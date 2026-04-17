@@ -9,6 +9,17 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { XCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  VENDOR_CANCELLATION_REASON_OPTIONS,
+  type VendorCancellationReasonSlug,
+} from '@/lib/vendor-cancellation-reasons';
 
 interface DeclineBookingModalProps {
   booking: any;
@@ -30,6 +41,8 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
   const [selectedReason, setSelectedReason] = useState('');
   const [customReason, setCustomReason] = useState('');
   const [suggestAlternative, setSuggestAlternative] = useState('');
+  const [vendorPolicyReason, setVendorPolicyReason] =
+    useState<VendorCancellationReasonSlug>('operational');
   const [loading, setLoading] = useState(false);
 
   const handleDecline = async () => {
@@ -49,7 +62,8 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
       const data = await apiClient.post(`/vendor/bookings/${booking.id}/decline`, {
         vendorId,
         reason: finalReason,
-        suggestAlternative: suggestAlternative || null
+        suggestAlternative: suggestAlternative || null,
+        vendorCancellationReason: vendorPolicyReason,
       }) as any;
 
       if (data && data.success) {
@@ -80,6 +94,28 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div>
+            <Label className="text-sm font-medium text-gray-700">Vendor cancellation reason</Label>
+            <p className="text-xs text-gray-500 mt-1 mb-2">
+              Used for refund and fee calculation (Admin Finance — Service Provider / Platform tiers).
+            </p>
+            <Select
+              value={vendorPolicyReason}
+              onValueChange={(v) => setVendorPolicyReason(v as VendorCancellationReasonSlug)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {VENDOR_CANCELLATION_REASON_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Booking Info */}
           <div className="p-4 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-600">Declining booking for:</p>
@@ -143,10 +179,10 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
           <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-yellow-800">
-              <p className="font-medium">Refund Policy</p>
+              <p className="font-medium">Refund policy</p>
               <p className="text-xs mt-1">
-                When you decline a booking, the customer receives a full refund immediately. 
-                Frequent declines may affect your vendor rating.
+                Refund percentage and cancellation fee follow the tier for the reason you selected above. Frequent
+                declines may affect your vendor rating.
               </p>
             </div>
           </div>

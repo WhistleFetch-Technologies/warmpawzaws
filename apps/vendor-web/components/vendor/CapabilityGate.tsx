@@ -8,6 +8,7 @@
 
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import { ModuleDisabledMessage } from './ModuleDisabledMessage';
+import { getVendorAllowedServiceStyles } from '@/lib/vendor-utils';
 
 interface CapabilityGateProps {
   /**
@@ -116,13 +117,10 @@ function checkIsSoloProvider(vendorData: any): boolean {
   );
 }
 
-// ✅ NEW: Helper to get vendor's allowed service styles
+// ✅ Admin role / profile — same canonical list as getVendorAllowedServiceStyles (no invented tele/at_home)
 function getVendorServiceStyles(vendorData: any): string[] {
-  if (!vendorData) return ['at_center', 'at_home', 'tele'];
-  return vendorData.allowedServiceStyles || 
-         vendorData.serviceStyles || 
-         vendorData.selectedServiceStyles || 
-         ['at_center', 'at_home', 'tele'];
+  if (!vendorData) return [];
+  return getVendorAllowedServiceStyles(vendorData);
 }
 
 export function CapabilityGate({

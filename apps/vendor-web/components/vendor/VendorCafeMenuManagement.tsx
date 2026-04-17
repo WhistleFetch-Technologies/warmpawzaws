@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 
 interface VendorCafeMenuManagementProps {
   vendorId: string;
@@ -353,24 +354,28 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                 </Button>
                 <div className="flex-1">
                   <input
+                    id={`vendor-cafe-bulk-menu-${vendorId}`}
                     ref={bulkMenuFileRef}
                     type="file"
                     accept=".csv,.xlsx"
-                    onChange={handleBulkUploadMenu}
+                    onChange={(e) => {
+                      handleBulkUploadMenu(e);
+                      e.target.value = '';
+                    }}
                     className="sr-only"
                     disabled={uploadingMenu}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs"
-                    disabled={uploadingMenu}
-                    onClick={() => bulkMenuFileRef.current?.click()}
+                  <label
+                    htmlFor={`vendor-cafe-bulk-menu-${vendorId}`}
+                    className={cn(
+                      buttonVariants({ variant: 'outline', size: 'sm' }),
+                      'flex w-full cursor-pointer text-xs',
+                      uploadingMenu && 'pointer-events-none opacity-50'
+                    )}
                   >
-                    <Upload className="w-4 h-4 mr-1" />
+                    <Upload className="mr-1 h-4 w-4" />
                     {uploadingMenu ? 'Uploading...' : 'Upload'}
-                  </Button>
+                  </label>
                 </div>
                 <Button
                   onClick={() => {

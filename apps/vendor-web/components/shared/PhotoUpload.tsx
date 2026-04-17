@@ -15,7 +15,8 @@
 
 import React, { useRef, useState } from 'react';
 import { Camera, Upload, X, Loader2, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 
 interface PhotoUploadProps {
@@ -48,6 +49,7 @@ export function PhotoUpload({
   disabled = false,
 }: PhotoUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputId = React.useId().replace(/:/g, '');
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(photoUrl || null);
   const [dragActive, setDragActive] = useState(false);
@@ -194,19 +196,21 @@ export function PhotoUpload({
 
           {/* Upload Overlay */}
           {!disabled && (
-            <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || disabled}
-                className="absolute bottom-2 right-2 bg-blue-500 text-white p-2 rounded-full cursor-pointer hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/10">
+              <label
+                htmlFor={fileInputId}
+                className={cn(
+                  'absolute bottom-2 right-2 cursor-pointer rounded-full bg-blue-500 p-2 text-white transition hover:bg-blue-600',
+                  (uploading || disabled) && 'pointer-events-none opacity-50'
+                )}
                 title="Upload photo"
               >
                 {uploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Camera className="w-4 h-4" />
+                  <Camera className="h-4 w-4" />
                 )}
-              </button>
+              </label>
             </div>
           )}
 
@@ -224,6 +228,7 @@ export function PhotoUpload({
         {/* Upload Controls */}
         <div className="flex-1">
           <input
+            id={fileInputId}
             ref={fileInputRef}
             type="file"
             accept={accept}
@@ -233,30 +238,31 @@ export function PhotoUpload({
           />
 
           <div className="space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || disabled}
-              className="w-full"
+            <label
+              htmlFor={fileInputId}
+              className={cn(
+                buttonVariants({ variant: 'outline', size: 'sm' }),
+                'w-full cursor-pointer',
+                (uploading || disabled) && 'pointer-events-none opacity-50'
+              )}
             >
               {uploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Uploading...
                 </>
               ) : preview ? (
                 <>
-                  <Camera className="w-4 h-4 mr-2" />
+                  <Camera className="mr-2 h-4 w-4" />
                   Change Photo
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="mr-2 h-4 w-4" />
                   Upload Photo
                 </>
               )}
-            </Button>
+            </label>
 
             <p className="text-xs text-gray-500">
               Drag and drop an image here, or click to select

@@ -167,11 +167,6 @@ export function VendorListingByStyle({
       if (response.success) {
         let providerData = response.providers || response.vendors || [];
         
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        if (serviceStyle === 'at_home') {
-          providerData = providerData.filter((p: any) => p.vendorType !== 'business');
-        }
-        
         const vendorMap = new Map<string, Vendor>();
         
         providerData.forEach((item: any) => {

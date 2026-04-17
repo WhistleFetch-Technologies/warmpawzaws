@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import {
   Video, VideoOff, Phone, PhoneOff, Mic, MicOff,
   MessageSquare, Settings, Maximize2, Minimize2,
@@ -106,7 +106,8 @@ export function ChimeVideoCall({
   const lastTypingSentRef = useRef<number>(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
+  const chimeChatFileInputId = useId().replace(/:/g, '');
+  const [isChimeNativeWebView, setIsChimeNativeWebView] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const callRootRef = useRef<HTMLDivElement>(null);
   const videoStageRef = useRef<HTMLDivElement>(null);
@@ -1007,9 +1008,6 @@ export function ChimeVideoCall({
     if (e.target === fileInputRef.current && fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-    if (e.target === cameraCaptureInputRef.current && cameraCaptureInputRef.current) {
-      cameraCaptureInputRef.current.value = '';
-    }
 
     const senderName = participantType === 'customer' ? customerName : vendorName;
     setUploadingFile(true);
@@ -1288,21 +1286,12 @@ export function ChimeVideoCall({
     }
   };
 
-  const openChatAttachment = () => {
-    if (typeof window !== 'undefined' && (window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } }).ReactNativeWebView) {
-      (window as unknown as { ReactNativeWebView: { postMessage: (s: string) => void } }).ReactNativeWebView.postMessage(
-        JSON.stringify({ type: 'WARMPAWZ_PICK_CHAT_FILE', bookingId })
-      );
-      return;
-    }
-    const narrow =
-      typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-    if (narrow && cameraCaptureInputRef.current) {
-      cameraCaptureInputRef.current.click();
-      return;
-    }
-    fileInputRef.current?.click();
-  };
+  useEffect(() => {
+    setIsChimeNativeWebView(
+      typeof window !== 'undefined' &&
+        !!(window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } }).ReactNativeWebView
+    );
+  }, []);
 
   {/* Other participant name*/ }
   const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
@@ -1872,12 +1861,12 @@ export function ChimeVideoCall({
       {/* Audio element for remote audio */}
       <audio ref={audioElementRef} autoPlay />
 
-      {/* Chat Panel */}
+      {/* Chat Panel — safe-area so header clears notch / status bar (iOS/Android) */}
       {showChat && (
-        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col">
-          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-            <div>
-              <h3 className="text-white font-semibold">Chat with {otherParticipantName}</h3>
+        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)]">
+          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex items-center gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-white font-semibold text-sm sm:text-base truncate">Chat with {otherParticipantName}</h3>
               {isOtherTyping && (
                 <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                   <span className="flex gap-0.5">
@@ -1889,12 +1878,17 @@ export function ChimeVideoCall({
                 </p>
               )}
             </div>
-            <button onClick={() => setShowChat(false)} className="p-2 hover:bg-slate-700 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setShowChat(false)}
+              className="p-2 hover:bg-slate-700 rounded-xl shrink-0 touch-manipulation"
+              aria-label="Close chat"
+            >
               <X className="w-5 h-5 text-white" />
             </button>
           </div>
 
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
             {chatMessages.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
                 <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -1986,33 +1980,40 @@ export function ChimeVideoCall({
             )}
           </div>
 
-          <div className="p-4 border-t border-slate-700">
-            <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="sr-only"
-                onChange={handleFileUpload}
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                disabled={uploadingFile}
-              />
-              <input
-                ref={cameraCaptureInputRef}
-                type="file"
-                className="sr-only"
-                onChange={handleFileUpload}
-                accept="image/*"
-                capture="environment"
-                disabled={uploadingFile}
-              />
-              <button
-                type="button"
-                onClick={openChatAttachment}
-                disabled={uploadingFile}
-                className="w-12 h-12 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
-              >
-                {uploadingFile ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
-              </button>
+          <div className="p-3 sm:p-4 border-t border-slate-700 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+            <div className="flex gap-2 min-w-0">
+              {isChimeNativeWebView ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const w = window as unknown as {
+                      ReactNativeWebView?: { postMessage: (s: string) => void };
+                    };
+                    w.ReactNativeWebView?.postMessage(
+                      JSON.stringify({ type: 'WARMPAWZ_PICK_CHAT_FILE', bookingId })
+                    );
+                  }}
+                  disabled={uploadingFile}
+                  className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-700 text-white transition-colors hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {uploadingFile ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+                </button>
+              ) : (
+                <label
+                  className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl bg-slate-700 text-white transition-colors hover:bg-slate-600 ${uploadingFile ? 'pointer-events-none opacity-50' : ''}`}
+                >
+                  <input
+                    id={chimeChatFileInputId}
+                    ref={fileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleFileUpload}
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                    disabled={uploadingFile}
+                  />
+                  {uploadingFile ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+                </label>
+              )}
               <input
                 type="text"
                 value={newMessage}

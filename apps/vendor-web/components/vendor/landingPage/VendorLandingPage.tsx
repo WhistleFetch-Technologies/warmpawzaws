@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
-import { getVendorRoleId, isDiagnosticsCenter } from '@/lib/vendor-utils';
+import { getVendorRoleId, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
 import { DoctorManagement } from '../clinic/DoctorManagement';
 import { VendorBusinessHub } from '../business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from '../clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
@@ -279,6 +279,20 @@ export function VendorLandingPage({
     })();
     return () => { cancelled = true; };
   }, [status, vendorData, vendorId]);
+
+  // Open Gallery when returning from /profile (Get started sets sessionStorage before router.push('/'))
+  useEffect(() => {
+    if (typeof window === 'undefined' || status !== 'active' || !vendorData) return;
+    try {
+      if (sessionStorage.getItem('warmpawz_vendor_open_gallery') === '1') {
+        sessionStorage.removeItem('warmpawz_vendor_open_gallery');
+        setShowProfile(false);
+        setShowGallery(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [status, vendorData]);
 
   {/* P2P VIDEO CALL: Check for incoming calls periodically (for tele consultations)*/ }
   useEffect(() => {
@@ -1083,6 +1097,10 @@ export function VendorLandingPage({
           <ProfileManager
             vendorId={vendorId}
             vendorData={vendorData}
+            onNavigateToGallery={() => {
+              setShowProfile(false);
+              setShowGallery(true);
+            }}
             onBack={async () => {
               setShowProfile(false);
               try {
@@ -1608,6 +1626,17 @@ export function VendorLandingPage({
       // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation
       console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
 
+      const isGroomerVendorPortfolioUnwired = hasVendorRole(vendorData, [
+        'groomer',
+        'groomer_solo',
+        'groomer_center',
+        'grooming_solo',
+        'pet_groomer',
+        'grooming_salon',
+        'pet_grooming',
+        'grooming',
+      ]);
+
       return (
         <>
           <Suspense fallback={
@@ -1632,7 +1661,9 @@ export function VendorLandingPage({
               onNavigateToLiveTracking={() => setShowLiveTracking(true)}
               onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
               onNavigateToGallery={() => setShowGallery(true)}
-              onNavigateToPortfolio={() => setShowPortfolio(true)}
+              onNavigateToPortfolio={
+                isGroomerVendorPortfolioUnwired ? undefined : () => setShowPortfolio(true)
+              }
               onNavigateToCCTV={() => setShowCCTV(true)}
               onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
               onNavigateToPrescription={() => setShowPrescription(true)}

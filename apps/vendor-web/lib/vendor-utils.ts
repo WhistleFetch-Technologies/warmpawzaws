@@ -363,30 +363,48 @@ export function isCenterRole(roleNameOrId: string | null | undefined): boolean {
 }
 
 /**
- * Get the allowed service styles for a vendor based on their configuration
- * Solo vendors cannot have at_center style
- * 
- * @param vendorData - Vendor data object
- * @returns Array of allowed service style strings
+ * Raw style strings from vendor profile / dashboard (Admin role → vendor.allowedServiceStyles, etc.).
+ * Does not invent defaults — empty means caller should treat as "no styles declared".
+ */
+function rawStyleIdsFromVendorData(vendorData: any): string[] {
+  if (!vendorData) return [];
+  const a = vendorData.allowedServiceStyles ?? vendorData.allowed_service_styles;
+  if (Array.isArray(a) && a.length) return a.map((x: unknown) => String(x));
+  const sel = vendorData.selectedServiceStyles ?? vendorData.selected_service_styles;
+  if (Array.isArray(sel) && sel.length) return sel.map((x: unknown) => String(x));
+  const ss = vendorData.serviceStyles ?? vendorData.service_styles;
+  if (Array.isArray(ss) && ss.length) return ss.map((x: unknown) => String(x));
+  if (ss && typeof ss === 'object' && !Array.isArray(ss)) {
+    const nested =
+      (ss as any).selected ?? (ss as any).solo ?? (ss as any).business;
+    if (Array.isArray(nested) && nested.length) {
+      return nested.map((x: unknown) => String(x));
+    }
+  }
+  return [];
+}
+
+/**
+ * Allowed service styles from Admin role / vendor profile (canonical at_center | at_home | tele).
+ * Solo vendors cannot have at_center. Returns [] when the API omitted style lists (strict callers use []).
  */
 export function getVendorAllowedServiceStyles(vendorData: any): ('at_center' | 'at_home' | 'tele')[] {
-  // Get base allowed styles from vendor data
-  const baseStyles = vendorData?.allowedServiceStyles || 
-                     vendorData?.serviceStyles || 
-                     vendorData?.selectedServiceStyles || 
-                     ['at_center', 'at_home', 'tele'];
-  
-  // Filter to valid styles
-  const validStyles = baseStyles.filter((style: string) => 
-    ['at_center', 'at_home', 'tele'].includes(style)
-  ) as ('at_center' | 'at_home' | 'tele')[];
-  
-  // Solo vendors cannot have at_center
-  if (isSoloVendor(vendorData)) {
-    return validStyles.filter(style => style !== 'at_center');
+  const raw = rawStyleIdsFromVendorData(vendorData).map((s) => s.toLowerCase().trim());
+  const out = new Set<'at_center' | 'at_home' | 'tele'>();
+  for (const s of raw) {
+    if (['at_center', 'at_vendor', 'at_clinic', 'center', 'clinic'].includes(s)) {
+      out.add('at_center');
+    } else if (['at_home', 'home_visit', 'home', 'at_home_visit'].includes(s)) {
+      out.add('at_home');
+    } else if (['tele', 'online', 'video_consultation', 'video', 'remote'].includes(s)) {
+      out.add('tele');
+    }
   }
-  
-  return validStyles;
+  let arr = Array.from(out);
+  if (isSoloVendor(vendorData)) {
+    arr = arr.filter((style) => style !== 'at_center');
+  }
+  return arr;
 }
 
 /**

@@ -39,6 +39,8 @@ interface Address {
     lat: number;
     lng: number;
   };
+  latitude?: number;
+  longitude?: number;
 }
 
 type CheckoutStep = 'address' | 'payment' | 'review' | 'confirmation';
@@ -524,7 +526,11 @@ export default function CheckoutPage() {
                               if (components.state) updates.state = components.state;
                               if (components.pincode) updates.pincode = components.pincode;
                               if (components.landmark) updates.landmark = components.landmark;
-                              if (components.coordinates) updates.coordinates = components.coordinates;
+                              if (components.coordinates) {
+                                updates.coordinates = components.coordinates;
+                                updates.latitude = components.coordinates.lat;
+                                updates.longitude = components.coordinates.lng;
+                              }
                             }
                             setNewAddress({ ...newAddress, ...updates });
                           }}

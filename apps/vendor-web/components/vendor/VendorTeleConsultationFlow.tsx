@@ -697,8 +697,8 @@ export function VendorTeleConsultationFlow({
       {/* Chat Panel */}
       {showChat && (
         <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)]">
-          {/* Chat Header — same layout pattern as VendorChatModal (mobile-safe) */}
-          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex items-center gap-3 min-w-0 shrink-0">
+          {/* Chat Header — same layout pattern as VendorChatModal (mobile-safe + horizontal safe area) */}
+          <div className="py-3 border-b border-slate-700 flex items-center gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-4 sm:pr-4">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center shrink-0">
               <MessageSquare className="w-5 h-5 text-[#FF8C42]" aria-hidden />
             </div>

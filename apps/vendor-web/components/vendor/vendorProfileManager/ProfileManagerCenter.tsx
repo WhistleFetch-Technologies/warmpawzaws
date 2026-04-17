@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check, Search } from 'lucide-react';
+import { Save, Clock, Building2, MapPin, Camera, Calendar, Sparkles, Check, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
-import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole } from '@/lib/vendor-utils';
+import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole, canVendorUseServiceStyle } from '@/lib/vendor-utils';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
@@ -20,7 +21,8 @@ import { VendorHeader } from '@/components/vendor/VendorHeader';
 // Export both names for backward compatibility
 
 // ✅ Main export with generic name
-export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
+export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGallery }: ProfileManagerProps) {
+  const router = useRouter();
   // ✅ FIX: Show Amenities and Specialty tabs for center roles even when vendorData says solo.
   // Use centralized isSoloVendor and override with isCenterRole so center profiles always get the tabs.
   // ⚠️ Do NOT use roleId state here - it is declared later; use vendorData only to avoid "Cannot access before initialization".
@@ -40,7 +42,6 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   }, [showAmenitiesAndSpecialtyTabs, activeTab]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
   
   // ✅ FIX: Track roleId separately with fallback loading
   // IMPORTANT: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
@@ -74,12 +75,25 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     }
   });
 
-  const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
   const [availableForInstantTele, setAvailableForInstantTele] = useState<boolean>(false);
+  /** Merged vendor + /vendor/profile so allowedServiceStyles reflects Admin role (instant tele gate). */
+  const [vendorStyleSource, setVendorStyleSource] = useState<any>(vendorData);
   // Using apiClient instead of API_BASE - use local roleId state
   const availableAmenities = getAmenitiesForVendorType(roleId);
-  const MAX_PHOTOS = 10;
+
+  const openGalleryFromProfile = () => {
+    if (onNavigateToGallery) {
+      onNavigateToGallery();
+      return;
+    }
+    try {
+      sessionStorage.setItem('warmpawz_vendor_open_gallery', '1');
+    } catch {
+      /* ignore */
+    }
+    router.push('/');
+  };
 
   // ✅ FIX: Update roleId when vendorData changes - prefer roleName over roleId
   // ⚠️ CRITICAL: DO NOT use vendorType as fallback - it's 'business'/'solo'/'center' which are NOT role names
@@ -92,6 +106,10 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       }
     }
   }, [vendorData?.roleName, vendorData?.roleId]);
+
+  useEffect(() => {
+    setVendorStyleSource(vendorData);
+  }, [vendorData]);
 
   useEffect(() => {
     loadCenterProfile();
@@ -144,8 +162,15 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
 
       // ✅ Load availableForInstantTele and coordinates from vendor profile
       if (vendorProfileData?.vendor) {
-        const instantTeleValue = vendorProfileData.vendor.availableForInstantTele ?? 
-                                 vendorProfileData.vendor.available_for_instant_tele ?? 
+        const v = vendorProfileData.vendor;
+        setVendorStyleSource((prev: any) => ({
+          ...prev,
+          ...v,
+          allowedServiceStyles: v.allowedServiceStyles ?? v.allowed_service_styles ?? prev?.allowedServiceStyles,
+          serviceStyles: v.serviceStyles ?? v.service_styles ?? prev?.serviceStyles,
+        }));
+        const instantTeleValue = v.availableForInstantTele ??
+                                 v.available_for_instant_tele ??
                                  false;
         setAvailableForInstantTele(instantTeleValue);
         console.log('[CENTER-PROFILE] Loaded availableForInstantTele:', instantTeleValue);
@@ -255,34 +280,11 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     try {
       setSaving(true);
       console.log('💾 Saving center profile for vendor:', vendorId);
-      
-      // 1. Upload new photos if any
-      let uploadedPhotoUrls: string[] = [];
-      if (newPhotos.length > 0) {
-        setUploading(true);
-        try {
-          const formData = new FormData();
-          newPhotos.forEach(photo => formData.append('photos', photo));
 
-          // Upload photos using apiClient
-          const uploadData = await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData) as any;
-          if (uploadData && uploadData.success) {
-            uploadedPhotoUrls = uploadData.photoUrls || [];
-            console.log('✅ Photos uploaded:', uploadedPhotoUrls.length);
-          } else {
-            console.warn('⚠️ Photo upload returned no success, continuing without photos');
-          }
-        } catch (photoError) {
-          console.error('⚠️ Photo upload failed, continuing without photos:', photoError);
-          // Continue without photos - not critical
-        } finally {
-          setUploading(false);
-        }
-      }
+      // Center listing photos are managed in Dashboard → Additional Features → Gallery (not here).
+      const allPhotos = profile.photos;
 
-      const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
-
-      // 2. Save facility data - ✅ FIX: Include centerName, operatingHours (both text and JSON), and better error handling
+      // 1. Save facility data - ✅ FIX: Include centerName, operatingHours (both text and JSON), and better error handling
       const facilityData = {
         centerName: profile.centerName.trim(),
         description: profile.description.trim(),
@@ -329,9 +331,11 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       // 4. Save address coordinates, business name, and availableForInstantTele to vendor profile
       try {
         const vendorProfileUpdate: any = {
-          availableForInstantTele: availableForInstantTele,
           businessName: profile.centerName.trim() // ✅ FIX: Update business_name when centerName changes
         };
+        if (canVendorUseServiceStyle(vendorStyleSource, 'tele')) {
+          vendorProfileUpdate.availableForInstantTele = availableForInstantTele;
+        }
         
         // Include latitude/longitude if they exist in profile state
         if (profile.latitude != null) {
@@ -360,8 +364,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       }
 
       toast.success('✅ Center profile saved successfully!');
-      setNewPhotos([]);
-      
+
       // Reload profile to get updated data
       await loadCenterProfile();
     } catch (error: any) {
@@ -370,7 +373,6 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       toast.error(errorMessage);
     } finally {
       setSaving(false);
-      setUploading(false);
     }
   };
 
@@ -414,40 +416,6 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const validFiles = files.filter(file => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} is not an image`);
-        return false;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} is too large (max 5MB)`);
-        return false;
-      }
-      return true;
-    });
-
-    const totalPhotos = newPhotos.length + profile.photos.length + validFiles.length;
-    if (totalPhotos > MAX_PHOTOS) {
-      toast.error(`Maximum ${MAX_PHOTOS} photos allowed`);
-      return;
-    }
-
-    setNewPhotos(prev => [...prev, ...validFiles]);
-  };
-
-  const removeExistingPhoto = (index: number) => {
-    setProfile(prev => ({
-      ...prev,
-      photos: prev.photos.filter((_, i) => i !== index)
-    }));
-  };
-
-  const removeNewPhoto = (index: number) => {
-    setNewPhotos(prev => prev.filter((_, i) => i !== index));
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -471,7 +439,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
               key="save"
               type="button"
               onClick={handleSave}
-              disabled={saving || uploading}
+              disabled={saving}
               className="h-9 shrink-0 bg-orange-500 px-3 text-xs text-white hover:bg-orange-600"
             >
               <Save className="mr-1 inline h-3.5 w-3.5" />
@@ -597,138 +565,36 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
               </div>
             </div>
 
-            {/* Photos */}
-            <div className="bg-white rounded-xl border p-6">
-              <h2 className="font-bold text-gray-900 mb-4">Center Photos</h2>
-              
-              {profile.photos.length === 0 && newPhotos.length === 0 && (
-                <div className="text-center py-8 text-gray-500 text-sm mb-4">
-                  No photos uploaded yet. Upload photos to showcase your center.
+            {/* Listing photos: use Dashboard → Additional Features → Gallery (not facility upload here) */}
+            <div className="rounded-xl border border-pink-100 bg-gradient-to-br from-pink-50/80 to-white p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-100">
+                    <Camera className="h-5 w-5 text-pink-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Photo gallery</h2>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Add and manage photos customers see for your center. From the main dashboard, open{' '}
+                      <span className="font-medium text-gray-800">Additional Features</span> →{' '}
+                      <span className="font-medium text-gray-800">Gallery</span> (look for{' '}
+                      <span className="font-medium text-gray-800">Get started</span> on that tile). You can also use the
+                      button here to jump straight to gallery.
+                    </p>
+                  </div>
                 </div>
-              )}
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                {profile.photos.map((photo, idx) => (
-                  <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
-                    <img 
-                      src={photo} 
-                      alt={`Photo ${idx + 1}`} 
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      onError={async (e) => {
-                        const target = e.target as HTMLImageElement;
-                        const originalSrc = photo;
-                        
-                        console.error(`[CENTER-PHOTOS] Image failed to load for photo ${idx + 1}:`, {
-                          src: originalSrc?.substring(0, 100),
-                          error: e,
-                          naturalWidth: target.naturalWidth,
-                          naturalHeight: target.naturalHeight,
-                          complete: target.complete
-                        });
-                        
-                        // Check if this is a retry (to avoid infinite loops)
-                        const retryCount = parseInt(target.getAttribute('data-retry-count') || '0');
-                        if (retryCount >= 2) {
-                          console.warn(`[CENTER-PHOTOS] Max retries reached for photo ${idx + 1}, showing error`);
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent && !parent.querySelector('.photo-error-message')) {
-                            const errorDiv = document.createElement('div');
-                            errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
-                            errorDiv.textContent = 'Failed to load';
-                            parent.appendChild(errorDiv);
-                          }
-                          return;
-                        }
-                        
-                        // Try to refresh the presigned URL by reloading facility data
-                        try {
-                          console.log(`[CENTER-PHOTOS] Attempting to refresh presigned URL for photo ${idx + 1} (retry ${retryCount + 1})`);
-                          const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
-                          
-                          if (facilityData && facilityData.success && facilityData.facility && facilityData.facility.photos) {
-                            const refreshedPhotos = facilityData.facility.photos;
-                            if (refreshedPhotos[idx] && refreshedPhotos[idx] !== originalSrc) {
-                              console.log(`[CENTER-PHOTOS] Got fresh URL for photo ${idx + 1}, retrying...`);
-                              // Update the photo in state
-                              setProfile(prev => {
-                                const updatedPhotos = [...prev.photos];
-                                updatedPhotos[idx] = refreshedPhotos[idx];
-                                return { ...prev, photos: updatedPhotos };
-                              });
-                              // Retry with new URL
-                              target.setAttribute('data-retry-count', String(retryCount + 1));
-                              target.src = refreshedPhotos[idx];
-                              return;
-                            } else if (refreshedPhotos[idx] === originalSrc) {
-                              console.warn(`[CENTER-PHOTOS] Refreshed URL is same as original for photo ${idx + 1}`);
-                            }
-                          }
-                        } catch (refreshError) {
-                          console.error(`[CENTER-PHOTOS] Failed to refresh presigned URL for photo ${idx + 1}:`, refreshError);
-                        }
-                        
-                        // If refresh failed or no new URL, show error message
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('.photo-error-message')) {
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
-                          errorDiv.textContent = 'Failed to load';
-                          parent.appendChild(errorDiv);
-                        }
-                      }}
-                      onLoad={(e) => {
-                        // Remove any error messages on successful load
-                        const parent = (e.target as HTMLImageElement).parentElement;
-                        if (parent) {
-                          const errorMsg = parent.querySelector('.photo-error-message');
-                          if (errorMsg) {
-                            errorMsg.remove();
-                          }
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => removeExistingPhoto(idx)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-10"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                
-                {newPhotos.map((photo, idx) => (
-                  <div key={`new-${idx}`} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
-                    <img src={URL.createObjectURL(photo)} alt={`New ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => removeNewPhoto(idx)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
-                    >
-                      ×
-                    </button>
-                    <Badge className="absolute bottom-2 left-2 bg-blue-500">New</Badge>
-                  </div>
-                ))}
+                <Button
+                  type="button"
+                  onClick={openGalleryFromProfile}
+                  className="h-10 shrink-0 bg-pink-600 px-4 text-sm text-white hover:bg-pink-700 sm:self-center"
+                >
+                  Get started
+                </Button>
               </div>
-
-              {(profile.photos.length + newPhotos.length) < MAX_PHOTOS && (
-                <label className="relative flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg hover:bg-gray-50 cursor-pointer overflow-hidden">
-                  <ImageIcon className="w-5 h-5 text-gray-400 pointer-events-none" />
-                  <span className="text-sm text-gray-600 pointer-events-none">Add Photos ({profile.photos.length + newPhotos.length}/{MAX_PHOTOS})</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileSelect}
-                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
-                  />
-                </label>
-              )}
             </div>
 
-            {/* Instant Tele Availability Toggle */}
+            {/* Instant Tele — only when Admin role includes tele (same source as customer discovery) */}
+            {canVendorUseServiceStyle(vendorStyleSource, 'tele') && (
             <div className="bg-white rounded-2xl border shadow-sm p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
@@ -763,6 +629,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                 </label>
               </div>
             </div>
+            )}
 
             {/* Emergency Services - for vet centers */}
             {(vendorData?.roleId?.includes('vet') || vendorData?.roleId?.includes('clinic')) && (

@@ -1,43 +1,136 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Settings, Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
+import { Camera, Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Button } from '@/components/ui/button';
 
 interface VendorGalleryManagementProps {
   vendorId: string;
   onBack?: () => void;
 }
 
+const MAX_PHOTOS = 10;
+const MAX_FILE_MB = 5;
+
 export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManagementProps) {
   const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<any[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
+  /** Same UX as before: empty state → "Get started" reveals the center photo manager */
+  const [galleryStarted, setGalleryStarted] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadData();
+  const loadPhotos = useCallback(async (): Promise<number> => {
+    const facilityData = (await apiClient.get(`/vendor/${vendorId}/facility`)) as {
+      success?: boolean;
+      facility?: { photos?: string[] };
+    };
+    const list = facilityData?.success && facilityData?.facility?.photos ? facilityData.facility.photos : [];
+    const cleaned = Array.isArray(list) ? list.filter(Boolean) : [];
+    setPhotos(cleaned);
+    return cleaned.length;
   }, [vendorId]);
 
-  const loadData = async () => {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const count = await loadPhotos();
+        if (!cancelled && count > 0) setGalleryStarted(true);
+      } catch (error) {
+        console.error('[GALLERY] Load facility failed:', error);
+        if (!cancelled) toast.error('Failed to load center photos');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId, loadPhotos]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+
+    const valid = files.filter((file) => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image`);
+        return false;
+      }
+      if (file.size > MAX_FILE_MB * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max ${MAX_FILE_MB}MB)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (valid.length === 0) return;
+
+    if (photos.length + valid.length > MAX_PHOTOS) {
+      toast.error(`You can have at most ${MAX_PHOTOS} center photos`);
+      return;
+    }
+
+    setUploading(true);
     try {
-      setLoading(true);
-      // API call would go here
-      setItems([]);
-    } catch (error) {
-      console.error('Error loading data:', error);
+      const formData = new FormData();
+      valid.forEach((photo) => formData.append('photos', photo));
+
+      const uploadData = (await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData)) as {
+        success?: boolean;
+        error?: string;
+      };
+
+      if (!uploadData?.success) {
+        throw new Error(uploadData?.error || 'Upload failed');
+      }
+
+      toast.success(valid.length === 1 ? 'Photo uploaded' : `${valid.length} photos uploaded`);
+      await loadPhotos();
+    } catch (err: unknown) {
+      console.error('[GALLERY] Upload failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to upload photos');
     } finally {
-      setLoading(false);
+      setUploading(false);
+    }
+  };
+
+  const removePhoto = async (index: number) => {
+    const next = photos.filter((_, i) => i !== index);
+    setDeletingIndex(index);
+    try {
+      const res = (await apiClient.put(`/vendor/facility/${vendorId}`, { photos: next })) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (res?.error || res?.success === false) {
+        throw new Error(res?.error || 'Failed to remove photo');
+      }
+      toast.success('Photo removed');
+      await loadPhotos();
+    } catch (err: unknown) {
+      console.error('[GALLERY] Remove failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to remove photo');
+      await loadPhotos();
+    } finally {
+      setDeletingIndex(null);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+      <div className="flex h-screen items-center justify-center bg-gray-50 vendor-app-column">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#FF8C42]" />
       </div>
     );
   }
+
+  const showManager = galleryStarted || photos.length > 0;
 
   return (
     <div className="vendor-page-shell bg-gray-50">
@@ -45,21 +138,85 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
         <VendorHeader
           tone="brand"
           title="Gallery Management"
-          subtitle="Manage your settings"
+          subtitle="Center photos for your listing (up to 10)"
           showBack={Boolean(onBack)}
           onBack={onBack}
         />
-      <div className="p-4">
-        <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
-          <Settings className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">Gallery Management</h3>
-          <p className="text-gray-500 mb-4">This feature is being configured for your account.</p>
-          <button className="bg-[#FF8C42] text-white px-6 py-2 rounded-lg font-medium">
-            <Plus className="w-4 h-4 inline mr-2" />
-            Get Started
-          </button>
+        <div className="p-4">
+          {!showManager ? (
+            <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+              <Camera className="mx-auto mb-4 h-16 w-16 text-gray-300" />
+              <h3 className="mb-2 text-lg font-semibold text-gray-800">Center photos</h3>
+              <p className="mb-4 text-gray-500">
+                Add up to {MAX_PHOTOS} photos of your center. They appear in discovery and your facility details — same
+                as the center photo option that was in Profile.
+              </p>
+              <Button
+                type="button"
+                className="bg-[#FF8C42] px-6 font-medium text-white hover:bg-orange-600"
+                onClick={() => setGalleryStarted(true)}
+              >
+                <Plus className="mr-2 inline h-4 w-4" />
+                Get started
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-gray-200 bg-white p-6">
+                <h3 className="mb-1 font-bold text-gray-900">Center photos</h3>
+                <p className="mb-4 text-sm text-gray-600">
+                  Up to {MAX_PHOTOS} images, max {MAX_FILE_MB}MB each. Uploads are saved to your facility immediately.
+                </p>
+
+                {photos.length === 0 && !uploading && (
+                  <p className="mb-4 text-center text-sm text-gray-500">No photos yet. Add some below.</p>
+                )}
+
+                <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3">
+                  {photos.map((photo, idx) => (
+                    <div key={`${idx}-${photo.slice(0, 48)}`} className="relative aspect-video overflow-hidden rounded-lg bg-gray-100">
+                      <img src={photo} alt={`Center ${idx + 1}`} className="h-full w-full object-cover" loading="lazy" />
+                      <button
+                        type="button"
+                        disabled={deletingIndex !== null}
+                        onClick={() => removePhoto(idx)}
+                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-sm text-white hover:bg-red-600 disabled:opacity-50"
+                        aria-label="Remove photo"
+                      >
+                        {deletingIndex === idx ? (
+                          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {photos.length < MAX_PHOTOS && (
+                  <label className="relative flex cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-dashed border-gray-300 p-6 hover:bg-gray-50">
+                    <ImageIcon className="h-8 w-8 text-gray-400" />
+                    <span className="text-sm text-gray-600">
+                      {uploading ? 'Uploading…' : `Add photos (${photos.length}/${MAX_PHOTOS})`}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={uploading}
+                      onChange={handleFileSelect}
+                      className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                    />
+                  </label>
+                )}
+
+                {photos.length >= MAX_PHOTOS && (
+                  <p className="text-center text-sm text-gray-500">Maximum of {MAX_PHOTOS} photos reached. Remove one to add more.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
       </div>
     </div>
   );

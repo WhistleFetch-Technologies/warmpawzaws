@@ -1,9 +1,30 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { toast } from 'sonner';
+import {
+  VENDOR_CANCELLATION_REASON_OPTIONS,
+  type VendorCancellationReasonSlug,
+} from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
@@ -247,7 +268,12 @@ export function VendorBookingManagement({
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState('');
   const [completingBooking, setCompletingBooking] = useState(false);
-  
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelPolicyReason, setCancelPolicyReason] =
+    useState<VendorCancellationReasonSlug>('operational');
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
   // ✅ Chat Modal State
   const [showChatModal, setShowChatModal] = useState(false);
   const [chatBooking, setChatBooking] = useState<Booking | null>(null);
@@ -732,17 +758,34 @@ export function VendorBookingManagement({
     }
   };
 
-  const handleCancelBooking = async (bookingId: string) => {
-    if (!confirm('Are you sure you want to cancel this booking?')) return;
+  const openCancelBookingDialog = (e: MouseEvent<HTMLButtonElement>, bookingId: string) => {
+    e.stopPropagation();
+    setCancelTargetId(bookingId);
+    setCancelPolicyReason('operational');
+    setCancelDialogOpen(true);
+  };
 
+  const confirmCancelBooking = async () => {
+    if (!cancelTargetId) return;
+    setCancelSubmitting(true);
     try {
-      const data = await apiClient.post(`/vendor/bookings/${bookingId}/cancel`, {}) as any;
+      const data = (await apiClient.post(`/vendor/bookings/${cancelTargetId}/cancel`, {
+        vendorCancellationReason: cancelPolicyReason,
+      })) as any;
 
       if (data && data.success) {
-        loadBookings(); // Reload bookings
+        toast.success(data?.refund?.message || 'Booking cancelled');
+        setCancelDialogOpen(false);
+        setCancelTargetId(null);
+        loadBookings();
+      } else {
+        toast.error(data?.error || 'Failed to cancel booking');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling booking:', error);
+      toast.error(error?.message || 'Failed to cancel booking');
+    } finally {
+      setCancelSubmitting(false);
     }
   };
 
@@ -1139,7 +1182,7 @@ export function VendorBookingManagement({
                             <div className="mt-3 grid grid-cols-2 gap-2">
                               <button
                                 className="px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
-                                onClick={() => handleCancelBooking(booking.id)}
+                                onClick={(e) => openCancelBookingDialog(e, booking.id)}
                                 disabled={completingBooking}
                               >
                                 Reject
@@ -1676,6 +1719,49 @@ export function VendorBookingManagement({
           <div className="min-h-0 flex-1 overflow-y-auto pb-20">{bookingMainBody}</div>
         </div>
       )}
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Cancel booking</DialogTitle>
+            <DialogDescription>
+              Select the provider cancellation reason. Customer refund and fees follow Admin Finance (Refund tiers
+              for Service Provider / Platform).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="vendor-cancel-reason">Vendor cancellation reason</Label>
+            <Select
+              value={cancelPolicyReason}
+              onValueChange={(v) => setCancelPolicyReason(v as VendorCancellationReasonSlug)}
+            >
+              <SelectTrigger id="vendor-cancel-reason" className="w-full">
+                <SelectValue placeholder="Select reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {VENDOR_CANCELLATION_REASON_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setCancelDialogOpen(false)}>
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmCancelBooking()}
+              disabled={cancelSubmitting}
+            >
+              {cancelSubmitting ? 'Cancelling…' : 'Cancel booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* OTP VERIFICATION MODAL */}
       {showOTPModal && selectedBooking && (() => {

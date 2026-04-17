@@ -461,11 +461,6 @@ export function ProblemBasedFlowRouter({
 
             let providers = response.providers || response.vendors || [];
             
-            // ✅ FIX: Filter out business vendors when style is at_home
-            if (style.style === 'at_home') {
-              providers = providers.filter((p: any) => p.vendorType !== 'business');
-            }
-            
             const isAvailable = providers.length > 0;
             // Phase 2: earliest slot from first provider's nextAvailable/nextAvailableSlot/nextAvailability
             let earliestSlot: string | undefined;

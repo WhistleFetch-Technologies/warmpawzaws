@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -155,7 +155,16 @@ export function VendorChatModal({
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatFileInputId = useId().replace(/:/g, '');
+  const [isNativeWebView, setIsNativeWebView] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setIsNativeWebView(
+      typeof window !== 'undefined' &&
+        !!(window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } }).ReactNativeWebView
+    );
+  }, []);
 
   // ✅ CRITICAL FIX: Check chat availability with enhanced rules
   const [chatAvailableFromBackend, setChatAvailableFromBackend] = useState<boolean | undefined>(undefined);
@@ -499,11 +508,11 @@ export function VendorChatModal({
     bookingId && bookingId.length > 10 ? `${bookingId.slice(0, 8)}…` : bookingId || '';
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom,0px)]">
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl h-[min(85dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[100dvh] flex flex-col shadow-2xl overflow-hidden min-h-0">
         
-        {/* Header — responsive row: title truncates; actions stay visible (tele + close) */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-3 sm:px-5 py-3 sm:py-4 flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Header — responsive row: title truncates; actions stay visible (tele + close); clear notch/status bar */}
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5 flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
               <MessageSquare className="w-5 h-5 text-white" aria-hidden />
@@ -734,26 +743,44 @@ export function VendorChatModal({
           {chatActive ? (
             <div className="flex items-end gap-2 sm:gap-3 min-w-0">
               {/* File Upload Button */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="sr-only"
-                onChange={handleFileUpload}
-                accept="image/*,.pdf,.doc,.docx"
-                disabled={uploading}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="p-2 sm:p-3 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition disabled:opacity-50 shrink-0 touch-manipulation"
-              >
-                {uploading ? (
-                  <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Paperclip className="w-5 h-5" />
-                )}
-              </button>
+              {isNativeWebView ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const w = window as unknown as {
+                      ReactNativeWebView?: { postMessage: (s: string) => void };
+                    };
+                    w.ReactNativeWebView?.postMessage(
+                      JSON.stringify({ type: 'WARMPAWZ_PICK_CHAT_FILE', bookingId })
+                    );
+                  }}
+                  disabled={uploading}
+                  className="shrink-0 touch-manipulation rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 sm:p-3"
+                >
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  ) : (
+                    <Paperclip className="h-5 w-5" />
+                  )}
+                </button>
+              ) : (
+                <label className="flex shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 sm:p-3">
+                  <input
+                    id={chatFileInputId}
+                    ref={fileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleFileUpload}
+                    accept="image/*,.pdf,.doc,.docx"
+                    disabled={uploading}
+                  />
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  ) : (
+                    <Paperclip className="h-5 w-5" />
+                  )}
+                </label>
+              )}
 
               {/* Message Input */}
               <div className="flex-1 relative min-w-0">

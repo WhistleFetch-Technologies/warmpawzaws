@@ -23,6 +23,11 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedService
 import { isValidUUID } from '../../../types/entities';
 import { checkVendorCapability } from '../../../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import {
+  parseVendorCancellationReason,
+  vendorCancellationReasonLabel,
+  applyRefundAfterProviderCancellation,
+} from '../../../lib/services/provider-booking-cancel-refund';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -406,7 +411,20 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     try {
       const { bookingId } = c.req.param();
       const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
-      const { reason } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const { reason } = body;
+      const vendorCancellationReason = parseVendorCancellationReason(
+        body.vendorCancellationReason ?? body.vendor_cancellation_reason
+      );
+      if (!vendorCancellationReason) {
+        return c.json(
+          {
+            error:
+              'vendorCancellationReason is required. Use one of: emergency, operational, technical (Finance → Cancellation & Refund policy, provider / Service Provider tiers).',
+          },
+          400
+        );
+      }
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -419,15 +437,39 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: `Booking cannot be cancelled. Current status: ${oldStatus}` }, 400);
       }
 
+      const reasonLabel = vendorCancellationReasonLabel(vendorCancellationReason);
+      const extraNote = typeof reason === 'string' && reason.trim() ? reason.trim() : '';
+      const cancellation_reason = extraNote
+        ? `Provider cancelled (${reasonLabel}). ${extraNote}`
+        : `Provider cancelled: ${reasonLabel}.`;
+      const priorMeta =
+        booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
+          ? booking.metadata
+          : {};
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'cancelled',
-          cancellation_reason: reason || null,
+          cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
+          metadata: {
+            ...priorMeta,
+            vendorCancellationReason,
+          },
         }
       );
+
+      const refundInfo = await applyRefundAfterProviderCancellation(
+        booking,
+        vendorCancellationReason,
+        cancellation_reason,
+        { refundMethod: 'wallet' }
+      ).catch((e: any) => {
+        console.warn('[vendor/cancel] refund apply failed:', e?.message);
+        return null;
+      });
 
       // Log status change
       await logBookingStatusChange(
@@ -436,7 +478,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         'cancelled',
         vendorId || booking.vendor_id,
         'vendor',
-        reason || 'Vendor cancelled booking'
+        extraNote ? `Vendor cancelled (${reasonLabel}): ${extraNote}` : `Vendor cancelled (${reasonLabel})`
       );
 
       // Publish notification event
@@ -448,7 +490,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           vendorId: booking.vendor_id || vendorId,
           oldStatus,
           newStatus: 'cancelled',
-          reason: reason || 'Vendor cancelled booking',
+          reason: cancellation_reason,
           eventTimestamp: new Date().toISOString(),
           eventId: randomUUID(),
         });
@@ -460,6 +502,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         success: true,
         booking: updated[0],
         message: 'Booking cancelled successfully',
+        refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
       console.error('Error cancelling booking:', error);
@@ -474,7 +517,20 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   app.post("/vendor/bookings/:bookingId/decline", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, reason, suggestAlternative } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, reason, suggestAlternative } = body;
+      const vendorCancellationReason = parseVendorCancellationReason(
+        body.vendorCancellationReason ?? body.vendor_cancellation_reason
+      );
+      if (!vendorCancellationReason) {
+        return c.json(
+          {
+            error:
+              'vendorCancellationReason is required. Use one of: emergency, operational, technical (Finance → Cancellation & Refund policy, provider tiers).',
+          },
+          400
+        );
+      }
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -487,20 +543,41 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: `Booking cannot be declined. Current status: ${oldStatus}` }, 400);
       }
 
+      const reasonLabel = vendorCancellationReasonLabel(vendorCancellationReason);
+      const extraNote = typeof reason === 'string' && reason.trim() ? reason.trim() : '';
+      const cancellation_reason = extraNote
+        ? `Provider declined (${reasonLabel}). ${extraNote}`
+        : `Provider declined: ${reasonLabel}.`;
+      const priorMeta =
+        booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
+          ? booking.metadata
+          : {};
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'cancelled',
-          cancellation_reason: reason || 'Vendor declined booking',
+          cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
           metadata: {
-            ...(booking.metadata || {}),
+            ...priorMeta,
             suggestAlternative: suggestAlternative || null,
             declinedBy: 'vendor',
+            vendorCancellationReason,
           },
         }
       );
+
+      const refundInfo = await applyRefundAfterProviderCancellation(
+        booking,
+        vendorCancellationReason,
+        cancellation_reason,
+        { refundMethod: 'wallet' }
+      ).catch((e: any) => {
+        console.warn('[vendor/decline] refund apply failed:', e?.message);
+        return null;
+      });
 
       // Log status change
       await logBookingStatusChange(
@@ -509,7 +586,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         'cancelled',
         vendorId || booking.vendor_id,
         'vendor',
-        reason || 'Vendor declined booking'
+        extraNote ? `Vendor declined (${reasonLabel}): ${extraNote}` : `Vendor declined (${reasonLabel})`
       );
 
       // Publish notification event
@@ -521,7 +598,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           vendorId: booking.vendor_id || vendorId,
           oldStatus,
           newStatus: 'cancelled',
-          reason: reason || 'Vendor declined booking',
+          reason: cancellation_reason,
           eventTimestamp: new Date().toISOString(),
           eventId: randomUUID(),
         });
@@ -533,6 +610,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         success: true,
         booking: updated[0],
         message: 'Booking declined successfully',
+        refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
       console.error('Error declining booking:', error);
