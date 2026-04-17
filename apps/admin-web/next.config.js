@@ -1,28 +1,38 @@
 const path = require('path');
+const { getDevDistDir } = require('./scripts/dev-cache-path.cjs');
 
 /**
- * True when the CLI is `next dev`.
- * Do not use NODE_ENV — .env.local often sets production and breaks dev.
- * On Windows, `process.argv[2] === 'dev'` alone can be false in spawned workers; `npm run dev`
- * sets `npm_lifecycle_event`. Prefer `.next` in those cases so `dist` + OneDrive does not break dev.
+ * `distDir` for builds/starts vs dev. Dev must stay consistent in worker processes too:
+ * `scripts/start-dev.cjs` sets WARMPAWZ_ADMIN_WEB_DEV_DISTDIR so reloads are not confused
+ * when argv no longer equals `next dev`.
  */
-const argv = process.argv;
-const isNextDev =
-  argv[2] === 'dev' ||
-  process.env.npm_lifecycle_event === 'dev' ||
-  (argv.includes('dev') && !argv.includes('build') && !argv.includes('start'));
+function resolveDistDir() {
+  const cmd = process.argv[2];
+  if (cmd === 'build' || cmd === 'start') {
+    return 'dist';
+  }
+  const fromEnv = process.env.WARMPAWZ_ADMIN_WEB_DEV_DISTDIR;
+  if (fromEnv) {
+    return fromEnv;
+  }
+  if (cmd === 'dev' || process.env.npm_lifecycle_event === 'dev') {
+    return getDevDistDir(__dirname);
+  }
+  return 'dist';
+}
 
 /**
  * Next.js config – Admin Web
  * Retained structure for AWS Serverless: static export → S3 + CloudFront.
  * Build for performance: compress, tree-shake, chunk splitting.
  * See docs/NEXTJS_AWS_SERVERLESS_ARCHITECTURE.md
+ *
+ * Dev cache path: `scripts/dev-cache-path.cjs` (outside OneDrive on Windows when possible).
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   ...(process.argv[2] === 'build' && process.env.NEXT_EXPORT !== 'false' ? { output: 'export' } : {}),
-  // Dev uses `.next` so OneDrive/reparse points under `dist` do not break `next dev`. Builds use `dist` for S3 deploy.
-  distDir: isNextDev ? '.next' : 'dist',
+  distDir: resolveDistDir(),
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,

@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
@@ -6,14 +6,24 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
-    <!-- Razorpay CheckoutActivity: non-translucent status bar + solid color so content lays out below system bars. -->
+    <!--
+      Razorpay CheckoutActivity (com.razorpay.CheckoutActivity): native WebView toolbar, not RN safe area.
+
+      Observed fix set (device + API 35 emulator): keep status/nav opaque, do not extend into display cutout,
+      and on API 35 use windowOptOutEdgeToEdgeEnforcement (see values-v35).
+
+      windowLayoutInDisplayCutoutMode=never: keeps the window out of the notch region so the merchant header
+      lays out below status icons on notched phones (pairs with non-translucent status bar).
+    -->
     <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <!-- Solid bar (Warmpawz orange); avoids drawing checkout toolbar under status icons -->
         <item name="android:statusBarColor">#FFF57C00</item>
+        <item name="android:navigationBarColor">#FFFFFFFF</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:fitsSystemWindows">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="28">never</item>
     </style>
 
 </resources>

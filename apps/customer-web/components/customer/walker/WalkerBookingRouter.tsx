@@ -468,6 +468,11 @@ export function WalkerBookingRouter({
   };
 
   // ✅ FIX: Prepare step indicators for header
+  const getHeaderTitle = () =>
+    step === 'payment' && !showPaymentPage ? 'Booking Summary' : getServiceTitle();
+  const getHeaderSubtitle = () =>
+    step === 'payment' && !showPaymentPage ? 'Review before payment' : getServiceSubtitle();
+
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
     
@@ -488,11 +493,11 @@ export function WalkerBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
-      {step !== 'payment' && (
+      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
+      {!(step === 'payment' && showPaymentPage) && (
         <ServiceDashboardHeader
-          serviceName={getServiceTitle()}
-          serviceSubtitle={getServiceSubtitle()}
+          serviceName={getHeaderTitle()}
+          serviceSubtitle={getHeaderSubtitle()}
           serviceIcon={Bike}
           iconColor="text-white"
           stats={dashboardStats}
@@ -833,8 +838,6 @@ export function WalkerBookingRouter({
         {/* Payment Summary - Now using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-            
             <div className="bg-white rounded-xl p-4 space-y-4">
               {/* Service - with fallbacks for missing data */}
               <div className="flex items-center gap-3 pb-4 border-b">

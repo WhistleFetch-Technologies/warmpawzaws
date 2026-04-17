@@ -346,40 +346,38 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   }
 
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Back + edit */}
-      <div className="px-4 pt-4 pb-2 bg-white flex items-center justify-between gap-2">
+    <div className="mx-auto flex min-h-screen-dynamic w-full max-w-customer flex-col bg-slate-100">
+      {/* App-style top bar (narrow column, not full-bleed web) */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-white pb-2 shadow-sm cw-header-safe-top cw-header-safe-x">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="text-gray-800 -ml-2 gap-1 shrink-0"
+          className="h-11 min-h-[44px] shrink-0 gap-1 px-1 text-gray-800"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="h-5 w-5" />
           <span className="font-medium">Back</span>
         </Button>
         <button
           type="button"
           onClick={() => (editMode ? setEditMode(false) : setEditMode(true))}
-          className="p-2 hover:bg-gray-100 rounded-full transition-all shrink-0"
+          className="inline-flex h-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full transition-colors hover:bg-slate-100 active:bg-slate-200"
           aria-label={editMode ? 'Close edit' : 'Edit pet'}
         >
           {editMode ? (
-            <X className="w-5 h-5 text-gray-700" />
+            <X className="h-5 w-5 text-gray-700" />
           ) : (
-            <Edit2 className="w-5 h-5 text-gray-700" />
+            <Edit2 className="h-5 w-5 text-gray-700" />
           )}
         </button>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 bg-white overflow-y-auto pb-32">
-        <div className="px-6 py-6">
+      {/* Scrollable body — grouped cards on canvas like native settings */}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-28 pt-3">
+        <div className="space-y-3 px-3 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:px-4">
           {/* Pet Photo */}
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex flex-col items-center rounded-2xl border border-slate-100 bg-white px-4 py-6 shadow-sm">
             <div 
               onClick={() => editMode && fileInputRef.current?.click()}
               className={`w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg mb-3 relative group ${editMode ? 'cursor-pointer' : ''}`}
@@ -412,15 +410,16 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             />
             {editMode && (
               <p className="text-xs text-gray-500 text-center">
-                Click photo to change
+                Tap photo to change
               </p>
             )}
           </div>
 
-          {/* Basic Information */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-4">Basic Information</h3>
-            <div className="space-y-4">
+          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Basic information
+            </h3>
+            <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">
                   Pet Name
@@ -433,18 +432,18 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.name}
                   </p>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Type
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {petTypeEmoji(pet.type)} {pet.type}
                   </p>
                 </div>
@@ -452,7 +451,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Gender
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.gender || 'Not specified'}
                   </p>
                 </div>
@@ -462,17 +461,17 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                 <label className="block text-xs font-medium text-gray-500 mb-2">
                   Breed
                 </label>
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                   {pet.breed}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Age
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.age} {pet.age === '1' ? 'year' : 'years'}
                   </p>
                 </div>
@@ -480,7 +479,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Weight
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.weight ? `${pet.weight} kg` : 'Not specified'}
                   </p>
                 </div>
@@ -491,18 +490,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Microchip ID
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl font-mono text-sm">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 font-mono text-sm font-medium text-slate-900">
                     {pet.microchipId}
                   </p>
                 </div>
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Health Records */}
-          <div className="mb-6 pt-6 border-t border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700 mb-4">🏥 Health Records</h3>
-            <div className="space-y-4">
+          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Health records
+            </h3>
+            <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">
                   Last Checkup
@@ -518,7 +518,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.healthRecords?.lastCheckup 
                       ? new Date(pet.healthRecords.lastCheckup).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : 'Not recorded'}
@@ -542,7 +542,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     placeholder="None"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.healthRecords?.allergies || 'None recorded'}
                   </p>
                 )}
@@ -564,7 +564,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     placeholder="None"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.healthRecords?.medications || 'None recorded'}
                   </p>
                 )}
@@ -586,18 +586,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     placeholder="None"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.healthRecords?.conditions || 'None recorded'}
                   </p>
                 )}
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Vaccination Records */}
-          <div className="mb-6 pt-6 border-t border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700 mb-4">💉 Vaccination Chart</h3>
-            <div className="space-y-4">
+          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Vaccination chart
+            </h3>
+            <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">
                   Rabies Vaccine
@@ -613,7 +614,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.vaccinations?.rabies 
                       ? new Date(pet.vaccinations.rabies).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : 'Not vaccinated'}
@@ -636,7 +637,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.vaccinations?.distemper 
                       ? new Date(pet.vaccinations.distemper).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : 'Not vaccinated'}
@@ -659,7 +660,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.vaccinations?.parvovirus 
                       ? new Date(pet.vaccinations.parvovirus).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : 'Not vaccinated'}
@@ -672,18 +673,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <label className="block text-xs font-medium text-gray-500 mb-2">
                     Other Vaccinations
                   </label>
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
                     {pet.vaccinations.other}
                   </p>
                 </div>
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Service Bookings */}
-          <div className="mb-6 pt-6 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-gray-700">📅 Service Bookings</h3>
+          <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Service bookings
+              </h3>
               <div className="flex items-center gap-2">
                 {bookings.length > 0 && (
                   <span className="text-xs bg-[#FF8C42] text-white px-2 py-1 rounded-full">
@@ -795,12 +797,13 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                 ))}
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Danger Zone - Delete Pet */}
-          <div className="mb-6 pt-6 border-t-2 border-red-100">
-            <h3 className="text-sm font-medium text-red-600 mb-3">⚠️ Danger Zone</h3>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <section className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-red-600">
+              Danger zone
+            </h3>
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
               <p className="text-sm text-gray-700 mb-3">
                 Once you delete {pet.name}'s profile, it cannot be undone. Booking history will be preserved.
               </p>
@@ -812,36 +815,23 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                 {deleting ? 'Deleting...' : `Delete ${pet.name}'s Profile`}
               </Button>
             </div>
-          </div>
+          </section>
         </div>
       </div>
 
-      {/* Fixed Bottom Button */}
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
-
-          {/* Home Indicator */}
-          <div className="flex justify-center mt-4">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center">
+          <div className="pointer-events-auto w-full max-w-customer border-t border-slate-200 bg-white px-4 pt-3 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-5">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-12 w-full rounded-xl bg-[#FF8C42] text-white hover:bg-[#FF7A2E] disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save changes'}
+            </Button>
           </div>
         </div>
       )}
-
-      {/* Home Indicator (when not in edit mode) */}
-      {!editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-customer mx-auto w-full">
-          <div className="flex justify-center">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }

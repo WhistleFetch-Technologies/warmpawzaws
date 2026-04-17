@@ -45,6 +45,8 @@ export interface ServiceDashboardHeaderProps {
    * Use for in-app provider/clinic profiles so wide viewports do not show a narrow “desktop web” column.
    */
   fullWidth?: boolean;
+  /** When set, each stat card is a button (index 0 = first stat). Pet Sitting: Sitters → browse all, etc. */
+  onStatClick?: (index: number) => void;
 }
 
 export function ServiceDashboardHeader({
@@ -62,6 +64,7 @@ export function ServiceDashboardHeader({
   headerGradient,
   className = '',
   fullWidth = false,
+  onStatClick,
 }: ServiceDashboardHeaderProps) {
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
@@ -72,7 +75,7 @@ export function ServiceDashboardHeader({
     >
       {/* Orange Header Background */}
       <div
-        className={`${headerGradient || headerColor} cw-header-safe-top cw-header-safe-x text-white pb-4 md:pb-6 sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
+        className={`${headerGradient || headerColor} text-white pb-4 md:pb-6 pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
       >
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
@@ -147,18 +150,37 @@ export function ServiceDashboardHeader({
         {/* Stats Cards - Frosted Effect */}
         {stats.length > 0 && (
           <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-2">
-            {stats.map((stat, index) => (
-              <div
-                key={index}
-                className="rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3"
-              >
-                <div className="mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl">
-                  {stat.icon && <span className="text-white">{stat.icon}</span>}
-                  <span className="truncate tabular-nums">{stat.value}</span>
+            {stats.map((stat, index) => {
+              const inner = (
+                <>
+                  <div className="mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl">
+                    {stat.icon && <span className="text-white">{stat.icon}</span>}
+                    <span className="truncate tabular-nums">{stat.value}</span>
+                  </div>
+                  <div className="text-[10px] font-medium text-white/90 sm:text-xs">{stat.label}</div>
+                </>
+              );
+              const cardClass =
+                'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
+              if (onStatClick) {
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => onStatClick(index)}
+                    className={`${cardClass} pointer-events-auto`}
+                    aria-label={`${stat.label}: ${stat.value}`}
+                  >
+                    {inner}
+                  </button>
+                );
+              }
+              return (
+                <div key={index} className={cardClass}>
+                  {inner}
                 </div>
-                <div className="text-[10px] font-medium text-white/90 sm:text-xs">{stat.label}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -200,10 +222,9 @@ export function ServiceDashboardHeader({
         )}
       </div>
 
-      {/* Inward Curving White Content Area */}
-      <div className="relative -mt-4 bg-white rounded-t-[32px] min-h-[40px]">
-        {/* This creates the inward curve effect */}
-        <div className="absolute top-0 left-0 right-0 h-8 bg-white rounded-t-[32px]"></div>
+      {/* Inward curve — decorative only; must not sit above main content and steal taps (Pet Sitting hub, etc.). */}
+      <div className="pointer-events-none relative -mt-4 min-h-[40px] rounded-t-[32px] bg-white">
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-8 rounded-t-[32px] bg-white" aria-hidden />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
+import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -737,6 +737,9 @@ export function GroomingBookingRouter({
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
+    if (step === 'payment' && !showPaymentPage) {
+      return { title: 'Booking Summary', subtitle: 'Review before payment', icon: CreditCard };
+    }
     if (step === 'datetime') {
       return {
         title: 'Book Grooming',
@@ -779,8 +782,8 @@ export function GroomingBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
-      {step !== 'payment' && (
+      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
+      {!(step === 'payment' && showPaymentPage) && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
           serviceSubtitle={headerInfo.subtitle}
@@ -1220,18 +1223,6 @@ export function GroomingBookingRouter({
         {/* Payment Summary - Now using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
           <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-800 hover:bg-gray-100 transition-colors"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-            </div>
-            
             <div className="bg-white rounded-xl p-4 space-y-4">
               {/* ✅ Updated: Show all selected services */}
               {allSelectedServices && allSelectedServices.length > 0 ? (

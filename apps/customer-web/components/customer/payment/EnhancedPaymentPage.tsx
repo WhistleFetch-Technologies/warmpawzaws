@@ -634,8 +634,8 @@ export function EnhancedPaymentPage({
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 via-white to-orange-50/30 pb-48">
       {/* Header - Sleek & Modern */}
-      <header className="bg-gradient-to-r from-orange-500 via-orange-400 to-amber-500 text-white sticky top-0 z-50 shadow-lg cw-header-safe-top cw-header-safe-x">
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
+      <header className="bg-gradient-to-r from-orange-500 via-orange-400 to-amber-500 text-white sticky top-0 z-50 shadow-lg cw-header-safe-x pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))]">
+        <div className="max-w-lg mx-auto px-4 pb-4 pt-0 flex items-center gap-4">
           <button 
             onClick={onBack} 
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center hover:bg-white/30 transition"

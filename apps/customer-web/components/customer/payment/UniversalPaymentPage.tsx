@@ -2512,6 +2512,7 @@ export function UniversalPaymentPage({
 
   return (
     <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
+      {/* In-app payment summary (not Razorpay’s iframe). Safe top/inset: ServiceDashboardHeader + globals .cw-header-safe-*. */}
       <ServiceDashboardHeader
         className="sticky top-0 z-50 shrink-0"
         serviceName="Payment"

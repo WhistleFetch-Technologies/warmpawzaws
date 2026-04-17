@@ -40,9 +40,67 @@ interface BoardingBookingRouterProps {
   duration?: number;
   /** When set, loads `sitting` vendor services and uses at-home booking semantics (no facility rooms). */
   flowVariant?: "boarding" | "pet_sitting";
+  /** Hub tile id (`overnight_sitting`, `day_visits`, …) — best-effort match to vendor_services after load. */
+  presetSittingOptionId?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+}
+
+/** Map Pet Sitting hub tile ids to default router slugs (see `defaultPetSittingOptions`). */
+function mapHubSittingPresetToDefaultSlug(preset: string | undefined): string | undefined {
+  if (!preset) return undefined;
+  if (preset === "day_visits") return "day_sitting";
+  return preset;
+}
+
+function vendorServiceTextBlob(s: Record<string, unknown>): string {
+  return `${s.serviceName || s.service_name || s.name || ""} ${s.serviceStyle || s.service_style || ""} ${s.description || s.shortDescription || ""}`.toLowerCase();
+}
+
+function rowId(s: Record<string, unknown>): string {
+  return String(s.id || s.serviceId || s.service_id || "");
+}
+
+/** Pick vendor_services row id from hub preset (keyword heuristics). */
+function matchPresetToVendorServiceRowId(
+  preset: string | undefined,
+  services: Record<string, unknown>[]
+): string | undefined {
+  if (!preset || !Array.isArray(services) || services.length === 0) return undefined;
+  const tests: { preset: string; test: (t: string) => boolean }[] = [
+    {
+      preset: "overnight_sitting",
+      test: (t) =>
+        (/overnight|night|stay/.test(t) && !/day\s*visit|daytime|check-?in/.test(t)) ||
+        t.includes("overnight_sitting"),
+    },
+    {
+      preset: "day_visits",
+      test: (t) =>
+        (/day|visit|daytime|check-?in|walking|walk/.test(t) && !/overnight|extended|multi/.test(t)) ||
+        t.includes("day_sitting"),
+    },
+    {
+      preset: "extended_home",
+      test: (t) => /extend|multi|week|long/.test(t) || t.includes("extended_home"),
+    },
+    {
+      preset: "drop_in",
+      test: (t) => /drop|quick|feeding|30\s*min|45\s*min/.test(t) || t.includes("drop_in"),
+    },
+  ];
+  const rule = tests.find((x) => x.preset === preset)?.test;
+  if (rule) {
+    for (const s of services) {
+      const t = vendorServiceTextBlob(s);
+      if (rule(t)) {
+        const id = rowId(s);
+        if (id) return id;
+      }
+    }
+  }
+  return undefined;
 }
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'room' | 'payment' | 'confirmation';
@@ -84,6 +142,7 @@ export function BoardingBookingRouter({
   price,
   duration,
   flowVariant = "boarding",
+  presetSittingOptionId,
   onBack, 
   onNavigate, 
   onViewBooking 
@@ -113,7 +172,10 @@ export function BoardingBookingRouter({
     if (serviceStyle && serviceStyle !== "sitting" && serviceStyle !== "boarding") {
       return serviceStyle;
     }
-    if (isPetSitting) return "overnight_sitting";
+    if (isPetSitting) {
+      const fromHub = mapHubSittingPresetToDefaultSlug(presetSittingOptionId);
+      return fromHub || "overnight_sitting";
+    }
     if (serviceType === "daycare" || serviceType === "full-day") return "full-day";
     return "overnight";
   });
@@ -304,10 +366,21 @@ export function BoardingBookingRouter({
     const ids = vendorServices
       .map((s) => s.id || s.serviceId)
       .filter(Boolean) as string[];
-    if (ids.length > 0 && !ids.includes(selectedServiceType)) {
-      setSelectedServiceType(ids[0]);
+    if (ids.length === 0) return;
+
+    if (isPetSitting && presetSittingOptionId) {
+      const matched = matchPresetToVendorServiceRowId(
+        presetSittingOptionId,
+        vendorServices as Record<string, unknown>[]
+      );
+      if (matched && ids.includes(matched)) {
+        setSelectedServiceType(matched);
+        return;
+      }
     }
-  }, [vendorServices]);
+
+    setSelectedServiceType((prev) => (ids.includes(prev) ? prev : ids[0]));
+  }, [vendorServices, isPetSitting, presetSittingOptionId]);
 
   useEffect(() => {
     if (!vendorId || loading) return;

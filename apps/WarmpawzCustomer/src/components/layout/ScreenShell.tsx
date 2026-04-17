@@ -50,8 +50,9 @@ export function ScreenShell({ children, style, edges = DEFAULT_EDGES }: ScreenSh
     <View
       style={[
         { flex: 1 },
-        { paddingTop, paddingLeft, paddingRight, paddingBottom },
         style,
+        // After consumer styles so `padding` shorthand on `style` cannot clobber safe-area padding.
+        { paddingTop, paddingLeft, paddingRight, paddingBottom },
       ]}
     >
       {children}
