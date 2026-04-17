@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
@@ -141,6 +148,10 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   const [activePackages, setActivePackages] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [previousWalker, setPreviousWalker] = useState<any>(null);
+  const [packagesDialogOpen, setPackagesDialogOpen] = useState(false);
+  const [packagesWalkerName, setPackagesWalkerName] = useState('');
+  const [walkerPackagesList, setWalkerPackagesList] = useState<any[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
 
   useEffect(() => {
     loadActiveWalks();
@@ -343,13 +354,59 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => clearTimeout(t);
   }, [searchQuery, loadWalkers]);
 
-  const handleWalkerSelect = (walker: any) => {
+  const buildWalkerPayload = (walker: any) => {
     const vid = walker.id || walker.vendorId;
-    const walkerPayload = {
+    return {
       id: vid,
       name: walker.name || walker.businessName || 'Walker',
       ...walker,
     };
+  };
+
+  const handleOpenWalkerProfile = (walker: any, e?: MouseEvent) => {
+    e?.stopPropagation();
+    const vid = walker.id || walker.vendorId;
+    if (!vid) {
+      toast.error('Profile unavailable for this walker.');
+      return;
+    }
+    onNavigate?.('walker-provider-profile', {
+      vendorId: vid,
+      walker: buildWalkerPayload(walker),
+      serviceType: 'walking',
+      serviceStyle: 'at_home',
+    });
+  };
+
+  const handleViewWalkerPackages = async (walker: any, e: MouseEvent) => {
+    e.stopPropagation();
+    const vid = walker.id || walker.vendorId;
+    if (!vid) {
+      toast.error('Packages unavailable for this walker.');
+      return;
+    }
+    setPackagesWalkerName(String(walker.name || walker.businessName || walker.business_name || 'Walker').trim());
+    setPackagesDialogOpen(true);
+    setPackagesLoading(true);
+    setWalkerPackagesList([]);
+    try {
+      const res = (await apiClient.get(`/vendor/${vid}/packages`)) as {
+        packages?: any[];
+        success?: boolean;
+      };
+      const list = Array.isArray(res?.packages) ? res.packages : [];
+      setWalkerPackagesList(list);
+    } catch {
+      toast.error('Could not load packages. Try again later.');
+      setWalkerPackagesList([]);
+    } finally {
+      setPackagesLoading(false);
+    }
+  };
+
+  const handleWalkerSelect = (walker: any) => {
+    const vid = walker.id || walker.vendorId;
+    const walkerPayload = buildWalkerPayload(walker);
     const base = {
       vendorId: vid,
       serviceType: 'walking' as const,
@@ -384,10 +441,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     }, 350);
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
-
-  const handleWeeklyWalkPackage = () => {
-    onNavigate?.('purchase-package');
-  };
 
   // Prepare stats for ServiceDashboardHeader
   const dashboardStats = stats ? [
@@ -650,85 +703,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           </Card>
         )}
 
-        {/* Walk Packages — single walks open Service Packages with details; weekly opens the same browse flow */}
-        <div>
-          <h2 className="font-bold text-gray-900 mb-4">Walk Packages</h2>
-          <div className="space-y-3">
-            {(
-              [
-                {
-                  kind: 'walk' as const,
-                  icon: <Dog className="w-7 h-7 text-orange-600" />,
-                  title: '30 Min Walk',
-                  price: '₹199/walk',
-                  features: ['Quick exercise', 'Basic walk'],
-                  serviceId: 'walk_30min',
-                  serviceName: '30 Min Walk',
-                  priceValue: 199,
-                  duration: 30,
-                },
-                {
-                  kind: 'walk' as const,
-                  icon: <Dog className="w-7 h-7 text-orange-600" />,
-                  title: '60 Min Walk',
-                  price: '₹349/walk',
-                  features: ['Extended exercise', 'Playtime'],
-                  serviceId: 'walk_60min',
-                  serviceName: '60 Min Walk',
-                  priceValue: 349,
-                  duration: 60,
-                },
-                {
-                  kind: 'weekly' as const,
-                  icon: '📅' as const,
-                  title: 'Weekly Package',
-                  price: '₹1,999/week',
-                  features: ['5 walks', 'GPS tracking', 'Updates'],
-                },
-              ] as const
-            ).map((pkg, idx) => (
-              <Card
-                key={idx}
-                role="button"
-                tabIndex={0}
-                className="p-4 hover:shadow-md transition-shadow cursor-pointer focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
-                onClick={() => {
-                  if (pkg.kind === 'weekly') handleWeeklyWalkPackage();
-                  else if (pkg.kind === 'walk') {
-                    onNavigate?.('purchase-package', {
-                      walkSession: {
-                        serviceId: pkg.serviceId,
-                        serviceName: pkg.serviceName,
-                        price: pkg.priceValue,
-                        duration: pkg.duration,
-                      },
-                    });
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    (e.currentTarget as HTMLDivElement).click();
-                  }
-                }}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl [&>svg]:shrink-0">
-                    {pkg.icon}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900">{pkg.title}</h3>
-                    <p className="text-orange-500 font-bold mb-2">{pkg.price}</p>
-                    {pkg.features.map((f, i) => (
-                      <div key={i} className="text-sm text-gray-600">• {f}</div>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-
         {/* Walkers List */}
         <div ref={walkersSectionRef}>
           <div className="flex items-center justify-between mb-4">
@@ -755,10 +729,18 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 >
                   <div className="relative">
                     <WalkerListCardHero walker={walker as Record<string, unknown>} />
-                    <div className="absolute top-3 right-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                    <div className="absolute top-3 left-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
                       <Star className="w-3 h-3 fill-white" />
                       {walker.rating || 4.5}
                     </div>
+                    <button
+                      type="button"
+                      aria-label={`View ${walker.name || walker.businessName || 'walker'} profile`}
+                      className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-white/95 text-orange-600 shadow-md flex items-center justify-center hover:bg-white transition-colors"
+                      onClick={(e) => handleOpenWalkerProfile(walker, e)}
+                    >
+                      <ChevronRight className="w-5 h-5" aria-hidden />
+                    </button>
                   </div>
 
                   {/* Walker Details */}
@@ -780,16 +762,28 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                       </div>
                     </div>
 
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleWalkerSelect(walker);
-                      }}
-                      className="w-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] hover:from-[#FF7A35] hover:to-[#FF5A25] text-white h-12 text-base font-semibold shadow-lg"
-                    >
-                      <Dog className="w-5 h-5 mr-2" />
-                      Book Walker
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={(e) => void handleViewWalkerPackages(walker, e)}
+                        className="flex-1 h-12 text-base font-semibold border-orange-200 text-orange-700 hover:bg-orange-50"
+                      >
+                        <Package className="w-4 h-4 mr-2 shrink-0" />
+                        View packages
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleWalkerSelect(walker);
+                        }}
+                        className="flex-1 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] hover:from-[#FF7A35] hover:to-[#FF5A25] text-white h-12 text-base font-semibold shadow-lg"
+                      >
+                        <Dog className="w-5 h-5 mr-2 shrink-0" />
+                        Book Walker
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               ))}
@@ -820,6 +814,68 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           </div>
         </Card>
       </div>
+
+      <Dialog
+        open={packagesDialogOpen}
+        onOpenChange={(open) => {
+          setPackagesDialogOpen(open);
+          if (!open) {
+            setWalkerPackagesList([]);
+            setPackagesWalkerName('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Packages{packagesWalkerName ? ` — ${packagesWalkerName}` : ''}</DialogTitle>
+            <DialogDescription>
+              Walk bundles and offers this walker has published.
+            </DialogDescription>
+          </DialogHeader>
+          {packagesLoading ? (
+            <div className="flex justify-center py-10">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" />
+            </div>
+          ) : walkerPackagesList.length === 0 ? (
+            <p className="text-sm text-gray-600 py-4 text-center">No packages listed yet for this walker.</p>
+          ) : (
+            <ul className="space-y-3">
+              {walkerPackagesList.filter(Boolean).map((pkg, i) => {
+                  const name =
+                    pkg.package_name ||
+                    pkg.packageName ||
+                    pkg.name ||
+                    `Package ${i + 1}`;
+                  const price =
+                    pkg.package_price ??
+                    pkg.packagePrice ??
+                    pkg.price ??
+                    pkg.original_price ??
+                    pkg.originalPrice;
+                  const sessions =
+                    pkg.total_sessions ?? pkg.totalSessions ?? pkg.session_count ?? pkg.sessionCount;
+                  const desc = pkg.description || pkg.package_description || '';
+                  return (
+                    <li key={pkg.id ?? `pkg-${i}`}>
+                      <Card className="p-3 border-orange-100">
+                        <p className="font-semibold text-gray-900">{name}</p>
+                        {desc ? <p className="text-sm text-gray-600 mt-1 line-clamp-3">{desc}</p> : null}
+                        <div className="flex flex-wrap gap-2 mt-2 text-sm">
+                          {price != null && price !== '' ? (
+                            <span className="font-semibold text-orange-600">₹{Number(price).toLocaleString()}</span>
+                          ) : null}
+                          {sessions != null && sessions !== '' ? (
+                            <span className="text-gray-500">{sessions} session(s)</span>
+                          ) : null}
+                        </div>
+                      </Card>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
