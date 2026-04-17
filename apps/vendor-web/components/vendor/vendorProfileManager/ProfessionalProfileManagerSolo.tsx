@@ -16,7 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle } from 'lucide-react';
+import { Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle, Calendar, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -73,6 +73,15 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     operating_hours: initialProfile?.operating_hours || initialProfile?.operatingHours || '',
     availability: initialProfile?.availability || initialProfile?.availabilitySchedule || undefined,
     role_name: vendorRoleName,
+    service_radius:
+      initialProfile?.service_radius != null && initialProfile?.service_radius !== ''
+        ? Number(initialProfile.service_radius)
+        : initialProfile?.serviceRadius != null
+          ? Number(initialProfile.serviceRadius)
+          : null,
+    available_for_instant_tele: Boolean(
+      initialProfile?.available_for_instant_tele ?? initialProfile?.availableForInstantTele
+    ),
   });
   const [hasChanges, setHasChanges] = useState(false);
   const isPetInsuranceProfile = hasVendorRole(
@@ -161,6 +170,15 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           service_area: response.vendor.service_area || response.vendor.serviceArea || '',
           operating_hours: response.vendor.operating_hours || response.vendor.operatingHours || '',
           role_name: response.vendor.role_name || response.vendor.roleName || vendorRoleName,
+          service_radius:
+            response.vendor.service_radius != null && response.vendor.service_radius !== ''
+              ? Number(response.vendor.service_radius)
+              : response.vendor.serviceRadius != null
+                ? Number(response.vendor.serviceRadius)
+                : null,
+          available_for_instant_tele: Boolean(
+            response.vendor.availableForInstantTele ?? response.vendor.available_for_instant_tele
+          ),
         });
       }
     } catch (err: any) {
@@ -227,8 +245,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           qualifications: profile.qualifications,
           specializations: JSON.stringify(isPetInsuranceProfile ? [] : profile.specializations),
           experience_years: profile.experience_years,
-          service_area: profile.service_area,
           operating_hours: profile.operating_hours,
+          available_for_instant_tele: profile.available_for_instant_tele ?? false,
         }
       ) as { success?: boolean; error?: string };
       if (response?.success) {
@@ -251,8 +269,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     let filled = 0;
     // ✅ Updated to match ALL fields that can be filled in the Professional Profile form
     // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations (optional for pet insurance),
-    //                     experience_years, address, city, state, pincode, service_area, description
-    let total = isPetInsuranceProfile ? 12 : 13;
+    //                     experience_years, address, city, state, pincode, description
+    let total = isPetInsuranceProfile ? 11 : 12;
 
     // ✅ FIX: Check each field with proper validation
     // 1. Profile Photo
@@ -296,10 +314,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     const pincode = profile.pincode && profile.pincode.trim();
     if (pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode)) filled++;
 
-    // 12. Service Area (optional but counts if filled)
-    if (profile.service_area && profile.service_area.trim()) filled++;
-
-    // 13. Description (optional but counts if filled)
+    // 12. Description (optional but counts if filled)
     if (profile.description && profile.description.trim()) filled++;
 
     // ✅ FIX: Calculate percentage - ensure it reaches 100% when all fields are filled
@@ -320,7 +335,6 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     console.log(`  city: ${!!profile.city && profile.city.trim() ? '✅' : '❌'} (value: '${profile.city || ''}')`);
     console.log(`  state: ${!!profile.state && profile.state.trim() ? '✅' : '❌'} (value: '${profile.state || ''}')`);
     console.log(`  pincode: ${pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode) ? '✅' : '❌'} (value: '${profile.pincode || ''}')`);
-    console.log(`  service_area: ${!!profile.service_area && profile.service_area.trim() ? '✅' : '❌'} (value: '${profile.service_area || ''}')`);
     console.log(`  description: ${!!profile.description && profile.description.trim() ? '✅' : '❌'} (value: '${(profile.description || '').substring(0, 30)}...')`);
     console.log(`[ProfileCompletion] ===========================================`);
 
@@ -650,19 +664,49 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                   />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="service_area">Service Area Coverage</Label>
-                <Input
-                  id="service_area"
-                  value={profile.service_area || ''}
-                  onChange={(e) => handleInputChange('service_area', e.target.value)}
-                  className="mt-1"
-                  placeholder="e.g., Within 10km radius, All of South Mumbai, etc."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Specify the areas where you provide home visit services
-                </p>
-              </div>
+              {!isPetInsuranceProfile && (
+                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Instant tele consultation</h3>
+                      <p className="text-sm text-gray-500">
+                        Same as business profile: turn this on to be eligible for customer “available now” tele lists
+                        (you still need tele enabled in services and a published tele offering).
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-gray-100 bg-white/80 p-3 transition-colors hover:border-blue-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfile((prev) => ({
+                          ...prev,
+                          available_for_instant_tele: !prev.available_for_instant_tele,
+                        }));
+                        setHasChanges(true);
+                      }}
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                        profile.available_for_instant_tele
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {profile.available_for_instant_tele ? <Check className="h-4 w-4 text-white" /> : null}
+                    </button>
+                    <div className="flex-1">
+                      <span className="font-medium text-gray-900">Available for instant tele</span>
+                      <p className="text-xs text-gray-500">
+                        {profile.available_for_instant_tele
+                          ? 'Customers can see you for instant tele when other requirements are met.'
+                          : 'Instant tele is off; scheduled tele may still be available depending on your services.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 
@@ -670,7 +714,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <AdvancedAvailabilityManager
               vendorId={vendorId}
-              vendorData={{ ...initialProfile, vendorType: 'solo', id: vendorId, isSoloProvider: true }}
+              vendorData={{
+                ...initialProfile,
+                ...profile,
+                vendorType: 'solo',
+                id: vendorId,
+                isSoloProvider: true,
+              }}
               embeddedInProfile
             />
           </div>

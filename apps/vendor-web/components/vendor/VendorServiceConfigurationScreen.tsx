@@ -86,7 +86,6 @@ export function VendorServiceConfigurationScreen({
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
-  const [showBulkActions, setShowBulkActions] = useState(false); // ✅ NEW: Bulk actions state
   const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
   const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
@@ -545,109 +544,6 @@ export function VendorServiceConfigurationScreen({
       newExpanded.add(serviceId);
     }
     setExpandedServices(newExpanded);
-  };
-
-  // ✅ NEW: Bulk selection functions
-  const enableAllServices = () => {
-    setServices(prev => {
-      const allIds = prev.map(s => s.id);
-      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
-      return prev.map(s => ({ ...s, isEnabled: true }));
-    });
-    setHasChanges(true);
-    toast.success('All services enabled');
-  };
-
-  const disableAllServices = () => {
-    setServices(prev => {
-      const allIds = prev.map(s => s.id);
-      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
-      return prev.map(s => ({ ...s, isEnabled: false }));
-    });
-    setHasChanges(true);
-    toast.success('All services disabled');
-  };
-
-  // ✅ NEW: Batch publish/unpublish - run one request at a time with retry to avoid 503
-  const batchPublishServices = async () => {
-    const enabledServices = services.filter(s => s.isEnabled && s.publishStatus !== 'published');
-    if (enabledServices.length === 0) {
-      toast.info('No enabled services to publish');
-      return;
-    }
-
-    try {
-      setIsPublishing(true);
-      for (let i = 0; i < enabledServices.length; i++) {
-        const service = enabledServices[i];
-        if (service.id && service.id.startsWith('temp_')) {
-          const catalogId = service.serviceId || service.catalogServiceId || service.id.replace('temp_', '');
-          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
-            catalogServiceId: catalogId,
-            serviceStyle: serviceStyle,
-            customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-            isEnabled: true,
-            publish_status: 'published'
-          });
-        } else if (!service.isVendorEnabled && service.isPlatformService) {
-          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
-            catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
-            serviceStyle: serviceStyle,
-            customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-            isEnabled: true,
-            publish_status: 'published'
-          });
-        } else {
-          if (!service.id || service.id.startsWith('temp_')) {
-            toast.error(`Service "${service.serviceName || service.name}" is not yet added. Please add it first.`);
-            continue;
-          }
-          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service.id);
-          if (!isUUID) continue;
-          const vendorServiceId = service.vendorServiceId ?? service.id;
-          await putWithRetry(() =>
-            apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
-          );
-        }
-        if (i < enabledServices.length - 1) await delayMs(250);
-      }
-      toast.success(`${enabledServices.length} service(s) published successfully!`);
-      await loadServices();
-    } catch (error) {
-      console.error('Error batch publishing:', error);
-      toast.error('Error publishing services');
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const batchUnpublishServices = async () => {
-    const publishedServices = services.filter(s => s.publishStatus === 'published');
-    if (publishedServices.length === 0) {
-      toast.info('No published services to unpublish');
-      return;
-    }
-
-    try {
-      setIsPublishing(true);
-      for (let i = 0; i < publishedServices.length; i++) {
-        const service = publishedServices[i];
-        const vendorServiceId = service.vendorServiceId ?? service.id;
-        await putWithRetry(() =>
-          apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'draft' })
-        );
-        if (i < publishedServices.length - 1) await delayMs(250);
-      }
-      toast.success(`${publishedServices.length} service(s) unpublished successfully!`);
-      await loadServices();
-    } catch (error) {
-      console.error('Error batch unpublishing:', error);
-      toast.error('Error unpublishing services');
-    } finally {
-      setIsPublishing(false);
-    }
   };
 
   const enableCategory = (category: string) => {
@@ -1293,14 +1189,12 @@ export function VendorServiceConfigurationScreen({
             </div>
           </div>
 
-          {/* ✅ NEW: Staff Assignment & Bulk Actions */}
+          {/* Staff assignment (bulk Enable/Disable/Publish-all UI removed — re-add from git history if needed) */}
           {services.length > 0 && (
             <div className="mt-3 space-y-2">
-              {/* Staff Assignment Button - Disabled for solo vendors */}
               {enabledCount > 0 && (
                 <Button
                   onClick={() => {
-                    // Navigate to staff management - using window.location or router if available
                     if (typeof window !== 'undefined') {
                       window.location.href = `/staff?assignServices=true&serviceStyle=${serviceStyle}`;
                     } else {
@@ -1315,61 +1209,6 @@ export function VendorServiceConfigurationScreen({
                   Assign Services to Staff
                   {staffCount === 0 && <span className="ml-2 text-xs">(No staff)</span>}
                 </Button>
-              )}
-
-              <button
-                onClick={() => setShowBulkActions(!showBulkActions)}
-                className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
-              >
-                {showBulkActions ? 'Hide Bulk Actions' : 'Show Bulk Actions'}
-              </button>
-              
-              {showBulkActions && (
-                <div className="mt-2 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={enableAllServices}
-                      className="text-xs"
-                    >
-                      <Check className="w-3 h-3 mr-1" />
-                      Enable All
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={disableAllServices}
-                      className="text-xs"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Disable All
-                    </Button>
-                  </div>
-                  {/* ✅ NEW: Batch Publish/Unpublish */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={batchPublishServices}
-                      disabled={isPublishing || services.filter(s => s.isEnabled && s.publishStatus !== 'published').length === 0}
-                      className="text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-                    >
-                      <Check className="w-3 h-3 mr-1" />
-                      Publish All
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={batchUnpublishServices}
-                      disabled={isPublishing || publishedCount === 0}
-                      className="text-xs bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Unpublish All
-                    </Button>
-                  </div>
-                </div>
               )}
             </div>
           )}

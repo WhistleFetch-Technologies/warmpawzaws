@@ -38,6 +38,10 @@ export interface ProfessionalProfile {
     operating_hours?: string;
     availability?: AvailabilitySchedule; // Enhanced scheduling
     role_name?: string;
+    /** Default home-visit radius (km) on vendor row; also fallback when saving availability slots */
+    service_radius?: number | null;
+    /** When true, vendor can appear in customer “instant tele” lists (requires tele service + identity join, etc.) */
+    available_for_instant_tele?: boolean;
 }
 
 export interface ProfessionalProfileManagerProps {
