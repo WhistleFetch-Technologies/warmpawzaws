@@ -205,19 +205,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
-        <div className="flex justify-center pt-4 mb-6">
+        <div className="flex justify-center pt-4 mb-8">
           <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
-        </div>
-
-        {/* Orange Circle Icon */}
-        <div className="flex flex-col items-center mb-8 px-6">
-          <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="18" r="8" fill="white"/>
-              <path d="M10 38C10 30 16 24 24 24C32 24 38 30 38 38V42H10V38Z" fill="white"/>
-            </svg>
-          </div>
-          <h1 className="text-black text-center">Create Your<br />Profile 👤</h1>
         </div>
 
         {/* Content */}

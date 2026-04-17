@@ -23,6 +23,144 @@ import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
 
+/** Parse roles.config when stored as JSON string (Postgres json/jsonb driver variance). */
+export function parseRoleConfigJson(config: unknown): Record<string, any> {
+  if (config == null || config === '') return {};
+  if (typeof config === 'string') {
+    try {
+      const p = JSON.parse(config);
+      return typeof p === 'object' && p !== null && !Array.isArray(p) ? (p as Record<string, any>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof config === 'object' && !Array.isArray(config)) return config as Record<string, any>;
+  return {};
+}
+
+export type VendorKind = 'solo' | 'business';
+
+/**
+ * Admin wizard stores categories like `vet_solo`, `groomer_business` — suffix encodes solo vs business/center.
+ * This is separate from `vendor_type` on the row but should drive it when identity/role did not set it.
+ */
+export function inferVendorKindFromServiceCategory(cat: unknown): VendorKind | null {
+  if (cat == null || cat === '') return null;
+  const s = String(cat).trim().toLowerCase();
+  if (!s) return null;
+  if (/_solo$/.test(s) || s === 'solo') return 'solo';
+  if (/_business$|_center$|_clinic$/.test(s) || s === 'business' || s === 'center') return 'business';
+  return null;
+}
+
+/**
+ * When vendors.vendor_type is NULL, derive from vendor_identity or roles.config.vendorConfiguration and persist.
+ * Keeps profile + availability GET aligned with solo vs business.
+ */
+export async function resolveAndPersistVendorType(vendor: any): Promise<VendorKind> {
+  const cur = vendor?.vendor_type;
+  if (cur === 'solo' || cur === 'business') return cur;
+
+  const vendorId = vendor?.id;
+  const phone = vendor?.phone;
+
+  const fromIdentity = async (): Promise<VendorKind | null> => {
+    try {
+      if (vendorId) {
+        const r = await query(
+          `SELECT vendor_type FROM vendor_identity
+           WHERE (vendor_id::text = $1 OR id::text = $1)
+           AND COALESCE(is_deleted, false) = false
+           LIMIT 1`,
+          [String(vendorId)]
+        ).catch(() => ({ rows: [] as any[] }));
+        const vt = r.rows?.[0]?.vendor_type;
+        if (vt === 'solo' || vt === 'business') return vt;
+      }
+      if (phone) {
+        const r2 = await query(
+          `SELECT vendor_type FROM vendor_identity
+           WHERE phone = $1 AND COALESCE(is_deleted, false) = false
+           LIMIT 1`,
+          [phone]
+        ).catch(() => ({ rows: [] as any[] }));
+        const vt2 = r2.rows?.[0]?.vendor_type;
+        if (vt2 === 'solo' || vt2 === 'business') return vt2;
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+
+  const idType = await fromIdentity();
+  if (idType && vendorId) {
+    await update('vendors', { id: vendorId }, { vendor_type: idType, updated_at: new Date().toISOString() }).catch(() => {});
+    return idType;
+  }
+
+  if (vendor?.role_id) {
+    try {
+      const roles = await select('roles', { id: vendor.role_id });
+      if (roles.length > 0) {
+        const roleConfig = parseRoleConfigJson(roles[0].config);
+        const cfgVt = roleConfig.vendorConfiguration;
+        if (cfgVt === 'solo' || cfgVt === 'business') {
+          if (vendorId) {
+            await update('vendors', { id: vendorId }, { vendor_type: cfgVt, updated_at: new Date().toISOString() }).catch(() => {});
+          }
+          return cfgVt;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const fromCategoryRow = inferVendorKindFromServiceCategory(
+    vendor?.service_category ?? vendor?.serviceCategory
+  );
+  if (fromCategoryRow && vendorId) {
+    await update('vendors', { id: vendorId }, { vendor_type: fromCategoryRow, updated_at: new Date().toISOString() }).catch(() => {});
+    return fromCategoryRow;
+  }
+
+  try {
+    if (vendorId) {
+      const r = await query(
+        `SELECT voa.application_payload
+         FROM vendor_onboarding_applications voa
+         INNER JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+         WHERE (vi.vendor_id::text = $1 OR vi.id::text = $1)
+         ORDER BY voa.updated_at DESC NULLS LAST, voa.created_at DESC NULLS LAST
+         LIMIT 1`,
+        [String(vendorId)]
+      ).catch(() => ({ rows: [] as any[] }));
+      let payload = r.rows?.[0]?.application_payload;
+      if (typeof payload === 'string') {
+        try {
+          payload = JSON.parse(payload);
+        } catch {
+          payload = null;
+        }
+      }
+      const cat =
+        payload && typeof payload === 'object'
+          ? (payload as any).serviceCategory ?? (payload as any).service_category
+          : null;
+      const fromPayload = inferVendorKindFromServiceCategory(cat);
+      if (fromPayload) {
+        await update('vendors', { id: vendorId }, { vendor_type: fromPayload, updated_at: new Date().toISOString() }).catch(() => {});
+        return fromPayload;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return 'business';
+}
+
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
   'business_name',
@@ -392,6 +530,16 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     return extractPincodeFromPayload(payload);
   })()}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
   
+  const payloadVtRaw = payload.vendorType || payload.vendor_type;
+  const payloadVt =
+    payloadVtRaw === 'solo' || payloadVtRaw === 'business' ? payloadVtRaw : null;
+  const idVtRaw = (identity as any).vendor_type;
+  const idVt = idVtRaw === 'solo' || idVtRaw === 'business' ? idVtRaw : null;
+  const fromServiceCategory = inferVendorKindFromServiceCategory(
+    payload.serviceCategory ?? payload.service_category
+  );
+  const resolvedVendorType: VendorKind = idVt || payloadVt || fromServiceCategory || 'business';
+
   const newVendor = await insert('vendors', {
     id: newVendorId,
     phone: identity.phone,
@@ -399,7 +547,7 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
     owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
     role_id: identity.selected_role_id,
-    vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
+    vendor_type: resolvedVendorType,
     category: 'general',
     address: payload.address || 'Not specified',
     city: payload.city || 'Not specified',
@@ -806,6 +954,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         createdAt: 'created_at',
         updatedAt: 'updated_at',
         availableForInstantTele: 'available_for_instant_tele', // ✅ Added for instant tele toggle
+        serviceRadius: 'service_radius',
+        serviceRadiusKm: 'service_radius',
+        vendorType: 'vendor_type',
       };
 
       const updates: any = {};
@@ -849,7 +1000,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
         'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
-        'available_for_instant_tele' // ✅ Added for instant tele availability toggle
+        'available_for_instant_tele', // ✅ Instant tele availability toggle
+        'service_radius', // ✅ Home-visit default radius (km); also used as fallback for slot location_data
+        'vendor_type', // solo | business — persisted when missing (see resolveAndPersistVendorType)
       ];
 
       const updateData: any = {};
@@ -858,6 +1011,23 @@ export function registerVendorProfileEndpoints(app: Hono) {
         if (safeColumns.includes(key) && existingColumns.has(key)) {
           updateData[key] = value;
         }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updateData, 'service_radius')) {
+        const v = updateData.service_radius;
+        if (v == null || v === '') {
+          updateData.service_radius = null;
+        } else {
+          const n = Number(v);
+          updateData.service_radius = Number.isFinite(n) ? n : null;
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, 'available_for_instant_tele')) {
+        updateData.available_for_instant_tele = Boolean(updateData.available_for_instant_tele);
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, 'vendor_type')) {
+        const vt = String(updateData.vendor_type || '').toLowerCase();
+        updateData.vendor_type = vt === 'solo' || vt === 'business' ? vt : null;
       }
       
       // Log skipped fields for debugging
@@ -1052,6 +1222,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       // ✅ Solo profile: show pincode from onboarding when vendors.pincode was never persisted
       vendor = await enrichVendorLocationFromOnboardingApplication(vendor);
+
+      // ✅ Persist vendors.vendor_type when NULL (identity or role.config.vendorConfiguration)
+      const resolvedVt = await resolveAndPersistVendorType(vendor);
+      vendor = { ...vendor, vendor_type: resolvedVt };
       
       // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
       let role = null;
@@ -1067,7 +1241,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendor.role_id });
           if (roles.length > 0) {
             role = roles[0];
-            roleConfig = role.config || {};
+            roleConfig = parseRoleConfigJson(role.config);
             customerService = role.customer_service || roleConfig?.customer_service || null;
             // ✅ FORENSIC: Use vendor's actual type (from onboarding) for filtering so vendor gets exactly role permissions filtered by their type
             const vendorType = (vendor as any).vendor_type;

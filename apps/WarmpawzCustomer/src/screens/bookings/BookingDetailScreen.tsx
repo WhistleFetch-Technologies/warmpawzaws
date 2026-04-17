@@ -356,6 +356,21 @@ export function BookingDetailScreen({
           </View>
         )}
 
+        {booking.vendorName && onNavigate && (
+          <TouchableOpacity
+            style={styles.chatCardButton}
+            onPress={() =>
+              onNavigate('Chat', {
+                bookingId,
+                recipientName: booking.vendorName,
+              })
+            }
+          >
+            <Text style={styles.chatCardButtonIcon}>💬</Text>
+            <Text style={styles.chatCardButtonText}>Message provider</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Date & Time Information */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Date & Time</Text>
@@ -690,6 +705,27 @@ const styles = StyleSheet.create({
   },
   vendorInfo: {
     flex: 1,
+  },
+  chatCardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  chatCardButtonIcon: {
+    fontSize: 18,
+    marginRight: spacing.sm,
+  },
+  chatCardButtonText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.primary,
   },
   vendorName: {
     fontSize: typography.body,

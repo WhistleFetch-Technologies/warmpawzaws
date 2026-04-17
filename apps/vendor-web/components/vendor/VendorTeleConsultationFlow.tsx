@@ -696,13 +696,27 @@ export function VendorTeleConsultationFlow({
 
       {/* Chat Panel */}
       {showChat && (
-        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col">
-          {/* Chat Header */}
-          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-            <h3 className="text-white font-semibold">Chat with {customerName}</h3>
-            <button 
+        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)]">
+          {/* Chat Header — same layout pattern as VendorChatModal (mobile-safe) */}
+          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex items-center gap-3 min-w-0 shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+              <MessageSquare className="w-5 h-5 text-[#FF8C42]" aria-hidden />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-white font-semibold text-sm sm:text-base truncate">
+                Chat with {customerName}
+              </h3>
+              {bookingId && (
+                <p className="text-slate-400 text-xs truncate mt-0.5">
+                  Booking #{bookingId.length > 10 ? `${bookingId.slice(0, 8)}…` : bookingId}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
               onClick={() => setShowChat(false)}
-              className="p-2 hover:bg-slate-700 rounded-xl"
+              className="p-2 hover:bg-slate-700 rounded-xl shrink-0 touch-manipulation"
+              aria-label="Close chat"
             >
               <X className="w-5 h-5 text-white" />
             </button>
@@ -738,20 +752,21 @@ export function VendorTeleConsultationFlow({
           </div>
           
           {/* Chat Input */}
-          <div className="p-4 border-t border-slate-700">
-            <div className="flex gap-2">
+          <div className="p-3 sm:p-4 border-t border-slate-700 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="flex gap-2 min-w-0">
               <input
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
                 placeholder="Type a message..."
-                className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl border-0 focus:ring-2 focus:ring-[#FF8C42] placeholder:text-slate-400"
+                className="flex-1 min-w-0 bg-slate-700 text-white px-3 sm:px-4 py-3 rounded-xl border-0 focus:ring-2 focus:ring-[#FF8C42] placeholder:text-slate-400 text-base sm:text-sm"
               />
               <button
+                type="button"
                 onClick={sendChatMessage}
                 disabled={!newMessage.trim()}
-                className="w-12 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
+                className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors touch-manipulation"
               >
                 <Send className="w-5 h-5" />
               </button>

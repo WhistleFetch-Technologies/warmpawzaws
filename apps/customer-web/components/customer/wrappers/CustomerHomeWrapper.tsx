@@ -83,6 +83,7 @@ import { toast } from 'sonner';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { MyBookings } from '../booking/MyBookings';
+import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { AppointmentsList } from '../AppointmentsList';
 import { AppointmentDetailsView } from '../AppointmentDetailsView';
 import { RescheduleAppointmentView } from '../RescheduleAppointmentView';
@@ -355,7 +356,8 @@ export function CustomerHomeWrapper({
   const [prescriptionOrderData, setPrescriptionOrderData] = useState<{ prescriptionId?: string; prescriptionUrl?: string } | null>(null); // ✅ Pharmacy order from My Bookings prescription
   const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null); // ✅ After PharmacyOrderFlow completes
   const { addToCart } = useCart();
-  
+  const { openMessages } = useCustomerBookingMessagesModal();
+
   // ✅ FIX: User profile state for consistent header display
   const [userName, setUserName] = useState<string>('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
@@ -369,13 +371,17 @@ export function CustomerHomeWrapper({
     if (!raw) return;
     sessionStorage.removeItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY);
     if (WARMPAWZ_HOME_RESUME_SCREENS.has(raw)) {
+      if (raw === 'booking-messages') {
+        openMessages();
+        return;
+      }
       const next = raw as ScreenType;
       if (next === 'shop') {
         setShopReturnScreen('home');
       }
       setCurrentScreen(next);
     }
-  }, [pathname]);
+  }, [pathname, openMessages]);
 
   // ✅ FIX: Listen for orderMedicineFromPrescription event (fallback when onOrderMedicine not passed)
   useEffect(() => {
@@ -578,6 +584,7 @@ export function CustomerHomeWrapper({
     else if (service === 'holiday') setCurrentScreen('holiday');
     else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
     else if (service === 'wallet') setCurrentScreen('wallet');
+    else if (service === 'booking-messages') openMessages();
     else if (service === 'purchase-package') {
       setPreviousScreen(currentScreen);
       setCurrentScreen('package-booking');
@@ -982,7 +989,7 @@ export function CustomerHomeWrapper({
               setCurrentScreen('problem_grid');
             } else if (screen === 'shop' && data?.category) {
               goToShopFromParent({ category: data.category });
-            } else if (screen === 'support_help') {
+            }             else if (screen === 'support_help') {
               if (typeof window !== 'undefined' && data?.initialTab) {
                 try {
                   sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, data.initialTab);
@@ -991,6 +998,9 @@ export function CustomerHomeWrapper({
                 }
               }
               setCurrentScreen('support_help');
+            } else if (screen === 'booking-messages') {
+              openMessages();
+              return;
             } else if (screen === 'article-detail' && data?.article) {
               const a = data.article as { id?: string; slug?: string };
               const ref = (a.slug || a.id || '').toString();
@@ -1245,7 +1255,12 @@ export function CustomerHomeWrapper({
       <BoardingVendorListView
         phone={phone}
         serviceSlug={slug}
-        onBack={() => router.push('/')}
+        onBack={() => {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, 'boarding');
+          }
+          router.push('/');
+        }}
         onNavigate={(screen, data) => {
           if (screen === 'boarding-booking') {
             setPreviousScreen('pet-boarding-vendors');
@@ -2301,7 +2316,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); goToShopFromParent(); }} onHelp={() => setCurrentScreen('support_help')} />;
   if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
   
-  if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
+  if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
   if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => setCurrentScreen('pharmacy_store')} onSuccess={() => setCurrentScreen('home')} />;
 
   // Other Screens
@@ -2745,12 +2760,31 @@ export function CustomerHomeWrapper({
     petId={selectedPetId || undefined}
   />;
   // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
-  if (currentScreen === 'purchase-package') return <PackageBookingPage
-    customerPhone={phone}
-    customerId={phone}
-    petId={selectedPetId || undefined}
-    onBack={() => { setCurrentScreen(previousScreen || 'home'); setPreviousScreen(null); }}
-  />;
+  if (currentScreen === 'purchase-package') {
+    const walkSession = walkerServiceData?.walkSession ?? null;
+    return (
+      <PackageBookingPage
+        customerPhone={phone}
+        customerId={phone}
+        petId={selectedPetId || undefined}
+        walkSessionIntent={walkSession}
+        onContinueToChooseWalker={
+          walkSession
+            ? () => {
+                setPreviousScreen('purchase-package');
+                setWalkerServiceData({ pendingWalkSession: walkSession });
+                setCurrentScreen('walker');
+              }
+            : undefined
+        }
+        onBack={() => {
+          setWalkerServiceData(null);
+          setCurrentScreen(previousScreen || 'home');
+          setPreviousScreen(null);
+        }}
+      />
+    );
+  }
   // profile: map to customer-profile (e.g. from VetBookingRouter tab)
   if (currentScreen === 'profile') return (
     <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>

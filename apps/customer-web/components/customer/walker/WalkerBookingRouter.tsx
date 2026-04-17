@@ -114,8 +114,8 @@ export function WalkerBookingRouter({
 
   // Default walk service options (used when no specific services loaded)
   const defaultServiceTypeOptions = [
-    { id: '30min', name: '30 Min Walk', icon: Home, price: 299, duration: 30, desc: '30-minute walk session', color: 'green' },
-    { id: '60min', name: '60 Min Walk', icon: Home, price: 499, duration: 60, desc: '60-minute walk session', color: 'orange' },
+    { id: 'walk_30min', name: '30 Min Walk', icon: Home, price: 199, duration: 30, desc: '30-minute walk session', color: 'green' },
+    { id: 'walk_60min', name: '60 Min Walk', icon: Home, price: 349, duration: 60, desc: '60-minute walk session', color: 'orange' },
   ];
 
   // Get actual services for current style, or fall back to defaults
@@ -832,7 +832,7 @@ export function WalkerBookingRouter({
 
         {/* Payment Summary - Now using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4">
+          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
             <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-4 space-y-4">

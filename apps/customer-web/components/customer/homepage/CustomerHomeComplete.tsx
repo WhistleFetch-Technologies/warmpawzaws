@@ -6,11 +6,11 @@ import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsN
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  Heart, Plus, ChevronRight, Star, MapPin, Clock,
+  Bell, Heart, Plus, ChevronRight, Star, MapPin, Clock,
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical,
+  Navigation, AlertCircle, FlaskConical, MessageSquare,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems } from '../TrendingProblems';
 import { WalletIcon } from '../WalletIcon';
+import { CustomerNotificationModal } from '../CustomerNotificationModal';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Package as PackageIcon, Shirt, Watch, Bed, Store } from 'lucide-react';
@@ -183,6 +184,11 @@ export function CustomerHomeComplete({
     staffName?: string;
   } | null>(null);
   const [customerId, setCustomerId] = useState<string>('');
+  /** Unread inbox count for header bell; refreshed infrequently (same API as useNotificationService). */
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  /** Bumps when inbox changes (modal read/delete) so the header badge refetches. */
+  const [notificationInboxVersion, setNotificationInboxVersion] = useState(0);
 
   // ✅ FIX GAP-6.2: 5-minute notification state
   const [upcomingCall, setUpcomingCall] = useState<{
@@ -1063,6 +1069,34 @@ export function CustomerHomeComplete({
     }
   }, [phone, refreshKey]);
 
+  useEffect(() => {
+    const clean = (phone || '').replace(/[^0-9]/g, '');
+    if (clean.length < 10) {
+      setNotificationUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
+          `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=50`
+        );
+        if (cancelled) return;
+        const list = data.notifications ?? [];
+        const unread = list.filter((n) => !(n.is_read ?? n.read)).length;
+        setNotificationUnreadCount(unread);
+      } catch {
+        if (!cancelled) setNotificationUnreadCount(0);
+      }
+    };
+    void fetchUnread();
+    const interval = setInterval(fetchUnread, 90_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [phone, refreshKey, notificationInboxVersion]);
+
   const loadActiveBookings = async () => {
     try {
       // Rule 1: Include vendor_on_way so customer sees "track provider" when vendor has started travel
@@ -1504,6 +1538,16 @@ export function CustomerHomeComplete({
 
   return (
     <div className={containerClassName}>
+      {!hideHeaderFooter && (
+        <button
+          type="button"
+          onClick={() => handleNavigation('booking-messages')}
+          className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] text-white shadow-lg ring-2 ring-white/90 hover:opacity-95 sm:bottom-28"
+          aria-label="Open messages"
+        >
+          <MessageSquare className="h-7 w-7" strokeWidth={2} />
+        </button>
+      )}
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
@@ -1539,6 +1583,28 @@ export function CustomerHomeComplete({
                 showBalance={true}
               />
               <button
+                type="button"
+                onClick={() => handleNavigation('booking-messages')}
+                className="relative w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                aria-label="Messages"
+              >
+                <MessageSquare className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotificationModalOpen(true)}
+                className="relative w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                aria-label="Notifications"
+              >
+                <Bell className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+                {notificationUnreadCount > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
                 onClick={() => handleNavigation('wishlist')}
                 className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
                 aria-label="Wishlist"
@@ -2869,6 +2935,24 @@ export function CustomerHomeComplete({
           }}
         />
       )}
+
+      <CustomerNotificationModal
+        open={notificationModalOpen}
+        phone={phone}
+        onClose={() => {
+          setNotificationModalOpen(false);
+          setNotificationInboxVersion((v) => v + 1);
+        }}
+        onNotificationsRead={() => setNotificationInboxVersion((v) => v + 1)}
+        onNotificationClick={(n) => {
+          const raw = n.data?.bookingId ?? n.data?.booking_id;
+          const bookingId = typeof raw === 'string' ? raw : raw != null ? String(raw) : '';
+          if (bookingId && onViewBooking) {
+            setNotificationModalOpen(false);
+            onViewBooking(bookingId);
+          }
+        }}
+      />
     </div>
   );
 }

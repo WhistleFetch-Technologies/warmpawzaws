@@ -1219,12 +1219,12 @@ export function GroomingBookingRouter({
 
         {/* Payment Summary - Now using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4">
+          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleBack}
-                className="p-2 -ml-2 rounded-xl text-gray-800 hover:bg-gray-100 transition-colors shrink-0"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-800 hover:bg-gray-100 transition-colors"
                 aria-label="Go back"
               >
                 <ArrowLeft className="w-5 h-5" />

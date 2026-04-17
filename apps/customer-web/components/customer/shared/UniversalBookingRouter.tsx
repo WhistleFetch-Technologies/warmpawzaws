@@ -1334,7 +1334,7 @@ export function UniversalBookingRouter({
 
         {/* Payment Summary - Using UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 cw-scroll-pad-tabbar">
+          <div className="space-y-4 cw-scroll-pad-tabbar -mx-4 cw-header-safe-x sm:-mx-6">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">

@@ -564,7 +564,7 @@ export function UniversalProviderProfile({
 
       {/* Booking Form (Slide-in from bottom) */}
       {showBookingForm ? (
-        <div className="px-4 py-4 pb-40">
+        <div className="px-4 pt-4 cw-scroll-pad-tabbar-sticky-cta">
           <h2 className="text-lg font-bold mb-4">Complete Your Booking</h2>
 
           {/* Selected Services Summary */}
@@ -781,8 +781,8 @@ export function UniversalProviderProfile({
             </div>
           </div>
 
-          {/* Tab Content - Extra padding for footer button above nav */}
-          <div className="px-4 py-4 pb-40">
+          {/* Tab Content — scroll padding matches globals (--customer-sticky-cta-scroll-padding) */}
+          <div className="px-4 pt-4 cw-scroll-pad-tabbar-sticky-cta">
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
@@ -942,8 +942,8 @@ export function UniversalProviderProfile({
         </>
       )}
 
-      {/* Sticky Footer - Positioned above bottom navigation */}
-      <div className="fixed bottom-20 left-0 right-0 bg-white border-t shadow-lg z-[60] max-w-lg mx-auto">
+      {/* Sticky Footer — bottom/z-index/width aligned with BottomNavigation + globals.css tokens */}
+      <div className="fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg cw-fixed-above-customer-tabbar">
         {showBookingForm ? (
           <div className="p-4">
             <Button

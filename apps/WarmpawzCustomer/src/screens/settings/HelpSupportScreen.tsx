@@ -62,7 +62,13 @@ export function HelpSupportScreen({
     // Booking/vendor chat uses /chat/* on API; generic "support" used legacy /dating routes.
     // Escalated human support runs through AI assistant + support tickets.
     if (onNavigate) {
-      onNavigate('AIChatbot');
+      const digits = phone.replace(/\D/g, '') || 'guest';
+      onNavigate('Chat', {
+        type: 'support',
+        bookingId: '',
+        matchId: `customer-support-${digits}`,
+        recipientName: 'Warmpawz Support',
+      });
     }
   };
 

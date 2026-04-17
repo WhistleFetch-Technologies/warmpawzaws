@@ -70,6 +70,7 @@ export function BottomTabNavigator({
           <CustomerHomeScreen
             {...props}
             phone={phone}
+            customerId={customerId}
             onNavigate={onNavigate || (() => {})}
             onProfileClick={onProfileClick}
             onPetClick={onPetClick}

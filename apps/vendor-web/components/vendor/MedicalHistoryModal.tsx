@@ -121,59 +121,70 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-3 overflow-hidden bg-white rounded-2xl shadow-2xl">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-blue-600">
-                <Activity className="w-6 h-6" />
+      <DialogContent
+        hideCloseButton
+        className="max-w-3xl w-[min(100vw-1rem,48rem)] max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-bottom)))] flex flex-col p-0 gap-0 overflow-hidden bg-white rounded-2xl shadow-2xl sm:p-0"
+      >
+        {/* Header — single close (Radix default hidden via hideCloseButton) */}
+        <div className="p-4 sm:p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50 shrink-0">
+          <div className="flex justify-between items-start gap-3 min-w-0">
+            <div className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-blue-600 shrink-0">
+                <Activity className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
-              <div>
-                <DialogTitle className="text-xl font-bold text-blue-900">Medical History</DialogTitle>
-                <p className="text-sm text-blue-700 mt-0.5">
+              <div className="min-w-0">
+                <DialogTitle className="text-lg sm:text-xl font-bold text-blue-900 text-left">
+                  Medical History
+                </DialogTitle>
+                <p className="text-xs sm:text-sm text-blue-700 mt-0.5 break-words">
                   Confidential Record for <span className="font-semibold">{petName}</span>
                 </p>
               </div>
             </div>
-            <button 
-              onClick={onClose} 
-              className="p-2 hover:bg-white/50 rounded-full transition-colors text-blue-700"
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 p-2 hover:bg-white/50 rounded-full transition-colors text-blue-700 touch-manipulation"
+              aria-label="Close"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-6 pt-2 bg-white sticky top-0 z-10">
+        {/* Tabs — horizontal scroll on narrow viewports (iOS/Android) */}
+        <div className="flex border-b border-gray-200 px-2 sm:px-6 pt-2 bg-white sticky top-0 z-10 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <button
+            type="button"
             onClick={() => setActiveTab('all')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'all' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             All Records
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('prescriptions')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'prescriptions' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Prescriptions
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('reports')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'reports' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Labs & Uploads
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('notes')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'notes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -182,7 +193,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50 min-h-[400px]">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-50 min-h-[min(400px,50dvh)]">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>

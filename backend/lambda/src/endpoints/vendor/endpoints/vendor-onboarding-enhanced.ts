@@ -37,6 +37,7 @@ import {
 } from '@warmpawz/api-contracts/vendors';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { inferVendorKindFromServiceCategory } from './vendor-profile.vendor';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY
@@ -777,13 +778,19 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       // vendor_type refers to whether the vendor is a solo provider or a business with staff
       const payloadRoleId = application_payload?.roleId || application_payload?.role_id || body.roleId || body.role_id;
       
-      // Only use explicit vendor_type values, NOT businessType (which is the category like "veterinarian")
+      // Only use explicit vendor_type values, NOT businessType (which is the profession like "veterinarian").
+      // Service category codes (e.g. vet_solo) encode solo vs business — use them when vendorType is omitted.
       let payloadVendorType = application_payload?.vendorType || application_payload?.vendor_type || 
                                body.vendorType || body.vendor_type;
       
-      // Validate vendor_type is a valid value, otherwise default to 'business'
       if (!payloadVendorType || !['solo', 'business', 'center'].includes(payloadVendorType)) {
-        payloadVendorType = 'business';
+        const fromCat = inferVendorKindFromServiceCategory(
+          application_payload?.serviceCategory ??
+            application_payload?.service_category ??
+            body.serviceCategory ??
+            body.service_category
+        );
+        payloadVendorType = fromCat || 'business';
       }
 
       // ✅ FIX: Auto-update vendor_identity with role and vendor_type from payload if missing
@@ -1581,6 +1588,14 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         }
       } catch {}
 
+      const appVt = application.vendor_type;
+      const vendorTypeForRow =
+        appVt === 'solo' || appVt === 'business'
+          ? appVt
+          : inferVendorKindFromServiceCategory(
+              payload.serviceCategory ?? payload.service_category
+            ) || 'business';
+
       const vendors = await insert('vendors', {
         id: finalVendorId, // ✅ CRITICAL: Explicitly set new unique ID
         phone: identity.phone,
@@ -1588,7 +1603,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         business_name: payload.businessName || '',
         owner_name: payload.fullName || payload.ownerName || '',
         role_id: application.role_id,
-        vendor_type: application.vendor_type,
+        vendor_type: vendorTypeForRow,
         vendor_identity_id: identity.id,
         onboarding_status: 'ACTIVATED',
         status: 'approved',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Phone, User, Settings, Loader2, Save, Gift, Copy, Send, Users } from 'lucide-react';
+import { Phone, User, Settings, Loader2, Save, Gift, Copy, Send, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +23,6 @@ interface EmergencyContact {
 }
 
 interface VendorConfig {
-  service_radius?: number; // in km
   emergency_contact?: EmergencyContact;
   max_dogs_per_walk?: number; // for walkers
   walk_durations?: string[]; // for walkers
@@ -34,7 +33,6 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<VendorConfig>({
-    service_radius: undefined,
     emergency_contact: { name: '', phone: '' },
     max_dogs_per_walk: undefined,
     walk_durations: [],
@@ -80,7 +78,6 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
       
       if (response && response.success && response.settings) {
         setConfig({
-          service_radius: response.settings.service_radius,
           emergency_contact: response.settings.emergency_contact || { name: '', phone: '' },
           max_dogs_per_walk: response.settings.max_dogs_per_walk,
           walk_durations: response.settings.walk_durations || [],
@@ -112,10 +109,6 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
       }
     }
 
-    if (config.service_radius !== undefined && config.service_radius < 0) {
-      newErrors.service_radius = 'Service radius must be positive';
-    }
-
     if (isWalker) {
       if (config.max_dogs_per_walk !== undefined && config.max_dogs_per_walk < 1) {
         newErrors.max_dogs_per_walk = 'Must be at least 1';
@@ -135,7 +128,6 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
     try {
       setSaving(true);
       const response = await apiClient.put(`/vendor/${vendorId}/settings`, {
-        service_radius: config.service_radius,
         emergency_contact: config.emergency_contact,
         max_dogs_per_walk: config.max_dogs_per_walk,
         walk_durations: config.walk_durations,
@@ -334,30 +326,6 @@ export function VendorGeneralSettings({ vendorId, vendorData, onBack }: VendorGe
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Service Radius */}
-        <div>
-          <Label htmlFor="service_radius" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <MapPin className="w-4 h-4" />
-            Service Radius (km)
-          </Label>
-          <Input
-            id="service_radius"
-            type="number"
-            value={config.service_radius || ''}
-            onChange={(e) => setConfig({ ...config, service_radius: e.target.value ? parseFloat(e.target.value) : undefined })}
-            placeholder="Enter service radius in kilometers"
-            className={`mt-1 ${errors.service_radius ? 'border-red-500' : ''}`}
-            min="0"
-            step="0.1"
-          />
-          {errors.service_radius && (
-            <p className="text-xs text-red-600 mt-1">{errors.service_radius}</p>
-          )}
-          <p className="text-xs text-gray-500 mt-1">
-            Maximum distance you're willing to travel for service delivery
-          </p>
-        </div>
-
         {/* Emergency Contact */}
         <div className="border-t border-gray-200 pt-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">

@@ -834,7 +834,7 @@ export function NutritionistBookingRouter({
 
         {/* Payment Summary - Show summary first, then UniversalPaymentPage */}
         {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4">
+          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
             <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
 
             <div className="bg-white rounded-xl p-4 space-y-4">

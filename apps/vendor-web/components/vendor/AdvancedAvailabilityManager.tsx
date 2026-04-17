@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Save, Clock, Plus, X, Copy, Calendar, 
-  Coffee, Pause, MapPin, Loader2, ToggleLeft, ToggleRight,
+  Coffee, Pause, Loader2, ToggleLeft, ToggleRight,
   AlertCircle, ChevronDown, ChevronUp, Trash2, Check
 } from 'lucide-react';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { getVendorRoleName, isSoloVendor } from '@/lib/vendor-utils';
 
 interface AdvancedAvailabilityManagerProps {
@@ -53,6 +52,7 @@ interface TimeSlot {
     lat?: number;
     lng?: number;
     placeId?: string;
+    serviceRadiusKm?: number;
   };
   /** @deprecated Use leadTimeByStyle per style instead */
   bufferTime?: number;
@@ -209,6 +209,43 @@ export function AdvancedAvailabilityManager({
   
   // Get vendor role name
   const roleName = getVendorRoleName(vendorData);
+
+  /** Single source of truth for customer distance matching (km); persisted on vendors.service_radius when saving availability */
+  const [travelRadiusKm, setTravelRadiusKm] = useState(7);
+
+  useEffect(() => {
+    const s = vendorData?.service_radius ?? vendorData?.serviceRadius;
+    if (s != null && s !== '' && !Number.isNaN(Number(s))) {
+      setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(s)))));
+    }
+  }, [vendorData?.service_radius, vendorData?.serviceRadius]);
+
+  const buildLocationDataForSave = useCallback(
+    (slot: TimeSlot): TimeSlot['locationData'] | undefined => {
+      const styles = slot.serviceStyles || [];
+      if (!styles.includes('at_home')) {
+        const ld = slot.locationData;
+        if (!ld || typeof ld !== 'object') return undefined;
+        const hasContent = Object.keys(ld).some((k) => {
+          const v = (ld as Record<string, unknown>)[k];
+          return v !== undefined && v !== null && v !== '';
+        });
+        return hasContent ? { ...ld } : undefined;
+      }
+      const addr = (vendorData?.address || '').trim();
+      const lat =
+        vendorData?.latitude != null && vendorData.latitude !== ''
+          ? Number(vendorData.latitude)
+          : undefined;
+      const lng =
+        vendorData?.longitude != null && vendorData.longitude !== ''
+          ? Number(vendorData.longitude)
+          : undefined;
+      const r = Number.isFinite(travelRadiusKm) && travelRadiusKm > 0 ? travelRadiusKm : 7;
+      return { address: addr, lat, lng, serviceRadiusKm: r };
+    },
+    [vendorData?.address, vendorData?.latitude, vendorData?.longitude, travelRadiusKm]
+  );
   
   // Filter service styles based on role and allowed styles
   const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedServiceStyles.includes(style.id as any));
@@ -336,6 +373,10 @@ export function AdvancedAvailabilityManager({
         const profileRes = await apiClient.get(`/vendor/${vendorId}/profile`) as any;
         if (profileRes?.vendor) {
           setIsOnline(profileRes.vendor.is_online ?? profileRes.vendor.isOnline ?? true);
+          const sr = profileRes.vendor.service_radius ?? profileRes.vendor.serviceRadius;
+          if (sr != null && sr !== '' && !Number.isNaN(Number(sr))) {
+            setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(sr)))));
+          }
         }
       } catch (e) {
         console.warn('Failed to load vendor profile:', e);
@@ -843,7 +884,7 @@ export function AdvancedAvailabilityManager({
               timeWindowStart: slot.startTime,
               timeWindowEnd: slot.endTime,
               serviceStyles: slot.serviceStyles,
-              locationData: slot.locationData,
+              locationData: buildLocationDataForSave(slot),
               leadTimeByStyle: slot.leadTimeByStyle || undefined,
               maxCapacity: slot.maxCapacity,
               isEnabled: slot.isEnabled,
@@ -855,7 +896,10 @@ export function AdvancedAvailabilityManager({
       console.log('[SAVE] Saving slots to /vendor/' + vendorId + '/availability:', slotsToSave);
       
       // Save availability slots
-      const availRes = await apiClient.post(`/vendor/${vendorId}/availability`, { slots: slotsToSave }) as any;
+      const availRes = await apiClient.post(`/vendor/${vendorId}/availability`, {
+        slots: slotsToSave,
+        ...(isSoloProvider ? { serviceRadiusKm: travelRadiusKm } : {}),
+      }) as any;
       console.log('[SAVE] Availability response:', availRes);
       
       if (!availRes?.success) {
@@ -1009,6 +1053,40 @@ export function AdvancedAvailabilityManager({
           </div>
         )}
 
+        {/* Service radius — single source of truth (vendors.service_radius); uses profile address & map coordinates */}
+        {isSoloProvider && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Service radius (km)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Max distance you travel from the address in{' '}
+                  <span className="font-medium">My profile → Service Area and Location</span>.
+                  This distance is used so customers can find you for home visits, tele, and in-person offerings that depend on your area.
+                </p>
+              </div>
+              <div className="shrink-0 w-full sm:w-40">
+                <label htmlFor="travel-radius-km" className="sr-only">
+                  Service radius in kilometers
+                </label>
+                <Input
+                  id="travel-radius-km"
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={travelRadiusKm}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isNaN(v)) return;
+                    setTravelRadiusKm(Math.min(500, Math.max(1, v)));
+                  }}
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Day Tabs */}
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="flex border-b overflow-x-auto">
@@ -1121,49 +1199,6 @@ export function AdvancedAvailabilityManager({
                         )}
                       </div>
                     </div>
-
-                    {/* Location for Solo (at_home only) - Hidden for walker solo */}
-                    {isSoloProvider && 
-                     slot.serviceStyles.includes('at_home') && 
-                     !roleName?.toLowerCase().includes('walker') && (
-                      <div className="mb-4 space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            Service Location
-                          </p>
-                          <EnhancedAddressAutocomplete
-                            value={slot.locationData?.address || ''}
-                            onChange={(address, components) => {
-                              updateSlot(slotIdx, {
-                                locationData: {
-                                  ...slot.locationData,
-                                  address,
-                                  lat: components?.lat ?? components?.coordinates?.lat,
-                                  lng: components?.lng ?? components?.coordinates?.lng,
-                                  placeId: components?.placeId,
-                                },
-                              });
-                            }}
-                            placeholder="Search for your service location..."
-                            className="w-full"
-                          />
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">Service radius (km) — max distance you travel</p>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={50}
-                            value={(slot.locationData as any)?.serviceRadiusKm ?? 7}
-                            onChange={(e) => updateSlot(slotIdx, {
-                              locationData: { ...slot.locationData, serviceRadiusKm: parseInt(e.target.value, 10) || 7 },
-                            })}
-                            className="h-9 w-24"
-                          />
-                        </div>
-                      </div>
-                    )}
 
                     {/* Lead time (min) per service style - only for styles allowed in this slot */}
                     <div className="mb-4">

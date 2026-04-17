@@ -105,11 +105,13 @@ if ($DeployOnly -and (Test-Path "dist")) {
     
     Write-Host "  Running: npm run build" -ForegroundColor Gray
     $env:NODE_ENV = "production"
-    $buildOutput = npm run build 2>&1
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ❌ Build failed!" -ForegroundColor Red
-        Write-Host $buildOutput
+    # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
+    $buildProc = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "npm run build" `
+        -WorkingDirectory $customerWebDir `
+        -Wait -PassThru -NoNewWindow
+    if ($buildProc.ExitCode -ne 0) {
+        Write-Host "  ❌ Build failed (exit code $($buildProc.ExitCode))!" -ForegroundColor Red
         exit 1
     }
     
@@ -164,41 +166,6 @@ foreach ($htmlFile in $htmlFiles) {
 
 Write-Host "  ✅ Inline config injected into $htmlCount HTML files" -ForegroundColor Green
 Write-Host ""
-
-# Ensure a default index.html exists to avoid AccessDenied on root
-try {
-    $indexPath = Join-Path $distPath "index.html"
-    if (!(Test-Path $indexPath)) {
-        Write-Host "  ℹ️ No index.html found. Creating a minimal placeholder to avoid AccessDenied..." -ForegroundColor Yellow
-        $indexHtml = @'
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Warmpawz Customer (Dev)</title>
-  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:40px}</style>
-</head>
-<body>
-  <h1>Warmpawz Customer (Dev)</h1>
-  <p>Deployment successful. Full static export pending for customer-web.</p>
-  <p>If this persists, rebuild with production static export.</p>
-  <script>
-    (function() {
-      window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: "__API_GATEWAY_ENDPOINT__", uatMode: true, environment: "development" };
-      console.log("Runtime config set", window.__WARMPAWZ_RUNTIME_CONFIG__);
-    })();
-  </script>
-</body>
-</html>
-'@
-        $indexHtml = $indexHtml -replace '__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint
-        Set-Content -Path $indexPath -Value $indexHtml -Encoding UTF8
-        Write-Host "  ✅ Placeholder index.html created" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "  ⚠️ Could not create placeholder index.html (non-fatal): $($_.Exception.Message)" -ForegroundColor Yellow
-}
 
 # Deploy to S3
 Write-Host "Step 5: Deploying to S3..." -ForegroundColor Yellow

@@ -11,18 +11,14 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
-  ArrowLeft,
   FlaskConical,
-  Sparkles,
   Star,
   TrendingUp,
-  ChevronRight,
   MapPin,
   Home as HomeIcon,
   Building2,
   Clock,
   Search,
-  Filter,
   TestTube,
   FileText,
   Microscope,
@@ -128,6 +124,33 @@ interface TestPackage {
   turnaroundHours: number;
 }
 
+/** Normalize category strings for matching catalog tiles to API test.category / test_name. */
+function normCat(s: string): string {
+  return s.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, '_').replace(/_+/g, '_').trim();
+}
+
+function countTestsForCategory(
+  allTests: { category?: string; name?: string }[],
+  catId: string,
+  catName: string
+): number {
+  const id = normCat(catId);
+  const name = normCat(catName);
+  const nameTokens = name.split('_').filter((t) => t.length > 1);
+  return allTests.filter((t) => {
+    const c = normCat(t.category || '');
+    const n = normCat(t.name || '');
+    const hay = `${c}_${n}`;
+    if (!c && !n) return false;
+    if (id && (c === id || c.includes(id) || id.includes(c))) return true;
+    if (name && (c.includes(name) || name.includes(c))) return true;
+    for (const tok of nameTokens) {
+      if (tok.length > 2 && (c.includes(tok) || n.includes(tok))) return true;
+    }
+    return id.length > 0 && hay.includes(id);
+  }).length;
+}
+
 export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: DiagnosticsServicesLandingProps) {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -140,6 +163,8 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const [expandedCenter, setExpandedCenter] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [testCategories, setTestCategories] = useState<{ id: string; name: string; icon: any; color: string; count: number }[]>([]);
+  /** Set when GET /customer/diagnostics/vendors-with-tests rejects (network/server). */
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   /** Lab used for Health Package “Book” — required when multiple labs match filters (never guess `filteredCenters[0]`). */
   const [healthPackageLabId, setHealthPackageLabId] = useState('');
 
@@ -150,6 +175,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const loadDiagnosticsData = async () => {
     try {
       setLoading(true);
+      setDiscoveryError(null);
       let latitude: string | undefined;
       let longitude: string | undefined;
       try {
@@ -183,10 +209,28 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         apiClient.get<any>('/customer/diagnostic-packages')
       ]);
 
+      if (vendorsRes.status === 'rejected') {
+        setDiscoveryError('Could not load labs. Check your connection and try again.');
+      }
+
       const vendorsData = vendorsRes.status === 'fulfilled' ? vendorsRes.value : null;
-      const vendorsList = vendorsData?.vendors ?? [];
-      if (Array.isArray(vendorsList) && vendorsList.length > 0) {
-        const centers: DiagnosticCenter[] = vendorsList.map((v: any) => ({
+      if (
+        vendorsData &&
+        typeof vendorsData === 'object' &&
+        vendorsData.success === false
+      ) {
+        const msg =
+          (typeof vendorsData.error === 'string' && vendorsData.error) ||
+          (typeof vendorsData.message === 'string' && vendorsData.message) ||
+          'Could not load labs.';
+        setDiscoveryError(msg);
+      }
+
+      const vendorsList = Array.isArray(vendorsData?.vendors) ? vendorsData.vendors : [];
+
+      let centers: DiagnosticCenter[] = [];
+      if (vendorsList.length > 0) {
+        centers = vendorsList.map((v: any) => ({
           id: v.id,
           businessName: v.businessName || 'Diagnostic Center',
           rating: v.rating ?? 4.5,
@@ -207,88 +251,53 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             service_style: t.service_style,
           })),
         }));
-        setFeaturedCenters(centers);
-        setStats({
-          activeCenters: centers.length,
-          tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
-          rating: centers.length ? (centers.reduce((acc, c) => acc + c.rating, 0) / centers.length).toFixed(1) : '4.6',
-        });
-      } else {
-        const fallbackParams = new URLSearchParams({ roleId: 'diagnostics_center', maxDistance: distanceFilter.toString() });
-        const fallbackRes = await apiClient.get<any>(`/customer/services?${fallbackParams.toString()}`);
-        const servicesPayload = fallbackRes?.services ?? fallbackRes?.data?.services;
-        if (Array.isArray(servicesPayload) && servicesPayload.length > 0) {
-          const vendorMap = new Map<string, DiagnosticCenter>();
-          servicesPayload.forEach((service: any) => {
-            const vendorId = service.vendorId;
-            if (!vendorMap.has(vendorId)) {
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                businessName: service.vendorName || 'Diagnostic Center',
-                rating: 4.5,
-                reviewCount: 0,
-                distance: parseFloat((Math.random() * distanceFilter).toFixed(1)),
-                address: '',
-                homeCollectionAvailable: service.serviceStyle === 'at_home',
-                testCount: 0,
-                packages: [],
-                tests: [],
-              });
-            }
-            const vendor = vendorMap.get(vendorId)!;
-            vendor.testCount++;
-            vendor.tests.push({
-              id: service.id,
-              name: service.serviceName,
-              price: service.price,
-              category: service.category,
-              service_style: service.serviceStyle,
-            });
-          });
-          setFeaturedCenters(Array.from(vendorMap.values()));
-          setStats({
-            activeCenters: vendorMap.size,
-            tests: servicesPayload.length.toString(),
-            rating: '4.6',
-          });
-        } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
-          setFeaturedCenters(MOCK_DIAGNOSTIC_CENTERS);
-          setStats({
-            activeCenters: MOCK_DIAGNOSTIC_CENTERS.length,
-            tests: MOCK_DIAGNOSTIC_CENTERS.reduce((acc, c) => acc + c.testCount, 0).toString(),
-            rating: '4.6',
-          });
-        } else {
-          setFeaturedCenters([]);
-          setStats(EMPTY_DIAGNOSTICS_STATS);
-        }
+      } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
+        centers = MOCK_DIAGNOSTIC_CENTERS;
       }
 
+      setFeaturedCenters(centers);
+      setStats(
+        centers.length > 0
+          ? {
+              activeCenters: centers.length,
+              tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
+              rating: (centers.reduce((acc, c) => acc + c.rating, 0) / centers.length).toFixed(1),
+            }
+          : EMPTY_DIAGNOSTICS_STATS
+      );
+
+      // Category counts from the same labs/tests we render (bookable diagnostic_tests catalog only).
+      const allTestsFlat = centers.flatMap((c) => c.tests || []);
       if (categoriesRes.status === 'fulfilled' && categoriesRes.value?.categories?.length) {
         const cats = categoriesRes.value.categories as { id: string; name: string }[];
         const iconMap: Record<string, any> = {
           blood: TestTube, imaging: Activity, allergy: Heart, hormone: Microscope,
           urine: TestTube, stool: TestTube, biopsy: Microscope, other: FlaskConical,
         };
-        const allTests = vendorsList.flatMap((v: any) => v.tests || []);
-        const countFor = (catId: string, catName: string) =>
-          allTests.filter((t: any) => {
-            const c = (t.category || '').toLowerCase();
-            return c.includes(catId) || c.includes(catName.toLowerCase().replace(/\s+/g, '_'));
-          }).length;
-        setTestCategories(cats.map(c => ({
-          id: c.id,
-          name: c.name,
-          icon: iconMap[c.id] || FlaskConical,
-          color: c.id === 'blood' ? 'bg-red-100 text-red-600' : c.id === 'imaging' ? 'bg-blue-100 text-blue-600' : c.id === 'allergy' ? 'bg-pink-100 text-pink-600' : c.id === 'hormone' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600',
-          count: countFor(c.id, c.name) || 0,
-        })));
+        setTestCategories(
+          cats.map((c) => ({
+            id: c.id,
+            name: c.name,
+            icon: iconMap[c.id] || FlaskConical,
+            color:
+              c.id === 'blood'
+                ? 'bg-red-100 text-red-600'
+                : c.id === 'imaging'
+                  ? 'bg-blue-100 text-blue-600'
+                  : c.id === 'allergy'
+                    ? 'bg-pink-100 text-pink-600'
+                    : c.id === 'hormone'
+                      ? 'bg-purple-100 text-purple-600'
+                      : 'bg-gray-100 text-gray-600',
+            count: countTestsForCategory(allTestsFlat, c.id, c.name),
+          }))
+        );
       } else {
         setTestCategories([
-          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 0 },
-          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 0 },
-          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 0 },
-          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 0 },
+          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: countTestsForCategory(allTestsFlat, 'blood', 'Blood Tests') },
+          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: countTestsForCategory(allTestsFlat, 'imaging', 'Imaging') },
+          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: countTestsForCategory(allTestsFlat, 'allergy', 'Allergy Tests') },
+          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: countTestsForCategory(allTestsFlat, 'hormone', 'Hormone Tests') },
         ]);
       }
 
@@ -333,11 +342,9 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
     } catch (error) {
       console.error('Error loading diagnostics data:', error);
       setFeaturedCenters([]);
-      setStats(
-        SHOW_DIAGNOSTICS_MOCK_LABS
-          ? { activeCenters: MOCK_DIAGNOSTIC_CENTERS.length, tests: '500+', rating: '4.6' }
-          : EMPTY_DIAGNOSTICS_STATS
-      );
+      setStats(EMPTY_DIAGNOSTICS_STATS);
+      setDiscoveryError('Could not load diagnostic labs. Check your connection and try again.');
+      setTestCategories([]);
     } finally {
       setLoading(false);
     }
@@ -410,12 +417,15 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
     { value: '*4.6', label: 'Rating' }
   ];
 
-  const categoriesToShow = testCategories.length > 0 ? testCategories : [
-    { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 45 },
-    { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 12 },
-    { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 8 },
-    { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 15 },
-  ];
+  const categoriesToShow =
+    testCategories.length > 0
+      ? testCategories
+      : [
+          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 0 },
+          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 0 },
+          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 0 },
+          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 0 },
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -509,6 +519,21 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           </div>
         </div>
 
+        {discoveryError ? (
+          <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-900" role="alert">
+            {discoveryError}
+          </div>
+        ) : null}
+        {!discoveryError && featuredCenters.length === 0 ? (
+          <div className="mb-4 p-4 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-700">
+            <p className="font-medium text-gray-900 mb-1">No bookable labs in this area</p>
+            <p className="leading-relaxed">
+              We only list partners who have published lab tests in their catalog—the same tests used when you book.
+              None match your filters or distance yet. Try a larger radius, clear the category filter, or check back later.
+            </p>
+          </div>
+        ) : null}
+
         {/* Popular Packages */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
@@ -540,7 +565,9 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           )}
           {labsForPackageBooking.length === 0 && popularPackages.length > 0 && (
             <p className="text-xs text-amber-800 mb-3 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              No labs match your filters. Adjust search or filters to book a package.
+              {featuredCenters.length === 0
+                ? 'Health packages need a lab with published diagnostic tests. None are available for your search yet—try widening distance or check back later.'
+                : 'No labs match your filters. Adjust search or filters to book a package.'}
             </p>
           )}
           

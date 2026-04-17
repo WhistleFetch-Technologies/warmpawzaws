@@ -1224,7 +1224,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         FROM service_categories sc
         LEFT JOIN specialization_master sm ON sm.category_id = sc.category_id AND sm.is_active = true
         LEFT JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id AND ss.is_active = true
-        WHERE sc.is_active = true
+        WHERE sc.is_active = true OR sc.is_active IS NULL
         GROUP BY sc.id
         ORDER BY sc.display_order NULLS LAST, sc.name
       `);
