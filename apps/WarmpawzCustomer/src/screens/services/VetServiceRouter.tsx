@@ -138,12 +138,12 @@ export function VetServiceRouter({
   const loadVendors = async (serviceType: 'center' | 'home') => {
     try {
       setLoading(true);
-      const response = await CustomerApi.searchServices({
+      const response = (await CustomerApi.searchServices({
         serviceType: 'vet',
         serviceStyle: serviceType,
         location: '', // TODO: Get from location service
-      });
-      setVendors(response.vendors || []);
+      })) as { vendors?: any[] };
+      setVendors(response.vendors ?? []);
     } catch (error) {
       console.error('Error loading vendors:', error);
       Alert.alert('Error', 'Failed to load veterinary clinics');
@@ -163,7 +163,7 @@ export function VetServiceRouter({
     try {
       setLoading(true);
       const vendorServices = await CustomerApi.getVendorServices(vendor.id);
-      setServices(vendorServices || []);
+      setServices(Array.isArray(vendorServices) ? vendorServices : []);
       setCurrentView('select_service');
     } catch (error) {
       console.error('Error loading services:', error);
@@ -416,7 +416,7 @@ export function VetServiceRouter({
       : '—';
 
     return (
-      <View style={[styles.container, styles.paymentRoot, styles.paymentScreenFill]}>
+      <View style={[styles.container, styles.paymentScreenFill]}>
         <View style={styles.summaryHeader}>
           <TouchableOpacity
             onPress={() => setCurrentView('booking_details')}
@@ -425,7 +425,7 @@ export function VetServiceRouter({
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Text style={styles.summaryBackGlyph} pointerEvents="none">
+            <Text style={styles.summaryBackGlyph}>
               ‹
             </Text>
           </TouchableOpacity>
@@ -535,19 +535,23 @@ export function VetServiceRouter({
   if (loading && currentView === 'landing') {
     return (
       <ScreenShell style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.screenContentPad}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       </ScreenShell>
     );
   }
 
   return (
     <ScreenShell style={styles.container}>
-      {currentView === 'landing' && renderLanding()}
-      {currentView === 'vet_center' && renderVendorList()}
-      {currentView === 'select_service' && renderServiceSelection()}
-      {currentView === 'booking_details' && renderBookingDetails()}
-      {currentView === 'payment' && renderPayment()}
-      {currentView === 'confirmation' && renderConfirmation()}
+      <View style={styles.screenContentPad}>
+        {currentView === 'landing' && renderLanding()}
+        {currentView === 'vet_center' && renderVendorList()}
+        {currentView === 'select_service' && renderServiceSelection()}
+        {currentView === 'booking_details' && renderBookingDetails()}
+        {currentView === 'payment' && renderPayment()}
+        {currentView === 'confirmation' && renderConfirmation()}
+      </View>
     </ScreenShell>
   );
 }
@@ -555,17 +559,18 @@ export function VetServiceRouter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
-    padding: spacing.md,
+    backgroundColor: colors.background,
+  },
+  /** Gutters only — never `padding` shorthand on ScreenShell (it would override safe-area insets). */
+  screenContentPad: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.lg,
-  },
-  /** Generous top padding after ScreenShell safe area — status bar / notch still overlaps on some devices without extra room. */
-  paymentRoot: {
-    paddingTop: spacing.xxl + spacing.xxl + spacing.lg,
   },
   paymentScreenFill: {
     flex: 1,
@@ -643,17 +648,17 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   summaryServiceTitle: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   summaryServiceMeta: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
   },
   summaryPrice: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
   },
@@ -679,12 +684,12 @@ const styles = StyleSheet.create({
   },
   summaryRowValue: {
     flex: 1,
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     fontWeight: '600',
     color: colors.text,
   },
   notesSectionLabel: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.sm,
@@ -695,29 +700,29 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     minHeight: 100,
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.text,
     backgroundColor: colors.background,
   },
   backButton: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.primary,
     marginRight: spacing.md,
   },
   headerTitle: {
     flex: 1,
-    fontSize: typography.h2,
+    fontSize: typography.fontSizes['2xl'],
     fontWeight: 'bold',
     color: colors.text,
   },
   title: {
-    fontSize: typography.h1,
+    fontSize: typography.fontSizes['3xl'],
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.xl,
   },
@@ -729,20 +734,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.gray['200'],
+    borderColor: colors.border,
   },
   optionIcon: {
     fontSize: 48,
     marginBottom: spacing.sm,
   },
   optionTitle: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   optionDescription: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
   },
   vendorList: {
@@ -754,21 +759,21 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray['200'],
+    borderColor: colors.border,
   },
   vendorName: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   vendorAddress: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   vendorRating: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.primary,
   },
   serviceList: {
@@ -780,21 +785,21 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray['200'],
+    borderColor: colors.border,
   },
   serviceName: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   serviceDescription: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   servicePrice: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.primary,
   },
@@ -802,7 +807,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionHeader: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.sm,
@@ -819,7 +824,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray['200'],
+    borderColor: colors.border,
   },
   petCardSelected: {
     borderColor: colors.primary,
@@ -827,22 +832,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF7ED',
   },
   petName: {
-    fontSize: typography.h3,
+    fontSize: typography.fontSizes.xl,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.xs,
   },
   petBreed: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   petAge: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
   },
   infoText: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     textAlign: 'center',
@@ -858,14 +863,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   confirmationTitle: {
-    fontSize: typography.h1,
+    fontSize: typography.fontSizes['3xl'],
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: spacing.md,
     textAlign: 'center',
   },
   confirmationMessage: {
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.xl,
@@ -879,8 +884,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: colors.white,
-    fontSize: typography.body,
+    color: colors.background,
+    fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
   },
   secondaryButton: {
@@ -894,7 +899,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: colors.primary,
-    fontSize: typography.body,
+    fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
   },
 });

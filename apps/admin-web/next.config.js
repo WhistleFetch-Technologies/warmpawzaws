@@ -1,7 +1,16 @@
 const path = require('path');
 
-/** True when the CLI is `next dev` (do not use NODE_ENV — .env.local often sets production and breaks dev). */
-const isNextDev = process.argv[2] === 'dev';
+/**
+ * True when the CLI is `next dev`.
+ * Do not use NODE_ENV — .env.local often sets production and breaks dev.
+ * On Windows, `process.argv[2] === 'dev'` alone can be false in spawned workers; `npm run dev`
+ * sets `npm_lifecycle_event`. Prefer `.next` in those cases so `dist` + OneDrive does not break dev.
+ */
+const argv = process.argv;
+const isNextDev =
+  argv[2] === 'dev' ||
+  process.env.npm_lifecycle_event === 'dev' ||
+  (argv.includes('dev') && !argv.includes('build') && !argv.includes('start'));
 
 /**
  * Next.js config – Admin Web

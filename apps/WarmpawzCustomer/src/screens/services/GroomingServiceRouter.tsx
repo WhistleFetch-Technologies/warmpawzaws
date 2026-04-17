@@ -568,7 +568,7 @@ export function GroomingServiceRouter({
                       bookingFlow.addOns.reduce((sum, a) => sum + (a.price || 0), 0);
 
     return (
-      <View style={[styles.container, styles.paymentRoot]}>
+      <View style={styles.container}>
         <View style={styles.summaryHeader}>
           <TouchableOpacity
             onPress={() => setCurrentView('booking_details')}
@@ -655,20 +655,24 @@ export function GroomingServiceRouter({
   if (loading && currentView === 'landing') {
     return (
       <ScreenShell style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.screenContentPad}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       </ScreenShell>
     );
   }
 
   return (
     <ScreenShell style={styles.container}>
-      {currentView === 'landing' && renderLanding()}
-      {(currentView === 'grooming_center' || currentView === 'grooming_home') && renderVendorList()}
-      {currentView === 'center_profile' && renderCenterProfile()}
-      {currentView === 'select_service' && renderServiceSelection()}
-      {currentView === 'booking_details' && renderBookingDetails()}
-      {currentView === 'payment' && renderPayment()}
-      {currentView === 'confirmation' && renderConfirmation()}
+      <View style={styles.screenContentPad}>
+        {currentView === 'landing' && renderLanding()}
+        {(currentView === 'grooming_center' || currentView === 'grooming_home') && renderVendorList()}
+        {currentView === 'center_profile' && renderCenterProfile()}
+        {currentView === 'select_service' && renderServiceSelection()}
+        {currentView === 'booking_details' && renderBookingDetails()}
+        {currentView === 'payment' && renderPayment()}
+        {currentView === 'confirmation' && renderConfirmation()}
+      </View>
     </ScreenShell>
   );
 }
@@ -677,15 +681,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-    padding: spacing.md,
+  },
+  screenContentPad: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.lg,
-  },
-  paymentRoot: {
-    paddingTop: spacing.xxl + spacing.xxl + spacing.lg,
   },
   summaryHeader: {
     flexDirection: 'row',

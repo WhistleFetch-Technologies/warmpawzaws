@@ -1261,7 +1261,7 @@ export function VetBookingRouter({
 
         {/* Payment Summary - Using UniversalPaymentPage (only for at_center services, at_home goes directly to UniversalPaymentPage) */}
         {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
-          <div className="space-y-4 cw-scroll-pad-tabbar">
+          <div className="space-y-4 cw-scroll-pad-tabbar -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
             <div className="flex items-center gap-2 sm:gap-3">
               <button
                 type="button"
