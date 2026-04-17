@@ -17,6 +17,18 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { query } from '../database/rds-connection';
 
+/** Claude v2 / Instant use Text Completions on Bedrock, not the Messages API. */
+function isLegacyAnthropicCompletionModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes('claude-v2') || id.includes('claude-instant') || id.includes('claude-v1');
+}
+
+/** Amazon Nova (Lite/Pro/Micro) InvokeModel uses messages + inferenceConfig, not Titan-style inputText. */
+function isAmazonNovaModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes('nova') || id.includes('amazon.nova');
+}
+
 export interface BedrockConfig {
   client: BedrockRuntimeClient;
   modelId: string;
@@ -28,10 +40,15 @@ export interface BedrockConfig {
  */
 export async function getBedrockConfig(): Promise<BedrockConfig | null> {
   try {
+    // Admin UI saves AWS (including Bedrock) under admin:settings:aws (GET/POST /admin/settings/aws).
+    // Legacy key aws_config is still supported as fallback.
     const settingsResult = await query(
-      `SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1`
+      `SELECT COALESCE(
+         (SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1),
+         (SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1)
+       ) AS setting_value`
     );
-    
+
     const awsSettings = settingsResult.rows[0]?.setting_value as any || null;
     
     if (!awsSettings?.bedrock?.enabled) {
@@ -94,38 +111,33 @@ export async function invokeBedrock(
   const { maxTokens = 1024, temperature = 0.5, topP = 0.9 } = options;
   
   try {
-    // Determine model format based on modelId
+    // Determine model format based on modelId (each family has a different InvokeModel JSON schema).
     let body: any;
-    
-    if (modelId.includes('claude') || modelId.includes('anthropic')) {
-      // Claude format
-      const messages: any[] = [];
-      
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt,
-        });
-      }
-      
-      messages.push({
-        role: 'user',
-        content: prompt,
-      });
-      
+
+    if (isLegacyAnthropicCompletionModel(modelId)) {
+      const humanText = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+      const formattedPrompt = `\n\nHuman: ${humanText}\n\nAssistant:`;
       body = {
-        anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: maxTokens,
+        prompt: formattedPrompt,
+        max_tokens_to_sample: maxTokens,
         temperature,
         top_p: topP,
-        messages,
       };
-    } else if (modelId.includes('nova') || modelId.includes('amazon')) {
-      // Amazon Nova/Titan format
-      const inputText = systemPrompt 
+    } else if (isAmazonNovaModel(modelId)) {
+      body = {
+        schemaVersion: 'messages-v1',
+        messages: [{ role: 'user', content: [{ text: prompt }] }],
+        ...(systemPrompt ? { system: [{ text: systemPrompt }] } : {}),
+        inferenceConfig: {
+          maxTokens,
+          temperature,
+          topP,
+        },
+      };
+    } else if (modelId.toLowerCase().includes('titan')) {
+      const inputText = systemPrompt
         ? `System: ${systemPrompt}\n\nHuman: ${prompt}\n\nAssistant:`
         : `Human: ${prompt}\n\nAssistant:`;
-      
       body = {
         inputText,
         textGenerationConfig: {
@@ -134,28 +146,34 @@ export async function invokeBedrock(
           topP: topP,
         },
       };
-    } else {
-      // Default to Claude format
-      const messages: any[] = [];
-      
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt,
-        });
-      }
-      
-      messages.push({
-        role: 'user',
-        content: prompt,
-      });
-      
+    } else if (modelId.includes('claude') || modelId.includes('anthropic')) {
+      // Claude 3+ Messages API on Bedrock
       body = {
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: maxTokens,
         temperature,
         top_p: topP,
-        messages,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: prompt }],
+          },
+        ],
+      };
+    } else {
+      body = {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: maxTokens,
+        temperature,
+        top_p: topP,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: prompt }],
+          },
+        ],
       };
     }
     
@@ -168,20 +186,32 @@ export async function invokeBedrock(
     
     const response = await client.send(command);
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-    
-    // Extract text from response based on model type
-    if (modelId.includes('nova') || modelId.includes('amazon')) {
-      // Amazon Nova/Titan format
-      if (responseBody.results && responseBody.results.length > 0) {
+
+    if (isLegacyAnthropicCompletionModel(modelId)) {
+      if (typeof responseBody.completion === 'string') {
+        return responseBody.completion;
+      }
+    } else if (isAmazonNovaModel(modelId)) {
+      const blocks = responseBody.output?.message?.content;
+      if (Array.isArray(blocks)) {
+        const textBlock = blocks.find((b: any) => typeof b?.text === 'string');
+        if (textBlock?.text) {
+          return textBlock.text;
+        }
+      }
+    } else if (modelId.toLowerCase().includes('titan')) {
+      if (responseBody.results && responseBody.results.length > 0 && responseBody.results[0].outputText) {
         return responseBody.results[0].outputText;
       }
     } else {
-      // Claude format
       if (responseBody.content && responseBody.content.length > 0) {
-        return responseBody.content[0].text;
+        const first = responseBody.content[0];
+        if (typeof first?.text === 'string') {
+          return first.text;
+        }
       }
     }
-    
+
     throw new Error('Invalid response format from Bedrock');
   } catch (error: any) {
     console.error('Error invoking Bedrock:', error);
