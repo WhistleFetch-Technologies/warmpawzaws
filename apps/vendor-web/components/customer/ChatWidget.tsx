@@ -42,6 +42,8 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [supportTicketId, setSupportTicketId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -160,6 +162,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
 
       const payload: Record<string, unknown> = {
         message: userMessage.content,
+        conversationId: conversationId || undefined,
         context: {
           userName,
           userType,
@@ -177,9 +180,20 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
 
       try {
         const response = (await apiClient.post('/ai-chatbot/chat', payload)) as {
+          success?: boolean;
+          conversationId?: string;
           response?: string;
           message?: string;
+          ticketId?: string;
+          requiresAgent?: boolean;
         };
+
+        if (response?.conversationId) {
+          setConversationId(response.conversationId);
+        }
+        if (response?.ticketId) {
+          setSupportTicketId(String(response.ticketId));
+        }
 
         const assistantMessage: Message = {
           role: 'assistant',
@@ -208,7 +222,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
         setIsTyping(false);
       }
     },
-    [isMinimized, isTyping, messages, userId, userName, userType]
+    [conversationId, isMinimized, isTyping, messages, userId, userName, userType]
   );
 
   const handleSend = () => sendChatMessage(input);
@@ -344,6 +358,13 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-gray-50 p-4">
+              {supportTicketId ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  A support ticket is open for this chat (ref.{' '}
+                  <span className="font-mono">{supportTicketId.slice(0, 8)}</span>…). Our team can follow up in the
+                  support queue.
+                </div>
+              ) : null}
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center px-2 py-4 text-center">
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-100 to-amber-100">

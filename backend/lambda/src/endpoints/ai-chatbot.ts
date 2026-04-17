@@ -815,12 +815,17 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
               'For **payments and settlements**, open **Reporting** on your dashboard for earnings summaries, and check **Settings** for payout / bank details (labels may vary by app version). For a missing payout or dispute, use **Contact support** and include dates and booking references.';
             confidence = 0.85;
             suggestedActions = ['Reporting', 'Contact support'];
-          } else if (/\b(contact support|support team|help desk|human agent|talk to someone)\b/.test(lowerMessage)) {
+          } else if (
+            /\b(contact support|support team|help desk|human agent|live agent|real person|talk to someone|speak to (a )?human)\b/.test(
+              lowerMessage
+            )
+          ) {
             intent = 'vendor_support';
             responseText =
               'Reach Warmpawz support from **Help** or **Contact support** in the vendor app. Include your business name and a short summary of the issue for faster help.';
             confidence = 0.88;
             suggestedActions = ['Contact Support'];
+            requiresAgent = true;
           } else if (/\b(hi|hello|hey|hii)\b/.test(lowerMessage) && lowerMessage.length < 40) {
             intent = 'general';
             responseText =
@@ -837,7 +842,8 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             intent = 'support';
             responseText =
               "I'm not sure I understood. Try asking about **services**, **bookings**, **payments & settlements**, or **contact support**. You can also tap a quick question in the chat.";
-            confidence = 0.75;
+            // Below 0.7 so a support ticket is created (same low-confidence handoff as customer path).
+            confidence = 0.68;
             suggestedActions = ['Services', 'Bookings', 'Contact support'];
           }
         } else if (
@@ -910,8 +916,11 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         }
       }
 
+      // Only fill defaults when Bedrock did not supply actions (avoid stomping model JSON).
       if (!isVendorSession && widgetMode === 'chat') {
-        suggestedActions = ['Create Ticket', 'Contact Support'];
+        if (!usedBedrock || !Array.isArray(suggestedActions) || suggestedActions.length === 0) {
+          suggestedActions = ['Create Ticket', 'Contact Support'];
+        }
       }
 
       // Save conversation to database

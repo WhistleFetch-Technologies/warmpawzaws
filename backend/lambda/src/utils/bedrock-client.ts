@@ -49,39 +49,62 @@ export async function getBedrockConfig(): Promise<BedrockConfig | null> {
        ) AS setting_value`
     );
 
-    const awsSettings = settingsResult.rows[0]?.setting_value as any || null;
-    
-    if (!awsSettings?.bedrock?.enabled) {
-      console.warn('AWS Bedrock is not enabled in platform settings');
+    let raw = settingsResult.rows[0]?.setting_value as unknown;
+    if (raw == null) {
+      console.warn('[Bedrock] No admin:settings:aws / aws_config row; Bedrock disabled');
       return null;
     }
-    
-    if (!awsSettings.credentials?.accessKeyId || !awsSettings.credentials?.secretAccessKey) {
-      throw new Error('AWS credentials not configured');
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        console.warn('[Bedrock] AWS settings value is not valid JSON');
+        return null;
+      }
     }
-    
+
+    const awsSettings = raw as Record<string, any>;
+
+    if (!awsSettings?.bedrock?.enabled) {
+      console.warn('[Bedrock] bedrock.enabled is false in platform settings');
+      return null;
+    }
+
     let modelId = awsSettings.bedrock.modelId || 'us.amazon.nova-lite-v1:0';
-    
+
     // Fix: Remap base Nova ID to US Cross-Region Inference Profile
     if (modelId === 'amazon.nova-lite-v1:0') {
       modelId = 'us.amazon.nova-lite-v1:0';
     }
-    
+
     let region = (awsSettings.bedrock.region || 'ap-south-1').trim();
-    
+
     // Fix: US Inference Profiles are not accessible from ap-south-1
     if (modelId.startsWith('us.') && region === 'ap-south-1') {
       region = 'us-east-1';
     }
-    
-    const client = new BedrockRuntimeClient({
-      region,
-      credentials: {
-        accessKeyId: String(awsSettings.credentials.accessKeyId).trim(),
-        secretAccessKey: String(awsSettings.credentials.secretAccessKey).trim(),
-      },
-    });
-    
+
+    const accessKeyId = String(awsSettings.credentials?.accessKeyId || '').trim();
+    const secretAccessKey = String(awsSettings.credentials?.secretAccessKey || '').trim();
+    const hasStaticCredentials =
+      accessKeyId.length > 0 && secretAccessKey.length > 0;
+
+    // Lambda / ECS: use execution task role when keys are not stored in DB (recommended).
+    // Static IAM user keys still supported when both are set in admin AWS settings.
+    const client = hasStaticCredentials
+      ? new BedrockRuntimeClient({
+          region,
+          credentials: {
+            accessKeyId,
+            secretAccessKey,
+          },
+        })
+      : new BedrockRuntimeClient({ region });
+
+    if (!hasStaticCredentials) {
+      console.info('[Bedrock] Using default AWS credential chain (e.g. Lambda execution role) for region', region);
+    }
+
     return { client, modelId, region };
   } catch (error: any) {
     console.error('Error getting Bedrock config:', error);
