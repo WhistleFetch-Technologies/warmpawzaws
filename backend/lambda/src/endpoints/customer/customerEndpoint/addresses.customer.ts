@@ -95,6 +95,50 @@ function normalizeCoordinates(coordinates: any): string | null {
   return null;
 }
 
+/** Prefer explicit lat/lng from the client; fall back to JSON coordinates (Google Places). */
+function resolveLatLngForRow(
+  finalCoordinates: string | null,
+  explicitLat?: unknown,
+  explicitLng?: unknown
+): { latitude: number | null; longitude: number | null } {
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  if (finalCoordinates) {
+    try {
+      const o = JSON.parse(finalCoordinates) as Record<string, unknown>;
+      const la =
+        typeof o.lat === 'number'
+          ? o.lat
+          : typeof o.latitude === 'number'
+            ? (o.latitude as number)
+            : null;
+      const lo =
+        typeof o.lng === 'number'
+          ? o.lng
+          : typeof o.longitude === 'number'
+            ? (o.longitude as number)
+            : typeof o.lon === 'number'
+              ? (o.lon as number)
+              : null;
+      if (la != null && Number.isFinite(la)) latitude = la;
+      if (lo != null && Number.isFinite(lo)) longitude = lo;
+    } catch {
+      /* ignore */
+    }
+  }
+  const nl =
+    explicitLat !== undefined && explicitLat !== null && explicitLat !== ''
+      ? Number(explicitLat as number | string)
+      : NaN;
+  const ng =
+    explicitLng !== undefined && explicitLng !== null && explicitLng !== ''
+      ? Number(explicitLng as number | string)
+      : NaN;
+  if (Number.isFinite(nl)) latitude = nl;
+  if (Number.isFinite(ng)) longitude = ng;
+  return { latitude, longitude };
+}
+
 export function registerAddressEndpoints(app: Hono) {
   /**
    * GET /customer/addresses?phone=...
@@ -135,6 +179,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -149,6 +195,12 @@ export function registerAddressEndpoints(app: Hono) {
       // When no saved addresses exist, use profile address/pincode so checkout doesn't block
       const cust = customer as any;
       if (list.length === 0 && (cust?.address || cust?.pincode)) {
+        const plat = cust?.latitude != null ? Number(cust.latitude) : NaN;
+        const plng = cust?.longitude != null ? Number(cust.longitude) : NaN;
+        const profileCoords =
+          Number.isFinite(plat) && Number.isFinite(plng)
+            ? { lat: plat, lng: plng }
+            : null;
         list = [{
           id: 'profile',
           customerId: cust.id,
@@ -163,7 +215,9 @@ export function registerAddressEndpoints(app: Hono) {
           landmark: null,
           houseNo: cust.house_no ?? undefined,
           floor: cust.floor ?? undefined,
-          coordinates: null,
+          coordinates: profileCoords,
+          latitude: Number.isFinite(plat) ? plat : undefined,
+          longitude: Number.isFinite(plng) ? plng : undefined,
           isDefault: true,
           createdAt: null,
           updatedAt: null,
@@ -265,6 +319,8 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: lastAddress.pincode || lastAddress.pincode,
           landmark: lastAddress.landmark || null,
           coordinates: lastAddress.coordinates || null,
+          latitude: lastAddress.latitude,
+          longitude: lastAddress.longitude,
           isDefault: lastAddress.isDefault !== undefined ? lastAddress.isDefault : (addressesArray.length === 1),
         };
       } else {
@@ -281,6 +337,8 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: body.pincode,
           landmark: body.landmark || null,
           coordinates: body.coordinates || null,
+          latitude: body.latitude,
+          longitude: body.longitude,
           flatNo: body.flatNo ?? body.flat_no ?? null,
           houseNo: body.houseNo ?? body.house_no ?? null,
           floor: body.floor ?? null,
@@ -360,6 +418,12 @@ export function registerAddressEndpoints(app: Hono) {
         );
       }
 
+      const { latitude: rowLat, longitude: rowLng } = resolveLatLngForRow(
+        finalCoordinates,
+        (addressData as any).latitude ?? body.latitude,
+        (addressData as any).longitude ?? body.longitude
+      );
+
       // ✅ FIX: Create address with better error handling
       let address;
       try {
@@ -375,6 +439,8 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: addressData.pincode,
           landmark: addressData.landmark || null,
           coordinates: finalCoordinates,
+          latitude: rowLat,
+          longitude: rowLng,
           flat_no: addressData.flatNo || null,
           house_no: addressData.houseNo || null,
           floor: addressData.floor || null,
@@ -423,6 +489,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -482,6 +550,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -519,6 +589,8 @@ export function registerAddressEndpoints(app: Hono) {
         state,
         pincode,
         coordinates,
+        latitude: bodyLat,
+        longitude: bodyLng,
         isDefault = false,
       } = body;
       const flatNo = body.flatNo ?? body.flat_no ?? null;
@@ -574,6 +646,12 @@ export function registerAddressEndpoints(app: Hono) {
         );
       }
 
+      const { latitude: rowLat2, longitude: rowLng2 } = resolveLatLngForRow(
+        finalCoordinates,
+        bodyLat,
+        bodyLng
+      );
+
       // Create address
       const address = await insert('customer_addresses', {
         customer_id: customer[0].id,
@@ -587,6 +665,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: pincode,
         landmark: null,
         coordinates: finalCoordinates,
+        latitude: rowLat2,
+        longitude: rowLng2,
         flat_no: flatNo,
         house_no: String(houseNo).trim(),
         floor: floor,
@@ -668,6 +748,16 @@ export function registerAddressEndpoints(app: Hono) {
         }
       }
 
+      const { latitude: putLat, longitude: putLng } = resolveLatLngForRow(
+        finalCoordinates,
+        updates.latitude,
+        updates.longitude
+      );
+
+      const explicitGeo =
+        'coordinates' in updates || 'latitude' in updates || 'longitude' in updates;
+      const shouldUpdateGeoColumns = explicitGeo || finalCoordinates != null;
+
       const updatePayload: Record<string, any> = {
         address_type: updates.label || updates.address_type,
         full_name: updates.name || updates.full_name,
@@ -681,6 +771,10 @@ export function registerAddressEndpoints(app: Hono) {
         coordinates: finalCoordinates !== undefined ? finalCoordinates : null,
         is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default,
       };
+      if (shouldUpdateGeoColumns) {
+        updatePayload.latitude = putLat;
+        updatePayload.longitude = putLng;
+      }
       if (updates.flatNo !== undefined || updates.flat_no !== undefined) updatePayload.flat_no = updates.flatNo ?? updates.flat_no;
       if (updates.houseNo !== undefined || updates.house_no !== undefined) updatePayload.house_no = updates.houseNo ?? updates.house_no;
       if (updates.floor !== undefined) updatePayload.floor = updates.floor;

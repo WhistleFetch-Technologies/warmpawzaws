@@ -630,6 +630,7 @@ export function UniversalServiceProviderList({
         // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
         const cleanedProviders = providerData.map((p: any) => ({
           ...p,
+          isOnline: p.isOnline ?? p.is_online,
           name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
           vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
           businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,

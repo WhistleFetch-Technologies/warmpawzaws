@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface BulkProductUploadProps {
   isOpen: boolean;
@@ -203,27 +204,24 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
                 </button>
               </div>
 
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition"
+              <TouchFilePicker
+                ref={fileInputRef}
+                accept=".csv,.xlsx,.xls"
+                onFileChange={handleFileSelect}
+                disabled={loading}
+                className="cursor-pointer rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center transition hover:border-orange-400 hover:bg-orange-50"
+                innerClassName="min-h-[12rem] gap-3"
               >
                 {loading ? (
-                  <Loader2 className="w-12 h-12 text-orange-500 mx-auto animate-spin" />
+                  <Loader2 className="mx-auto h-12 w-12 animate-spin text-orange-500" />
                 ) : (
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <Upload className="mx-auto mb-4 h-12 w-12 text-gray-400" />
                 )}
-                <p className="text-gray-600 font-medium">
-                  {loading ? 'Processing file...' : 'Click to upload or drag and drop'}
+                <p className="font-medium text-gray-600">
+                  {loading ? 'Processing file...' : 'Tap to upload or drag and drop'}
                 </p>
-                <p className="text-sm text-gray-400 mt-1">CSV or Excel files up to 10MB</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileSelect}
-                  className="sr-only"
-                />
-              </div>
+                <p className="mt-1 text-sm text-gray-400">CSV or Excel files up to 10MB</p>
+              </TouchFilePicker>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <h4 className="font-semibold text-amber-800 mb-2">📋 Required Fields</h4>

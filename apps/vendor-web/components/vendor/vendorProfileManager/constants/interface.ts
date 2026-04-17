@@ -55,6 +55,8 @@ export interface ProfileManagerProps {
     vendorId: string;
     vendorData?: any;
     onBack: () => void;
+    /** When set (e.g. from VendorLandingPage), "Get started" opens gallery; otherwise `/profile` uses home + session flag. */
+    onNavigateToGallery?: () => void;
 }
 
 // Alias for backward compatibility

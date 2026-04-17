@@ -253,6 +253,8 @@ export function AddAddressModal({
         coordinates: formData.latitude && formData.longitude 
           ? JSON.stringify({ lat: formData.latitude, lng: formData.longitude })
           : null,
+        latitude: formData.latitude ?? undefined,
+        longitude: formData.longitude ?? undefined,
         isDefault: formData.isDefault,
         flatNo: formData.flatNo || undefined,
         houseNo: formData.houseNo || undefined,
@@ -404,39 +406,25 @@ export function AddAddressModal({
               <EnhancedAddressAutocomplete
                 value={formData.addressLine1}
                 onChange={(address: string, components?: AddressComponents) => {
-                  setFormData(prev => ({ ...prev, addressLine1: address }));
-                  
-                  // Auto-populate city, state, pincode, street from Google Maps
-                  if (components) {
-                    const updates: Partial<AddressFormData> = {};
-                    
-                    if (components.city && !formData.city) {
-                      updates.city = components.city;
+                  setFormData(prev => {
+                    const next: AddressFormData = { ...prev, addressLine1: address };
+                    if (components) {
+                      if (components.city && !prev.city) next.city = components.city;
+                      if (components.state && !prev.state) next.state = components.state;
+                      if (components.pincode && !prev.pincode) next.pincode = components.pincode;
+                      if (components.street) {
+                        next.streetName = components.street.trim();
+                        if (!prev.addressLine2) next.addressLine2 = components.street.trim();
+                      }
+                      if (components.landmark && !prev.landmark) next.landmark = components.landmark;
+                      if (components.coordinates) {
+                        next.latitude = components.coordinates.lat;
+                        next.longitude = components.coordinates.lng;
+                      }
                     }
-                    if (components.state && !formData.state) {
-                      updates.state = components.state;
-                    }
-                    if (components.pincode && !formData.pincode) {
-                      updates.pincode = components.pincode;
-                    }
-                    if (components.street) {
-                      updates.streetName = components.street.trim();
-                      if (!formData.addressLine2) updates.addressLine2 = components.street.trim();
-                    }
-                    if (components.landmark && !formData.landmark) {
-                      updates.landmark = components.landmark;
-                    }
-                    if (components.coordinates) {
-                      updates.latitude = components.coordinates.lat;
-                      updates.longitude = components.coordinates.lng;
-                    }
-                    
-                    if (Object.keys(updates).length > 0) {
-                      setFormData(prev => ({ ...prev, ...updates }));
-                    }
-                  }
-                  
-                  // Clear errors when address is selected
+                    return next;
+                  });
+
                   if (address && errors.addressLine1) {
                     setErrors(prev => ({ ...prev, addressLine1: '' }));
                   }

@@ -74,6 +74,19 @@ function sqlVendorDiscoverableStatus(vAlias = 'v'): string {
   )`;
 }
 
+/** PG/client may return boolean or 't'/'f'. Unknown/null → treat as online (do not hide vendors). */
+function vendorRowIsOnline(isOnline: unknown): boolean {
+  if (isOnline === false || isOnline === 'f' || isOnline === 'false' || isOnline === 0 || isOnline === '0') {
+    return false;
+  }
+  return true;
+}
+
+/** Hide vendor from all customer discovery when they went offline (is_online = false). NULL → treat as online. */
+function sqlVendorOnlineForCustomerDiscovery(vAlias = 'v'): string {
+  return `COALESCE(${vAlias}.is_online, true) = true`;
+}
+
 /**
  * SQL predicate: vendor_services row is discoverable (enabled + publish state).
  * Includes `draft` when enabled — new vendors often save as draft before explicit publish;
@@ -241,26 +254,13 @@ function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | un
     return true;
   }
 
-  // ✅ CRITICAL FIX: For tele and at_home service styles, be more permissive for at_center businesses
-  // If an at_center business (vendor_type = 'business' or 'center') has a published tele/at_home service
-  // (verified by SQL query), they should be discoverable even if role_config doesn't explicitly list it.
-  // This ensures centers/clinics offering tele/at_home services are discoverable in production mode.
-  // Note: We can't check vendor_type here (this function only receives roleConfig), but the SQL query
-  // already ensures only vendors with the service style are included, so it's safe to be permissive.
-  // The special case for at_center above shows this pattern is acceptable.
+  // tele / at_home: strict — Admin role catalogue (serviceStyles.selected/solo/business) must list the style.
+  // Published vendor_services alone must not bypass role (aligns customer discovery + vendor UI).
   if (normalized === 'tele' || normalized === 'at_home') {
-    // Allow if role_config includes the style or any of its aliases
     const teleAliases = ['tele', 'online', 'video_consultation', 'video', 'remote'];
     const atHomeAliases = ['at_home', 'home', 'at_home_visit', 'home_visit'];
     const relevantAliases = normalized === 'tele' ? teleAliases : atHomeAliases;
-    if (styles.some(s => relevantAliases.includes(s))) {
-      return true;
-    }
-    // If role_config has serviceStyles defined but doesn't include tele/at_home,
-    // still allow it (vendor has published service, so role_config might be outdated)
-    // This is safe because the SQL query already verified the vendor has a published service
-    console.log('[roleConfigAllowsStyle] Allowing %s despite role_config not explicitly listing it (vendor has published service)', normalized);
-    return true;
+    return styles.some((s) => relevantAliases.includes(s) || s === normalized);
   }
 
   const allows = styles.includes(normalized);
@@ -325,6 +325,7 @@ async function getDiscoverableRoleNames(): Promise<string[]> {
     FROM vendors v
     INNER JOIN roles r ON v.role_id = r.id
     WHERE ${sqlVendorDiscoverableStatus('v')}
+      AND ${sqlVendorOnlineForCustomerDiscovery('v')}
       AND v.is_active = true
       AND EXISTS (
         SELECT 1 FROM vendor_services vs
@@ -812,6 +813,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE (v.status = 'approved' OR v.status = 'active')
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.is_active = true
           AND EXISTS (
             SELECT 1 FROM vendor_services vs
@@ -825,6 +827,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendor_services vs
         INNER JOIN vendors v ON v.id = vs.vendor_id
         WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
           AND vs.service_style IS NOT NULL
@@ -996,6 +999,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
           AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
           AND EXISTS (
@@ -1438,6 +1442,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Enrichment
       const enrichVendor = async (vendor: any) => {
+        if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+          return null;
+        }
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
         if (services.length === 0) return null;
 
@@ -1524,6 +1531,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
+          isOnline: vendorRowIsOnline(vendor.is_online),
+          is_online: vendor.is_online,
           photos: photos.length > 0 ? photos : undefined,
           priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
           priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
@@ -1583,6 +1592,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.latitude, v.longitude, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
+          v.is_online,
           r.id AS role_id,
           r.name AS role_name, r.display_name AS role_display_name,
           r.config AS role_config,
@@ -1592,6 +1602,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
@@ -1985,6 +1996,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (_) { /* ignore */ }
       const minBookingTime = new Date(now.getTime() + minNoticeMinutes * 60 * 1000);
 
+      const vendorOnlineRow = await query(
+        `SELECT COALESCE(is_online, true) AS is_online FROM vendors WHERE id::text = $1 LIMIT 1`,
+        [resolvedVendorId]
+      ).catch(() => ({ rows: [] }));
+      const slotVendorOnline = vendorRowIsOnline(vendorOnlineRow.rows?.[0]?.is_online);
+      if (!slotVendorOnline) {
+        return c.json({
+          success: true,
+          slots: [],
+          date,
+          vendorId: canonicalVendorId,
+          inputVendorId: vendorId,
+          serviceStyle,
+          staffBased: false,
+          isOnline: false,
+          vendorOnline: false,
+          message: 'Vendor is currently offline',
+        });
+      }
+
       // ---------- 1) Holiday check: no slots if vendor has holiday on this date ----------
       let isHoliday = false;
       try {
@@ -2012,7 +2043,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // ignore
         }
       }
-      if (!isHoliday && vendor.metadata && (vendor.metadata as any).vacation_mode?.isActive) {
+      if (!isHoliday && vendor?.metadata && (vendor.metadata as any).vacation_mode?.isActive) {
         const vm = (vendor.metadata as any).vacation_mode;
         const start = new Date(vm.startDate);
         const end = new Date(vm.endDate);
@@ -2026,6 +2057,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorId: canonicalVendorId,
           serviceStyle,
           staffBased: false,
+          isOnline: true,
+          vendorOnline: true,
           message: 'Vendor is on holiday or vacation on this date',
         });
       }
@@ -2172,6 +2205,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vendorId,
             serviceStyle,
             staffBased: true, // ✅ Flag indicating slots are staff-specific
+            isOnline: true,
+            vendorOnline: true,
           });
         }
         // If no staff availability found, fall through to vendor_availability_v2 then operating hours
@@ -2617,7 +2652,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // ✅ ENHANCED AVAILABILITY DEBUG: Check vendor status and online status
         try {
           const vendorStatusCheck = await query(
-            `SELECT v.id::text, v.business_name, v.phone, v.status, v.is_active, true as is_online,
+            `SELECT v.id::text, v.business_name, v.phone, v.status, v.is_active, v.is_online,
                     (SELECT COUNT(*) FROM vendor_availability_v2 WHERE vendor_id::text = v.id::text) as availability_count
              FROM vendors v
              WHERE v.id::text = ANY($1::text[])
@@ -2736,6 +2771,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               inputVendorId: vendorId,
               serviceStyle,
               staffBased: false,
+              isOnline: true,
+              vendorOnline: true,
               message: `No ${serviceStyle} availability configured for this day. Vendor must set ${serviceStyle}-specific schedule in Advanced Availability.`,
               availabilityMeta: {
                 source: 'vendor_availability_v2',
@@ -2941,6 +2978,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           inputVendorId: vendorId,
           serviceStyle,
           staffBased: false,
+          isOnline: true,
+          vendorOnline: true,
           availabilityMeta: {
             source: 'vendor_availability_v2',
             slotDurationDefault: 30,
@@ -2972,6 +3011,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         inputVendorId: vendorId, // ✅ Also include original input for debugging
         serviceStyle,
         staffBased: false,
+        isOnline: true,
+        vendorOnline: true,
         message,
         availabilityMeta: {
           source: 'vendor_availability_v2',
@@ -3007,6 +3048,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
+        return c.json({ error: 'Vendor not found', success: false }, 404);
+      }
+      if (!vendorRowIsOnline(vendor.is_online)) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }
       const resolvedVendorId = vendor.id;
@@ -3415,6 +3459,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
       `;
 
       const params: any[] = [];
@@ -3736,6 +3781,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          FROM vendors v
          INNER JOIN roles r ON v.role_id = r.id
          WHERE v.status = 'approved' AND v.is_active = true
+           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
            AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
            ${serviceType ? `AND r.name ILIKE $3` : ''}
          HAVING distance_km <= $4
@@ -3780,10 +3826,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Get vendors that handle this problem (specialization_id): check vendors.specializations, metadata.specializations, vendor_specializations, or service name/description
       const problemPattern = `%${problem}%`;
       let queryText = `
-        SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name
+        SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND (
             (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
             (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND (v.metadata->'specializations')::text ILIKE $2) OR
@@ -3913,14 +3960,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       }));
 
-      // ✅ FIX: Fallback filter - filter out business/clinic vendors for at_home
-      let filteredResults = enriched;
-      if (serviceStyle === 'at_home') {
-        filteredResults = enriched.filter((r: any) => {
-          return r.vendorType !== 'business' && r.vendorType !== 'clinic';
-        });
-        console.log(`[Discover By Problem] After fallback filter for at_home: ${filteredResults.length} results (removed ${enriched.length - filteredResults.length} business/clinic vendors)`);
-      }
+      // Role gate (Admin catalogue): drop vendors whose role does not allow the requested style
+      const filteredResults = enriched.filter((r: any) =>
+        !serviceStyle || roleConfigAllowsStyle((r as any).role_config, serviceStyle)
+      );
 
       return c.json({
         success: true,
@@ -4453,9 +4496,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendorResult = await query(
         `SELECT v.*, r.name as role_name, r.display_name as role_display_name,
                 r.config as role_config
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id
-         WHERE v.id = $1`,
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.id = $1`,
         [vendorId]
       );
 
@@ -4464,6 +4507,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       const vendor = vendorResult.rows[0];
+      if (!vendorRowIsOnline(vendor.is_online)) {
+        return c.json({ error: 'Vendor not found', success: false }, 404);
+      }
 
       // Get rating
       const ratingResult = await query(
@@ -4676,6 +4722,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       if (!vendorId || !isValidUUID(vendorId)) {
         return c.json({ error: 'Valid vendor ID is required', success: false }, 400);
+      }
+
+      const clinicVendorOnline = await query(
+        `SELECT COALESCE(is_online, true) AS is_online FROM vendors WHERE id = $1 LIMIT 1`,
+        [vendorId]
+      ).catch(() => ({ rows: [] as any[] }));
+      if (!clinicVendorOnline.rows?.length || !vendorRowIsOnline(clinicVendorOnline.rows[0]?.is_online)) {
+        return c.json({ error: 'Vendor not found', success: false }, 404);
       }
 
       // Get vendor services from vendor_services table
@@ -4919,7 +4973,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
        *   • zero matching services
        */
       const enrichVendor = async (vendor: any) => {
-        // Eligibility is based on services, not role config
+        if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+          return null;
+        }
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
 
         if (services.length === 0) return null;
@@ -5005,6 +5061,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
+          isOnline: vendorRowIsOnline(vendor.is_online),
+          is_online: vendor.is_online,
           photos: photos.length > 0 ? photos : undefined,
           priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
           priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
@@ -5021,6 +5079,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.latitude, v.longitude, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
+          v.is_online,
           r.id AS role_id,
           r.name AS role_name, r.display_name AS role_display_name,
           r.config AS role_config,
@@ -5030,6 +5089,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
@@ -5186,6 +5246,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
       `;
 
       const params: any[] = [];
@@ -5265,6 +5326,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+      if (!vendorRowIsOnline(vendor.is_online)) {
         return c.json({ success: false, error: 'Vendor not found' }, 404);
       }
 

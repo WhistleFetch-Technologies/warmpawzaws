@@ -34,6 +34,82 @@ function cleanDescription(desc: string | null | undefined): string | undefined {
   return cleaned || undefined;
 }
 
+/** Align with service-discovery.roleConfigAllowsStyle (Admin role catalogue gates tele / at_home). */
+const PROBLEM_GRID_STYLE_ALIASES: Record<string, string> = {
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  at_center: 'at_center',
+  home_visit: 'at_home',
+  at_home: 'at_home',
+  video_consultation: 'tele',
+  online: 'tele',
+  tele: 'tele',
+};
+
+function pgNormalizeServiceStyle(style: string | null | undefined): string | null {
+  if (!style) return null;
+  const key = String(style).toLowerCase().trim().replace(/\s+/g, '_');
+  return PROBLEM_GRID_STYLE_ALIASES[key] || key;
+}
+
+function pgNormalizeServiceStylesArray(styles: any): string[] {
+  if (!styles) return [];
+  const arr = Array.isArray(styles) ? styles : (styles?.selected ?? styles?.solo ?? []);
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const s of arr) {
+    const norm = pgNormalizeServiceStyle(s);
+    if (norm && !out.includes(norm)) out.push(norm);
+  }
+  return out;
+}
+
+function pgParseRoleConfig(roleConfig: any): any {
+  if (!roleConfig) return null;
+  try {
+    return typeof roleConfig === 'string' ? JSON.parse(roleConfig || '{}') : roleConfig;
+  } catch {
+    return null;
+  }
+}
+
+function pgRoleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | undefined): boolean {
+  const normalized = pgNormalizeServiceStyle(serviceStyle || '') || '';
+  if (!normalized) return true;
+  const config = pgParseRoleConfig(roleConfig);
+  if (!config) return true;
+
+  let styles: string[] = [];
+  if (config?.serviceStyles) {
+    if (Array.isArray(config.serviceStyles)) {
+      styles = pgNormalizeServiceStylesArray(config.serviceStyles);
+    } else if (typeof config.serviceStyles === 'object') {
+      const nestedStyles =
+        config.serviceStyles.selected || config.serviceStyles.solo || config.serviceStyles.business || [];
+      styles = pgNormalizeServiceStylesArray(Array.isArray(nestedStyles) ? nestedStyles : []);
+    }
+  } else if (config?.service_styles) {
+    styles = pgNormalizeServiceStylesArray(config.service_styles);
+  }
+
+  if (styles.length === 0) return true;
+
+  if (normalized === 'at_center') {
+    const centerAliases = ['at_center', 'at_vendor', 'at_clinic', 'center', 'clinic'];
+    if (styles.some((s) => centerAliases.includes(s))) return true;
+    return true;
+  }
+
+  if (normalized === 'tele' || normalized === 'at_home') {
+    const teleAliases = ['tele', 'online', 'video_consultation', 'video', 'remote'];
+    const atHomeAliases = ['at_home', 'home', 'at_home_visit', 'home_visit'];
+    const relevantAliases = normalized === 'tele' ? teleAliases : atHomeAliases;
+    return styles.some((s) => relevantAliases.includes(s) || s === normalized);
+  }
+
+  return styles.includes(normalized);
+}
+
 /**
  * Vendors often store profile_photo_url as a bare S3 key (no https://).
  * Same pattern as customer-profile + service-discovery getVendorPhotoUrl.
@@ -774,6 +850,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           v.metadata as vendor_metadata,
           v.vendor_type,
           r.name as role_name,
+          r.config as role_config,
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
@@ -902,7 +979,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         GROUP BY vs.id, vs.service_name, vs.custom_description, vs.metadata, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
                  v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
-                 v.vendor_type, r.name
+                 v.vendor_type, r.name, r.config
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
@@ -959,7 +1036,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                    vs.price, vs.duration_minutes, vs.created_at, vs.metadata as vendor_service_metadata,
                    v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
                    v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
-                   v.role_id, r.name as role_name
+                   v.role_id, r.name as role_name, r.config as role_config
             FROM vendors v
             -- ✅ Start from vendors table (same as profile API) - where specializations array is stored
             INNER JOIN vendor_services vs ON vs.vendor_id = v.id
@@ -1038,6 +1115,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 vendorType: row.vendor_type,
                 role_name: row.role_name || '',
                 roleName: row.role_name || '',
+                role_config: row.role_config,
                 vendor_rating: 0,
                 vendorRating: 0,
                 vendor_reviews: 0,
@@ -1176,7 +1254,12 @@ export function registerProblemGridEndpoints(app: Hono) {
         );
       }
 
-      const vendorIds = [...new Set(servicesResult.rows.map((r: any) => r.vendor_id))];
+      const rowsForRoleGate =
+        serviceStyle && servicesResult.rows?.length
+          ? servicesResult.rows.filter((row: any) => pgRoleConfigAllowsStyle(row.role_config, serviceStyle))
+          : servicesResult.rows || [];
+
+      const vendorIds = [...new Set(rowsForRoleGate.map((r: any) => r.vendor_id))];
       const specMap: Record<string, string[]> = {};
       if (vendorIds.length > 0) {
         try {
@@ -1193,7 +1276,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       // Calculate distance if location provided
-      let services = servicesResult.rows.map((service: any) => {
+      let services = rowsForRoleGate.map((service: any) => {
         const nameStr = String(service.name || '').trim();
         const descRaw = cleanDescription(service.description);
         const descTrim = (descRaw || '').trim();

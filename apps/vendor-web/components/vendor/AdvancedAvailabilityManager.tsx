@@ -821,9 +821,21 @@ export function AdvancedAvailabilityManager({
     setTogglingOnline(true);
     try {
       const newStatus = !isOnline;
-      await apiClient.post(`/vendor/${vendorId}/toggle-online`, { isOnline: newStatus });
+      const data = await apiClient.post<{
+        message?: string;
+        cancelledUpcomingBookings?: number;
+      }>(`/vendor/${vendorId}/toggle-online`, { isOnline: newStatus });
       setIsOnline(newStatus);
-      toast.success(newStatus ? 'You are now online' : 'You are now offline');
+      const cancelled = typeof data?.cancelledUpcomingBookings === 'number' ? data.cancelledUpcomingBookings : 0;
+      if (newStatus) {
+        toast.success(data?.message || 'You are now online');
+      } else if (cancelled > 0) {
+        toast.success(
+          `${data?.message || 'You are now offline'} ${cancelled} upcoming booking${cancelled === 1 ? '' : 's'} cancelled; customers were notified.`
+        );
+      } else {
+        toast.success(data?.message || 'You are now offline');
+      }
     } catch (error) {
       console.error('Error toggling online status:', error);
       toast.error('Failed to update online status');

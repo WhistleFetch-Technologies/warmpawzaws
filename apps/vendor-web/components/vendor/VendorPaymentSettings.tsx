@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Building2, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
@@ -433,6 +434,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
                     <div className="inline-block">
                       <input
+                        id={`vendor-pay-cheque-${vendorId}`}
                         ref={cancelledChequeInputRef}
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
@@ -441,31 +443,33 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
                               toast.error('File size must be less than 5MB');
+                              e.target.value = '';
                               return;
                             }
                             handleUploadDocument(file, 'cancelled_cheque');
                           }
+                          e.target.value = '';
                         }}
                         className="sr-only"
                         disabled={uploadingDoc}
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingDoc}
-                        className="cursor-pointer"
-                        onClick={() => cancelledChequeInputRef.current?.click()}
+                      <label
+                        htmlFor={`vendor-pay-cheque-${vendorId}`}
+                        className={cn(
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'cursor-pointer',
+                          uploadingDoc && 'pointer-events-none opacity-50'
+                        )}
                       >
                         {uploadingDoc ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 mr-1" />
+                            <Upload className="mr-1 h-4 w-4" />
                             Upload
                           </>
                         )}
-                      </Button>
+                      </label>
                     </div>
                   </div>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
@@ -474,6 +478,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
                     <div className="inline-block">
                       <input
+                        id={`vendor-pay-stmt-${vendorId}`}
                         ref={bankStatementInputRef}
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
@@ -482,31 +487,33 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
                               toast.error('File size must be less than 5MB');
+                              e.target.value = '';
                               return;
                             }
                             handleUploadDocument(file, 'bank_statement');
                           }
+                          e.target.value = '';
                         }}
                         className="sr-only"
                         disabled={uploadingDoc}
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingDoc}
-                        className="cursor-pointer"
-                        onClick={() => bankStatementInputRef.current?.click()}
+                      <label
+                        htmlFor={`vendor-pay-stmt-${vendorId}`}
+                        className={cn(
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'cursor-pointer',
+                          uploadingDoc && 'pointer-events-none opacity-50'
+                        )}
                       >
                         {uploadingDoc ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 mr-1" />
+                            <Upload className="mr-1 h-4 w-4" />
                             Upload
                           </>
                         )}
-                      </Button>
+                      </label>
                     </div>
                   </div>
                 </div>

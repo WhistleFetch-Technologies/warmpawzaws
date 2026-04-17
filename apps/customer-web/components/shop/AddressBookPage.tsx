@@ -36,7 +36,9 @@ interface Address {
   city: string;
   state: string;
   pincode: string;
-  coordinates?: { lat: number; lng: number };
+  coordinates?: { lat: number; lng: number } | string | null;
+  latitude?: number;
+  longitude?: number;
   isDefault: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -45,6 +47,28 @@ interface Address {
   floor?: string;
   streetName?: string;
   apartmentName?: string;
+}
+
+function parseAddressCoordinates(address: Address): { lat: number; lng: number } | null {
+  const lat = address.latitude;
+  const lng = address.longitude;
+  if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+  const c = address.coordinates;
+  if (!c) return null;
+  if (typeof c === 'object' && typeof (c as { lat?: number }).lat === 'number' && typeof (c as { lng?: number }).lng === 'number') {
+    return { lat: (c as { lat: number }).lat, lng: (c as { lng: number }).lng };
+  }
+  if (typeof c === 'string') {
+    try {
+      const o = JSON.parse(c) as { lat?: number; lng?: number };
+      if (typeof o.lat === 'number' && typeof o.lng === 'number') return { lat: o.lat, lng: o.lng };
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function AddressBookPage({
@@ -86,6 +110,7 @@ export function AddressBookPage({
     isDefault: false,
     houseNo: '',
     floor: '',
+    coordinates: null as { lat: number; lng: number } | null,
   });
 
   const handleFormBack = () => {
@@ -124,6 +149,7 @@ export function AddressBookPage({
       isDefault: address.isDefault,
       houseNo: address.houseNo || (address as any).flatNo || '',
       floor: address.floor || '',
+      coordinates: parseAddressCoordinates(address),
     });
     setShowForm(true);
   };
@@ -179,6 +205,9 @@ export function AddressBookPage({
         addressLine2: null,
         streetName: editingAddress?.streetName ?? '',
         apartmentName: editingAddress?.apartmentName ?? '',
+        coordinates: formData.coordinates ?? undefined,
+        latitude: formData.coordinates?.lat,
+        longitude: formData.coordinates?.lng,
       };
 
       if (editingAddress) {
@@ -220,6 +249,7 @@ export function AddressBookPage({
         isDefault: false,
         houseNo: '',
         floor: '',
+        coordinates: null,
       });
       await loadAddresses();
     } catch (error: any) {
@@ -243,6 +273,7 @@ export function AddressBookPage({
       isDefault: addresses.length === 0, // Set as default if first address
       houseNo: '',
       floor: '',
+      coordinates: null,
     });
     setShowForm(true);
   };
@@ -367,12 +398,18 @@ export function AddressBookPage({
               value={formData.addressLine1}
               onChange={(address: string, components?: AddressComponents) => {
                 setFormData(prev => {
-                  const updates: any = { ...prev, addressLine1: address };
+                  const updates: typeof prev = { ...prev, addressLine1: address };
                   // Auto-populate city, state, pincode from Google Maps selection
                   if (components) {
                     if (components.city && !prev.city) updates.city = components.city;
                     if (components.state && !prev.state) updates.state = components.state;
                     if (components.pincode && !prev.pincode) updates.pincode = components.pincode;
+                    if (components.coordinates) {
+                      updates.coordinates = {
+                        lat: components.coordinates.lat,
+                        lng: components.coordinates.lng,
+                      };
+                    }
                   }
                   return updates;
                 });

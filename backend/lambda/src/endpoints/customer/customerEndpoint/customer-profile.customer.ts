@@ -117,7 +117,45 @@ type ProfileAddressSyncPayload = {
   address?: string;
   city?: string;
   state?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinates?: string | { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
 };
+
+function deriveLatLngFromProfileData(profile: ProfileAddressSyncPayload): {
+  latitude: number | null;
+  longitude: number | null;
+} {
+  let latitude =
+    profile.latitude != null && Number.isFinite(Number(profile.latitude))
+      ? Number(profile.latitude)
+      : null;
+  let longitude =
+    profile.longitude != null && Number.isFinite(Number(profile.longitude))
+      ? Number(profile.longitude)
+      : null;
+  const c = profile.coordinates;
+  if (c != null) {
+    if (typeof c === 'string') {
+      try {
+        const o = JSON.parse(c) as Record<string, number>;
+        if (latitude == null && typeof o.lat === 'number') latitude = o.lat;
+        if (latitude == null && typeof o.latitude === 'number') latitude = o.latitude;
+        if (longitude == null && typeof o.lng === 'number') longitude = o.lng;
+        if (longitude == null && typeof o.longitude === 'number') longitude = o.longitude;
+      } catch {
+        /* ignore */
+      }
+    } else if (typeof c === 'object') {
+      const o = c as Record<string, number>;
+      if (latitude == null && typeof o.lat === 'number') latitude = o.lat;
+      if (latitude == null && typeof o.latitude === 'number') latitude = o.latitude;
+      if (longitude == null && typeof o.lng === 'number') longitude = o.lng;
+      if (longitude == null && typeof o.longitude === 'number') longitude = o.longitude;
+    }
+  }
+  return { latitude, longitude };
+}
 
 type SyncDefaultAddressOpts = {
   updateHouseNo?: boolean;
@@ -162,7 +200,10 @@ async function syncDefaultCustomerAddressFromProfile(
     profileAddressFields.pincode !== undefined ||
     profileAddressFields.address !== undefined ||
     profileAddressFields.city !== undefined ||
-    profileAddressFields.state !== undefined;
+    profileAddressFields.state !== undefined ||
+    profileAddressFields.latitude !== undefined ||
+    profileAddressFields.longitude !== undefined ||
+    profileAddressFields.coordinates !== undefined;
   if (!shouldSync) return;
 
   const pincode = String(customerRow?.pincode || '').trim();
@@ -209,6 +250,18 @@ async function syncDefaultCustomerAddressFromProfile(
       setParts.push(`floor = $${p++}`);
       params.push(opts.floor ?? null);
     }
+
+    const rowLat = customerRow?.latitude != null ? Number(customerRow.latitude) : NaN;
+    const rowLng = customerRow?.longitude != null ? Number(customerRow.longitude) : NaN;
+    if (Number.isFinite(rowLat) && Number.isFinite(rowLng)) {
+      setParts.push(`coordinates = $${p++}::jsonb`);
+      params.push(JSON.stringify({ lat: rowLat, lng: rowLng }));
+      setParts.push(`latitude = $${p++}`);
+      params.push(rowLat);
+      setParts.push(`longitude = $${p++}`);
+      params.push(rowLng);
+    }
+
     params.push(targetId);
     await query(
       `UPDATE customer_addresses SET ${setParts.join(', ')} WHERE id = $${p}::uuid`,
@@ -226,6 +279,13 @@ async function syncDefaultCustomerAddressFromProfile(
   const fullName = String(customerRow?.full_name || 'Customer').trim() || 'Customer';
   const phone = phoneDigitsForAddressRow(customerRow);
 
+  const insLat = customerRow?.latitude != null ? Number(customerRow.latitude) : NaN;
+  const insLng = customerRow?.longitude != null ? Number(customerRow.longitude) : NaN;
+  const insCoords =
+    Number.isFinite(insLat) && Number.isFinite(insLng)
+      ? JSON.stringify({ lat: insLat, lng: insLng })
+      : null;
+
   await insert('customer_addresses', {
     customer_id: customerId,
     address_type: 'home',
@@ -235,6 +295,9 @@ async function syncDefaultCustomerAddressFromProfile(
     city: city || '—',
     state: state || '—',
     pincode,
+    coordinates: insCoords,
+    latitude: Number.isFinite(insLat) ? insLat : null,
+    longitude: Number.isFinite(insLng) ? insLng : null,
     is_default: true,
     house_no: opts?.updateHouseNo ? opts.houseNo ?? null : customerRow?.house_no ?? null,
     floor: opts?.updateFloor ? opts.floor ?? null : customerRow?.floor ?? null,
@@ -689,6 +752,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith('http')) {
         profilePayload.photo = rawProfilePayload.photo;
       }
+      if (rawProfilePayload.latitude !== undefined) {
+        profilePayload.latitude = rawProfilePayload.latitude;
+      }
+      if (rawProfilePayload.longitude !== undefined) {
+        profilePayload.longitude = rawProfilePayload.longitude;
+      }
+      if (rawProfilePayload.coordinates !== undefined) {
+        profilePayload.coordinates = rawProfilePayload.coordinates;
+      }
+
+      const hasGeoPayload =
+        rawProfilePayload != null &&
+        typeof rawProfilePayload === 'object' &&
+        ('latitude' in rawProfilePayload ||
+          'longitude' in rawProfilePayload ||
+          'coordinates' in rawProfilePayload);
 
       console.log('[PROFILE] Cleaned payload:', profilePayload);
 
@@ -858,6 +937,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
       if (hasFloorField) {
         updateData.floor = profileData.floor?.trim() || null;
+      }
+
+      if (hasGeoPayload) {
+        const geo = deriveLatLngFromProfileData(profileData as ProfileAddressSyncPayload);
+        updateData.latitude = geo.latitude;
+        updateData.longitude = geo.longitude;
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)
@@ -1039,6 +1124,14 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
       if (hasFloorInPut) {
         updateData.floor = profileData.floor?.trim() || null;
+      }
+
+      const hasGeoPut =
+        'latitude' in bodyForSchema || 'longitude' in bodyForSchema || 'coordinates' in bodyForSchema;
+      if (hasGeoPut) {
+        const geo = deriveLatLngFromProfileData(profileData as ProfileAddressSyncPayload);
+        updateData.latitude = geo.latitude;
+        updateData.longitude = geo.longitude;
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)

@@ -120,14 +120,6 @@ export function VetServicesByStyle({
         // New API returns 'providers' array, fallback to 'vendors' for backward compatibility
         let providerData = response.providers || response.vendors || [];
         
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        // Filter out any provider with vendorType === 'business'
-        if (serviceStyle === 'at_home') {
-          providerData = providerData.filter((p: any) => {
-            return p.vendorType !== 'business';
-          });
-        }
-        
         // Filter to specific vendor if vendorId is provided (vendor profile mode)
         if (vendorId) {
           providerData = providerData.filter((p: any) => 

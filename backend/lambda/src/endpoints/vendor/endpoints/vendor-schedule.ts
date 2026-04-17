@@ -16,8 +16,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, query, insert, update } from '../../../database/rds-connection';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendorProfile.vendor';
+import { logBookingStatusChange } from '../../../utils/audit-log';
+import { publishBookingStatusUpdated } from '../../../utils/sns-client';
 import { validateScheduleSlot } from '../../../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -1273,6 +1276,16 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         return c.json({ error: 'isOnline boolean is required' }, 400);
       }
 
+      const trimmedId = (vendorId || '').trim();
+      const resolved = await resolveVendorById(trimmedId);
+      if (!resolved?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = resolved.id;
+
+      const OFFLINE_CANCEL_REASON =
+        'The service provider went offline (stopped accepting bookings), so this upcoming appointment was cancelled. Any refund or settlement follows the usual provider-cancellation rules. We apologize for the inconvenience.';
+
       await query(
         `UPDATE vendors SET 
           is_online = $1, 
@@ -1282,14 +1295,105 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         [
           isOnline,
           isOnline ? null : new Date(),
-          vendorId
+          actualVendorId
         ]
       );
 
-      return c.json({ 
-        success: true, 
+      let cancelledBookingIds: string[] = [];
+
+      if (!isOnline) {
+        const vendorIdCandidates = new Set<string>([String(actualVendorId)]);
+        if (trimmedId && trimmedId !== String(actualVendorId)) {
+          vendorIdCandidates.add(trimmedId);
+        }
+        const upcoming = await query(
+          `SELECT id, customer_id, vendor_id, status
+           FROM bookings
+           WHERE vendor_id = ANY($1::uuid[])
+             AND status IN ('pending', 'confirmed', 'pending_payment')
+             AND (
+               (booking_datetime IS NOT NULL AND booking_datetime > NOW())
+               OR (
+                 booking_datetime IS NULL
+                 AND (
+                   booking_date > CURRENT_DATE
+                   OR (booking_date = CURRENT_DATE AND booking_time > CURRENT_TIME)
+                 )
+               )
+             )`,
+          [Array.from(vendorIdCandidates)]
+        ).catch(() => ({ rows: [] as any[] }));
+
+        const rows = upcoming.rows || [];
+        cancelledBookingIds = rows.map((r: any) => String(r.id));
+
+        for (const booking of rows) {
+          const bookingId = String(booking.id);
+          const oldStatus = String(booking.status || 'pending');
+          try {
+            await update(
+              'bookings',
+              { id: bookingId },
+              {
+                status: 'cancelled',
+                cancellation_reason: OFFLINE_CANCEL_REASON,
+                cancelled_at: new Date().toISOString(),
+                cancelled_by: 'provider',
+              }
+            );
+
+            await logBookingStatusChange(
+              bookingId,
+              oldStatus,
+              'cancelled',
+              actualVendorId,
+              'vendor',
+              'Provider went offline (advance availability)'
+            );
+
+            if (booking.customer_id) {
+              try {
+                await insert('notifications', {
+                  recipient_id: booking.customer_id,
+                  recipient_type: 'customer',
+                  title: 'Booking cancelled',
+                  message: OFFLINE_CANCEL_REASON,
+                  notification_type: 'booking_cancelled',
+                  channels: { email: false, sms: false, inApp: true, push: true },
+                  is_read: false,
+                  data: { bookingId, reason: 'vendor_went_offline' },
+                });
+              } catch (notifErr: any) {
+                console.warn('[toggle-online] Customer notification insert failed:', notifErr?.message);
+              }
+            }
+
+            try {
+              await publishBookingStatusUpdated({
+                bookingId,
+                customerId: booking.customer_id,
+                vendorId: booking.vendor_id || actualVendorId,
+                oldStatus,
+                newStatus: 'cancelled',
+                reason: OFFLINE_CANCEL_REASON,
+                eventTimestamp: new Date().toISOString(),
+                eventId: randomUUID(),
+              });
+            } catch (snsErr: any) {
+              console.warn('[toggle-online] SNS publish failed:', snsErr?.message);
+            }
+          } catch (rowErr: any) {
+            console.error(`[toggle-online] Failed to cancel booking ${bookingId}:`, rowErr?.message);
+          }
+        }
+      }
+
+      return c.json({
+        success: true,
         isOnline,
-        message: isOnline ? 'You are now online' : 'You are now offline' 
+        message: isOnline ? 'You are now online' : 'You are now offline',
+        cancelledUpcomingBookings: cancelledBookingIds.length,
+        cancelledBookingIds,
       });
     } catch (error: any) {
       console.error('Error toggling online status:', error);

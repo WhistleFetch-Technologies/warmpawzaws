@@ -40,7 +40,7 @@ interface VendorProfile {
  * - Center/Business vendors -> CenterProfileManager (ProfileManager)
  * 
  * Both are feature-rich enhanced profiles with:
- * - Photo upload
+ * - Photo upload (solo); center listing photos via Dashboard → Gallery
  * - Address autocomplete
  * - Specializations (Problem Grid)
  * - Availability/Schedule management

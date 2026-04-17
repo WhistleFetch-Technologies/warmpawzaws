@@ -319,3 +319,62 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
 }
+
+/**
+ * Provider cancels: refund % and fee from vendor_refund_tiers (cancelled_by = provider,
+ * optional vendor_cancellation_reason slug: emergency | operational | technical).
+ * Refund base uses the same customer-paid breakdown as customer cancellation.
+ */
+export async function previewProviderCancellationRefund(
+  booking: BookingForPolicy,
+  vendorCancellationReason: string | null | undefined
+): Promise<{
+  refundAmount: number;
+  refundPercentage: number;
+  cancellationFee: number;
+  source: RefundSource;
+  policyApplied: boolean;
+  meta?: { tierId?: string; tierName?: string };
+  refundableCustomerPaidBase: number;
+  platformFeeNonRefundable: number;
+}> {
+  const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
+  const refundableBase = paidBreakdown.refundableBase;
+  const platformFeeNonRefundable = paidBreakdown.platformFeeNonRefundable;
+  const total = refundableBase;
+  const reasonNorm =
+    vendorCancellationReason && String(vendorCancellationReason).trim()
+      ? String(vendorCancellationReason).toLowerCase().trim()
+      : null;
+
+  const tier = await getRefundTierForCancellation(booking, 'provider', {
+    vendorCancellationReason: reasonNorm ?? undefined,
+  });
+
+  if (tier) {
+    const computed = computeRefundFromTier(total, tier, 100, 0);
+    const refundAmount = clampRefundToCustomerPaidBase(computed.refundAmount, refundableBase);
+    return {
+      refundAmount,
+      refundPercentage: computed.refundPercentage,
+      cancellationFee: computed.cancellationFee,
+      source: 'vendor_refund_tiers',
+      policyApplied: true,
+      meta: { tierId: tier.tierId, tierName: tier.tierName },
+      refundableCustomerPaidBase: refundableBase,
+      platformFeeNonRefundable,
+    };
+  }
+
+  const computed = computeRefundFromTier(total, null, 100, 0);
+  const refundAmount = clampRefundToCustomerPaidBase(computed.refundAmount, refundableBase);
+  return {
+    refundAmount,
+    refundPercentage: 100,
+    cancellationFee: 0,
+    source: 'default',
+    policyApplied: false,
+    refundableCustomerPaidBase: refundableBase,
+    platformFeeNonRefundable,
+  };
+}

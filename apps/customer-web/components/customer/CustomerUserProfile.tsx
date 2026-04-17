@@ -20,6 +20,9 @@ interface UserProfile {
   houseNo: string;
   floor: string;
   photo?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinates?: { lat: number; lng: number };
 }
 
 interface CustomerUserProfileProps {
@@ -166,6 +169,14 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         pincode: profile.pincode.trim(),
         city: profile.city.trim(),
         state: profile.state.trim(),
+        ...(profile.latitude != null &&
+          profile.longitude != null &&
+          Number.isFinite(profile.latitude) &&
+          Number.isFinite(profile.longitude) && {
+            latitude: profile.latitude,
+            longitude: profile.longitude,
+            coordinates: { lat: profile.latitude, lng: profile.longitude },
+          }),
       };
       delete (profileBody as UserProfile & { house_no?: string }).house_no;
       // Save user profile to backend - AWS Serverless compatible
@@ -344,6 +355,10 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
                   }
                   if (components?.state) {
                     updated.state = components.state;
+                  }
+                  if (components?.coordinates) {
+                    updated.latitude = components.coordinates.lat;
+                    updated.longitude = components.coordinates.lng;
                   }
                   return updated;
                 });

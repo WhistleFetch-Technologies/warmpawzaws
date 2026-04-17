@@ -68,10 +68,16 @@ export function TimeSlotSelector({
         slots?: Array<{ time: string; available?: boolean; booked?: boolean; slotDuration?: number; bufferMinutes?: number; serviceStyles?: string[] } | string>;
         availabilityMeta?: Record<string, unknown>;
         message?: string;
+        isOnline?: boolean;
+        vendorOnline?: boolean;
       }>(`/customer/vendor/${vendorId}/available-slots?${params}`);
 
+      const explicitOffline =
+        response?.isOnline === false ||
+        response?.vendorOnline === false;
+
       if (!response?.success || !response.slots?.length) {
-        if (response?.message) setVendorOffline(true);
+        setVendorOffline(explicitOffline);
         setSlots([]);
         return;
       }

@@ -298,6 +298,7 @@ export function UniversalServicesByStyle({
               reviewCount: Number(provider.reviewCount || 0),
               distance: provider.distance || null,
               isVerified: provider.isVerified,
+              isOnline: provider.isOnline ?? provider.is_online,
               isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
               nextAvailableSlot: (() => {
                 // Priority 1: nextAvailable (API returns this field name)

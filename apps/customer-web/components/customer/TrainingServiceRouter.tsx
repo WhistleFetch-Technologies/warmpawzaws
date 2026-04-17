@@ -160,9 +160,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}${phoneParam}`);
           let altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           
-          // ✅ FIX: Filter out business vendors when style is at_home
           if (Array.isArray(altData)) {
-            altData = altData.filter((p: any) => p.vendorType !== 'business');
             trainerServices = altData;
           } else if (altData?.services) {
             trainerServices = altData.services;

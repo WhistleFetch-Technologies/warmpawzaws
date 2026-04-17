@@ -325,9 +325,7 @@ export function ProblemGridFlowRouter({
       if (res.success) {
         let rows: ByProblemServiceRow[] = res.providers || res.services || [];
 
-        if (selectedServiceStyle === 'at_home') {
-          rows = rows.filter((p: any) => p.vendorType !== 'business');
-        } else if (selectedServiceStyle === 'at_center') {
+        if (selectedServiceStyle === 'at_center') {
           rows = rows.filter((p: any) => {
             const style = p.serviceStyle || p.service_style;
             return style === 'at_center' || style === 'at_vendor' || style === 'at_clinic';

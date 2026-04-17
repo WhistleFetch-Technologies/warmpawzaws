@@ -1125,6 +1125,7 @@ export function registerSpecializedServiceFlows(app: Hono) {
         WHERE r.name IN ('pet_relocation', 'pet_transport', 'relocation')
         AND v.status = 'approved'
         AND v.is_active = true
+        AND COALESCE(v.is_online, true) = true
       `;
 
       const params: any[] = [];

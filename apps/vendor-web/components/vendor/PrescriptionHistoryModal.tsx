@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Upload, FileText, Calendar, Image, File, Eye, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from './PrescriptionDocument';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -50,7 +51,6 @@ export function PrescriptionHistoryModal({
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [recordDate, setRecordDate] = useState('');
   const [uploadingFile, setUploadingFile] = useState<File | null>(null);
 
@@ -150,9 +150,6 @@ export function PrescriptionHistoryModal({
       setShowUploadModal(false);
       setUploadingFile(null);
       setRecordDate('');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
       loadPrescriptions();
       if (onUploadSuccess) onUploadSuccess();
     } catch (error: any) {
@@ -369,33 +366,28 @@ export function PrescriptionHistoryModal({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload Photo or PDF <span className="text-red-500">*</span>
                 </label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+                <TouchFilePicker
+                  accept="image/*,application/pdf"
+                  onFileChange={handleFileSelect}
+                  className="cursor-pointer rounded-xl border-2 border-dashed border-gray-300 p-8 transition-colors hover:border-blue-500"
+                  innerClassName="min-h-[10rem] justify-center gap-1 p-2"
                 >
                   {uploadingFile ? (
                     <div>
-                      <File className="w-12 h-12 text-blue-500 mx-auto mb-2" />
+                      <File className="mx-auto mb-2 h-12 w-12 text-blue-500" />
                       <p className="text-sm text-gray-700">{uploadingFile.name}</p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="mt-1 text-xs text-gray-500">
                         {(uploadingFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
                     </div>
                   ) : (
                     <div>
-                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-700">Click to select file</p>
-                      <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
+                      <Upload className="mx-auto mb-2 h-12 w-12 text-gray-400" />
+                      <p className="text-sm text-gray-700">Tap to select file</p>
+                      <p className="mt-1 text-xs text-gray-500">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
                     </div>
                   )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleFileSelect}
-                  className="sr-only"
-                />
+                </TouchFilePicker>
               </div>
 
               <Button

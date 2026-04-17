@@ -263,6 +263,19 @@ export function VendorDashboard({
 
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
+  /** Groomer solo/center: hide Portfolio under Additional Features (UI only; capability/backend unchanged). */
+  const isGroomerVendorForPortfolioUi = hasVendorRole(vendorData, [
+    'groomer',
+    'groomer_solo',
+    'groomer_center',
+    'grooming_solo',
+    'pet_groomer',
+    'grooming_salon',
+    'pet_grooming',
+    'grooming',
+  ]);
+  const showPortfolioAdditionalFeature =
+    !isGroomerVendorForPortfolioUi && !!onNavigateToPortfolio && !!capabilities.portfolio;
 
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
   const logoImage = '/warmpawz-logo.svg';
@@ -1079,7 +1092,8 @@ export function VendorDashboard({
           )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
-        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+        {!isPharmacy && ((capabilities.gallery || (capabilities.portfolio && !isGroomerVendorForPortfolioUi) || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+          onNavigateToGallery ||
           capabilities.controlled_substances ||
           capabilities.prescription_verification ||
           capabilities.delivery ||
@@ -1099,19 +1113,21 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Gallery Management */}
-                {onNavigateToGallery && capabilities.gallery && (
+                {/* Gallery — always for center/business dashboard when handler exists (role may omit gallery capability) */}
+                {onNavigateToGallery && !isPharmacy && (
                   <button
+                    type="button"
                     onClick={onNavigateToGallery}
-                    className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
+                    className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors gap-0.5"
                   >
-                    <Camera className="w-6 h-6 text-pink-600 mb-1" />
+                    <Camera className="w-6 h-6 text-pink-600 mb-0.5" />
                     <span className="text-xs font-medium text-gray-900">Gallery</span>
+                    <span className="text-[10px] font-medium text-pink-700">Get started</span>
                   </button>
                 )}
 
-                {/* Portfolio Management */}
-                {onNavigateToPortfolio && capabilities.portfolio && (
+                {/* Portfolio Management — hidden for groomer (solo/center); backend capability unchanged */}
+                {showPortfolioAdditionalFeature && (
                   <button
                     onClick={onNavigateToPortfolio}
                     className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"

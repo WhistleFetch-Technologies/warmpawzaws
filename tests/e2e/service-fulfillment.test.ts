@@ -440,6 +440,7 @@ async function testBookingCancellation(ctx: TestContext): Promise<void> {
       'POST',
       {
         reason: 'Customer requested cancellation',
+        vendorCancellationReason: 'operational',
       }
     );
     
