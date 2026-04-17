@@ -48,11 +48,17 @@ const DialogOverlay = React.forwardRef<
 });
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Content> & {
+  /** When true, omit the default top-right close control (use for custom headers with their own close). */
+  hideCloseButton?: boolean;
+};
+
 function DialogContent({
   className,
   children,
+  hideCloseButton,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: DialogContentProps) {
   // Check if a custom z-index class is passed (for nested dialogs)
   const hasCustomZIndex = className?.includes('z-[') || className?.includes('z-6') || className?.includes('z-7') || className?.includes('z-8') || className?.includes('z-9');
   const overlayZIndex = hasCustomZIndex ? 'z-[99]' : 'z-[60]'; // Ensure overlay is properly stacked
@@ -69,10 +75,12 @@ function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="ring-offset-white focus:ring-ring absolute top-4 right-4 rounded-full p-1 text-gray-700 opacity-100 transition-[color,transform,background-color] hover:bg-gray-100 hover:text-gray-900 hover:scale-[1.05] focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5">
-          <XIcon />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
+        {!hideCloseButton && (
+          <DialogPrimitive.Close className="ring-offset-white focus:ring-ring absolute top-4 right-4 rounded-full p-1 text-gray-700 opacity-100 transition-[color,transform,background-color] hover:bg-gray-100 hover:text-gray-900 hover:scale-[1.05] focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5">
+            <XIcon />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
