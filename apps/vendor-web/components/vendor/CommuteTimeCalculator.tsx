@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Navigation, MapPin, Clock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 interface CommuteTimeCalculatorProps {
   providerId: string;
@@ -40,19 +41,19 @@ export function CommuteTimeCalculator({ providerId, apiUrl = process.env.NEXT_PU
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block mb-2">From Latitude</label>
-          <input type="number" value={fromLat} onChange={e => setFromLat(e.target.value)} className="w-full p-3 border rounded-lg" step="0.000001" />
+          <Input type="number" value={fromLat} onChange={e => setFromLat(e.target.value)} className="w-full p-3 h-11 rounded-lg" step={0.000001} />
         </div>
         <div>
           <label className="block mb-2">From Longitude</label>
-          <input type="number" value={fromLng} onChange={e => setFromLng(e.target.value)} className="w-full p-3 border rounded-lg" step="0.000001" />
+          <Input type="number" value={fromLng} onChange={e => setFromLng(e.target.value)} className="w-full p-3 h-11 rounded-lg" step={0.000001} />
         </div>
         <div>
           <label className="block mb-2">To Latitude</label>
-          <input type="number" value={toLat} onChange={e => setToLat(e.target.value)} className="w-full p-3 border rounded-lg" step="0.000001" />
+          <Input type="number" value={toLat} onChange={e => setToLat(e.target.value)} className="w-full p-3 h-11 rounded-lg" step={0.000001} />
         </div>
         <div>
           <label className="block mb-2">To Longitude</label>
-          <input type="number" value={toLng} onChange={e => setToLng(e.target.value)} className="w-full p-3 border rounded-lg" step="0.000001" />
+          <Input type="number" value={toLng} onChange={e => setToLng(e.target.value)} className="w-full p-3 h-11 rounded-lg" step={0.000001} />
         </div>
       </div>
       <button onClick={calculate} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700">

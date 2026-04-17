@@ -1304,11 +1304,23 @@ export function registerVendorScheduleEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/availability", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const { slots } = await c.req.json();
+      const body = await c.req.json();
+      const { slots, serviceRadiusKm: bodyServiceRadiusKm, service_radius: bodyServiceRadiusSnake } = body;
 
       if (!Array.isArray(slots)) {
         return c.json({ error: 'slots array is required' }, 400);
       }
+
+      const parseTravelRadiusKm = (): number | null => {
+        const candidates = [bodyServiceRadiusKm, bodyServiceRadiusSnake];
+        for (const raw of candidates) {
+          if (raw === undefined || raw === null || raw === '') continue;
+          const n = typeof raw === 'number' ? raw : parseFloat(String(raw));
+          if (Number.isFinite(n) && n > 0 && n <= 500) return n;
+        }
+        return null;
+      };
+      const travelRadiusKmFromBody = parseTravelRadiusKm();
 
       const trimmedVendorId = (vendorId || '').trim();
       if (!trimmedVendorId) {
@@ -1521,6 +1533,45 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       // Use the actual vendor ID (might be different if found by phone or vendor_id)
       const finalVendorId = actualVendorId;
 
+      const vendorGeoRows = await select('vendors', { id: finalVendorId });
+      const vendorRowForSlots = vendorGeoRows[0] ?? null;
+
+      function mergeSlotLocationForInsert(
+        raw: unknown,
+        serviceStyles: string[],
+        v: Record<string, unknown> | null,
+        radiusKm: number | null
+      ): Record<string, unknown> | null {
+        const styles = Array.isArray(serviceStyles) ? serviceStyles : [];
+        if (!styles.includes('at_home')) {
+          if (raw == null) return null;
+          if (typeof raw === 'object' && !Array.isArray(raw)) return { ...(raw as Record<string, unknown>) };
+          return null;
+        }
+        const rawObj =
+          raw != null && typeof raw === 'object' && !Array.isArray(raw)
+            ? { ...(raw as Record<string, unknown>) }
+            : {};
+        const addr = v && typeof v.address === 'string' ? String(v.address).trim() : '';
+        const lat = v?.latitude != null && v.latitude !== '' ? Number(v.latitude) : NaN;
+        const lng = v?.longitude != null && v.longitude !== '' ? Number(v.longitude) : NaN;
+        let r = radiusKm;
+        if (r == null || !Number.isFinite(r)) {
+          const sr = v?.service_radius;
+          if (sr != null && sr !== '') r = Number(sr);
+        }
+        const out: Record<string, unknown> = { ...rawObj };
+        if (addr) out.address = addr;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          out.lat = lat;
+          out.lng = lng;
+        }
+        if (r != null && Number.isFinite(Number(r)) && Number(r) > 0) {
+          out.serviceRadiusKm = Number(r);
+        }
+        return Object.keys(out).length ? out : null;
+      }
+
       // Ensure vendor_availability_v2 has the required columns (add individually to avoid conflicts)
       try {
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {});
@@ -1546,7 +1597,13 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
-        const locationData = slot.locationData || slot.location_data || null;
+        const rawLoc = slot.locationData || slot.location_data || null;
+        const locationData = mergeSlotLocationForInsert(
+          rawLoc,
+          serviceStyles,
+          vendorRowForSlots as Record<string, unknown> | null,
+          travelRadiusKmFromBody
+        );
         // Lead time per service style (e.g. at_home: 45 travel, at_center: 15 prep, tele: 5 setup); replaces single buffer_time
         const leadTimeByStyle = slot.leadTimeByStyle || slot.lead_time_by_style || null;
         let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
@@ -1691,6 +1748,17 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         }, 500);
       }
 
+      if (travelRadiusKmFromBody != null) {
+        try {
+          await query(`UPDATE vendors SET service_radius = $1, updated_at = NOW() WHERE id = $2`, [
+            travelRadiusKmFromBody,
+            finalVendorId,
+          ]);
+        } catch (updErr: any) {
+          console.warn('[AVAILABILITY] Could not persist service_radius on vendor row:', updErr?.message);
+        }
+      }
+
       return c.json({ 
         success: true, 
         message: `Availability saved successfully (${insertedSlots.length} slots)`,
@@ -1791,6 +1859,42 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         ).catch(() => ({ rows: [] }));
       }
 
+      const vLat =
+        vendor.latitude != null && vendor.latitude !== '' ? Number(vendor.latitude) : NaN;
+      const vLng =
+        vendor.longitude != null && vendor.longitude !== '' ? Number(vendor.longitude) : NaN;
+      const vendorCoordsOk = Number.isFinite(vLat) && Number.isFinite(vLng);
+      const vRad =
+        vendor.service_radius != null && vendor.service_radius !== ''
+          ? Number(vendor.service_radius)
+          : NaN;
+
+      const mapSlotLocationData = (raw: unknown): Record<string, unknown> | null => {
+        if (raw == null) return null;
+        let ld: Record<string, unknown>;
+        try {
+          ld =
+            typeof raw === 'string'
+              ? (JSON.parse(raw || '{}') as Record<string, unknown>)
+              : ({ ...(raw as Record<string, unknown>) } as Record<string, unknown>);
+        } catch {
+          return null;
+        }
+        if (!ld || typeof ld !== 'object') return null;
+        const out = { ...ld };
+        if (vendorCoordsOk) {
+          out.lat = vLat;
+          out.lng = vLng;
+          if (typeof vendor.address === 'string' && vendor.address.trim()) {
+            out.address = vendor.address.trim();
+          }
+        }
+        if (Number.isFinite(vRad) && vRad > 0) {
+          out.serviceRadiusKm = vRad;
+        }
+        return out;
+      };
+
       return c.json({
         success: true,
         allowedServiceStyles: allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_center', 'at_home', 'tele'],
@@ -1805,9 +1909,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
               startTime: s.time_window_start || s.start_time,
               endTime: s.time_window_end || s.end_time,
               serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ['at_center']),
-              locationData: typeof s.location_data === 'string'
-                ? JSON.parse(s.location_data)
-                : s.location_data,
+              locationData: mapSlotLocationData(s.location_data),
               leadTimeByStyle: leadTimeByStyle || undefined,
               bufferTime: leadTimeByStyle ? undefined : (s.buffer_time || s.buffer_time_minutes || 15),
               maxCapacity: s.max_capacity || 1,

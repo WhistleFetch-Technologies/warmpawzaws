@@ -23,6 +23,13 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
+import {
+  parseRoleConfigJson,
+  resolveAndPersistVendorType,
+  enrichVendorLocationFromOnboardingApplication,
+  inferVendorKindFromServiceCategory,
+  type VendorKind,
+} from './vendor-profile.vendor';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -364,6 +371,16 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     }
   } catch {}
 
+  const payloadVtRaw = payload.vendorType || payload.vendor_type;
+  const payloadVt =
+    payloadVtRaw === 'solo' || payloadVtRaw === 'business' ? payloadVtRaw : null;
+  const idVtRaw = (identity as any).vendor_type;
+  const idVt = idVtRaw === 'solo' || idVtRaw === 'business' ? idVtRaw : null;
+  const fromServiceCategory = inferVendorKindFromServiceCategory(
+    payload.serviceCategory ?? payload.service_category
+  );
+  const resolvedVendorType: VendorKind = idVt || payloadVt || fromServiceCategory || 'business';
+
   const newVendor = await insert('vendors', {
     id: finalVendorId,
     phone: identity.phone,
@@ -371,7 +388,7 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
     owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
     role_id: identity.selected_role_id,
-    vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
+    vendor_type: resolvedVendorType,
     category: 'general',
     address: payload.address || 'Not specified',
     city: payload.city || 'Not specified',
@@ -968,6 +985,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
         'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
+        'service_radius', // km; canonical value updated from Schedule & availability save
         'available_for_instant_tele' // ✅ Added for instant tele availability toggle
       ];
 
@@ -1160,7 +1178,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
 
       // ✅ Use shared resolver: checks vendors, vendor_identity, auto-creates if approved
-      const vendor = await resolveVendorById(vendorId);
+      let vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         const identities = await select('vendor_identity', { id: vendorId });
         if (identities.length > 0 && identities[0].onboarding_status !== 'APPROVED' && identities[0].onboarding_status !== 'ACTIVATED') {
@@ -1179,6 +1197,11 @@ export function registerVendorProfileEndpoints(app: Hono) {
           message: 'This vendor account no longer exists.'
         }, 404);
       }
+
+      // ✅ Align with vendor-profile.vendor: location backfill, persist vendor_type, parse roles.config JSON string
+      vendor = await enrichVendorLocationFromOnboardingApplication(vendor);
+      const resolvedVt = await resolveAndPersistVendorType(vendor);
+      vendor = { ...vendor, vendor_type: resolvedVt };
       
       // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
       let role = null;
@@ -1194,7 +1217,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendor.role_id });
           if (roles.length > 0) {
             role = roles[0];
-            roleConfig = role.config || {};
+            roleConfig = parseRoleConfigJson(role.config);
             customerService = role.customer_service || roleConfig?.customer_service || null;
             // ✅ FORENSIC: Use vendor's actual type (from onboarding) for filtering so vendor gets exactly role permissions filtered by their type
             const vendorType = (vendor as any).vendor_type;
@@ -1404,7 +1427,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendor.role_id });
           if (roles.length > 0) {
             role = roles[0];
-            roleConfig = role.config || {};
+            roleConfig = parseRoleConfigJson(role.config);
             
             // Get capabilities from DB (batch query)
             try {
@@ -2003,7 +2026,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendor.role_id });
           if (roles.length > 0) {
             role = roles[0];
-            roleConfig = role.config || {};
+            roleConfig = parseRoleConfigJson(role.config);
             
             const permissions = await select('role_permissions', { role_id: vendor.role_id });
             capabilities = permissions.map(p => p.permission_name);
