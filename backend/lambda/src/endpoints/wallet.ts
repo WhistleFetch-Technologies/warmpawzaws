@@ -60,6 +60,58 @@ async function getCustomerIdByPhone(phone: string): Promise<string | null> {
   }
 }
 
+/** Lifetime wallet credits / debits from ledger (for My Wallet summary UI). */
+async function getWalletLedgerTotals(
+  customerId: string
+): Promise<{ totalEarned: number; totalSpent: number }> {
+  try {
+    // Rows may use customer_id and/or wallet_id (legacy). Include both so totals match the ledger.
+    // Types vary by writer — include refund/topup as inflow; payment/purchase as spend.
+    const result = await query(
+      `SELECT
+        COALESCE(
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(COALESCE(wt.transaction_type::text, ''))) IN (
+                'credit','c','refund','r','topup','top_up','cashback','credit_adjustment'
+              )
+              THEN ABS(wt.amount::numeric)
+              ELSE 0::numeric
+            END
+          ),
+          0
+        )::text AS total_earned,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(COALESCE(wt.transaction_type::text, ''))) IN (
+                'debit','d','payout','payment','purchase','withdraw','debit_adjustment'
+              )
+              THEN ABS(wt.amount::numeric)
+              ELSE 0::numeric
+            END
+          ),
+          0
+        )::text AS total_spent
+       FROM wallet_transactions wt
+       WHERE wt.customer_id = $1::uuid
+          OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1::uuid)`,
+      [customerId]
+    );
+    if (!result.rows.length) {
+      return { totalEarned: 0, totalSpent: 0 };
+    }
+    const r = result.rows[0] as { total_earned?: string; total_spent?: string };
+    return {
+      totalEarned: parseFloat(String(r.total_earned ?? '0')) || 0,
+      totalSpent: parseFloat(String(r.total_spent ?? '0')) || 0,
+    };
+  } catch (e: any) {
+    console.warn('[WALLET] Ledger totals query failed:', e?.message);
+    return { totalEarned: 0, totalSpent: 0 };
+  }
+}
+
 // ============================================================================
 // WALLET HANDLERS
 // ============================================================================
@@ -77,22 +129,38 @@ class GetWalletHandler extends BaseHandler {
 
     // Get recent transactions
     const transactions = await this.getRecentTransactions(customerId);
+    const { totalEarned, totalSpent } = await getWalletLedgerTotals(customerId);
+
+    // Optional denormalized columns (when migration 008+ applied) — keep DB in sync with ledger truth.
+    try {
+      const colq = await query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
+      );
+      const cw = new Set(colq.rows.map((r) => r.column_name));
+      if (cw.has('total_earned') && cw.has('total_spent')) {
+        const hasUpd = cw.has('updated_at');
+        await query(
+          hasUpd
+            ? `UPDATE customer_wallets
+               SET total_earned = $1::numeric, total_spent = $2::numeric, updated_at = NOW()
+               WHERE customer_id = $3::uuid`
+            : `UPDATE customer_wallets
+               SET total_earned = $1::numeric, total_spent = $2::numeric
+               WHERE customer_id = $3::uuid`,
+          [totalEarned, totalSpent, customerId]
+        );
+      }
+    } catch (syncErr: any) {
+      console.warn('[WALLET] total_earned/total_spent sync skipped:', syncErr?.message);
+    }
 
     // Calculate loyalty points converted to wallet
     const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
     const totalLoyaltyCredits = loyaltyCredits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
+    // Single flat JSON body (BaseHandler.success) — avoids double-nested `data.data` on the client.
     return this.success({
-      success: true,
-      data: {
-        customerId: wallet.customer_id,
-        balance: parseFloat(wallet.balance),
-        currency: wallet.currency || 'INR',
-        lastUpdated: wallet.updated_at,
-        recentTransactions: transactions,
-        loyaltyPointsConverted: totalLoyaltyCredits, // Total ₹ converted from loyalty points
-        loyaltyTransactionsCount: loyaltyCredits.length,
-      },
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || 'INR',
@@ -100,6 +168,10 @@ class GetWalletHandler extends BaseHandler {
       recentTransactions: transactions,
       loyaltyPointsConverted: totalLoyaltyCredits,
       loyaltyTransactionsCount: loyaltyCredits.length,
+      totalEarned,
+      totalSpent,
+      total_earned: totalEarned,
+      total_spent: totalSpent,
     });
   }
 
@@ -155,9 +227,10 @@ class GetWalletHandler extends BaseHandler {
     try {
       const result = await query(
         `SELECT id, transaction_type, amount, balance_after, description, created_at, source, reference_type, reference_id
-         FROM wallet_transactions
-         WHERE customer_id = $1
-         ORDER BY created_at DESC
+         FROM wallet_transactions wt
+         WHERE wt.customer_id = $1
+            OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1)
+         ORDER BY wt.created_at DESC
          LIMIT 10`,
         [customerId]
       );
@@ -213,6 +286,7 @@ class GetWalletByPhoneHandler extends BaseHandler {
 
     // Get recent transactions
     const transactions = await this.getRecentTransactions(customerId);
+    const { totalEarned, totalSpent } = await getWalletLedgerTotals(customerId);
 
     // Calculate loyalty points converted to wallet
     const loyaltyCredits = transactions.filter(t => t.isLoyaltyConversion || t.source === 'loyalty_points');
@@ -227,6 +301,10 @@ class GetWalletByPhoneHandler extends BaseHandler {
         recentTransactions: transactions,
         loyaltyPointsConverted: totalLoyaltyCredits,
         loyaltyTransactionsCount: loyaltyCredits.length,
+        totalEarned,
+        totalSpent,
+        total_earned: totalEarned,
+        total_spent: totalSpent,
       },
     });
   }
@@ -284,9 +362,10 @@ class GetWalletByPhoneHandler extends BaseHandler {
                 COALESCE(source, '') as source, 
                 COALESCE(reference_type, '') as reference_type, 
                 COALESCE(reference_id::text, '') as reference_id
-         FROM wallet_transactions
-         WHERE customer_id = $1
-         ORDER BY created_at DESC
+         FROM wallet_transactions wt
+         WHERE wt.customer_id = $1
+            OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1)
+         ORDER BY wt.created_at DESC
          LIMIT 10`,
         [customerId]
       );
@@ -312,9 +391,10 @@ class GetWalletByPhoneHandler extends BaseHandler {
       try {
         const result = await query(
           `SELECT id, transaction_type, amount, balance_after, description, created_at
-           FROM wallet_transactions
-           WHERE customer_id = $1
-           ORDER BY created_at DESC
+           FROM wallet_transactions wt
+           WHERE wt.customer_id = $1
+              OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1)
+           ORDER BY wt.created_at DESC
            LIMIT 10`,
           [customerId]
         );
@@ -935,9 +1015,10 @@ class GetTransactionsByPhoneHandler extends BaseHandler {
 
     try {
       const result = await query(
-        `SELECT * FROM wallet_transactions
-         WHERE customer_id = $1
-         ORDER BY created_at DESC
+        `SELECT * FROM wallet_transactions wt
+         WHERE wt.customer_id = $1
+            OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1)
+         ORDER BY wt.created_at DESC
          LIMIT $2 OFFSET $3`,
         [customerId, Math.min(limit, 100), offset]
       );
@@ -1000,7 +1081,16 @@ class GetWalletTransactionsHandler extends BaseHandler {
       const hasWalletId = tableCheck.rows.some(r => r.column_name === 'wallet_id');
       
       let result;
-      if (hasCustomerId) {
+      if (hasCustomerId && hasWalletId) {
+        result = await query(
+          `SELECT * FROM wallet_transactions wt
+           WHERE wt.customer_id = $1::uuid
+              OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1::uuid)
+           ORDER BY wt.created_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, Math.min(limit, 100), offset]
+        );
+      } else if (hasCustomerId) {
         result = await query(
           `SELECT * FROM wallet_transactions
            WHERE customer_id = $1

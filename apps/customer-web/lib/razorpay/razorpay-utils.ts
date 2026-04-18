@@ -3,6 +3,75 @@
  * Centralized functions for Razorpay payment processing
  */
 
+/**
+ * Standard Checkout may request bad static chunks (e.g. …/build/undefined) and fail
+ * validate/account when options include undefined values, string "undefined", or
+ * invalid offer ids. Strip those before `new Razorpay(opts)`.
+ */
+export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(opts: T): T {
+  const out = { ...opts } as Record<string, any>;
+
+  for (const key of Object.keys(out)) {
+    const v = out[key];
+    if (v === undefined || v === null) {
+      delete out[key];
+      continue;
+    }
+
+    if (key === 'offers') {
+      if (!Array.isArray(v)) {
+        delete out[key];
+        continue;
+      }
+      const ids = v
+        .filter((x: unknown): x is string => typeof x === 'string')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && s !== 'undefined' && s !== 'null');
+      if (ids.length === 0) delete out[key];
+      else out[key] = ids;
+      continue;
+    }
+
+    if (key === 'prefill' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      const p = { ...(v as Record<string, unknown>) };
+      for (const pk of Object.keys(p)) {
+        const pv = p[pk];
+        if (pv === undefined || pv === null || pv === '') {
+          delete p[pk];
+        } else if (typeof pv === 'string') {
+          const t = pv.trim();
+          if (!t || t === 'undefined' || t === 'null') delete p[pk];
+        }
+      }
+      if (Object.keys(p).length === 0) delete out[key];
+      else out[key] = p;
+      continue;
+    }
+
+    if (key === 'notes' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      const n = { ...(v as Record<string, unknown>) };
+      for (const nk of Object.keys(n)) {
+        if (n[nk] === undefined || n[nk] === null) delete n[nk];
+      }
+      if (Object.keys(n).length === 0) delete out[key];
+      else out[key] = n;
+    }
+  }
+
+  const desc = out.description;
+  if (desc === undefined || desc === null || (typeof desc === 'string' && !String(desc).trim())) {
+    out.description = 'Payment';
+  } else if (typeof desc === 'string' && desc.includes('undefined')) {
+    out.description = 'Payment';
+  }
+
+  if (typeof out.amount === 'number' && Number.isFinite(out.amount)) {
+    out.amount = Math.max(1, Math.round(out.amount));
+  }
+
+  return out as T;
+}
+
 export interface RazorpayOrderResponse {
   orderId: string;
   keyId?: string;
@@ -94,24 +163,26 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     throw new Error('Razorpay key is missing. Please provide keyId or set NEXT_PUBLIC_RAZORPAY_KEY environment variable.');
   }
 
-  const razorpayOptions = {
+  const digits =
+    options.customerPhone && String(options.customerPhone).trim()
+      ? String(options.customerPhone).replace(/\D/g, '')
+      : '';
+  const razorpayOptions = sanitizeRazorpayInstanceOptions({
     key: razorpayKey,
     amount: Math.round(options.amount * 100), // Convert to paise
     currency: options.currency || 'INR',
     name: 'Warmpawz',
-    description: options.description,
+    description: options.description?.trim() ? options.description : 'Payment',
     order_id: options.orderId,
     handler: options.onSuccess,
-    prefill: options.customerPhone ? {
-      contact: options.customerPhone.replace(/[^0-9]/g, ''),
-    } : undefined,
+    ...(digits.length > 0 ? { prefill: { contact: digits } } : {}),
     theme: {
       color: '#FF8C42',
     },
     modal: {
       ondismiss: options.onDismiss || (() => { }),
     },
-  };
+  });
 
   const razorpay = new (window as any).Razorpay(razorpayOptions);
   razorpay.open();

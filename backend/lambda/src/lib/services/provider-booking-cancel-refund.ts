@@ -9,6 +9,7 @@ import {
   previewProviderCancellationRefund,
   type BookingForPolicy,
 } from './cancellation-policy-service';
+import { hasCustomerPaidCapture } from './refundable-base';
 
 export const VENDOR_CANCELLATION_REASON_SLUGS = ['emergency', 'operational', 'technical'] as const;
 export type VendorCancellationReasonSlug = (typeof VENDOR_CANCELLATION_REASON_SLUGS)[number];
@@ -69,11 +70,16 @@ export async function applyRefundAfterProviderCancellation(
   options?: { refundMethod?: 'wallet' | 'original' }
 ): Promise<ProviderCancelRefundInfo | null> {
   const refundMethod = options?.refundMethod ?? 'wallet';
-  if (String(bookingRow.payment_status) !== 'paid' || !(Number(bookingRow.total_amount) > 0)) {
+  const bookingId = String(bookingRow.id);
+  const hasPaid = await hasCustomerPaidCapture(bookingId, {
+    total_amount: bookingRow.total_amount,
+    discount_amount: bookingRow.discount_amount,
+    payment_status: bookingRow.payment_status,
+  });
+  if (!hasPaid) {
     return null;
   }
 
-  const bookingId = String(bookingRow.id);
   const bookingForPolicy = rowToBookingForPolicy(bookingRow);
 
   try {

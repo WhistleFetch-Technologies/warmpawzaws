@@ -11,6 +11,7 @@ import {
   formatWalletTopUpError,
   normalizeRazorpayCreateOrderResponse,
 } from '@/lib/wallet-razorpay-helpers';
+import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
 
 interface WalletData {
   balance: number;
@@ -60,22 +61,88 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
     loadTransactions();
   }, [customerPhone, filter]);
 
+  const extractWalletPayload = (response: any): any => {
+    if (!response || typeof response !== 'object') return null;
+    const top = response;
+    const d1 = top.data;
+    if (d1 && typeof d1 === 'object') {
+      if (d1.balance != null || d1.totalEarned != null || d1.customerId != null) return d1;
+      if (d1.data && typeof d1.data === 'object') return d1.data;
+      if (d1.wallet && typeof d1.wallet === 'object') return d1.wallet;
+    }
+    if (top.wallet && typeof top.wallet === 'object') return top.wallet;
+    if (top.balance != null || top.totalEarned != null) return top;
+    return top;
+  };
+
   const normalizeWalletResponse = (response: any): WalletData | null => {
     if (!response) return null;
-    const data = response.data || response.wallet || response;
+    const data = extractWalletPayload(response);
     if (!data) return null;
+
+    let totalEarned = Number(data.total_earned ?? data.totalEarned ?? 0);
+    let totalSpent = Number(data.total_spent ?? data.totalSpent ?? 0);
+    const recent = data.recentTransactions;
+    if (
+      totalEarned === 0 &&
+      totalSpent === 0 &&
+      Array.isArray(recent) &&
+      recent.length > 0
+    ) {
+      for (const t of recent) {
+        const typ = String(t.type ?? t.transaction_type ?? t.transactionType ?? '').toLowerCase();
+        const amt = Math.abs(Number(t.amount ?? 0));
+        if (typ === 'credit' || typ === 'c') totalEarned += amt;
+        else if (typ === 'debit' || typ === 'd') totalSpent += amt;
+      }
+    }
 
     return {
       balance: Number(data.balance ?? data.currentBalance ?? data.walletBalance ?? 0),
       pending_credits: Number(data.pending_credits ?? data.pendingCredits ?? 0),
-      total_earned: Number(data.total_earned ?? data.totalEarned ?? 0),
-      total_spent: Number(data.total_spent ?? data.totalSpent ?? 0),
+      total_earned: totalEarned,
+      total_spent: totalSpent,
     };
+  };
+
+  const extractTransactionsPayload = (response: any): any => {
+    if (!response || typeof response !== 'object') return null;
+    const d1 = (response as any).data;
+    if (d1 && typeof d1 === 'object' && !Array.isArray(d1)) {
+      if (Array.isArray(d1.transactions) || Array.isArray(d1.recentTransactions)) return d1;
+      if (d1.data && typeof d1.data === 'object') return d1.data;
+    }
+    return response;
+  };
+
+  /** Align with backend wallet ledger classification (refund = inflow, payment = spend). */
+  const ledgerTotalsFromTransactions = (rows: Transaction[]): { earned: number; spent: number } => {
+    let earned = 0;
+    let spent = 0;
+    for (const t of rows) {
+      const typ = String(t.type ?? '').toLowerCase().trim();
+      const amt = Math.abs(Number(t.amount ?? 0));
+      if (!amt) continue;
+      if (
+        ['credit', 'c', 'refund', 'r', 'topup', 'top_up', 'cashback'].includes(typ) ||
+        typ.includes('refund') ||
+        typ.includes('credit')
+      ) {
+        earned += amt;
+      } else if (
+        ['debit', 'd', 'payout', 'payment', 'purchase', 'withdraw'].includes(typ) ||
+        typ.includes('debit') ||
+        typ.includes('payout')
+      ) {
+        spent += amt;
+      }
+    }
+    return { earned, spent };
   };
 
   const normalizeTransactionsResponse = (response: any): Transaction[] => {
     if (!response) return [];
-    const data = response.data || response;
+    const data = extractTransactionsPayload(response) || response;
     const list = data.transactions || data.recentTransactions || [];
     if (!Array.isArray(list)) return [];
 
@@ -104,10 +171,19 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
 
       setCustomerId(id);
 
-      // Then get wallet using customer ID
-      const response = await apiClient.get<any>(`/wallet/${id}`);
-      const normalized = normalizeWalletResponse(response);
+      const [walletRes, txRes] = await Promise.all([
+        apiClient.get<any>(`/wallet/${id}`),
+        apiClient.get<any>(`/wallet/${id}/transactions?limit=500&offset=0`).catch(() => null),
+      ]);
+
+      const normalized = normalizeWalletResponse(walletRes);
       if (normalized) {
+        if (txRes) {
+          const txs = normalizeTransactionsResponse(txRes);
+          const { earned, spent } = ledgerTotalsFromTransactions(txs);
+          normalized.total_earned = Math.max(normalized.total_earned, earned);
+          normalized.total_spent = Math.max(normalized.total_spent, spent);
+        }
         setWallet(normalized);
       }
     } catch (err) {
@@ -222,6 +298,8 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
 
       const payAmountPaise = Math.round(order.amount * 100);
 
+      const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+
       const options = {
         key: order.keyId,
         amount: payAmountPaise,
@@ -272,9 +350,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
             setProcessingTopUp(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
+        ...(phoneDigits.length > 0 ? { prefill: { contact: phoneDigits } } : {}),
         theme: {
           color: '#F97316', // Orange primary color
         },
@@ -285,7 +361,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
         },
       };
 
-      const razorpay = new window.Razorpay(options);
+      const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
       razorpay.open();
     } catch (error: any) {
       console.error('Error initiating top-up:', error);

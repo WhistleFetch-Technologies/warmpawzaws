@@ -16,7 +16,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query, upsert, deleteRows } from '../../../database/rds-connection';
+import { select, insert, update, query, upsert, deleteRows, withTransaction } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
@@ -206,43 +206,118 @@ export function registerLoyaltyEndpoints(app: Hono) {
         return c.json({ error: `Minimum ${minRedemption} points required for redemption` }, 400);
       }
 
-      // Check balance
-      let profile = await select('customer_loyalty_points', { customer_id: customerId });
-      if (profile.length === 0 || parseInt(profile[0]?.total_points || '0', 10) < points) {
-        return c.json({ error: 'Insufficient loyalty points' }, 400);
+      const cashValue = Math.round((points / rr) * 100) / 100;
+      if (!Number.isFinite(cashValue) || cashValue <= 0) {
+        return c.json({ error: 'Invalid redemption amount for given points' }, 400);
       }
 
-      // Create transaction
-      await insert('loyalty_transactions', {
-        customer_id: customerId,
-        transaction_type: 'redeemed',
-        points: -points,
-        reference_type: referenceType || null,
-        reference_id: referenceId || null,
-        description: description || `Redeemed ${points} points`,
+      const redeemDescription = description || `Redeemed ${points} points`;
+
+      const { remainingPoints, walletCredited } = await withTransaction(async (client) => {
+        const prof = await client.query(
+          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid FOR UPDATE`,
+          [customerId]
+        );
+        if (prof.rows.length === 0) {
+          throw new Error('Loyalty profile not found');
+        }
+        const bal = parseInt(String(prof.rows[0].total_points ?? '0'), 10);
+        if (bal < points) {
+          throw new Error('INSUFFICIENT_POINTS');
+        }
+
+        await client.query(
+          `INSERT INTO loyalty_transactions
+             (customer_id, transaction_type, points, reference_type, reference_id, description)
+           VALUES ($1::uuid, 'redeemed', $2, $3, $4, $5)`,
+          [customerId, -points, referenceType || null, referenceId || null, redeemDescription]
+        );
+
+        await client.query(
+          `UPDATE customer_loyalty_points
+           SET total_points = COALESCE(total_points, 0) - $1,
+               lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1,
+               updated_at = NOW()
+           WHERE customer_id = $2::uuid`,
+          [points, customerId]
+        );
+
+        await client.query(
+          `INSERT INTO customer_wallets (customer_id, balance, currency)
+           VALUES ($1::uuid, 0, 'INR')
+           ON CONFLICT (customer_id) DO NOTHING`,
+          [customerId]
+        );
+        await client.query(
+          `SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+          [customerId]
+        );
+        const wup = await client.query(
+          `UPDATE customer_wallets SET balance = balance + $1::numeric, updated_at = NOW()
+           WHERE customer_id = $2::uuid RETURNING id, balance::text`,
+          [cashValue, customerId]
+        );
+        const walletRow = wup.rows[0] as { id: string; balance: string };
+        const newBal = parseFloat(String(walletRow?.balance ?? '0')) || 0;
+
+        const wtxnDesc = `Loyalty redeem: ${points} points → ₹${cashValue.toFixed(2)} (${rr} pts = ₹1)`;
+        await client.query('SAVEPOINT sp_loyalty_redeem_wt');
+        try {
+          await client.query(
+            `INSERT INTO wallet_transactions (
+               customer_id, transaction_type, amount, balance_after, description, source
+             ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4, 'loyalty_redeem')`,
+            [customerId, cashValue, newBal, wtxnDesc]
+          );
+          await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_wt');
+        } catch (colErr: any) {
+          await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
+          const msg = String(colErr?.message || '');
+          if (msg.includes('source') || msg.includes('column')) {
+            await client.query(
+              `INSERT INTO wallet_transactions (
+                 customer_id, transaction_type, amount, balance_after, description
+               ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4)`,
+              [customerId, cashValue, newBal, wtxnDesc]
+            );
+          } else {
+            throw colErr;
+          }
+        }
+
+        await client
+          .query(
+            `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
+            [cashValue, customerId]
+          )
+          .catch(() => null);
+
+        const after = await client.query(
+          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid`,
+          [customerId]
+        );
+        return {
+          remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
+          walletCredited: cashValue,
+        };
       });
-
-      // Update profile
-      await query(
-        `UPDATE customer_loyalty_points
-         SET total_points = total_points - $1,
-             lifetime_points_redeemed = lifetime_points_redeemed + $1
-         WHERE customer_id = $2`,
-        [points, customerId]
-      );
-
-      const updatedProfile = await select('customer_loyalty_points', { customer_id: customerId });
-      const cashValue = points / rr;
 
       return c.json({
         success: true,
         pointsRedeemed: points,
         cashValue,
-        remainingPoints: parseInt(updatedProfile[0]?.total_points || '0', 10), // Schema uses INTEGER
-        message: 'Points redeemed successfully',
+        walletCredited,
+        remainingPoints,
+        message: 'Points redeemed and credited to wallet successfully',
       });
     } catch (error: any) {
       console.error('Error redeeming loyalty points:', error);
+      if (error?.message === 'INSUFFICIENT_POINTS') {
+        return c.json({ error: 'Insufficient loyalty points' }, 400);
+      }
+      if (error?.message === 'Loyalty profile not found') {
+        return c.json({ error: 'Loyalty profile not found' }, 404);
+      }
       return c.json({ error: error.message }, 500);
     }
   });
