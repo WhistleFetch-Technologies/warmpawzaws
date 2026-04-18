@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, type MouseEvent } from "react";
 import {
   Home,
   Star,
@@ -17,8 +17,13 @@ import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { PromotionBanner } from "./shared/PromotionBanner";
 import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
-import { FeaturedProviderCard } from "./shared/FeaturedProviderCard";
-import { normalizeAndDedupeDiscoveryProviders } from "@/lib/featured-provider";
+import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandableCard";
+import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
+import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
+import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
+import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
+import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
+import type { BoardingServiceSlug } from "@/lib/boarding-service-types";
 import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
 
 interface PetSitterServiceRouterProps {
@@ -67,6 +72,8 @@ const SITTING_OPTIONS = [
   },
 ];
 
+const HUB_SLUG: BoardingServiceSlug = "all";
+
 export function PetSitterServiceRouter({
   phone,
   onBack,
@@ -74,9 +81,16 @@ export function PetSitterServiceRouter({
   hubMode = true,
   initialSittingOptionId,
 }: PetSitterServiceRouterProps) {
-  const [loading, setLoading] = useState(true);
-  const [sitters, setSitters] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const loadSitterRows = useCallback(() => fetchPetSitterHubRows(phone), [phone]);
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadSitterRows);
   const [previousSitter, setPreviousSitter] = useState<any>(null);
   /** Carried into `pet-sitter-booking` so the sitting flow can pre-match the vendor’s service row. */
   const [selectedSittingOption, setSelectedSittingOption] = useState<string | null>(null);
@@ -84,9 +98,8 @@ export function PetSitterServiceRouter({
   const scrollRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadSitters();
     loadPreviousSitter();
-  }, []);
+  }, [phone]);
 
   useEffect(() => {
     if (hubMode) return;
@@ -132,181 +145,6 @@ export function PetSitterServiceRouter({
     }
   };
 
-  const loadSitters = async () => {
-    try {
-      setLoading(true);
-      // discover-services requires serviceStyle; pet sitting is always at_home (matches HomeServiceProviderListView / WalkerService).
-      const locationParams = await (async (): Promise<string> => {
-        try {
-          const lat =
-            typeof localStorage !== "undefined" &&
-            localStorage.getItem("customer_latitude");
-          const lng =
-            typeof localStorage !== "undefined" &&
-            localStorage.getItem("customer_longitude");
-          if (lat && lng)
-            return `&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}`;
-        } catch {
-          /* ignore */
-        }
-        if (phone) {
-          try {
-            const profileRes = (await apiClient.get(
-              `/customer/profile?phone=${encodeURIComponent(phone)}`
-            )) as any;
-            const profile = profileRes?.profile || profileRes;
-            if (
-              profile?.latitude != null &&
-              profile?.longitude != null
-            ) {
-              return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        if (
-          typeof navigator !== "undefined" &&
-          navigator.geolocation
-        ) {
-          try {
-            const pos = await new Promise<GeolocationPosition>(
-              (resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(
-                  resolve,
-                  reject,
-                  { timeout: 8000, maximumAge: 600000 }
-                );
-              }
-            );
-            return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
-          } catch {
-            /* ignore */
-          }
-        }
-        return "";
-      })();
-
-      const phoneParam = phone
-        ? `&phone=${encodeURIComponent(phone)}`
-        : "";
-
-      const base =
-        "/customer/discover-services?category=sitting&serviceStyle=at_home";
-
-      const extractProviderList = (payload: any): any[] => {
-        if (!payload || typeof payload !== "object") return [];
-        const inner = payload.data && typeof payload.data === "object" ? payload.data : payload;
-        return (
-          inner.vendors ||
-          inner.providers ||
-          inner.services ||
-          []
-        );
-      };
-
-      const fetchSittersWithLocationSuffix = async (
-        locSuffix: string
-      ): Promise<any[]> => {
-        let list: any[] = [];
-
-        try {
-          const data = await apiClient.get<Record<string, unknown>>(
-            `${base}&roleId=pet_sitter${locSuffix}${phoneParam}`
-          );
-          list = extractProviderList(data);
-        } catch {
-          list = [];
-        }
-
-        if (list.length === 0) {
-          try {
-            const fallback = await apiClient.get<Record<string, unknown>>(
-              `${base}${locSuffix}${phoneParam}`
-            );
-            list = extractProviderList(fallback);
-          } catch {
-            list = [];
-          }
-        }
-
-        if (list.length === 0) {
-          try {
-            const alt = await apiClient.get<Record<string, unknown>>(
-              `${base}&roleId=sitter${locSuffix}${phoneParam}`
-            );
-            list = extractProviderList(alt);
-          } catch {
-            list = [];
-          }
-        }
-
-        if (list.length === 0) {
-          try {
-            const svc = await apiClient.get<{ services?: any[] }>(
-              `/customer/services?roleId=pet_sitter&serviceStyle=at_home${locSuffix}`
-            );
-            const services = svc.services || [];
-            const byVendor = new Map<string, any>();
-            for (const s of services) {
-              const vid = s.vendorId;
-              if (!vid || byVendor.has(vid)) continue;
-              byVendor.set(vid, {
-                id: vid,
-                vendorId: vid,
-                businessName: s.vendorName,
-                name: s.vendorName,
-                rating: 4.7,
-                basePrice: s.price,
-              });
-            }
-            list = Array.from(byVendor.values());
-          } catch {
-            /* ignore */
-          }
-        }
-
-        return list;
-      };
-
-      let list = await fetchSittersWithLocationSuffix(locationParams);
-      /* When lat/lng is present, API applies a radius; sitters outside it or without geocode vanish. Retry without coords so the list is stable. */
-      if (list.length === 0 && locationParams) {
-        list = await fetchSittersWithLocationSuffix("");
-      }
-
-      setSitters(list);
-      const dedupedSitters = normalizeAndDedupeDiscoveryProviders(list, "sitting");
-      setStats({
-        activeSitters: dedupedSitters.length || list.length || 12,
-        visits: "8K+",
-        rating:
-          dedupedSitters.length > 0
-            ? Number(
-                dedupedSitters.reduce(
-                  (acc, v) => acc + Number(v.rating || 0),
-                  0
-                ) / dedupedSitters.length
-              ).toFixed(1)
-            : list.length > 0
-              ? Number(
-                  list.reduce(
-                    (acc: number, v: any) =>
-                      acc + Number(v.rating || 4.7),
-                    0
-                  ) / list.length
-                ).toFixed(1)
-              : "4.7",
-      });
-    } catch (e) {
-      console.error("Error loading pet sitters:", e);
-      setSitters([]);
-      setStats({ activeSitters: 12, visits: "8K+", rating: "4.7" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const goBook = (vendorId: string) => {
     onNavigate?.("pet-sitter-booking", {
       vendorId,
@@ -315,10 +153,23 @@ export function PetSitterServiceRouter({
     });
   };
 
-  const featuredSitters = normalizeAndDedupeDiscoveryProviders(sitters, "sitting");
-  const displaySitters = hubMode
-    ? featuredSitters.slice(0, 5)
-    : featuredSitters;
+  const handleBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    onNavigate?.("pet-sitter-booking", {
+      vendorId: v.id,
+      serviceType: "sitting",
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      sittingOptionId: selectedSittingOption || undefined,
+    });
+  };
+
+  const openSitterDetails = (e: MouseEvent, vendorId: string) => {
+    e.stopPropagation();
+    goBook(vendorId);
+  };
+
+  const displaySitters = vendors;
 
   const scrollToFeatured = () => {
     const scrollEl = scrollRootRef.current;
@@ -358,7 +209,7 @@ export function PetSitterServiceRouter({
     scrollToFeatured();
   };
 
-  if (loading) {
+  if (vendorsLoading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
@@ -366,17 +217,22 @@ export function PetSitterServiceRouter({
     );
   }
 
-  const headerStats = stats
-    ? [
-        { value: `${stats.activeSitters}+`, label: "Sitters" },
-        { value: stats.visits, label: "Visits" },
-        {
-          value: stats.rating,
-          label: "Rating",
-          icon: <Star className="h-4 w-4 fill-current" />,
-        },
-      ]
-    : [];
+  const headerStats = useMemo(() => {
+    const n = vendors.length;
+    const rating =
+      n > 0
+        ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1)
+        : "4.7";
+    return [
+      { value: `${n > 0 ? n : 12}+`, label: "Sitters" },
+      { value: "8K+", label: "Visits" },
+      {
+        value: rating,
+        label: "Rating",
+        icon: <Star className="h-4 w-4 fill-current" />,
+      },
+    ];
+  }, [vendors]);
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -532,11 +388,16 @@ export function PetSitterServiceRouter({
                   </button>
                 ) : (
                   <span className="text-xs text-slate-400">
-                    {featuredSitters.length} nearby
+                    {vendors.length} nearby
                   </span>
                 )}
               </div>
-              <div className="space-y-3">
+              {relaxedFilter && (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+                  Showing all sitters we could match — expand for services and prices.
+                </p>
+              )}
+              <div className="space-y-4">
                 {displaySitters.length === 0 ? (
                   <Card className="p-8 text-center">
                     <div className="mb-3 text-4xl">🏠</div>
@@ -548,13 +409,29 @@ export function PetSitterServiceRouter({
                     </p>
                   </Card>
                 ) : (
-                  displaySitters.map((provider) => (
-                    <FeaturedProviderCard
-                      key={provider.id}
-                      provider={provider}
-                      onClick={() => goBook(provider.id)}
-                    />
-                  ))
+                  displaySitters.map((v) => {
+                    const expanded = selectedVendorId === v.id;
+                    const minP = minPriceForVendor(v);
+                    return (
+                      <BoardingVendorExpandableCard
+                        key={v.id}
+                        v={v}
+                        serviceSlug={HUB_SLUG}
+                        planBadgeLabel="Sitting"
+                        expanded={expanded}
+                        fetchingPlansFor={fetchingPlansFor}
+                        minPrice={minP}
+                        onToggleHeader={() => toggleVendor(v.id)}
+                        onViewServices={(e) => {
+                          e.stopPropagation();
+                          setSelectedVendorId(v.id);
+                        }}
+                        onDetails={openSitterDetails}
+                        onBookPlan={handleBookPlan}
+                        onOpenCenterDetails={openSitterDetails}
+                      />
+                    );
+                  })
                 )}
               </div>
             </div>

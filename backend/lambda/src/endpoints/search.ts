@@ -14,6 +14,9 @@
  * 
  * Date: 2025-01-28 (Updated: 2026-01-02)
  * Migration: Supabase to AWS Lambda
+ *
+ * Service result ids: OpenSearch warmpawz-services documents MUST use vendor_services.id
+ * (same as SQL fallback) so customer /booking/:id and GET /services/:id resolve correctly.
  * ============================================================================
  */
 
@@ -134,7 +137,7 @@ class UniversalSearchHandler extends BaseHandler {
       } else {
         services.push({
           id: source.id,
-          serviceName: source.service_name,
+          serviceName: source.service_name || source.name,
           description: source.description,
           price: source.price,
           vendorId: source.vendor_id,

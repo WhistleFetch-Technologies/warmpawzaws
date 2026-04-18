@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft, ChevronLeft, LucideIcon, CheckCircle2, X } from 'lucide-react';
-import { ReactNode } from 'react';
+import { Fragment, ReactNode } from 'react';
 
 export interface StatCard {
   value: string;
@@ -184,39 +184,59 @@ export function ServiceDashboardHeader({
           </div>
         )}
 
-        {/* ✅ FIX: Step Indicators in Orange Header Area */}
+        {/* Step indicators: two rows (circles + flex connectors, then equal-width labels) so 4–5 steps fit on narrow screens */}
         {steps && steps.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-white/20">
-            <div className="flex items-center justify-center gap-2">
-              {steps.map((step, index) => (
-                <div key={index} className="flex items-center">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
-                    step.isCompleted || step.isCurrent 
-                      ? 'bg-white text-[#FF8C42] shadow-lg' 
-                      : 'bg-white/20 text-white/70'
-                  }`}>
-                    {step.isCompleted ? (
-                      <CheckCircle2 className="w-4 h-4" />
-                    ) : (
-                      index + 1
+          <div className="mt-4 min-w-0 border-t border-white/20 pt-4">
+            <div className="w-full min-w-0 px-0.5 sm:px-1">
+              <div className="flex w-full min-w-0 items-center">
+                {steps.map((step, index) => (
+                  <Fragment key={index}>
+                    {index > 0 && (
+                      <div
+                        className={`h-0.5 min-w-[6px] flex-1 transition-all ${
+                          steps[index - 1].isCompleted ? 'bg-white' : 'bg-white/30'
+                        }`}
+                        aria-hidden
+                      />
                     )}
-                  </div>
-                  <div className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${
-                    step.isCurrent 
-                      ? 'bg-white text-[#FF8C42] font-semibold' 
-                      : step.isCompleted
-                      ? 'bg-white/30 text-white'
-                      : 'text-white/70'
-                  }`}>
+                    <div
+                      className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all ${
+                        step.isCompleted || step.isCurrent
+                          ? 'bg-white text-[#FF8C42] shadow-lg'
+                          : 'bg-white/20 text-white/70'
+                      }`}
+                    >
+                      {step.isCompleted ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        index + 1
+                      )}
+                    </div>
+                  </Fragment>
+                ))}
+              </div>
+              <div
+                className="mt-2 grid w-full min-w-0 gap-x-0.5 sm:gap-x-1"
+                style={{
+                  gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {steps.map((step, index) => (
+                  <div
+                    key={index}
+                    title={step.label}
+                    className={`min-w-0 truncate whitespace-nowrap rounded-lg px-0.5 py-1 text-center text-[10px] font-medium leading-tight transition-all sm:text-xs ${
+                      step.isCurrent
+                        ? 'bg-white font-semibold text-[#FF8C42]'
+                        : step.isCompleted
+                          ? 'bg-white/30 text-white'
+                          : 'text-white/70'
+                    }`}
+                  >
                     {step.label}
                   </div>
-                  {index < steps.length - 1 && (
-                    <div className={`w-6 h-0.5 mx-1 transition-all ${
-                      step.isCompleted ? 'bg-white' : 'bg-white/30'
-                    }`} />
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         )}

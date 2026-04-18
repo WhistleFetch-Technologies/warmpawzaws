@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,8 +13,12 @@ import { PromotionBanner } from './shared/PromotionBanner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
-import { FeaturedProviderCard } from './shared/FeaturedProviderCard';
-import { featuredProviderFromLegacyVet } from '@/lib/featured-provider';
+import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
+import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -27,19 +31,26 @@ interface VetServiceRouterProps {
  * ✅ FIX: Added pet context validation to prevent crashes (VET-CUST-001)
  * Vet services require a pet to be selected before booking
  */
+const HUB_SLUG: BoardingServiceSlug = 'all';
+
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
   const vetProblems = useProblemGridByRole('vet');
-  const [loading, setLoading] = useState(true);
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
-  const [featuredVets, setFeaturedVets] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [showBookingHistory, setShowBookingHistory] = useState(false);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   // ✅ FIX #13: Track all error states
-  const [vetDataError, setVetDataError] = useState<string | null>(null);
   
   // User profile data for header
   const [userName, setUserName] = useState('User');
@@ -49,11 +60,10 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   useEffect(() => {
     loadPets();
-    loadVetData();
     loadDashboardConfig();
     loadUserProfile();
     loadPreviousVet();
-  }, []);
+  }, [phone]);
 
   const loadPreviousVet = async () => {
     try {
@@ -133,173 +143,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       }
     } catch (error) {
       console.error('Error loading dashboard config:', error);
-    }
-  };
-
-  const loadVetData = async () => {
-    try {
-      setLoading(true);
-      setVetDataError(null);
-
-      // Get customer location for distance/radius: profile lat/lng or geolocation
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-      try {
-        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          latitude = String(profile.latitude);
-          longitude = String(profile.longitude);
-        }
-      } catch (_) { /* ignore */ }
-      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-          });
-          latitude = String(pos.coords.latitude);
-          longitude = String(pos.coords.longitude);
-        } catch (_) { /* ignore */ }
-      }
-      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
-      
-      // ✅ FIX: Try multiple endpoints to find vendors
-      let servicesData: any[] = [];
-      
-      // Try 1: discover-services endpoint (with location for distance and radius filtering)
-      try {
-        const endpoint = `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`;
-        const data = await apiClient.get<any>(endpoint);
-        console.log('🔵 [VetServiceRouter] discover-services response:', data);
-        
-        // Handle different response formats
-        if (Array.isArray(data)) {
-          servicesData = data;
-        } else if (data?.vendors && Array.isArray(data.vendors)) {
-          servicesData = data.vendors;
-        } else if (data?.services && Array.isArray(data.services)) {
-          servicesData = data.services;
-        } else if (data?.results && Array.isArray(data.results)) {
-          servicesData = data.results;
-        } else if (data?.data && Array.isArray(data.data)) {
-          servicesData = data.data;
-        }
-      } catch (err) {
-        console.warn('⚠️ [VetServiceRouter] discover-services failed, trying alternatives:', err);
-      }
-      
-      // Try 2: If no data, try services/by-style endpoint
-      if (servicesData.length === 0) {
-        try {
-          const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-          const altEndpoint = `/customer/services/by-style?style=tele&category=vet${locationParams}${phoneParam}`;
-          const altData = await apiClient.get<any>(altEndpoint);
-          console.log('🔵 [VetServiceRouter] services/by-style response:', altData);
-          
-          if (Array.isArray(altData)) {
-            servicesData = altData;
-          } else if (altData?.services && Array.isArray(altData.services)) {
-            servicesData = altData.services;
-          } else if (altData?.vendors && Array.isArray(altData.vendors)) {
-            servicesData = altData.vendors;
-          }
-        } catch (err) {
-          console.warn('⚠️ [VetServiceRouter] services/by-style also failed:', err);
-        }
-      }
-      
-      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
-      if (servicesData.length === 0) {
-        try {
-          const vendorsEndpoint = `/customer/vendors/search?roleId=veterinarian&limit=50${locationParams}`;
-          const vendorsData = await apiClient.get<any>(vendorsEndpoint);
-          console.log('🔵 [VetServiceRouter] vendors/search fallback response:', vendorsData);
-          
-          if (Array.isArray(vendorsData)) {
-            servicesData = vendorsData;
-          } else if (vendorsData?.vendors && Array.isArray(vendorsData.vendors)) {
-            servicesData = vendorsData.vendors;
-          } else if (vendorsData?.results && Array.isArray(vendorsData.results)) {
-            servicesData = vendorsData.results;
-          }
-        } catch (err) {
-          console.warn('⚠️ [VetServiceRouter] vendors/search fallback failed:', err);
-        }
-      }
-      
-      console.log('🔵 [VetServiceRouter] Final servicesData length:', servicesData.length);
-      
-      // Extract unique vet vendors
-      const vendorMap = new Map();
-      servicesData.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id;
-        if (!vendorId) return; // Skip if no vendor ID
-        
-        const vendorType = (service.vendorType || service.vendor_type || '').toLowerCase();
-        const roleId = String(service.vendorRoleId || service.roleId || service.role_id || '').toLowerCase();
-        const vendorName = service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name || '';
-        
-        // ✅ FIX: More lenient filtering - accept any vendor with vet-related roleId or category
-        const isVet = roleId.includes('vet') || 
-                      roleId.includes('veterinarian') ||
-                      roleId.includes('clinic') ||
-                      vendorType.includes('vet') || 
-                      vendorType.includes('clinic') || 
-                      vendorType.includes('healthcare') ||
-                      service.category === 'vet' ||
-                      service.category === 'veterinary' ||
-                      vendorName.toLowerCase().includes('vet') ||
-                      vendorName.toLowerCase().includes('clinic');
-        
-        if (isVet && !vendorMap.has(vendorId)) {
-          const dist =
-            service.distance ?? service.distanceKm ?? service.distance_km;
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            name: vendorName,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            reviews: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            specialty: service.specialty || 'General Veterinarian',
-            experience: service.experience || 5,
-            fee: service.price || service.base_price || 499,
-            location: service.vendorLocation || service.vendor_location || service.location,
-            serviceStyle: service.serviceStyle || service.service_style,
-            photo:
-              service.photo ||
-              service.vendorPhoto ||
-              service.photoUrl ||
-              service.profile_photo_url ||
-              null,
-            distanceKm:
-              dist != null && Number.isFinite(Number(dist))
-                ? Number(dist)
-                : null,
-          });
-        }
-      });
-      
-      const vets = Array.from(vendorMap.values());
-      console.log('🔵 [VetServiceRouter] Found vendors:', vets.length);
-      setFeaturedVets(vets.slice(0, 5));
-      
-      // Set stats based on real data only
-      setStats({
-        activeVets: vets.length,
-        consultations: vets.length > 0 ? `${Math.max(vets.length * 10, 100)}+` : '0',
-        rating: vets.length > 0 ? Number(vets.reduce((acc: number, v: any) => acc + Number(v.rating || 4.5), 0) / vets.length).toFixed(1) : '-'
-      });
-    } catch (error) {
-      console.error('❌ [VetServiceRouter] Error loading vet data:', error);
-      // ✅ FIX #13: Track error state
-      const errorMsg = error instanceof Error ? error.message : 'Failed to load veterinary services';
-      setVetDataError(errorMsg);
-      setStats({
-        activeVets: 0,
-        consultations: '0',
-        rating: '-'
-      });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -420,7 +263,32 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
-  if (loading) {
+  const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    handleNavigate('vet-doctor-details', {
+      doctorId: v.id,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+    });
+  };
+
+  const openVetDetails = (e: MouseEvent, vendorId: string) => {
+    e.stopPropagation();
+    handleNavigate('vet-doctor-details', { doctorId: vendorId });
+  };
+
+  const dashboardStats = useMemo(() => {
+    const n = vendors.length;
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '-';
+    const consultations = n > 0 ? `${Math.max(n * 10, 100)}+` : '0';
+    return [
+      { value: `${n}+`, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
+      { value: consultations, label: 'Consults' },
+      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ];
+  }, [vendors]);
+
+  if (vendorsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
@@ -428,42 +296,24 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     );
   }
 
-  // ✅ FIX #13: Show error state if pets or vet data failed to load
-  if (error || vetDataError) {
+  if (error) {
     return (
       <>
-        {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
         <div className="px-6 pt-8">
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
-            <p className="text-gray-600 mb-4">{error || vetDataError}</p>
+            <p className="text-gray-600 mb-4">{error}</p>
             <div className="flex gap-3 justify-center">
-              {error && (
-                <Button onClick={loadPets} variant="outline">Retry Pets</Button>
-              )}
-              {vetDataError && (
-                <Button onClick={loadVetData} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-                  Retry Services
-                </Button>
-              )}
+              <Button onClick={loadPets} variant="outline">
+                Retry Pets
+              </Button>
             </div>
           </Card>
         </div>
       </>
     );
   }
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activeVets || 0}+`, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: `${stats.consultations || 0}`, label: 'Consults' },
-    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ] : [
-    { value: '0+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: '0', label: 'Consults' },
-    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ position: 'relative', zIndex: 0 }}>
@@ -722,7 +572,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           }}
         />
 
-        {/* Featured Vets */}
+        {/* Featured Vets — same expandable pattern as vet-all-doctors */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Featured Vets</h2>
@@ -734,30 +584,37 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          
-          <div className="space-y-3">
-            {featuredVets.length > 0 ? (
-              featuredVets.slice(0, 3).map((vet) => (
-                <FeaturedProviderCard
-                  key={vet.id}
-                  provider={featuredProviderFromLegacyVet({
-                    id: vet.id,
-                    name: vet.name,
-                    specialty: vet.specialty,
-                    rating: vet.rating,
-                    reviews: vet.reviews,
-                    experience: vet.experience,
-                    fee: vet.fee,
-                    photo: vet.photo,
-                    distanceKm: vet.distanceKm,
-                  })}
-                  onClick={() =>
-                    handleNavigate('vet-doctor-details', { doctorId: vet.id })
-                  }
-                />
-              ))
+          {relaxedFilter && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+              Showing all veterinary providers we could match — expand for services and prices.
+            </p>
+          )}
+          <div className="space-y-4">
+            {vendors.length > 0 ? (
+              vendors.map((v) => {
+                const expanded = selectedVendorId === v.id;
+                const minP = minPriceForVendor(v);
+                return (
+                  <BoardingVendorExpandableCard
+                    key={v.id}
+                    v={v}
+                    serviceSlug={HUB_SLUG}
+                    planBadgeLabel="Vet"
+                    expanded={expanded}
+                    fetchingPlansFor={fetchingPlansFor}
+                    minPrice={minP}
+                    onToggleHeader={() => toggleVendor(v.id)}
+                    onViewServices={(e) => {
+                      e.stopPropagation();
+                      setSelectedVendorId(v.id);
+                    }}
+                    onDetails={openVetDetails}
+                    onBookPlan={handleVetBookPlan}
+                    onOpenCenterDetails={openVetDetails}
+                  />
+                );
+              })
             ) : (
-              // No vets available message
               <Card className="p-6 text-center bg-gray-50 border border-gray-200">
                 <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
                 <p className="text-gray-400 text-xs mt-1">Check back soon!</p>

@@ -66,12 +66,19 @@ const SERVICE_MAPPING = {
   mappings: {
     properties: {
       id: { type: 'keyword' },
+      /** vendor_services.service_name — primary field for GET /search OpenSearch multi_match */
+      service_name: { type: 'text', analyzer: 'standard' },
       name: { type: 'text', analyzer: 'standard' },
       description: { type: 'text', analyzer: 'standard' },
       category: { type: 'keyword' },
       service_style: { type: 'keyword' },
       vendor_id: { type: 'keyword' },
       vendor_name: { type: 'text' },
+      specialization: { type: 'text', analyzer: 'standard' },
+      city: { type: 'keyword' },
+      state: { type: 'keyword' },
+      /** Aligns with OpenSearch bool filter in search.ts (cross-index with vendors) */
+      status: { type: 'keyword' },
       price: { type: 'float' },
       duration: { type: 'integer' },
       rating: { type: 'float' },
