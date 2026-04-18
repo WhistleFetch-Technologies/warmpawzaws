@@ -15,6 +15,8 @@ import { query } from '../../database/rds-connection';
 export type BookingMoneySnapshot = {
   total_amount?: number | string | null;
   discount_amount?: number | string | null;
+  /** When set (e.g. from bookings row), used for cancel/refund gating with wallet + payment rows. */
+  payment_status?: string | null;
 };
 
 export type RefundablePaidBreakdown = {
@@ -27,6 +29,28 @@ export type RefundablePaidBreakdown = {
 function roundMoney(n: number): number {
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.round(n * 100) / 100;
+}
+
+/** Wallet applied to the booking (split-pay / wallet-only), not in Razorpay `payments.amount`. */
+async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number> {
+  if (!bookingId) return 0;
+  try {
+    const res = await query(
+      `SELECT COALESCE(SUM(amount::numeric), 0)::text AS w
+       FROM wallet_transactions
+       WHERE booking_id = $1::uuid
+         AND transaction_type = 'debit'
+         AND (
+           COALESCE(reference_type, '') IN ('booking_payment', 'payment', '')
+           OR description ILIKE '%Payment for booking%'
+         )`,
+      [bookingId]
+    );
+    const row = (res as any).rows?.[0];
+    return parseFloat(String(row?.w ?? '0')) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function loadCompletedPaymentTotals(bookingId: string): Promise<{
@@ -91,21 +115,29 @@ export async function getRefundableCustomerPaidBreakdown(
   const fromBookingNet = Math.max(0, gross - disc);
 
   const paymentTotals = await loadCompletedPaymentTotals(bookingId);
+  const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
 
-  if (paymentTotals && paymentTotals.paidTotal > 0) {
+  if (paymentTotals && (paymentTotals.paidTotal > 0 || walletPaid > 0)) {
     const { paidTotal, platformFeeTotal, refundableFromPayments } = paymentTotals;
+    const combinedRefundable = roundMoney(refundableFromPayments + walletPaid);
     if (gross > 0 && paidTotal > gross + 0.01) {
       const pfCapped = Math.min(platformFeeTotal, gross);
       const refundableCapped = Math.max(0, gross - pfCapped);
       return {
-        refundableBase: roundMoney(refundableCapped),
+        refundableBase: roundMoney(Math.min(combinedRefundable, refundableCapped)),
         platformFeeNonRefundable: roundMoney(pfCapped),
       };
     }
     return {
-      refundableBase: roundMoney(refundableFromPayments),
+      refundableBase: combinedRefundable,
       platformFeeNonRefundable: roundMoney(platformFeeTotal),
     };
+  }
+
+  if (walletPaid > 0) {
+    const cap = fromBookingNet > 0 ? fromBookingNet : gross;
+    const base = cap > 0 ? Math.min(walletPaid, cap) : walletPaid;
+    return { refundableBase: roundMoney(base), platformFeeNonRefundable: 0 };
   }
 
   if (fromBookingNet > 0) {
@@ -113,6 +145,33 @@ export async function getRefundableCustomerPaidBreakdown(
   }
 
   return { refundableBase: roundMoney(gross), platformFeeNonRefundable: 0 };
+}
+
+/**
+ * Whether the customer has money at stake for this booking: booking marked paid/completed,
+ * any wallet debit tied to the booking, or any completed payment row.
+ * Used so cancellation can refund wallet/Razorpay even when `bookings.payment_status` was not
+ * updated yet (e.g. wallet debited, Razorpay still pending) or when the row uses `completed`.
+ */
+export async function hasCustomerPaidCapture(
+  bookingId: string,
+  bookingRow?: BookingMoneySnapshot | null
+): Promise<boolean> {
+  if (!bookingId) return false;
+  const ps = String(bookingRow?.payment_status ?? '').toLowerCase();
+  if (ps === 'paid' || ps === 'completed') return true;
+  const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
+  if (walletPaid > 0.009) return true;
+  try {
+    const payRes = await query(
+      `SELECT 1 FROM payments WHERE booking_id = $1::uuid AND payment_status = 'completed' LIMIT 1`,
+      [bookingId]
+    );
+    const pr = payRes as { rows?: unknown[] };
+    return Array.isArray(pr.rows) && pr.rows.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

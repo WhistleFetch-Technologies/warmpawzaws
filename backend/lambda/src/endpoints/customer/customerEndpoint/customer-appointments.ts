@@ -18,6 +18,7 @@ import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 
 // ============================================================================
@@ -404,7 +405,12 @@ class CancelAppointmentHandler extends BaseHandler {
 
       // Apply refund per policy (vendor_refund_tiers by who cancels)
       let refundInfo: { amount: number; percentage: number; method: string; status: string; message: string } | null = null;
-      if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
+      const bookingPaidForRefund = await hasCustomerPaidCapture(String(bookingId), {
+        total_amount: bookingRow.total_amount as number | string | null,
+        discount_amount: (bookingRow as any).discount_amount ?? null,
+        payment_status: bookingRow.payment_status as string | null,
+      });
+      if (bookingPaidForRefund) {
         try {
           const preview = await previewCustomerCancellationRefund({
             id: bookingId,
@@ -422,7 +428,11 @@ class CancelAppointmentHandler extends BaseHandler {
           const refundPercentage = preview.refundPercentage;
           if (refundAmount > 0) {
             const payments = await query(
-              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+              `SELECT id FROM payments
+               WHERE booking_id = $1::uuid
+                 AND payment_status IN ('completed', 'partially_refunded')
+               ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+               LIMIT 1`,
               [bookingId]
             ).catch(() => ({ rows: [] }));
             const paymentId = (payments as any).rows?.[0]?.id;

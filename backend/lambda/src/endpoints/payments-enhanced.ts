@@ -32,6 +32,7 @@ import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
+import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -335,65 +336,50 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Total amount including fees (fees are added on top of tax-inclusive request amount)
       const totalAmount = amount + gstAmount + feesTotal;
 
-      // Handle wallet payment if requested
       let walletDebited = false;
-      let remainingAmount = totalAmount; // Use total amount including fees
-      let walletTransactionId = null;
+      let remainingAmount = totalAmount;
+      let walletDebitedAmount = 0;
 
-      if (useWallet && customerId) {
-        const walletAmountToUse = walletAmount > 0 ? walletAmount : amount;
-        
-        // Check wallet balance
-        const wallets = await select('customer_wallets', { customer_id: customerId });
-        if (wallets.length > 0) {
-          const walletBalance = parseFloat(wallets[0].balance || '0');
-          const actualWalletAmount = Math.min(walletAmountToUse, walletBalance, amount);
-          
-          if (actualWalletAmount > 0) {
-            // Debit wallet
-            const { query } = await import('../database/rds-connection');
-            const debitResult = await query(
-              `UPDATE customer_wallets
-               SET balance = balance - $1, updated_at = NOW()
-               WHERE customer_id = $2 AND balance >= $1
-               RETURNING id, balance`,
-              [actualWalletAmount, customerId]
-            );
-
-            if (debitResult.rows.length > 0) {
-              // Create wallet transaction
-              const walletTxn = await insert('wallet_transactions', {
-                wallet_id: wallets[0].id,
-                customer_id: customerId,
-                transaction_type: 'debit',
-                amount: actualWalletAmount,
-                source: 'payment',
-                description: `Payment for booking ${bookingId}`,
-                reference_id: bookingId,
-              });
-              
-              walletDebited = true;
-              walletTransactionId = walletTxn[0]?.id || null;
-              remainingAmount = amount - actualWalletAmount;
-              
-              console.log(`✅ [PAYMENT] Debited ₹${actualWalletAmount} from wallet, remaining: ₹${remainingAmount}`);
-            }
-          }
-        }
-      }
-
-      // Use transaction for atomicity
+      // Wallet debit + payment insert must be atomic (rollback wallet if payment insert fails)
       let payment: any;
       try {
         payment = await withTransaction(async (client) => {
+        let walletApplied = 0;
+        if (useWallet && effectiveCustomerId) {
+          const walletCap =
+            walletAmount > 0 ? Math.min(Number(walletAmount), totalAmount) : totalAmount;
+          const wbalRes = await client.query(
+            `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+            [effectiveCustomerId]
+          );
+          const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
+          const targetDebit = Math.min(walletCap, bal, totalAmount);
+          if (targetDebit > 0.009) {
+            const idem =
+              idempotencyKey != null && String(idempotencyKey).trim() !== ''
+                ? String(idempotencyKey).trim()
+                : `legacy-${bookingId}`;
+            const d = await debitCustomerWalletForBookingInTransaction(client, {
+              customerId: effectiveCustomerId,
+              bookingId,
+              amount: Math.round(targetDebit * 100) / 100,
+              idempotencyKey: idem,
+            });
+            walletApplied = d.debited;
+          }
+        }
+
+        const roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+        const fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
+
         const paymentData: any = {
           booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
           amount: amount, // Base service amount
           currency: 'INR',
-          payment_method: walletDebited && remainingAmount === 0 ? 'wallet' : (paymentMethod || 'razorpay'),
-          payment_status: walletDebited && remainingAmount === 0 ? 'completed' : 'pending',
+          payment_method: fullyWallet ? 'wallet' : (paymentMethod || 'razorpay'),
+          payment_status: fullyWallet ? 'completed' : 'pending',
         };
 
         // Add tax fields if calculated
@@ -433,12 +419,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           values
         );
 
-        return result.rows[0];
+        const row = result.rows[0];
+        return { row, walletApplied, remainingAfterWallet: roundedRemain };
       });
       } catch (txErr: any) {
         (txErr as Error & { step?: string }).step = 'payment_insert';
         throw txErr;
       }
+
+      walletDebitedAmount = (payment as any).walletApplied ?? 0;
+      remainingAmount = (payment as any).remainingAfterWallet ?? totalAmount;
+      walletDebited = walletDebitedAmount > 0;
+      payment = (payment as any).row;
 
       // Log audit entry
       await logAuditEntry({
@@ -483,7 +475,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         message: 'Payment created successfully',
         isNew: true,
         walletUsed: walletDebited,
-        walletAmount: walletDebited ? (walletAmount > 0 ? walletAmount : totalAmount - remainingAmount) : 0,
+        walletAmount: walletDebitedAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
         // Fee breakdown for frontend display
         fees: {

@@ -187,6 +187,12 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                 const pricePerMonth = mealPlan.price_per_month ?? mealPlan.pricePerMonth ?? mealPlan.monthly_price ?? 0;
                 const duration = mealPlan.duration_days ?? mealPlan.duration ?? 30;
                 const vendorRating = mealPlan.vendor_rating ?? mealPlan.vendorRating ?? mealPlan.avg_rating;
+                const mealImageUrl =
+                  mealPlan.mealImageUrl ||
+                  (mealPlan.dietary_requirements &&
+                    typeof mealPlan.dietary_requirements === 'object' &&
+                    mealPlan.dietary_requirements.mealImageUrl) ||
+                  null;
 
                 return (
                   <Card
@@ -195,10 +201,16 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                     onClick={() => handleMealPlanClick(mealPlan)}
                   >
                     <div className="flex items-start gap-4">
-                      {/* Meal Plan Icon */}
+                      {mealImageUrl ? (
+                        <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-slate-100 bg-slate-50">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={mealImageUrl} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
                       <div className="w-14 h-14 bg-yellow-100 rounded-xl flex items-center justify-center text-yellow-600 shrink-0">
                         <UtensilsCrossed className="w-6 h-6" />
                       </div>
+                      )}
 
                       {/* Meal Plan Info */}
                       <div className="flex-1 min-w-0">

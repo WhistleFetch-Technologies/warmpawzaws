@@ -40,6 +40,17 @@ function pickUuidFromByPhoneResponse(res: any): string | null {
   return isCustomerDatabaseUuid(s) ? s : null;
 }
 
+/** Flatten `{ success, data: { points… } }` and similar so loyalty fields are always readable. */
+function unwrapApiBody<T extends Record<string, unknown>>(res: T | null | undefined): T | null {
+  if (!res || typeof res !== 'object') return null;
+  const top = res as Record<string, unknown>;
+  const d = top.data as Record<string, unknown> | undefined;
+  if (d && typeof d === 'object' && !Array.isArray(d)) {
+    return { ...top, ...d } as T;
+  }
+  return res as T;
+}
+
 interface RewardsLoyaltyPageProps {
   phone?: string;
   customerPhone?: string;
@@ -149,21 +160,46 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
         apiClient.get<any>(`/customer/${id}/rewards/history`).catch(() => null),
       ]);
 
-      if (balanceRes?.success || balanceRes?.points !== undefined) {
+      const balanceBody = unwrapApiBody(balanceRes);
+      if (balanceBody?.success || balanceBody?.points !== undefined) {
         setBalance({
-          points: balanceRes.points || balanceRes.totalPoints || 0,
-          totalPoints: balanceRes.totalPoints || balanceRes.points || 0,
-          lifetimePointsEarned: balanceRes.lifetimePointsEarned || 0,
-          lifetimePointsRedeemed: balanceRes.lifetimePointsRedeemed || 0,
+          points: Number(balanceBody.points ?? balanceBody.totalPoints ?? 0),
+          totalPoints: Number(balanceBody.totalPoints ?? balanceBody.points ?? 0),
+          lifetimePointsEarned: Number(
+            balanceBody.lifetimePointsEarned ??
+              (balanceBody as any).lifetime_points_earned ??
+              0
+          ),
+          lifetimePointsRedeemed: Number(
+            balanceBody.lifetimePointsRedeemed ??
+              (balanceBody as any).lifetime_points_redeemed ??
+              0
+          ),
         });
       }
 
-      if (rewardsRes?.success || Array.isArray(rewardsRes?.rewards) || Array.isArray(rewardsRes?.catalog)) {
-        setRewards(rewardsRes.rewards || rewardsRes.catalog || rewardsRes || []);
+      const rewardsBody = unwrapApiBody(rewardsRes);
+      if (
+        rewardsBody?.success ||
+        Array.isArray((rewardsBody as any)?.rewards) ||
+        Array.isArray((rewardsBody as any)?.catalog)
+      ) {
+        setRewards(
+          (rewardsBody as any)?.rewards ||
+            (rewardsBody as any)?.catalog ||
+            (Array.isArray(rewardsBody) ? rewardsBody : []) ||
+            []
+        );
       }
 
-      if (historyRes?.success || Array.isArray(historyRes?.history)) {
-        setHistory(historyRes.history || historyRes || []);
+      const historyRaw = unwrapApiBody(historyRes) ?? historyRes;
+      const histList = Array.isArray(historyRaw)
+        ? historyRaw
+        : Array.isArray((historyRaw as any)?.history)
+          ? (historyRaw as any).history
+          : [];
+      if ((historyRaw as any)?.success || histList.length > 0) {
+        setHistory(histList);
       }
     } catch (err: any) {
       console.error('Error loading rewards:', err);
@@ -199,11 +235,30 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
         points: reward.points_cost,
       });
 
-      if (response.success) {
+      const redeemBody = unwrapApiBody(response) ?? response;
+      if (redeemBody?.success) {
         setSuccess(`Successfully redeemed: ${reward.name}! Check your rewards.`);
-        await loadData(); // Reload data
+        const rem = Number(
+          (redeemBody as any).points ??
+            (redeemBody as any).remainingPoints ??
+            balance?.points ??
+            0
+        );
+        const le = Number((redeemBody as any).lifetimePointsEarned ?? balance?.lifetimePointsEarned ?? 0);
+        const lr = Number((redeemBody as any).lifetimePointsRedeemed ?? balance?.lifetimePointsRedeemed ?? 0);
+        setBalance({
+          points: rem,
+          totalPoints: rem,
+          lifetimePointsEarned: le,
+          lifetimePointsRedeemed: lr,
+        });
+        await loadData();
       } else {
-        setError(response.message || 'Failed to redeem reward');
+        setError(
+          (redeemBody as any)?.message ||
+            (response as any)?.message ||
+            'Failed to redeem reward'
+        );
       }
     } catch (err: any) {
       console.error('Error redeeming reward:', err);

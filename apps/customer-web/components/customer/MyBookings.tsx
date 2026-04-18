@@ -304,7 +304,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   // ✅ Load refund preview based on actual backend policy (refund tiers / rules)
   const loadRefundPreview = async (booking: Booking) => {
     try {
-      if (booking.paymentStatus !== 'paid') {
+      const ps = String(booking.paymentStatus || '').toLowerCase();
+      // Preview uses ledger + policy; allow any paid-like state (backend also treats wallet debits as paid for cancel).
+      if (ps && !['paid', 'completed', 'pending_payment'].includes(ps)) {
         setEstimatedRefund({ percentage: 0, amount: 0 });
         return;
       }

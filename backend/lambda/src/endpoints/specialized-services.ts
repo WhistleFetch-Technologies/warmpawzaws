@@ -26,6 +26,10 @@ import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import {
+  fetchVendorProgressRowsFromBookings,
+  mergeTrainingProgressWithBookingDerived,
+} from '../lib/vendor-progress-from-bookings';
 
 export function registerSpecializedServicesEndpoints(app: Hono) {
   // ============================================
@@ -1543,12 +1547,32 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       queryStr += ` ORDER BY mp.created_at DESC`;
       
       const result = await query(queryStr, params);
-      const mealPlans = result.rows || [];
-      
-      return c.json({ 
-        success: true, 
-        plans: mealPlans, 
-        mealPlans, 
+      const rawPlans = result.rows || [];
+      const mealPlans = rawPlans.map((mp: any) => {
+        let dr: any = {};
+        try {
+          dr =
+            typeof mp.dietary_requirements === 'string'
+              ? JSON.parse(mp.dietary_requirements)
+              : mp.dietary_requirements || {};
+        } catch {
+          dr = {};
+        }
+        let photos = mp.photos;
+        try {
+          photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
+        } catch {
+          photos = [];
+        }
+        const mealImageUrl =
+          dr.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
+        return { ...mp, dietary_requirements: dr, photos, mealImageUrl };
+      });
+
+      return c.json({
+        success: true,
+        plans: mealPlans,
+        mealPlans,
         total: mealPlans.length,
         filters: filters,
         maxRadius: maxRadius,
@@ -1690,6 +1714,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
+      const mealImageUrl =
+        typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
       const dietaryPayload = {
         petTypes: data.petTypes || ['Dog', 'Cat'],
         dietType: data.dietType,
@@ -1700,6 +1726,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         storageInstructions: data.storageInstructions,
         shelfLife: data.shelfLife,
         packSize: data.packSize,
+        ...(mealImageUrl ? { mealImageUrl } : {}),
       };
 
       // Try products table first (with metadata if column exists)
@@ -1762,16 +1789,50 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const { productId } = c.req.param();
       const data = await c.req.json();
       const meta = data.metadata || {};
+
+      let existingDiet: any = {};
+      const existingMp = await query(
+        `SELECT dietary_requirements FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
+      );
+      if (existingMp.rows?.[0]) {
+        try {
+          const dr = existingMp.rows[0].dietary_requirements;
+          existingDiet = typeof dr === 'string' ? JSON.parse(dr) : (dr || {});
+        } catch {
+          existingDiet = {};
+        }
+      }
+
+      let existingProdMeta: any = {};
+      const existingProductRow = await query(
+        `SELECT metadata FROM products WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
+      );
+      if (existingProductRow.rows?.[0]?.metadata != null) {
+        try {
+          const m = existingProductRow.rows[0].metadata;
+          existingProdMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
+        } catch {
+          existingProdMeta = {};
+        }
+      }
+
+      const resolvedMealImageUrl = 'mealImageUrl' in data
+        ? (typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : null)
+        : (existingDiet.mealImageUrl ?? existingProdMeta.mealImageUrl ?? meta.mealImageUrl ?? null);
+
       const dietaryPayload = {
-        petTypes: data.petTypes || meta.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType ?? meta.dietType,
-        suitableFor: data.suitableFor ?? meta.suitableFor ?? [],
-        ingredients: data.ingredients ?? meta.ingredients ?? [],
-        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? {},
-        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime,
-        storageInstructions: data.storageInstructions ?? meta.storageInstructions,
-        shelfLife: data.shelfLife ?? meta.shelfLife,
-        packSize: data.packSize ?? meta.packSize,
+        petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
+        dietType: data.dietType ?? meta.dietType ?? existingDiet.dietType,
+        suitableFor: data.suitableFor ?? meta.suitableFor ?? existingDiet.suitableFor ?? [],
+        ingredients: data.ingredients ?? meta.ingredients ?? existingDiet.ingredients ?? [],
+        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? existingDiet.nutritionalValue ?? {},
+        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime ?? existingDiet.preparationLeadTime,
+        storageInstructions: data.storageInstructions ?? meta.storageInstructions ?? existingDiet.storageInstructions,
+        shelfLife: data.shelfLife ?? meta.shelfLife ?? existingDiet.shelfLife,
+        packSize: data.packSize ?? meta.packSize ?? existingDiet.packSize,
+        ...(resolvedMealImageUrl ? { mealImageUrl: resolvedMealImageUrl } : {}),
       };
 
       // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
@@ -1806,6 +1867,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       ).then((r: any) => (r?.rows?.length ?? 0) > 0);
 
       if (hasMetadata) {
+        const mergedProductMeta: any = { ...existingProdMeta, ...meta, ...dietaryPayload };
+        if ('mealImageUrl' in data && !(typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim())) {
+          delete mergedProductMeta.mealImageUrl;
+        }
         await query(
           `UPDATE products SET 
             name = COALESCE($1, name),
@@ -1818,7 +1883,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             data.name,
             data.description,
             data.price,
-            JSON.stringify({ ...meta, ...dietaryPayload }),
+            JSON.stringify(mergedProductMeta),
             productId,
             vendorId,
           ]
@@ -3579,24 +3644,43 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/training/progress", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      // Check if vendor has progress tracking capability
+
       const hasProgressCapability = await checkVendorCapability(vendorId, 'progress_tracking');
-      if (!hasProgressCapability) {
+      const hasGpsCapability = await checkVendorCapability(vendorId, 'gps_tracking');
+      if (!hasProgressCapability && !hasGpsCapability) {
         return c.json({ error: 'Vendor does not have progress tracking capability' }, 403);
       }
-      
-      const progress = await query(`
-        SELECT tp.*, p.name as pet_name, c.full_name as customer_name, trp.name as program_name
+
+      let enrollmentRows: Record<string, unknown>[] = [];
+      if (hasProgressCapability) {
+        const progress = await query(
+          `
+        SELECT tp.*,
+          p.name as pet_name,
+          c.full_name as customer_name,
+          trp.name as program_name,
+          trp.category as program_category,
+          trp.duration_weeks,
+          trp.sessions_per_week,
+          (COALESCE(trp.duration_weeks, 4) * COALESCE(trp.sessions_per_week, 2))::int as estimated_total_sessions
         FROM training_progress tp
         LEFT JOIN pets p ON tp.pet_id = p.id
         LEFT JOIN customers c ON tp.customer_id = c.id
         LEFT JOIN training_programs trp ON tp.program_id = trp.id
         WHERE tp.vendor_id = $1
         ORDER BY tp.updated_at DESC
-      `, [vendorId]).catch(() => ({ rows: [] }));
-      
-      return c.json({ success: true, progress: progress.rows, total: progress.rows.length });
+      `,
+          [vendorId]
+        ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+        enrollmentRows = progress.rows || [];
+      }
+
+      const bookingDerived = await fetchVendorProgressRowsFromBookings(vendorId, {
+        includeWalkAggregates: hasGpsCapability,
+      });
+      const merged = mergeTrainingProgressWithBookingDerived(enrollmentRows, bookingDerived);
+
+      return c.json({ success: true, progress: merged, total: merged.length });
     } catch (error: any) {
       console.error('Error fetching training progress:', error);
       return c.json({ error: error.message }, 500);

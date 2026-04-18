@@ -883,7 +883,7 @@ export function BoardingBookingRouter({
         serviceStyle={isPetSitting ? 'at_home' : 'at_center'}
         layoutVariant="appShell"
         customerPhone={phone}
-        customerId={phone}
+        customerId={customerId ?? undefined}
         bookingId={paymentBookingId}
         serviceId={paymentVendorServiceId}
         baseAmount={calculateTotalPrice()}

@@ -36,7 +36,9 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
+import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1015,7 +1017,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : petSittingServerTotalRupee != null
               ? petSittingServerTotalRupee
               : (amount || 0);
-        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const listedServerPrice =
+          (!selectedServices || selectedServices.length === 0) && petSittingServerTotalRupee == null
+            ? Number((service as any)?.custom_price ?? (service as any)?.price ?? 0) || 0
+            : 0;
+        const grossPayableBeforeWallet =
+          isPackageBooking || isSubscriptionBooking
+            ? 0
+            : listedServerPrice > 0
+              ? Math.max(calculatedBasePrice, listedServerPrice)
+              : calculatedBasePrice;
+        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
         const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
         
         // ✅ CRITICAL FIX: Extract coordinates from address_id or address field for GPS tracking
@@ -1347,6 +1359,89 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         
         if (!insertedBooking) {
           throw new Error('Failed to insert booking after removing missing columns');
+        }
+
+        // ✅ Wallet at booking time: debit inside same transaction (Razorpay path does not debit wallet).
+        const rawBookingBody = body as Record<string, unknown>;
+        const useWalletAtCreate =
+          rawBookingBody.useWallet === true ||
+          rawBookingBody.useWallet === 'true' ||
+          String(rawBookingBody.useWallet || '').toLowerCase() === 'true';
+        const reqWalletAmt = Math.max(
+          0,
+          parseFloat(String(rawBookingBody.walletAmount ?? rawBookingBody.wallet_amount ?? '0')) || 0
+        );
+        if (
+          !isPackageBooking &&
+          !isSubscriptionBooking &&
+          useWalletAtCreate &&
+          insertedBooking?.id &&
+          customerId
+        ) {
+          const gross = Math.round((parseFloat(String(insertedBooking.total_amount ?? 0)) || 0) * 100) / 100;
+          if (gross > 0) {
+            const cap = reqWalletAmt > 0 ? Math.min(reqWalletAmt, gross) : gross;
+            try {
+              const balRes = await client.query(
+                `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+                [customerId]
+              );
+              const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
+              const chunk = Math.round(Math.min(cap, bal, gross) * 100) / 100;
+              if (chunk > 0) {
+                await debitCustomerWalletForBookingInTransaction(client, {
+                  customerId,
+                  bookingId: String(insertedBooking.id),
+                  amount: chunk,
+                  idempotencyKey: `booking-create-${insertedBooking.id}`,
+                });
+              }
+              if (chunk + 1e-6 >= gross) {
+                await client.query(
+                  `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1::uuid`,
+                  [insertedBooking.id]
+                );
+                await client.query('SAVEPOINT sp_booking_wallet_payment');
+                try {
+                  const pc = await client.query<{ column_name: string }>(
+                    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments'`
+                  );
+                  const ec = new Set(pc.rows.map((r) => r.column_name));
+                  const pdata: Record<string, unknown> = {
+                    booking_id: insertedBooking.id,
+                    customer_id: customerId,
+                    vendor_id: insertedBooking.vendor_id,
+                    amount: chunk,
+                    currency: 'INR',
+                    payment_method: 'wallet',
+                    payment_status: 'completed',
+                  };
+                  const cols = Object.keys(pdata).filter((k) => ec.has(k));
+                  const vals = cols.map((k) => pdata[k]);
+                  const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
+                  if (cols.length >= 5) {
+                    await client.query(
+                      `INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`,
+                      vals
+                    );
+                  }
+                  await client.query('RELEASE SAVEPOINT sp_booking_wallet_payment');
+                } catch (wp: any) {
+                  await client.query('ROLLBACK TO SAVEPOINT sp_booking_wallet_payment').catch(() => {});
+                  console.warn('[BOOKING] wallet payment row insert skipped:', wp?.message || wp);
+                }
+              }
+              const refreshed = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [
+                insertedBooking.id,
+              ]);
+              if (refreshed.rows[0]) {
+                Object.assign(insertedBooking, refreshed.rows[0]);
+              }
+            } catch (wErr: any) {
+              console.error('[BOOKING] wallet debit at create failed:', wErr?.message || wErr);
+              throw wErr;
+            }
+          }
         }
 
         // ✅ Package booking: deduct session and log usage inside same transaction
@@ -2608,9 +2703,17 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made — use unified preview helper (same logic as preview endpoint)
+      // Process refund when the customer actually paid (booking paid/completed, completed payment,
+      // or wallet debited for this booking — not only bookings.payment_status, so split-pay /
+      // wallet-first before Razorpay confirm still gets a wallet credit on cancel).
+      const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
+        total_amount: currentBooking.total_amount,
+        discount_amount: currentBooking.discount_amount,
+        payment_status: currentBooking.payment_status,
+      });
+
       let refundInfo = null;
-      if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
+      if (bookingPaidForRefund) {
         try {
           const preview = await previewCustomerCancellationRefund({
             id: bookingId,
@@ -2646,6 +2749,14 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 };
               } catch (walletError) {
                 console.error('[CancelBooking] Wallet credit failed:', walletError);
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but wallet refund failed. Please contact support with your booking ID.',
+                };
               }
             } else if (refundMethod === 'original') {
               const payments = await query(

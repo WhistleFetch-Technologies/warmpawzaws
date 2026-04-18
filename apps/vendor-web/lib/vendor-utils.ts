@@ -107,6 +107,38 @@ export function hasVendorRole(
   });
 }
 
+/** True for dog/pet walker roles (booking-derived walk progress + live session tracking). */
+export function isVendorWalkerProgramProgress(vendorData: any): boolean {
+  return hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+}
+
+/** `ProgressTrackingDashboard` role → program-type inference (training vs behavioral vs nutrition vs walking). */
+export type VendorProgressRoleType = 'trainer' | 'behaviorist' | 'nutritionist' | 'walker';
+
+/**
+ * Maps vendor role to program progress UI (`ProgressTrackingDashboard` `roleType`).
+ * Walkers use `/bookings?walkSessions=1` + `/bookings/home-service/[id]` for live sessions, not training progress.
+ */
+export function getVendorProgressRoleType(vendorData: any): VendorProgressRoleType {
+  if (isVendorWalkerProgramProgress(vendorData)) {
+    return 'walker';
+  }
+  if (hasVendorRole(vendorData, ['nutritionist', 'pet_nutritionist', 'nutritionist_center'])) {
+    return 'nutritionist';
+  }
+  if (
+    hasVendorRole(vendorData, [
+      'pet_behaviorist',
+      'behaviorist_solo',
+      'behaviorist_center',
+      'behaviorist',
+    ])
+  ) {
+    return 'behaviorist';
+  }
+  return 'trainer';
+}
+
 /**
  * Check if vendor is a specific role type
  */

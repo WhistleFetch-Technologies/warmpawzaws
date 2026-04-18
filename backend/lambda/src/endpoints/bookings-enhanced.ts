@@ -36,6 +36,7 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { previewCustomerCancellationRefund } from '../lib/services/cancellation-policy-service';
+import { hasCustomerPaidCapture } from '../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../utils/credit-customer-wallet';
 import {
   CreateBookingRequestSchema,
@@ -2425,9 +2426,15 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made — same logic as preview/calculate-refund (tiers → legacy rules → default; net paid + coupons).
+      // Process refund when the customer actually paid (paid/completed status, completed payment,
+      // or wallet debited for this booking — aligns with booking router cancel handler).
       let refundInfo = null;
-      if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
+      const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
+        total_amount: currentBooking.total_amount,
+        discount_amount: currentBooking.discount_amount,
+        payment_status: currentBooking.payment_status,
+      });
+      if (bookingPaidForRefund) {
         try {
           const preview = await previewCustomerCancellationRefund({
             id: bookingId,

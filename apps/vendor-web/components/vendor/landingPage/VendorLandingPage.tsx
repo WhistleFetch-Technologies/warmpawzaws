@@ -9,12 +9,11 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
-import { getVendorRoleId, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
+import { getVendorRoleId, getVendorProgressRoleType, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
 import { DoctorManagement } from '../clinic/DoctorManagement';
 import { VendorBusinessHub } from '../business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from '../clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from '../resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
-import { NutritionistMealManager } from '../NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
 import { EnhancedVendorOnboarding } from '../onboarding/EnhancedVendorOnboarding';
 import { VendorApplicationSubmitted } from '../VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from '../VendorApplicationUnderReview';
@@ -114,7 +113,6 @@ export function VendorLandingPage({
   const [showBusinessHub, setShowBusinessHub] = useState(false);
   const [showSupportDashboard, setShowSupportDashboard] = useState(false);
   const [showVetSpecialized, setShowVetSpecialized] = useState(false);
-  const [showNutritionistMealManager, setShowNutritionistMealManager] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [showCCTV, setShowCCTV] = useState(false);
@@ -1156,17 +1154,6 @@ export function VendorLandingPage({
         );
       }
 
-      // ✅ NEW: Nutritionist Meal Manager
-      if (showNutritionistMealManager) {
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-
-            onBack={() => setShowNutritionistMealManager(false)}
-          />
-        );
-      }
-
       // ✅ FIX: Gallery Management
       if (showGallery) {
         return (
@@ -1327,10 +1314,11 @@ export function VendorLandingPage({
 
       // ✅ FIX: Progress Tracking Dashboard
       if (showProgressTracking) {
+        const progressRoleType = getVendorProgressRoleType(vendorData);
         return (
           <ProgressTrackingDashboard
             vendorId={vendorId}
-
+            roleType={progressRoleType}
             onBack={() => setShowProgressTracking(false)}
           />
         );
@@ -1533,19 +1521,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 4. Nutritionist
-      if (vendorData?.roleId === 'nutritionist') {
-        console.log('🥗 Rendering NutritionistMealManager');
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-
-            onBack={() => {
-              // Handle logout
-            }}
-          />
-        );
-      }
+      // 4. Nutritionist — same home dashboard as other solo vendors (VendorDashboard).
+      // Nutritionist meal products & orders: Additional Features "Diet" → /nutrition/dashboard only.
 
       // 5. Sunset Services (Memorial/Cremation)
       if (vendorData?.roleId === 'sunset_services') {
@@ -1637,6 +1614,9 @@ export function VendorLandingPage({
         'grooming',
       ]);
 
+      /** Dog walkers: "progress" is walk sessions (OTP start / end session / GPS), not training program trackers. */
+      const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+
       return (
         <>
           <Suspense fallback={
@@ -1682,7 +1662,13 @@ export function VendorLandingPage({
                 else setShowDiagnostics(true);
               }}
               onNavigateToPricing={() => setShowPricing(true)}
-              onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+              onNavigateToProgressTracking={() => {
+                if (isWalkerVendor) {
+                  router.push('/bookings?walkSessions=1');
+                } else {
+                  setShowProgressTracking(true);
+                }
+              }}
               onNavigateToPackages={undefined}
               onNavigateToCustomServices={() => setShowCustomServices(true)}
               onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}

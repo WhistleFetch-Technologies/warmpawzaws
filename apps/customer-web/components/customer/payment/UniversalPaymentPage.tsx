@@ -20,6 +20,7 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
 
 // Razorpay type declaration
 declare global {
@@ -934,6 +935,10 @@ export function UniversalPaymentPage({
         const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
+          const bal = Number(walletRes.wallet.balance ?? 0);
+          if (type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
+            setUseWallet(true);
+          }
         }
       } catch (e) {
         console.log('No wallet found');
@@ -1904,12 +1909,17 @@ export function UniversalPaymentPage({
       console.log('📤 Creating payment with payload:', paymentPayload);
 
       // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
-      // ⚠️ SKIP for Razorpay online payments when finalAmount > 0:
-      //    /razorpay/create-order already inserts the payment record with razorpay_order_id.
-      //    Calling /payments/create here would create a duplicate (orphan) record without razorpay_order_id.
+      // ⚠️ SKIP for Razorpay-only payments when finalAmount > 0 (no wallet portion):
+      //    /razorpay/create-order inserts the payment row with razorpay_order_id.
+      //    When the customer pays part from wallet first, we MUST call /payments/create so the backend
+      //    debits wallet and leaves a pending row with razorpay_order_id NULL; create-order then reuses
+      //    that row (see razorpay.razorpay.ts orphan upsert).
       const isRazorpayOnline = (paymentPayload.paymentMethod === 'razorpay' || selectedMethod === 'razorpay') && finalAmount > 0;
+      const needsPaymentsCreateForWalletSplit =
+        isRazorpayOnline && useWallet && (walletAmount || 0) > 0.009;
+      const skipPaymentsCreate = isRazorpayOnline && !needsPaymentsCreateForWalletSplit;
       let paymentRes: any = null;
-      if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !isRazorpayOnline) {
+      if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !skipPaymentsCreate) {
         // ✅ Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
@@ -1955,7 +1965,12 @@ export function UniversalPaymentPage({
         console.log('📤 Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
 
         try {
-          paymentRes = await apiClient.post<any>('/payments/create', paymentPayload);
+          const paymentRaw = await apiClient.post<any>('/payments/create', paymentPayload);
+          // Backend wraps as { success, data: { paymentId, status, ... } }
+          paymentRes =
+            paymentRaw && typeof paymentRaw === 'object' && paymentRaw.success && paymentRaw.data
+              ? { ...paymentRaw.data }
+              : paymentRaw;
         } catch (paymentError: any) {
           // ✅ Enhanced error logging to see validation errors
           console.error('❌ Payment creation failed:', paymentError);
@@ -2111,6 +2126,13 @@ export function UniversalPaymentPage({
           offerId: selectedRazorpayOffer?.id,
           type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
           vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
+          // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
+          ...(type === 'booking' &&
+          currentBookingId &&
+          useWallet &&
+          (walletAmount || 0) > 0.009
+            ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
+            : {}),
         }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
@@ -2204,13 +2226,30 @@ export function UniversalPaymentPage({
         }
       }
 
-      // Step 4: Open Razorpay checkout
+      // Step 4: Open Razorpay checkout (omit invalid offer ids / empty prefill — avoids Razorpay …/build/undefined)
+      const titlePart = [serviceName, productName].find((x) => typeof x === 'string' && String(x).trim());
+      const vendorPart =
+        typeof vendorName === 'string' && vendorName.trim() ? vendorName.trim() : 'Warmpawz';
+      const paymentDescription = titlePart
+        ? `${String(titlePart).trim()} — ${vendorPart}`
+        : `Payment — ${vendorPart}`;
+      const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+      const rawOfferId = selectedRazorpayOffer?.id;
+      const razorpayOfferIds =
+        typeof rawOfferId === 'string' &&
+        rawOfferId.trim() &&
+        rawOfferId.trim() !== 'undefined' &&
+        rawOfferId.trim() !== 'null'
+          ? [rawOfferId.trim()]
+          : [];
+      const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
+
       const options = {
         key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToCharge * 100,
+        amount: amountPaise,
         currency: 'INR',
         name: 'Warmpawz',
-        description: `${serviceName || productName} - ${vendorName}`,
+        description: paymentDescription,
         order_id: razorpayOrderId,
         handler: async (response: any) => {
           try {
@@ -2362,13 +2401,11 @@ export function UniversalPaymentPage({
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
+        ...(phoneDigits.length > 0 ? { prefill: { contact: phoneDigits } } : {}),
         theme: {
           color: '#FF8C42',
         },
-        offers: selectedRazorpayOffer ? [selectedRazorpayOffer.id] : [],
+        ...(razorpayOfferIds.length > 0 ? { offers: razorpayOfferIds } : {}),
         modal: {
           ondismiss: () => {
             console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
@@ -2391,7 +2428,7 @@ export function UniversalPaymentPage({
       });
 
       try {
-        const razorpay = new window.Razorpay(options);
+        const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
         // ✅ Listen for payment failures (these don't trigger the handler callback)
         razorpay.on('payment.failed', (resp: any) => {
           console.error('❌ [RAZORPAY] Payment failed event:', {

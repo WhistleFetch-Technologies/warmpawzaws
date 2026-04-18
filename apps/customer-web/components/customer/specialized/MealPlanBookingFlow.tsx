@@ -22,6 +22,7 @@ interface MealPlan {
   meals_per_day: number;
   price: number;
   is_active: boolean;
+  mealImageUrl?: string | null;
 }
 
 interface Pet {
@@ -108,8 +109,11 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
         apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`),
       ]);
 
-      if (plansRes.plans || plansRes) {
-        setMealPlans(plansRes.plans || plansRes);
+      const plansList = plansRes?.mealPlans ?? plansRes?.plans;
+      if (Array.isArray(plansList)) {
+        setMealPlans(plansList);
+      } else if (Array.isArray(plansRes)) {
+        setMealPlans(plansRes);
       }
 
       if (customerRes.customer) {
@@ -587,8 +591,14 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    {plan.mealImageUrl ? (
+                      <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-gray-100 bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={plan.mealImageUrl} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ) : null}
+                    <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-gray-900">{plan.name}</h4>
                       <p className="text-sm text-gray-600 mt-1">{plan.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">

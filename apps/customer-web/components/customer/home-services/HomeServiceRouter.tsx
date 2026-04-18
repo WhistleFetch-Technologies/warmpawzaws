@@ -1567,6 +1567,7 @@ export function HomeServiceRouter({
               baseAmount={selectedService?.price || 0}
               priceIncludesTax={catalogPriceIncludesTax(selectedService)}
               customerPhone={phone}
+              customerId={customerId ?? undefined}
               onSuccess={handlePaymentSuccess}
               onBack={() => setStep('datetime')}
             />

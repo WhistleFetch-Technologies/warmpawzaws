@@ -20,6 +20,7 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
+import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../../../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -422,6 +423,87 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const shortBookingId = bookingId.replace(/-/g, '').substring(0, 32);
         receipt = `bk_${shortBookingId}`;
         notes = { bookingId, customerId: customerIdFinal, vendorId: vendorIdFinal };
+      }
+
+      // ✅ Wallet + orphan payment row when the client never called /payments/create (split-pay gap).
+      // If an orphan pending row already exists, /payments/create already debited — do nothing here.
+      const useWalletCreateOrder =
+        body.useWallet === true ||
+        body.useWallet === 'true' ||
+        String(body.useWallet || '').toLowerCase() === 'true';
+      const walletAmountCreateOrder = Math.max(
+        0,
+        parseFloat(String(body.walletAmount ?? body.wallet_amount ?? '0')) || 0
+      );
+      if (
+        booking &&
+        bookingId &&
+        !isPharmacyOrder &&
+        !isDiagnosticsOrder &&
+        !isBookingPrepaid &&
+        !isWalletTopup &&
+        useWalletCreateOrder &&
+        walletAmountCreateOrder > 0.009 &&
+        customerIdFinal
+      ) {
+        try {
+          await withTransaction(async (client) => {
+            const orphan = await client.query(
+              `SELECT id FROM payments
+               WHERE booking_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL
+               ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+              [String(bookingId)]
+            );
+            if (orphan.rows.length > 0) {
+              return;
+            }
+            const gross =
+              Math.round((parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100) / 100;
+            const cap = Math.min(walletAmountCreateOrder, gross);
+            if (cap <= 0.009) return;
+            const idem = `rz-create-order-wallet-${String(bookingId)}`;
+            const deb = await debitCustomerWalletForBookingInTransaction(client, {
+              customerId: String(customerIdFinal),
+              bookingId: String(bookingId),
+              amount: Math.round(cap * 100) / 100,
+              idempotencyKey: idem,
+            });
+            if (!deb || (deb.debited ?? 0) <= 0.009) return;
+            const orphan2 = await client.query(
+              `SELECT id FROM payments
+               WHERE booking_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL
+               ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+              [String(bookingId)]
+            );
+            if (orphan2.rows.length > 0) return;
+            const colsRes = await client.query<{ column_name: string }>(
+              `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments'`
+            );
+            const ec = new Set(colsRes.rows.map((r) => r.column_name));
+            const payAmount =
+              gross > 0 ? gross : Math.round((Number(amount) + (deb.debited ?? 0)) * 100) / 100;
+            const pdata: Record<string, unknown> = {
+              booking_id: bookingId,
+              customer_id: customerIdFinal,
+              vendor_id: booking.vendor_id,
+              amount: payAmount,
+              currency: 'INR',
+              payment_method: 'razorpay',
+              payment_status: 'pending',
+            };
+            const cols = Object.keys(pdata).filter((k) => ec.has(k));
+            if (cols.length < 5) return;
+            const vals = cols.map((k) => pdata[k]);
+            const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
+            await client.query(`INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`, vals);
+          });
+        } catch (e: any) {
+          console.error('[RAZORPAY-CREATE-ORDER] wallet slice + orphan payment failed:', e?.message || e);
+          return this.error(
+            e?.message || 'Could not apply wallet balance to this booking. Check your wallet balance and try again.',
+            400
+          );
+        }
       }
 
       const orderData: any = {

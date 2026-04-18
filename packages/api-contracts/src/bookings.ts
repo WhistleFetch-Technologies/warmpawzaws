@@ -65,6 +65,10 @@ export const CreateBookingRequestSchema = z.object({
   numberOfNights: z.coerce.number().int().min(0).optional(),
   /** Customer app: drives timed pet-sitting pricing when vendor role lookup is ambiguous. */
   flowVariant: z.enum(['pet_sitting', 'boarding']).optional(),
+  /** When true, server debits `customer_wallets` at booking create (wallet-only or split with Razorpay). */
+  useWallet: z.boolean().optional(),
+  /** Max INR to take from wallet; server clamps to balance and list price. */
+  walletAmount: z.coerce.number().min(0).optional(),
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({
