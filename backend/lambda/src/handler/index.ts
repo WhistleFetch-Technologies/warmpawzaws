@@ -17,7 +17,7 @@ import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
 import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
 import { checkDbHealth } from '../database/rds-connection';
-import { requireAuth, requireAdmin, authAuditLog } from '../middleware/auth-middleware';
+import { requireAuth, requireAdmin, authAuditLog, requireAiChatbotAuth } from '../middleware/auth-middleware';
 import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '../middleware/rate-limit-middleware';
 // Enhanced handlers (Phase 2-5)
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor/endpoints/vendor-onboarding-enhanced';
@@ -408,6 +408,16 @@ app.use('/auth/*', rateLimitAuth());
 app.use('/otp/*', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'otp' }));
 app.use('/bookings/generate-otp', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'booking-otp' }));
 app.use('/payments/*', rateLimit({ windowMs: 60000, maxRequests: 30, keyPrefix: 'payments' }));
+
+const aiChatbotRlMaxRaw = parseInt(process.env.AI_CHATBOT_RL_MAX || '30', 10);
+const aiChatbotRlMax = Number.isFinite(aiChatbotRlMaxRaw) ? Math.max(5, aiChatbotRlMaxRaw) : 30;
+app.use(
+  '/ai-chatbot/*',
+  slidingWindowRateLimit({ windowMs: 60_000, maxRequests: aiChatbotRlMax, keyPrefix: 'ai-chatbot' })
+);
+if (process.env.AI_CHATBOT_REQUIRE_AUTH === 'true') {
+  app.use('/ai-chatbot/*', requireAiChatbotAuth());
+}
 
 // Initialize CloudWatch error tracking (India data residency compliant)
 const environment = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';

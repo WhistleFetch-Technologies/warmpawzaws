@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { AIChatbotApi, SupportCrmApi } from '../../services/api';
@@ -214,12 +215,23 @@ export function AIChatbotScreen({
           );
         }
       } else if (mode === 'booking') {
-        // Booking assist
+        // Booking assist — pass device coordinates when already permitted (enables closest-vet RDS merge).
+        let bookingLocation: { lat: number; lng: number } | undefined;
+        try {
+          const fg = await Location.getForegroundPermissionsAsync();
+          if (fg.status === 'granted') {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            bookingLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          }
+        } catch {
+          /* optional */
+        }
         response = await AIChatbotApi.bookingAssist({
           query: sentText,
           customerId,
           customerPhone: phone,
           petId,
+          ...(bookingLocation ? { location: bookingLocation } : {}),
         });
 
         let bookingPath =

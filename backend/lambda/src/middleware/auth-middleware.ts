@@ -413,6 +413,32 @@ export function requireCustomer() {
 }
 
 /**
+ * Strict Bearer (or UAT) auth for /ai-chatbot/* when registered with AI_CHATBOT_REQUIRE_AUTH=true.
+ */
+export function requireAiChatbotAuth() {
+  return async (c: Context, next: Next) => {
+    if (c.req.method === 'OPTIONS') {
+      return next();
+    }
+
+    const auth = await extractAuth(c);
+
+    if (!auth.valid) {
+      return c.json(
+        { success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' },
+        401
+      );
+    }
+
+    c.set('userId', auth.userId);
+    c.set('userRole', auth.userRole);
+    c.set('userGroups', auth.groups);
+
+    return next();
+  };
+}
+
+/**
  * Middleware: Log authentication attempts for security monitoring
  */
 export function authAuditLog() {
