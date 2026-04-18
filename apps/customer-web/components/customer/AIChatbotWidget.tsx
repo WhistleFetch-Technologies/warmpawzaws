@@ -176,11 +176,27 @@ export function AIChatbotWidget({
         
         setMessages(prev => [...prev, botMessage]);
       } else if (mode === 'booking') {
+        let browserLoc: { lat: number; lng: number } | undefined;
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: false,
+                timeout: 8000,
+                maximumAge: 120_000,
+              });
+            });
+            browserLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          } catch {
+            /* denied or timeout */
+          }
+        }
         response = await aiChatbotApi.bookingAssist({
           query: messageText,
           customerId,
           customerPhone,
           petId,
+          ...(browserLoc ? { location: browserLoc } : {}),
         });
         
         let bookingPath =

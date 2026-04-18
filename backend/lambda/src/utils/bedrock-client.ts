@@ -14,8 +14,16 @@
  * ============================================================================
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+  type InvokeModelCommandInput,
+} from '@aws-sdk/client-bedrock-runtime';
 import { query } from '../database/rds-connection';
+import { logErrorSafe } from './redact-for-log';
+
+/** Thrown when Bedrock guardrails block or strip content (caller maps to a safe user message). */
+export const BEDROCK_GUARDRAIL_BLOCKED = 'BEDROCK_GUARDRAIL_BLOCKED';
 
 /** Claude v2 / Instant use Text Completions on Bedrock, not the Messages API. */
 function isLegacyAnthropicCompletionModel(modelId: string): boolean {
@@ -106,8 +114,8 @@ export async function getBedrockConfig(): Promise<BedrockConfig | null> {
     }
 
     return { client, modelId, region };
-  } catch (error: any) {
-    console.error('Error getting Bedrock config:', error);
+  } catch (error: unknown) {
+    logErrorSafe('BedrockConfig', error);
     return null;
   }
 }
@@ -200,13 +208,22 @@ export async function invokeBedrock(
       };
     }
     
-    const command = new InvokeModelCommand({
+    const guardrailId = process.env.BEDROCK_GUARDRAIL_ID?.trim();
+    const guardrailVersion = process.env.BEDROCK_GUARDRAIL_VERSION?.trim();
+
+    const commandInput: InvokeModelCommandInput = {
       modelId,
       body: JSON.stringify(body),
       contentType: 'application/json',
       accept: 'application/json',
-    });
-    
+    };
+    if (guardrailId && guardrailVersion) {
+      commandInput.guardrailIdentifier = guardrailId;
+      commandInput.guardrailVersion = guardrailVersion;
+    }
+
+    const command = new InvokeModelCommand(commandInput);
+
     const response = await client.send(command);
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
@@ -236,9 +253,19 @@ export async function invokeBedrock(
     }
 
     throw new Error('Invalid response format from Bedrock');
-  } catch (error: any) {
-    console.error('Error invoking Bedrock:', error);
-    throw new Error(`Bedrock invocation failed: ${error.message}`);
+  } catch (error: unknown) {
+    const e = error as { message?: string; name?: string };
+    const msg = String(e?.message || error || '');
+    if (msg === BEDROCK_GUARDRAIL_BLOCKED) {
+      throw error instanceof Error ? error : new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
+    const lower = msg.toLowerCase();
+    if (lower.includes('guardrail') || lower.includes('blocked by guardrail')) {
+      logErrorSafe('BedrockInvoke', { name: 'Guardrail', message: 'intervened_or_blocked' });
+      throw new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
+    logErrorSafe('BedrockInvoke', error);
+    throw new Error(`Bedrock invocation failed: ${msg.slice(0, 240)}`);
   }
 }
 

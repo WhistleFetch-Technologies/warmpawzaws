@@ -17,9 +17,18 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
-import { invokeBedrock } from '../utils/bedrock-client';
+import { invokeBedrock, BEDROCK_GUARDRAIL_BLOCKED } from '../utils/bedrock-client';
 import { withRetry } from '../utils/error-recovery';
 import { generateSupportTicketNumber } from '../utils/support-ticket-number';
+import { logErrorSafe, redactForLog } from '../utils/redact-for-log';
+import {
+  parseChatBedrockCompletion,
+  parseSymptomsBedrockCompletion,
+  parseBookingAssistBedrockCompletion,
+} from '../utils/ai-chatbot-response-parse';
+
+const GUARDRAIL_CHAT_FALLBACK =
+  "I'm not able to respond to that in a way that meets our safety guidelines. Try rephrasing, or use **Contact support** for help.";
 
 const SYMPTOM_STOPWORDS = new Set([
   'the', 'and', 'for', 'pet', 'dog', 'cat', 'puppy', 'kitten', 'has', 'have', 'been', 'with', 'from', 'that', 'this',
@@ -148,10 +157,11 @@ type EnsureEscalationTicketArgs = {
 
 /**
  * One open ticket per AI conversation (metadata.ai_conversation_id); links all transcript rows.
+ * Caps new tickets per conversation per rolling window to avoid storms (env-tuned).
  */
 async function ensureEscalationTicket(
   args: EnsureEscalationTicketArgs
-): Promise<{ ticketId: string; created: boolean }> {
+): Promise<{ ticketId: string; created: boolean; capReached?: boolean }> {
   const existingId = await findOpenEscalationTicketForConversation(args.conversationId);
   if (existingId) {
     await linkAiConversationRowsToTicket(
@@ -172,6 +182,35 @@ async function ensureEscalationTicket(
     return { ticketId: existingId, created: false };
   }
 
+  const capHoursRaw = parseInt(process.env.AI_CHATBOT_TICKET_CAP_HOURS || '24', 10);
+  const capHours = Number.isFinite(capHoursRaw) ? Math.min(168, Math.max(1, capHoursRaw)) : 24;
+  const maxTicketsRaw = parseInt(process.env.AI_CHATBOT_MAX_TICKETS_PER_CONV_PER_DAY || '3', 10);
+  const maxTickets = Number.isFinite(maxTicketsRaw) ? Math.max(1, maxTicketsRaw) : 3;
+
+  const countRes = await query(
+    `SELECT COUNT(*)::int AS cnt FROM support_tickets
+     WHERE source = 'ai_chatbot'
+       AND COALESCE(metadata->>'ai_conversation_id','') = $1
+       AND created_at > NOW() - ($2::int * INTERVAL '1 hour')`,
+    [args.conversationId, capHours]
+  ).catch(() => ({ rows: [{ cnt: 0 }] as { cnt: number }[] }));
+  const recentCount = countRes.rows?.[0]?.cnt ?? 0;
+  if (recentCount >= maxTickets) {
+    const latest = await query(
+      `SELECT id::text AS id FROM support_tickets
+       WHERE source = 'ai_chatbot'
+         AND COALESCE(metadata->>'ai_conversation_id','') = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [args.conversationId]
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    const ticketId = latest.rows?.[0]?.id ? String(latest.rows[0].id) : '';
+    if (ticketId) {
+      await linkAiConversationRowsToTicket(args.conversationId, ticketId, args.escalationReason);
+    }
+    return { ticketId, created: false, capReached: true };
+  }
+
   const metadata: Record<string, unknown> = {
     ai_conversation_id: args.conversationId,
     last_intent: args.intent ?? null,
@@ -187,8 +226,8 @@ async function ensureEscalationTicket(
     customer_id: args.customerId || null,
     customer_phone: args.customerPhone || null,
     vendor_id: args.vendorId || null,
-    subject: args.subject,
-    message: args.message,
+    subject: redactForLog(args.subject, 500),
+    message: redactForLog(args.message, 8000),
     source: 'ai_chatbot',
     status: 'open',
     priority: args.priority,
@@ -208,12 +247,12 @@ function formatChatPreviousTurns(contextObj: Record<string, unknown>): string {
   const pm = contextObj.previousMessages;
   if (!Array.isArray(pm) || pm.length === 0) return '';
   const lines = pm
-    .slice(-4)
+    .slice(-3)
     .map((entry: unknown) => {
       if (!entry || typeof entry !== 'object') return '';
       const m = entry as { role?: string; content?: string };
       const role = m.role === 'assistant' ? 'Assistant' : 'User';
-      const content = String(m.content || '').slice(0, 240);
+      const content = String(m.content || '').slice(0, 160);
       if (!content) return '';
       return `${role}: ${content}`;
     })
@@ -238,7 +277,7 @@ function parseVendorAiChatFromOtherConfig(otherConfig: unknown): VendorAiChatCon
   const c = ac as Record<string, unknown>;
   const out: VendorAiChatConfig = {};
   if (typeof c.systemPromptSuffix === 'string' && c.systemPromptSuffix.trim()) {
-    out.systemPromptSuffix = c.systemPromptSuffix.trim().slice(0, 4000);
+    out.systemPromptSuffix = c.systemPromptSuffix.trim().slice(0, 2000);
   }
   if (typeof c.temperature === 'number' && Number.isFinite(c.temperature)) {
     out.temperature = Math.min(1, Math.max(0, c.temperature));
@@ -290,7 +329,7 @@ async function lookupCareForSymptoms(symptomsText: string): Promise<{
       AND ss.is_active = true
       AND (${conditions.join(' OR ')})
     ORDER BY sm.display_order NULLS LAST, sm.name
-    LIMIT 15
+    LIMIT 10
   `;
 
   const specRes = await query(specSql, params).catch(() => ({ rows: [] as any[] }));
@@ -341,7 +380,7 @@ async function lookupCareForSymptoms(symptomsText: string): Promise<{
     WHERE v.status = 'approved' AND v.is_active = true
       AND LOWER(r.name) = ANY($1::text[])
     ORDER BY v.created_at DESC
-    LIMIT 12
+    LIMIT 8
   `;
   const roleList = [...roleNames];
   let vendRes = await query(vendorSql, [roleList]).catch(() => ({ rows: [] as any[] }));
@@ -397,6 +436,113 @@ function appendSymptomCareToResponse(
   } else if (specs.length > 0) {
     lines.push('\nUse **Find Vet Clinic** or Search to see providers for these services.');
   }
+  return lines.join('\n');
+}
+
+type NearbyVetProvider = {
+  id: string;
+  businessName: string;
+  city?: string;
+  distanceKm: number;
+};
+
+function parseBookingAssistLatLng(location: unknown): { lat: number; lng: number } | null {
+  if (!location || typeof location !== 'object' || Array.isArray(location)) return null;
+  const o = location as Record<string, unknown>;
+  const lat = Number(o.lat ?? o.latitude);
+  const lng = Number(o.lng ?? o.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+/** User asked for proximity-based results (not just category). */
+function bookingMessageWantsNearbyVets(q: string): boolean {
+  const s = String(q || '').toLowerCase();
+  return (
+    /\b(nearby|near me|closest|nearest|around here|close to me|in my area|local)\b/.test(s) ||
+    /\b(doctors?|vets?|clinics?)\s+(near|around|close)\b/.test(s) ||
+    /\b(find|get|fetch|show)\b[\s\S]{0,40}\b(nearby|near me|closest|nearest)\b/.test(s)
+  );
+}
+
+function bookingMessageVetLike(q: string): boolean {
+  if (inferBookingCategoryFromText(q) === 'vet') return true;
+  const s = String(q || '').toLowerCase();
+  return /\b(doctor|dr\.|physician|gp|vet|veterinary|clinic)\b/.test(s);
+}
+
+/**
+ * Approved vet-role vendors with coordinates, sorted by great-circle distance (km).
+ * Bedrock does not query RDS — this runs in Lambda and results are merged into the booking response.
+ */
+async function lookupNearbyVetVendors(
+  lat: number,
+  lng: number,
+  limit: number,
+  maxKm: number
+): Promise<NearbyVetProvider[]> {
+  const res = await query(
+    `SELECT v.id::text AS id,
+            v.business_name,
+            v.city,
+            ROUND((
+              6371 * acos(
+                LEAST(1::double precision, GREATEST(-1::double precision,
+                  cos(radians($1::double precision)) * cos(radians(CAST(v.latitude AS double precision))) *
+                  cos(radians(CAST(v.longitude AS double precision)) - radians($2::double precision)) +
+                  sin(radians($1::double precision)) * sin(radians(CAST(v.latitude AS double precision)))
+                ))
+              )
+            )::numeric, 1
+            )::float AS distance_km
+     FROM vendors v
+     INNER JOIN roles r ON r.id = v.role_id
+     WHERE v.status = 'approved'
+       AND v.is_active = true
+       AND COALESCE(v.is_deleted, false) = false
+       AND v.latitude IS NOT NULL
+       AND v.longitude IS NOT NULL
+       AND TRIM(v.latitude::text) <> ''
+       AND TRIM(v.longitude::text) <> ''
+       AND (
+         LOWER(COALESCE(r.name, '')) LIKE '%vet%'
+         OR LOWER(COALESCE(NULLIF(TRIM(r.display_name), ''), r.name, '')) LIKE '%vet%'
+       )
+       AND (
+         6371 * acos(
+           LEAST(1::double precision, GREATEST(-1::double precision,
+             cos(radians($1::double precision)) * cos(radians(CAST(v.latitude AS double precision))) *
+             cos(radians(CAST(v.longitude AS double precision)) - radians($2::double precision)) +
+             sin(radians($1::double precision)) * sin(radians(CAST(v.latitude AS double precision)))
+           ))
+         )
+       ) <= $3::double precision
+     ORDER BY distance_km ASC
+     LIMIT $4`,
+    [lat, lng, maxKm, limit]
+  ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+
+  const rows = res.rows || [];
+  return rows.map((row: Record<string, unknown>) => ({
+    id: String(row.id || ''),
+    businessName: String(row.business_name || ''),
+    city: row.city ? String(row.city) : undefined,
+    distanceKm: typeof row.distance_km === 'number' ? row.distance_km : Number(row.distance_km) || 0,
+  }));
+}
+
+function appendNearbyVetsToResponse(
+  base: string,
+  rows: NearbyVetProvider[]
+): string {
+  if (rows.length === 0) return base;
+  const lines = [base.trim(), '', '**Veterinary providers closest to you**'];
+  rows.forEach((v, i) => {
+    const loc = v.city ? ` — ${v.city}` : '';
+    lines.push(`${i + 1}. ${v.businessName}${loc} (~${v.distanceKm} km)`);
+  });
+  lines.push('\nTap **Continue to booking** to open search and pick a slot.');
   return lines.join('\n');
 }
 
@@ -472,6 +618,7 @@ export function registerAIChatbotEndpoints(app: Hono) {
    */
   app.post("/ai-chatbot/chat", async (c) => {
     try {
+      // Invariant: never interpolate platform admin AWS settings, credentials, connection strings, or other secrets into prompts.
       const body = await c.req.json();
       const {
         message,
@@ -545,7 +692,7 @@ export function registerAIChatbotEndpoints(app: Hono) {
                 ? `- Location: ${[row.city, row.state].filter(Boolean).join(', ')}`
                 : null,
               row.specialization
-                ? `- Specialization (summary): ${String(row.specialization).slice(0, 240)}`
+                ? `- Specialization (summary): ${String(row.specialization).slice(0, 120)}`
                 : null,
               `- Home visits offered: ${row.home_service_enabled ? 'yes' : 'no'}`,
             ].filter(Boolean);
@@ -564,7 +711,7 @@ export function registerAIChatbotEndpoints(app: Hono) {
             vendorContext = `Vendor provider (signed in as): ${ctxUserName}`;
           }
         } catch (e) {
-          console.warn('Failed to fetch vendor context', e);
+          logErrorSafe('ai-chatbot-vendor-context', e);
         }
       } else if (isVendorSession && ctxUserName) {
         vendorContext = `Vendor provider (signed in as): ${ctxUserName}`;
@@ -579,10 +726,14 @@ export function registerAIChatbotEndpoints(app: Hono) {
           const customers = Array.isArray(customerResult) ? customerResult : customerResult.rows || [];
           if (customers.length > 0) {
             const cust = customers[0];
-            customerContext = `Customer: ${cust.first_name || ''} ${cust.last_name || ''}, Phone: ${cust.phone || customerPhone}`;
+            customerContext = `Customer: ${cust.first_name || ''} ${cust.last_name || ''}`.trim();
+            if (cust.phone || customerPhone) {
+              customerContext += ' (verified account)';
+            }
+            customerContext = customerContext.slice(0, 120);
           }
         } catch (e) {
-          console.warn('Failed to fetch customer context', e);
+          logErrorSafe('ai-chatbot-customer-context', e);
         }
       }
 
@@ -592,10 +743,13 @@ export function registerAIChatbotEndpoints(app: Hono) {
           const pets = await select('pets', { id: petId });
           if (pets.length > 0) {
             const pet = pets[0];
-            petContext = `Pet: ${pet.name || 'Unknown'}, Breed: ${pet.breed || 'Unknown'}, Age: ${pet.age || 'Unknown'}`;
+            petContext = `Pet: ${pet.name || 'Unknown'}, Breed: ${pet.breed || 'Unknown'}, Age: ${pet.age || 'Unknown'}`.slice(
+              0,
+              180
+            );
           }
         } catch (e) {
-          console.warn('Failed to fetch pet context', e);
+          logErrorSafe('ai-chatbot-pet-context', e);
         }
       }
 
@@ -607,14 +761,16 @@ export function registerAIChatbotEndpoints(app: Hono) {
              FROM bookings 
              WHERE vendor_id = $1
              ORDER BY created_at DESC 
-             LIMIT 5`,
+             LIMIT 3`,
             [effectiveVendorId]
           );
           if (bookings.rows && bookings.rows.length > 0) {
-            bookingContext = `Recent bookings for this provider: ${bookings.rows.map((b: any) => `${b.service_type} (${b.status})`).join(', ')}`;
+            bookingContext = `Recent bookings for this provider: ${bookings.rows
+              .map((b: any) => `${b.service_type} (${b.status})`)
+              .join(', ')}`.slice(0, 320);
           }
         } catch (e) {
-          console.warn('Failed to fetch vendor booking context', e);
+          logErrorSafe('ai-chatbot-vendor-bookings', e);
         }
       } else if (!isVendorSession && (customerId || customerPhone)) {
         try {
@@ -623,14 +779,16 @@ export function registerAIChatbotEndpoints(app: Hono) {
              FROM bookings 
              WHERE customer_id = $1 OR customer_phone = $2
              ORDER BY created_at DESC 
-             LIMIT 3`,
+             LIMIT 2`,
             [customerId || null, customerPhone || null]
           );
           if (bookings.rows && bookings.rows.length > 0) {
-            bookingContext = `Recent Bookings: ${bookings.rows.map((b: any) => `${b.service_type} (${b.status})`).join(', ')}`;
+            bookingContext = `Recent Bookings: ${bookings.rows
+              .map((b: any) => `${b.service_type} (${b.status})`)
+              .join(', ')}`.slice(0, 280);
           }
         } catch (e) {
-          console.warn('Failed to fetch booking context', e);
+          logErrorSafe('ai-chatbot-customer-bookings', e);
         }
       }
 
@@ -639,13 +797,15 @@ export function registerAIChatbotEndpoints(app: Hono) {
       if (!isVendorSession) {
         try {
           const products = await query(
-            `SELECT name, sale_price, base_price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 5`
+            `SELECT name, sale_price, base_price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 4`
           );
           if (products.rows && products.rows.length > 0) {
-            storeContext = `Featured Products:\n${products.rows.map((p: any) => `- ${p.name} (₹${p.sale_price || p.base_price || 0})`).join('\n')}`;
+            storeContext = `Featured Products:\n${products.rows
+              .map((p: any) => `- ${String(p.name || '').slice(0, 56)} (₹${p.sale_price || p.base_price || 0})`)
+              .join('\n')}`.slice(0, 400);
           }
         } catch (e) {
-          console.warn('Failed to fetch product context', e);
+          logErrorSafe('ai-chatbot-products', e);
         }
       }
 
@@ -738,8 +898,9 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
       let usedBedrock = false;
 
       // Try AWS Bedrock with retry. If invoke succeeds, we must set usedBedrock=true even when
-      // JSON.parse fails — otherwise the rule fallback overwrites the model output (e.g. canned "hi").
+      // parsing yields plain text — otherwise the rule fallback overwrites the model output (e.g. canned "hi").
       let bedrockCompletion: string | null = null;
+      let guardrailBlocked = false;
       try {
         bedrockCompletion = await withRetry(
           () =>
@@ -754,32 +915,29 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
           }
         );
-      } catch (err: any) {
-        console.error('Bedrock invocation failed:', err);
+      } catch (err: unknown) {
+        if ((err as Error)?.message === BEDROCK_GUARDRAIL_BLOCKED) {
+          logErrorSafe('ai-chatbot-chat', { name: 'Guardrail', message: 'blocked' });
+          guardrailBlocked = true;
+        } else {
+          logErrorSafe('ai-chatbot-chat-bedrock', err);
+        }
       }
 
-      if (bedrockCompletion != null) {
+      if (guardrailBlocked) {
         usedBedrock = true;
-        try {
-          const jsonMatch = bedrockCompletion.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            responseText = parsed.response || bedrockCompletion;
-            intent = parsed.intent || 'general';
-            confidence = parsed.confidence ?? 0.8;
-            suggestedActions = Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : [];
-            requiresAgent = !!parsed.requiresAgent;
-          } else {
-            responseText = bedrockCompletion;
-            intent = 'general';
-            confidence = 0.7;
-          }
-        } catch (e) {
-          console.warn('Failed to parse JSON from AI response', e);
-          responseText = bedrockCompletion;
-          intent = 'general';
-          confidence = 0.7;
-        }
+        responseText = GUARDRAIL_CHAT_FALLBACK;
+        intent = 'general';
+        confidence = 0.85;
+        suggestedActions = ['Contact Support', 'Create Ticket'];
+      } else if (bedrockCompletion != null) {
+        usedBedrock = true;
+        const parsed = parseChatBedrockCompletion(bedrockCompletion);
+        responseText = parsed.responseText || bedrockCompletion.slice(0, 12000);
+        intent = parsed.intent;
+        confidence = parsed.confidence;
+        suggestedActions = parsed.suggestedActions;
+        requiresAgent = parsed.requiresAgent;
       }
 
       // Fallback to rule-based responses only when Bedrock did not return a completion
@@ -939,11 +1097,12 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
           // Graceful fallback if table doesn't exist
         });
       } catch (e) {
-        console.warn('Failed to save conversation', e);
+        logErrorSafe('ai-chatbot-save-conversation', e);
       }
 
       let escalationTicketId: string | undefined;
       let escalationTicketCreated = false;
+      let escalationCapReached = false;
       if (requiresAgent || confidence < 0.7) {
         try {
           const ensured = await ensureEscalationTicket({
@@ -952,7 +1111,7 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             customerPhone: !isVendorSession ? customerPhone || null : null,
             vendorId: isVendorSession && effectiveVendorId ? effectiveVendorId : null,
             subject: `AI Chatbot Handoff - ${intent}`,
-            message: `User: ${message}\n\nAI Response: ${responseText}\n\nIntent: ${intent}, Confidence: ${confidence}${effectiveVendorId ? `\nVendorId: ${effectiveVendorId}` : ''}`,
+            message: `User: ${redactForLog(String(message), 800)}\n\nAI Response: ${redactForLog(responseText, 800)}\n\nIntent: ${intent}, Confidence: ${confidence}${effectiveVendorId ? `\nVendorId: ${effectiveVendorId}` : ''}`,
             priority: 'medium',
             intent,
             confidence,
@@ -962,8 +1121,12 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
             escalationTicketId = ensured.ticketId;
             escalationTicketCreated = ensured.created;
           }
+          if (ensured.capReached) {
+            escalationCapReached = true;
+            responseText = `${responseText}\n\nSupport already has your recent requests from this chat; we will not open duplicate tickets.`.trim();
+          }
         } catch (e) {
-          console.warn('Failed to create/link escalation ticket', e);
+          logErrorSafe('ai-chatbot-escalation-ticket', e);
         }
       }
 
@@ -978,10 +1141,12 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         usedBedrock,
         ticketId: escalationTicketId,
         escalationTicketCreated,
+        escalationCapReached,
       });
-    } catch (error: any) {
-      console.error('Error in AI chatbot:', error);
-      return c.json({ error: error.message || 'Failed to process chat message' }, 500);
+    } catch (error: unknown) {
+      logErrorSafe('ai-chatbot-chat-handler', error);
+      const msg = (error as Error)?.message || 'Failed to process chat message';
+      return c.json({ error: redactForLog(msg, 300) }, 500);
     }
   });
 
@@ -1004,10 +1169,13 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
           const pets = await select('pets', { id: petId });
           if (pets.length > 0) {
             const pet = pets[0];
-            petContext = `Pet: ${pet.name || 'Unknown'}, Type: ${pet.pet_type || petType || 'Unknown'}, Breed: ${pet.breed || 'Unknown'}, Age: ${pet.age || petAge || 'Unknown'}`;
+            petContext = `Pet: ${pet.name || 'Unknown'}, Type: ${pet.pet_type || petType || 'Unknown'}, Breed: ${pet.breed || 'Unknown'}, Age: ${pet.age || petAge || 'Unknown'}`.slice(
+              0,
+              200
+            );
           }
         } catch (e) {
-          console.warn('Failed to fetch pet context', e);
+          logErrorSafe('ai-chatbot-symptoms-pet', e);
         }
       }
 
@@ -1045,31 +1213,14 @@ OUTPUT FORMAT (JSON only):
             retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
           }
         );
-
-        const jsonMatch = completion.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          analysis = JSON.parse(jsonMatch[0]);
+        analysis = parseSymptomsBedrockCompletion(completion);
+      } catch (err: unknown) {
+        if ((err as Error)?.message === BEDROCK_GUARDRAIL_BLOCKED) {
+          logErrorSafe('ai-chatbot-symptoms', { name: 'Guardrail', message: 'blocked' });
         } else {
-          analysis = {
-            response: completion,
-            possibleCauses: [],
-            urgency: 'routine',
-            recommendations: ['Consult with a veterinarian'],
-            shouldSeeVet: true,
-            vetBookingSuggested: true,
-          };
+          logErrorSafe('ai-chatbot-symptoms-bedrock', err);
         }
-      } catch (err: any) {
-        console.error('Bedrock invocation failed:', err);
-        // Fallback response
-        analysis = {
-          response: "I understand you're concerned about your pet's symptoms. It's important to consult with a veterinarian for proper diagnosis and treatment. Would you like me to help you find a nearby vet clinic?",
-          possibleCauses: [],
-          urgency: 'routine',
-          recommendations: ['Consult with a veterinarian', 'Monitor symptoms', 'Keep pet comfortable'],
-          shouldSeeVet: true,
-          vetBookingSuggested: true,
-        };
+        analysis = parseSymptomsBedrockCompletion('');
       }
 
       let matchedSpecs: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }> = [];
@@ -1082,7 +1233,7 @@ OUTPUT FORMAT (JSON only):
           analysis.response = appendSymptomCareToResponse(analysis.response || '', matchedSpecs, matchedVendors);
         }
       } catch (e) {
-        console.warn('Symptom catalog lookup failed', e);
+        logErrorSafe('ai-chatbot-symptom-catalog', e);
       }
 
       // Save symptoms check
@@ -1098,7 +1249,7 @@ OUTPUT FORMAT (JSON only):
           // Graceful fallback
         });
       } catch (e) {
-        console.warn('Failed to save symptoms check', e);
+        logErrorSafe('ai-chatbot-save-symptoms', e);
       }
 
       return c.json({
@@ -1107,9 +1258,10 @@ OUTPUT FORMAT (JSON only):
         matchedServices: matchedSpecs.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId })),
         suggestedProviders: matchedVendors,
       });
-    } catch (error: any) {
-      console.error('Error in symptoms checker:', error);
-      return c.json({ error: error.message || 'Failed to analyze symptoms' }, 500);
+    } catch (error: unknown) {
+      logErrorSafe('ai-chatbot-symptoms-handler', error);
+      const msg = (error as Error)?.message || 'Failed to analyze symptoms';
+      return c.json({ error: redactForLog(msg, 300) }, 500);
     }
   });
 
@@ -1125,6 +1277,16 @@ OUTPUT FORMAT (JSON only):
         return c.json({ error: 'query is required' }, 400);
       }
 
+      const coords = parseBookingAssistLatLng(location);
+      const wantsNearby = bookingMessageWantsNearbyVets(bookingQuery);
+      const vetLike = bookingMessageVetLike(bookingQuery);
+      const maxKmRaw = parseFloat(process.env.AI_BOOKING_NEARBY_MAX_KM || '80');
+      const maxKm = Number.isFinite(maxKmRaw) ? Math.min(200, Math.max(5, maxKmRaw)) : 80;
+      let nearbyVets: NearbyVetProvider[] = [];
+      if (coords && vetLike) {
+        nearbyVets = await lookupNearbyVetVendors(coords.lat, coords.lng, 10, maxKm);
+      }
+
       // Fetch available services
       let servicesContext = '';
       try {
@@ -1133,19 +1295,30 @@ OUTPUT FORMAT (JSON only):
            FROM services 
            WHERE is_active = true 
            ORDER BY created_at DESC 
-           LIMIT 20`
+           LIMIT 12`
         );
         if (services.rows && services.rows.length > 0) {
-          servicesContext = `Available Services:\n${services.rows.map((s: any) => `- ${s.name} (${s.service_style || 'general'})`).join('\n')}`;
+          servicesContext = `Available Services:\n${services.rows
+            .map((s: any) => `- ${String(s.name || '').slice(0, 72)} (${s.service_style || 'general'})`)
+            .join('\n')}`.slice(0, 2000);
         }
       } catch (e) {
-        console.warn('Failed to fetch services context', e);
+        logErrorSafe('ai-chatbot-booking-services', e);
       }
+
+      const geoContextLine =
+        nearbyVets.length > 0
+          ? '- Server found geocoded vet clinics near the customer; a ranked list is appended after your JSON reply—briefly acknowledge that they can pick one in Search.\n'
+          : coords && vetLike
+            ? '- Customer coordinates were provided; the server searched for nearby vet clinics (results may append after your reply).\n'
+            : location && !coords
+              ? `- Location note: ${String(location).slice(0, 120)}\n`
+              : '';
 
       const systemPrompt = `You are a booking assistant for Warmpawz pet services platform.
 
 CONTEXT:
-${servicesContext ? `- ${servicesContext}\n` : ''}${location ? `- Location: ${location}\n` : ''}
+${servicesContext ? `- ${servicesContext}\n` : ''}${geoContextLine}
 
 TASK:
 1. Understand the user's booking request
@@ -1176,28 +1349,14 @@ OUTPUT FORMAT (JSON only):
             retryableErrors: ['Bedrock invocation failed', 'ETIMEDOUT', 'ECONNRESET'],
           }
         );
-
-        const jsonMatch = completion.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          assistance = JSON.parse(jsonMatch[0]);
+        assistance = parseBookingAssistBedrockCompletion(completion);
+      } catch (err: unknown) {
+        if ((err as Error)?.message === BEDROCK_GUARDRAIL_BLOCKED) {
+          logErrorSafe('ai-chatbot-booking', { name: 'Guardrail', message: 'blocked' });
         } else {
-          assistance = {
-            response: completion,
-            suggestedServices: [],
-            serviceType: 'other',
-            nextSteps: ['Browse Services', 'Select Service', 'Choose Time Slot'],
-            bookingUrl: '/book',
-          };
+          logErrorSafe('ai-chatbot-booking-bedrock', err);
         }
-      } catch (err: any) {
-        console.error('Bedrock invocation failed:', err);
-        assistance = {
-          response: "I'd be happy to help you book a service! What type of service are you looking for?",
-          suggestedServices: [],
-          serviceType: 'other',
-          nextSteps: ['Browse Services', 'Select Service', 'Choose Time Slot'],
-          bookingUrl: '/book',
-        };
+        assistance = parseBookingAssistBedrockCompletion('');
       }
 
       let catalogServices: Array<{ id: string; name: string; serviceStyle?: string }> = [];
@@ -1217,7 +1376,15 @@ OUTPUT FORMAT (JSON only):
           }
         }
       } catch (e) {
-        console.warn('Booking catalog lookup failed', e);
+        logErrorSafe('ai-chatbot-booking-catalog', e);
+      }
+
+      if (nearbyVets.length > 0) {
+        assistance.response = appendNearbyVetsToResponse(assistance.response || '', nearbyVets);
+      } else if (coords && vetLike) {
+        assistance.response = `${(assistance.response || '').trim()}\n\nNo geocoded vet clinics were found within ~${Math.round(maxKm)} km yet. Try **Search** or a wider area.`.trim();
+      } else if (wantsNearby && vetLike && !coords) {
+        assistance.response = `${(assistance.response || '').trim()}\n\nTo list clinics by distance, enable location in your browser or app and try again.`.trim();
       }
 
       const st = String(assistance.serviceType || '').toLowerCase();
@@ -1234,10 +1401,12 @@ OUTPUT FORMAT (JSON only):
         ...assistance,
         catalogServices,
         suggestedProviders: catalogVendors,
+        nearbyProviders: nearbyVets,
       });
-    } catch (error: any) {
-      console.error('Error in booking assist:', error);
-      return c.json({ error: error.message || 'Failed to assist with booking' }, 500);
+    } catch (error: unknown) {
+      logErrorSafe('ai-chatbot-booking-handler', error);
+      const msg = (error as Error)?.message || 'Failed to assist with booking';
+      return c.json({ error: redactForLog(msg, 300) }, 500);
     }
   });
 
@@ -1277,9 +1446,10 @@ OUTPUT FORMAT (JSON only):
         ticketCreated: ensured.created,
         message: 'Your conversation has been escalated to a support agent. They will contact you shortly.',
       });
-    } catch (error: any) {
-      console.error('Error escalating to agent:', error);
-      return c.json({ error: error.message || 'Failed to escalate to agent' }, 500);
+    } catch (error: unknown) {
+      logErrorSafe('ai-chatbot-escalate', error);
+      const msg = (error as Error)?.message || 'Failed to escalate to agent';
+      return c.json({ error: redactForLog(msg, 300) }, 500);
     }
   });
 
@@ -1303,9 +1473,10 @@ OUTPUT FORMAT (JSON only):
         conversationId,
         messages: conversations.rows || [],
       });
-    } catch (error: any) {
-      console.error('Error fetching conversation:', error);
-      return c.json({ error: error.message || 'Failed to fetch conversation' }, 500);
+    } catch (error: unknown) {
+      logErrorSafe('ai-chatbot-conversation-fetch', error);
+      const msg = (error as Error)?.message || 'Failed to fetch conversation';
+      return c.json({ error: redactForLog(msg, 300) }, 500);
     }
   });
 }
