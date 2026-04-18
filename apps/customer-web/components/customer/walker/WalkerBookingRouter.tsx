@@ -41,6 +41,35 @@ interface Pet {
   breed: string;
 }
 
+/** Booking location/mode for GET /available-slots — never a catalog service UUID */
+const KNOWN_BOOKING_STYLES = new Set([
+  'at_home',
+  'at_center',
+  'tele',
+  'outdoor',
+  'at_vendor',
+  'home',
+  'online',
+  'video_consultation',
+]);
+
+function isLikelyUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
+function normalizeBookingStyle(raw?: string): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const t = raw.trim();
+  if (isLikelyUuid(t)) return null;
+  if (t === 'home') return 'at_home';
+  if (KNOWN_BOOKING_STYLES.has(t)) return t;
+  return null;
+}
+
+function initialBookingServiceStyle(style?: string): string {
+  return normalizeBookingStyle(style) ?? 'at_home';
+}
+
 export function WalkerBookingRouter({ 
   phone, 
   vendorId, 
@@ -74,8 +103,12 @@ export function WalkerBookingRouter({
     }
   }, [serviceId, serviceType, serviceStyle, step]);
   const [loading, setLoading] = useState(false);
-  // ✅ FIX: Use serviceStyle if provided, otherwise fall back to serviceType
-  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'at_home');
+  /** Passed to available-slots only — must be at_home | outdoor | … never a vendor service UUID */
+  const [bookingServiceStyle, setBookingServiceStyle] = useState(() => initialBookingServiceStyle(serviceStyle));
+  /** Vendor catalog row id (UUID or default walk_30min / walk_60min) */
+  const [selectedVendorServiceId, setSelectedVendorServiceId] = useState<string>(() =>
+    serviceId ? String(serviceId) : selectedService ? String(selectedService) : ''
+  );
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -94,7 +127,7 @@ export function WalkerBookingRouter({
       name: serviceName,
       price: price,
       duration: duration,
-      serviceStyle: serviceStyle || serviceType
+      serviceStyle: initialBookingServiceStyle(serviceStyle),
     } : null
   );
   
@@ -129,7 +162,7 @@ export function WalkerBookingRouter({
         price: s.price || 0,
         duration: s.duration || 30,
         desc: s.description || '',
-        serviceStyle: style,
+        serviceStyle: s.serviceStyle || s.service_style || style,
         icon: style === 'at_home' ? Home : style === 'outdoor' ? Home : Home,
         color: style === 'at_home' ? 'green' : style === 'outdoor' ? 'green' : 'orange',
       }));
@@ -139,7 +172,7 @@ export function WalkerBookingRouter({
 
   // Use actual services or fallback to service type selection
   const serviceOptions = vendorServices.length > 0 
-    ? getServicesForStyle(selectedServiceType) 
+    ? getServicesForStyle(bookingServiceStyle) 
     : defaultServiceTypeOptions;
 
   const generateDates = () => {
@@ -148,8 +181,11 @@ export function WalkerBookingRouter({
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: `${y}-${m}-${d}`,
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -170,7 +206,7 @@ export function WalkerBookingRouter({
       // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType]);
+  }, [selectedDate, vendorId, bookingServiceStyle]);
 
   const loadTimeSlots = async (date: string) => {
     if (!vendorId) return;
@@ -178,7 +214,7 @@ export function WalkerBookingRouter({
     try {
       setLoadingSlots(true);
       const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
+        `/customer/vendor/${vendorId}/available-slots?date=${encodeURIComponent(date)}&serviceStyle=${encodeURIComponent(bookingServiceStyle)}`
       ) as any;
 
       if (response.success && response.slots) {
@@ -318,7 +354,7 @@ export function WalkerBookingRouter({
     
     try {
       const response = await apiClient.get<any>(
-        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}${selectedServiceType ? `&serviceType=${selectedServiceType}` : ''}`
+        `/packages/check-for-booking?customerId=${customerId}&vendorId=${vendorId}&serviceType=${encodeURIComponent(serviceType || 'walking')}`
       );
 
       if (response?.hasActivePackage && response?.package) {
@@ -361,7 +397,7 @@ export function WalkerBookingRouter({
     const currentIdx = steps.indexOf(step);
     
     // Skip address for tele consultations
-    if (step === 'pet' && selectedServiceType === 'tele') {
+    if (step === 'pet' && bookingServiceStyle === 'tele') {
       setStep('payment');
       return;
     }
@@ -376,7 +412,7 @@ export function WalkerBookingRouter({
     const currentIdx = steps.indexOf(step);
     
     // Handle back from payment for tele
-    if (step === 'payment' && selectedServiceType === 'tele') {
+    if (step === 'payment' && bookingServiceStyle === 'tele') {
       setStep('pet');
       return;
     }
@@ -386,7 +422,7 @@ export function WalkerBookingRouter({
     } else {
       onBack();
     }
-  }, [step, selectedServiceType, onBack]);
+  }, [step, bookingServiceStyle, onBack]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -411,8 +447,6 @@ export function WalkerBookingRouter({
   const handleConfirmBooking = async () => {
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
-      
       // If using package session, create session instead of booking
       if (usePackageSession && activePackage) {
         try {
@@ -448,7 +482,7 @@ export function WalkerBookingRouter({
     }
   };
 
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
+  const selectedServiceOption = serviceOptions.find(s => s.id === selectedVendorServiceId);
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const dashboardStats = [
@@ -463,7 +497,7 @@ export function WalkerBookingRouter({
   };
 
   const getServiceSubtitle = () => {
-    if (selectedServiceType === 'at_home') return 'Walker comes to you';
+    if (bookingServiceStyle === 'at_home') return 'Walker comes to you';
     return 'Professional pet walking services';
   };
 
@@ -476,11 +510,11 @@ export function WalkerBookingRouter({
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
     
-    const stepLabels = selectedServiceType === 'tele' 
+    const stepLabels = bookingServiceStyle === 'tele' 
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
+      service: 0, datetime: 1, pet: 2, address: 3, payment: bookingServiceStyle === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
     
@@ -519,11 +553,26 @@ export function WalkerBookingRouter({
             <div className="space-y-3">
               {serviceOptions.map((service) => {
                 const Icon = service.icon;
-                const isSelected = selectedServiceType === service.id;
+                const isSelected = selectedVendorServiceId === service.id;
                 return (
                   <button
                     key={service.id}
-                    onClick={() => setSelectedServiceType(service.id)}
+                    onClick={() => {
+                      setSelectedVendorServiceId(service.id);
+                      setSelectedVendorService({
+                        id: service.serviceId || service.id,
+                        serviceId: service.serviceId || service.id,
+                        name: service.name,
+                        price: service.price,
+                        duration: service.duration,
+                        serviceStyle: (service as { serviceStyle?: string }).serviceStyle ?? bookingServiceStyle,
+                      });
+                      const rowStyle = normalizeBookingStyle(
+                        (service as { serviceStyle?: string }).serviceStyle ??
+                          (service as { service_style?: string }).service_style
+                      );
+                      if (rowStyle) setBookingServiceStyle(rowStyle);
+                    }}
                     className={`w-full p-4 rounded-xl border-2 transition-all ${
                       isSelected 
                         ? 'border-[#FF8C42] bg-orange-50' 
@@ -560,7 +609,7 @@ export function WalkerBookingRouter({
             <Button 
               onClick={handleNext} 
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
-              disabled={!selectedServiceType}
+              disabled={!selectedVendorServiceId}
             >
               Continue
             </Button>
@@ -718,13 +767,13 @@ export function WalkerBookingRouter({
         )}
 
         {/* Address Selection (not for tele) */}
-        {step === 'address' && selectedServiceType !== 'tele' && (
+        {step === 'address' && bookingServiceStyle !== 'tele' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">
-                {selectedServiceType === 'at_home' ? 'Select Your Address' : 'Confirm Clinic Address'}
+                {bookingServiceStyle === 'at_home' ? 'Select Your Address' : 'Confirm Clinic Address'}
               </h2>
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+              {(bookingServiceStyle === 'at_home' || bookingServiceStyle === 'home') && (
                 <button
                   onClick={() => setShowAddAddressModal(true)}
                   className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-200 transition"
@@ -736,7 +785,7 @@ export function WalkerBookingRouter({
             </div>
             
             {/* Required notice for home services */}
-            {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+            {(bookingServiceStyle === 'at_home' || bookingServiceStyle === 'home') && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
                 <p className="text-sm text-blue-800">
@@ -746,7 +795,7 @@ export function WalkerBookingRouter({
             )}
             
             <div className="space-y-3">
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') ? (
+              {(bookingServiceStyle === 'at_home' || bookingServiceStyle === 'home') ? (
                 addresses.length > 0 ? (
                   addresses.map((addr) => (
                     <button
@@ -814,7 +863,7 @@ export function WalkerBookingRouter({
             </div>
             
             {/* Confirm selected address */}
-            {selectedServiceType === 'at_home' && selectedAddress && addresses.length > 0 && (
+            {bookingServiceStyle === 'at_home' && selectedAddress && addresses.length > 0 && (
               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                 <p className="text-sm text-[#FF6B35] font-medium">
                   ✓ Service will be delivered to: {selectedAddress?.label || 'Selected Address'}
@@ -824,13 +873,13 @@ export function WalkerBookingRouter({
             
             <Button 
               onClick={() => {
-                if (selectedServiceType === 'at_center') setSelectedAddress({ id: 'clinic' });
+                if (bookingServiceStyle === 'at_center') setSelectedAddress({ id: 'clinic' });
                 handleNext();
               }} 
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={selectedServiceType === 'at_home' && !selectedAddress}
+              disabled={bookingServiceStyle === 'at_home' && !selectedAddress}
             >
-              {selectedServiceType === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
+              {bookingServiceStyle === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
             </Button>
           </div>
         )}
@@ -914,7 +963,7 @@ export function WalkerBookingRouter({
             serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
             serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
-            serviceStyle="at_home"
+            serviceStyle={bookingServiceStyle}
             category="walking"
             vendorId={vendorId || ''}
             vendorName={walker?.name || 'Walker Professional'}
