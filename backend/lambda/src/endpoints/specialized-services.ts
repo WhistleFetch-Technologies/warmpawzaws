@@ -1805,17 +1805,26 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       let existingProdMeta: any = {};
-      const existingProductRow = await query(
-        `SELECT metadata FROM products WHERE id = $1 AND vendor_id = $2`,
-        [productId, vendorId]
-      );
-      if (existingProductRow.rows?.[0]?.metadata != null) {
-        try {
-          const m = existingProductRow.rows[0].metadata;
-          existingProdMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
-        } catch {
-          existingProdMeta = {};
+      try {
+        const hasProductMetadataCol = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
+        ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+        if (hasProductMetadataCol) {
+          const existingProductRow = await query(
+            `SELECT metadata FROM products WHERE id = $1 AND vendor_id = $2`,
+            [productId, vendorId]
+          );
+          if (existingProductRow.rows?.[0]?.metadata != null) {
+            try {
+              const m = existingProductRow.rows[0].metadata;
+              existingProdMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
+            } catch {
+              existingProdMeta = {};
+            }
+          }
         }
+      } catch (prodMetaErr: any) {
+        console.warn('meal-products PUT: could not load products.metadata', prodMetaErr?.message);
       }
 
       const resolvedMealImageUrl = 'mealImageUrl' in data
@@ -1846,7 +1855,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
             price = COALESCE($3, price),
-            dietary_requirements = COALESCE($4, dietary_requirements),
+            dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
