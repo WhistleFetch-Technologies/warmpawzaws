@@ -60,6 +60,8 @@ interface ServiceItem {
   publishStatus?: 'draft' | 'pending_approval' | 'published' | 'rejected';
   isCustomService?: boolean;
   isPlatformService?: boolean;
+  /** Stable index from last load — stable sort within enabled/disabled groups after publish */
+  _listOrder?: number;
 }
 
 interface CategoryGroup {
@@ -148,12 +150,25 @@ export default function SoloProviderServiceManagePage() {
     } else if (statusFilter === 'disabled') {
       filtered = filtered.filter(s => !s.isEnabled);
     }
+
+    // Pre-publish: keep merge order. Post-publish: enabled groups first (stable within groups).
+    const postPublishLayout = services.some(
+      s => s.isPublished || s.publishStatus === 'published'
+    );
+    const displayOrdered = postPublishLayout
+      ? [...filtered].sort((a, b) => {
+          const ae = !!a.isEnabled;
+          const be = !!b.isEnabled;
+          if (ae !== be) return ae ? -1 : 1;
+          return (a._listOrder ?? 0) - (b._listOrder ?? 0);
+        })
+      : filtered;
     
-    setFilteredServices(filtered);
+    setFilteredServices(displayOrdered);
     
-    // Group by category
+    // Group by category (same sequence as displayed)
     const groups: { [key: string]: ServiceItem[] } = {};
-    filtered.forEach(service => {
+    displayOrdered.forEach(service => {
       const category = service.category || 'Other';
       if (!groups[category]) {
         groups[category] = [];
@@ -161,9 +176,9 @@ export default function SoloProviderServiceManagePage() {
       groups[category].push(service);
     });
     
-    setCategoryGroups(Object.entries(groups).map(([name, services]) => ({
+    setCategoryGroups(Object.entries(groups).map(([name, svcs]) => ({
       name,
-      services,
+      services: svcs,
       expanded: true,
     })));
     
@@ -238,7 +253,12 @@ export default function SoloProviderServiceManagePage() {
         }
       });
       
-      setServices(mergedServices);
+      setServices(
+        mergedServices.map((s, index) => ({
+          ...s,
+          _listOrder: index,
+        }))
+      );
       
       // Calculate stats
       const enabledCount = mergedServices.filter(s => s.isEnabled).length;
