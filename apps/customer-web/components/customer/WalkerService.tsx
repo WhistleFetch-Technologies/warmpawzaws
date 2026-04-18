@@ -90,6 +90,14 @@ function collectWalkerSearchHaystack(w: Record<string, unknown>): string {
   return parts.join(' ').toLowerCase();
 }
 
+/** Canonical vendor id for API calls (prefer vendorId over staff/list id). */
+function resolveWalkerVendorId(walker: any): string | undefined {
+  const v = walker?.vendorId ?? walker?.providerId ?? walker?.id;
+  if (v == null) return undefined;
+  const s = String(v).trim();
+  return s || undefined;
+}
+
 function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): boolean {
   const needle = rawQuery.trim().toLowerCase();
   if (!needle) return true;
@@ -150,7 +158,10 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   const [previousWalker, setPreviousWalker] = useState<any>(null);
   const [packagesDialogOpen, setPackagesDialogOpen] = useState(false);
   const [packagesWalkerName, setPackagesWalkerName] = useState('');
-  const [walkerPackagesList, setWalkerPackagesList] = useState<any[]>([]);
+  const [packagesDialogWalker, setPackagesDialogWalker] = useState<any | null>(null);
+  const [walkerPackagesList, setWalkerPackagesList] = useState<
+    { kind: 'vendor_service' | 'service_package'; raw: any; dedupeKey: string }[]
+  >([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
 
   useEffect(() => {
@@ -355,7 +366,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   }, [searchQuery, loadWalkers]);
 
   const buildWalkerPayload = (walker: any) => {
-    const vid = walker.id || walker.vendorId;
+    const vid = resolveWalkerVendorId(walker);
     return {
       id: vid,
       name: walker.name || walker.businessName || 'Walker',
@@ -365,7 +376,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
 
   const handleOpenWalkerProfile = (walker: any, e?: MouseEvent) => {
     e?.stopPropagation();
-    const vid = walker.id || walker.vendorId;
+    const vid = resolveWalkerVendorId(walker);
     if (!vid) {
       toast.error('Profile unavailable for this walker.');
       return;
@@ -378,24 +389,62 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     });
   };
 
+  const collectVendorServicePackages = (svcRes: Record<string, any> | null | undefined): any[] => {
+    if (!svcRes || typeof svcRes !== 'object') return [];
+    const pkgs = Array.isArray(svcRes.packages) ? svcRes.packages : [];
+    const services = Array.isArray(svcRes.services) ? svcRes.services : [];
+    const fromServices = services.filter((s: any) => s?.isPackage);
+    return [...pkgs, ...fromServices];
+  };
+
   const handleViewWalkerPackages = async (walker: any, e: MouseEvent) => {
     e.stopPropagation();
-    const vid = walker.id || walker.vendorId;
+    const vid = resolveWalkerVendorId(walker);
     if (!vid) {
       toast.error('Packages unavailable for this walker.');
       return;
     }
+    setPackagesDialogWalker(walker);
     setPackagesWalkerName(String(walker.name || walker.businessName || walker.business_name || 'Walker').trim());
     setPackagesDialogOpen(true);
     setPackagesLoading(true);
     setWalkerPackagesList([]);
     try {
-      const res = (await apiClient.get(`/vendor/${vid}/packages`)) as {
-        packages?: any[];
-        success?: boolean;
-      };
-      const list = Array.isArray(res?.packages) ? res.packages : [];
-      setWalkerPackagesList(list);
+      const phoneParam = phone
+        ? `&customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
+        : '';
+      const servicesUrl = `/customer/vendor/${encodeURIComponent(vid)}/services?serviceStyle=at_home&category=walking${phoneParam}`;
+      const [svcRes, spRes] = await Promise.allSettled([
+        apiClient.get(servicesUrl) as Promise<Record<string, any>>,
+        apiClient.get(`/vendor/${encodeURIComponent(vid)}/packages`) as Promise<{ packages?: any[] }>,
+      ]);
+
+      const vendorRows: any[] =
+        svcRes.status === 'fulfilled' ? collectVendorServicePackages(svcRes.value) : [];
+      const tableRows: any[] =
+        spRes.status === 'fulfilled' && Array.isArray(spRes.value?.packages) ? spRes.value.packages : [];
+
+      const seen = new Set<string>();
+      const merged: { kind: 'vendor_service' | 'service_package'; raw: any; dedupeKey: string }[] = [];
+
+      for (const r of vendorRows) {
+        if (!r) continue;
+        const key = `vs:${r.id ?? r.service_id ?? r.serviceId ?? ''}`;
+        if (!key.endsWith(':') && !seen.has(key)) {
+          seen.add(key);
+          merged.push({ kind: 'vendor_service', raw: r, dedupeKey: key });
+        }
+      }
+      for (const r of tableRows) {
+        if (!r) continue;
+        const key = `sp:${r.id ?? ''}`;
+        if (!key.endsWith(':') && !seen.has(key)) {
+          seen.add(key);
+          merged.push({ kind: 'service_package', raw: r, dedupeKey: key });
+        }
+      }
+
+      setWalkerPackagesList(merged);
     } catch {
       toast.error('Could not load packages. Try again later.');
       setWalkerPackagesList([]);
@@ -404,8 +453,59 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     }
   };
 
+  const handleBookPackageFromModal = (entry: { kind: 'vendor_service' | 'service_package'; raw: any }) => {
+    const walker = packagesDialogWalker;
+    const vid = resolveWalkerVendorId(walker);
+    if (!walker || !vid) {
+      toast.error('Unable to start booking.');
+      return;
+    }
+    const r = entry.raw;
+    if (entry.kind === 'vendor_service') {
+      const serviceUuid = (r.serviceId || r.service_id || '').toString().trim();
+      const vsId = r.id != null ? String(r.id) : '';
+      onNavigate?.('walker-booking', {
+        vendorId: vid,
+        walker: buildWalkerPayload(walker),
+        serviceType: 'walking',
+        serviceStyle: 'at_home',
+        serviceId: serviceUuid || vsId,
+        serviceName: String(r.name || r.service_name || r.serviceName || 'Walk package').trim(),
+        price: Number(r.price ?? r.custom_price ?? 0) || 0,
+        duration: Number(r.duration ?? r.durationMinutes ?? r.duration_minutes ?? 30) || 30,
+      });
+    } else {
+      const ids = r.service_ids;
+      let firstSid = '';
+      if (Array.isArray(ids) && ids.length > 0) firstSid = String(ids[0]);
+      else if (ids && typeof ids === 'string') {
+        try {
+          const parsed = JSON.parse(ids);
+          if (Array.isArray(parsed) && parsed[0]) firstSid = String(parsed[0]);
+        } catch {
+          firstSid = String(ids);
+        }
+      }
+      onNavigate?.('walker-booking', {
+        vendorId: vid,
+        walker: buildWalkerPayload(walker),
+        serviceType: 'walking',
+        serviceStyle: 'at_home',
+        serviceId: firstSid || undefined,
+        serviceName: String(r.name || r.package_name || r.packageName || 'Walk package').trim(),
+        price: Number(r.price ?? r.package_price ?? r.packagePrice ?? 0) || 0,
+        duration: Number(r.duration_minutes ?? r.durationMinutes ?? 30) || 30,
+      });
+    }
+    setPackagesDialogOpen(false);
+  };
+
   const handleWalkerSelect = (walker: any) => {
-    const vid = walker.id || walker.vendorId;
+    const vid = resolveWalkerVendorId(walker);
+    if (!vid) {
+      toast.error('Booking unavailable for this walker.');
+      return;
+    }
     const walkerPayload = buildWalkerPayload(walker);
     const base = {
       vendorId: vid,
@@ -822,6 +922,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           if (!open) {
             setWalkerPackagesList([]);
             setPackagesWalkerName('');
+            setPackagesDialogWalker(null);
           }
         }}
       >
@@ -840,11 +941,14 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             <p className="text-sm text-gray-600 py-4 text-center">No packages listed yet for this walker.</p>
           ) : (
             <ul className="space-y-3">
-              {walkerPackagesList.filter(Boolean).map((pkg, i) => {
+              {walkerPackagesList.map((entry, i) => {
+                  const pkg = entry.raw;
                   const name =
                     pkg.package_name ||
                     pkg.packageName ||
                     pkg.name ||
+                    pkg.service_name ||
+                    pkg.serviceName ||
                     `Package ${i + 1}`;
                   const price =
                     pkg.package_price ??
@@ -853,21 +957,45 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                     pkg.original_price ??
                     pkg.originalPrice;
                   const sessions =
-                    pkg.total_sessions ?? pkg.totalSessions ?? pkg.session_count ?? pkg.sessionCount;
-                  const desc = pkg.description || pkg.package_description || '';
+                    pkg.total_sessions ??
+                    pkg.totalSessions ??
+                    pkg.session_count ??
+                    pkg.sessionCount ??
+                    pkg.packageDetails?.totalSessions;
+                  const desc =
+                    pkg.description ||
+                    pkg.package_description ||
+                    pkg.longDescription ||
+                    pkg.shortDescription ||
+                    '';
+                  const durationLabel =
+                    pkg.duration ??
+                    pkg.durationMinutes ??
+                    pkg.duration_minutes ??
+                    pkg.packageDetails?.sessionDuration;
                   return (
-                    <li key={pkg.id ?? `pkg-${i}`}>
+                    <li key={entry.dedupeKey}>
                       <Card className="p-3 border-orange-100">
                         <p className="font-semibold text-gray-900">{name}</p>
                         {desc ? <p className="text-sm text-gray-600 mt-1 line-clamp-3">{desc}</p> : null}
-                        <div className="flex flex-wrap gap-2 mt-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                           {price != null && price !== '' ? (
                             <span className="font-semibold text-orange-600">₹{Number(price).toLocaleString()}</span>
                           ) : null}
                           {sessions != null && sessions !== '' ? (
                             <span className="text-gray-500">{sessions} session(s)</span>
                           ) : null}
+                          {durationLabel != null && durationLabel !== '' ? (
+                            <span className="text-gray-500">{durationLabel} min</span>
+                          ) : null}
                         </div>
+                        <Button
+                          type="button"
+                          className="w-full mt-3 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] hover:from-[#FF7A35] hover:to-[#FF5A25] text-white font-semibold"
+                          onClick={() => handleBookPackageFromModal(entry)}
+                        >
+                          Book this package
+                        </Button>
                       </Card>
                     </li>
                   );
