@@ -38,8 +38,21 @@ export default function HomeServiceTrackingPageClient() {
         
         // Determine if this is a walker/sitter session requiring special tracking
         const serviceTypeLower = (booking.serviceType || booking.service_type || '').toLowerCase();
-        const isWalkerSession = serviceTypeLower.includes('walk') || serviceTypeLower === 'walking';
-        const isSitterSession = serviceTypeLower.includes('sit') || serviceTypeLower === 'sitting';
+        const serviceNameLower = (
+          booking.serviceName ||
+          booking.service_name ||
+          ''
+        ).toLowerCase();
+        const isWalkerSession =
+          serviceTypeLower.includes('walk') ||
+          serviceTypeLower === 'walking' ||
+          serviceNameLower.includes('walk') ||
+          serviceNameLower.includes('walking');
+        const isSitterSession =
+          serviceTypeLower.includes('sit') ||
+          serviceTypeLower === 'sitting' ||
+          serviceNameLower.includes('sit') ||
+          serviceNameLower.includes('sitting');
         
         setBookingData({
           customerName: booking.customerName || booking.customer_name || 'Customer',

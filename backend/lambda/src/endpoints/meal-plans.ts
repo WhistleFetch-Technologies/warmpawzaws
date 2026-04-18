@@ -314,12 +314,50 @@ export function registerMealPlanEndpoints(app: Hono) {
         mealPlans: filteredPlans.map((mp: any) => {
           const distanceKm = mp.distance_km || null;
           const estimatedDeliveryMinutes = distanceKm != null ? Math.round(15 + distanceKm * 3) : null; // Phase 1: ETA ~15min + 3min/km
+          let dietaryReqs: any = {};
+          try {
+            dietaryReqs =
+              typeof mp.dietary_requirements === 'string'
+                ? JSON.parse(mp.dietary_requirements)
+                : mp.dietary_requirements || {};
+          } catch {
+            dietaryReqs = {};
+          }
+          let photos = mp.photos;
+          try {
+            photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
+          } catch {
+            photos = [];
+          }
+          const mealImageUrl =
+            dietaryReqs.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
+          let suitableFor = mp.suitable_for;
+          let ingredients = mp.ingredients;
+          let nutritionInfo = mp.nutrition_info;
+          try {
+            suitableFor = typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for;
+          } catch {
+            suitableFor = mp.suitable_for;
+          }
+          try {
+            ingredients = typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients;
+          } catch {
+            ingredients = mp.ingredients;
+          }
+          try {
+            nutritionInfo = typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info;
+          } catch {
+            nutritionInfo = mp.nutrition_info;
+          }
+
           return {
             ...mp,
-            photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
-            suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
-            ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
-            nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
+            photos,
+            suitableFor,
+            ingredients,
+            nutritionInfo,
+            dietary_requirements: dietaryReqs,
+            mealImageUrl,
             distanceKm,
             estimatedDeliveryMinutes, // Phase 1: for customer UI "ETA ~X min"
           };
@@ -358,15 +396,35 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const mp = result.rows[0];
 
+      let dietaryReqs: any = {};
+      try {
+        dietaryReqs =
+          typeof mp.dietary_requirements === 'string'
+            ? JSON.parse(mp.dietary_requirements)
+            : mp.dietary_requirements || {};
+      } catch {
+        dietaryReqs = {};
+      }
+      let photos = mp.photos;
+      try {
+        photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
+      } catch {
+        photos = [];
+      }
+      const mealImageUrl =
+        dietaryReqs.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
+
       return c.json({
         success: true,
         mealPlan: {
           ...mp,
-          photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
+          photos,
           suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
           ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
           nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
           deliverySlots: typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots,
+          dietary_requirements: dietaryReqs,
+          mealImageUrl,
         },
       });
     } catch (error: any) {

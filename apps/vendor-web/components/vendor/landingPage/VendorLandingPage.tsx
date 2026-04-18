@@ -9,12 +9,11 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
-import { getVendorRoleId, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
+import { getVendorRoleId, getVendorProgressRoleType, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
 import { DoctorManagement } from '../clinic/DoctorManagement';
 import { VendorBusinessHub } from '../business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from '../clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from '../resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
-import { NutritionistMealManager } from '../NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
 import { EnhancedVendorOnboarding } from '../onboarding/EnhancedVendorOnboarding';
 import { VendorApplicationSubmitted } from '../VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from '../VendorApplicationUnderReview';
@@ -114,7 +113,6 @@ export function VendorLandingPage({
   const [showBusinessHub, setShowBusinessHub] = useState(false);
   const [showSupportDashboard, setShowSupportDashboard] = useState(false);
   const [showVetSpecialized, setShowVetSpecialized] = useState(false);
-  const [showNutritionistMealManager, setShowNutritionistMealManager] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [showCCTV, setShowCCTV] = useState(false);
@@ -1156,22 +1154,6 @@ export function VendorLandingPage({
         );
       }
 
-      // ✅ NEW: Nutritionist Meal Manager
-      if (showNutritionistMealManager) {
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-            vendorData={vendorData}
-            vendorName={vendorData?.fullName || vendorData?.businessName}
-            onBack={() => setShowNutritionistMealManager(false)}
-            onNavigateToProgressTracking={() => {
-              setShowNutritionistMealManager(false);
-              setShowProgressTracking(true);
-            }}
-          />
-        );
-      }
-
       // ✅ FIX: Gallery Management
       if (showGallery) {
         return (
@@ -1332,19 +1314,7 @@ export function VendorLandingPage({
 
       // ✅ FIX: Progress Tracking Dashboard
       if (showProgressTracking) {
-        const progressRoleType: 'trainer' | 'behaviorist' | 'nutritionist' = hasVendorRole(
-          vendorData,
-          ['nutritionist', 'pet_nutritionist', 'nutritionist_center']
-        )
-          ? 'nutritionist'
-          : hasVendorRole(vendorData, [
-              'pet_behaviorist',
-              'behaviorist_solo',
-              'behaviorist_center',
-              'behaviorist',
-            ])
-            ? 'behaviorist'
-            : 'trainer';
+        const progressRoleType = getVendorProgressRoleType(vendorData);
         return (
           <ProgressTrackingDashboard
             vendorId={vendorId}
@@ -1551,27 +1521,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 4. Nutritionist — meal manager shell; Progress uses shared ProgressTrackingDashboard (above)
-      if (
-        hasVendorRole(vendorData, [
-          'nutritionist',
-          'pet_nutritionist',
-          'nutritionist_center',
-        ])
-      ) {
-        console.log('🥗 Rendering NutritionistMealManager');
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-            vendorData={vendorData}
-            vendorName={vendorData?.fullName || vendorData?.businessName}
-            onBack={() => {
-              // Handle logout
-            }}
-            onNavigateToProgressTracking={() => setShowProgressTracking(true)}
-          />
-        );
-      }
+      // 4. Nutritionist — same home dashboard as other solo vendors (VendorDashboard).
+      // Nutritionist meal products & orders: Additional Features "Diet" → /nutrition/dashboard only.
 
       // 5. Sunset Services (Memorial/Cremation)
       if (vendorData?.roleId === 'sunset_services') {
@@ -1713,7 +1664,7 @@ export function VendorLandingPage({
               onNavigateToPricing={() => setShowPricing(true)}
               onNavigateToProgressTracking={() => {
                 if (isWalkerVendor) {
-                  setShowBookingManagement(true);
+                  router.push('/bookings?walkSessions=1');
                 } else {
                   setShowProgressTracking(true);
                 }

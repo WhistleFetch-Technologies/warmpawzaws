@@ -11,6 +11,7 @@ import {
   Heart,
   Activity,
   Search,
+  Footprints,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -20,7 +21,7 @@ interface ProgressTracker {
   petName: string;
   petImage: string;
   customerName: string;
-  programType: 'training' | 'behavioral' | 'nutrition' | 'rehabilitation';
+  programType: 'training' | 'behavioral' | 'nutrition' | 'rehabilitation' | 'walking';
   programName: string;
   startDate: string;
   endDate: string;
@@ -33,7 +34,7 @@ interface ProgressTracker {
 
 interface ProgressTrackingDashboardProps {
   vendorId: string;
-  roleType?: 'trainer' | 'behaviorist' | 'nutritionist';
+  roleType?: 'trainer' | 'behaviorist' | 'nutritionist' | 'walker';
   onBack?: () => void;
 }
 
@@ -48,21 +49,23 @@ function mapDbStatusToUi(status: string): ProgressTracker['status'] {
 }
 
 function inferProgramType(
-  roleType: 'trainer' | 'behaviorist' | 'nutritionist',
+  roleType: 'trainer' | 'behaviorist' | 'nutritionist' | 'walker',
   category: string
 ): ProgressTracker['programType'] {
   const c = (category || '').toLowerCase();
+  if (c.includes('walk')) return 'walking';
   if (c.includes('nutrition') || c.includes('diet')) return 'nutrition';
   if (c.includes('rehab')) return 'rehabilitation';
   if (c.includes('behavior') || c.includes('anxiety')) return 'behavioral';
   if (roleType === 'nutritionist') return 'nutrition';
   if (roleType === 'behaviorist') return 'behavioral';
+  if (roleType === 'walker') return 'walking';
   return 'training';
 }
 
 function mapTrainingProgressRow(
   row: TrainingProgressRow,
-  roleType: 'trainer' | 'behaviorist' | 'nutritionist'
+  roleType: 'trainer' | 'behaviorist' | 'nutritionist' | 'walker'
 ): ProgressTracker {
   const estimated =
     row.estimated_total_sessions != null
@@ -89,7 +92,7 @@ function mapTrainingProgressRow(
 
   return {
     id: String(row.id),
-    petId: String(row.pet_id),
+    petId: String(row.pet_id ?? '00000000-0000-0000-0000-000000000001'),
     petName: String(row.pet_name || 'Pet'),
     petImage: '',
     customerName: String(row.customer_name || 'Customer'),
@@ -98,7 +101,13 @@ function mapTrainingProgressRow(
     startDate: startRaw ? String(startRaw) : new Date().toISOString(),
     endDate: endRaw ? String(endRaw) : new Date().toISOString(),
     status: mapDbStatusToUi(String(row.status || 'enrolled')),
-    currentPhase: notes ? (notes.length > 80 ? `${notes.slice(0, 80)}…` : notes) : 'In program',
+    currentPhase: notes
+      ? notes.length > 80
+        ? `${notes.slice(0, 80)}…`
+        : notes
+      : inferProgramType(roleType, category) === 'walking'
+        ? 'Completed walks'
+        : 'In program',
     completionPercentage,
     sessionsCompleted,
     totalSessions,
@@ -189,6 +198,8 @@ export function ProgressTrackingDashboard({
         return <Heart className="w-5 h-5" />;
       case 'rehabilitation':
         return <Activity className="w-5 h-5" />;
+      case 'walking':
+        return <Footprints className="w-5 h-5" />;
       default:
         return <FileText className="w-5 h-5" />;
     }
@@ -277,7 +288,7 @@ export function ProgressTrackingDashboard({
             <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="text-lg font-semibold text-gray-800 mb-2">No progress records</h3>
             <p className="text-gray-500 mb-4">
-              Enrolled pets with training programs will appear here.
+              Completed sessions and enrolled programs appear here once bookings are marked complete.
             </p>
             <button
               type="button"

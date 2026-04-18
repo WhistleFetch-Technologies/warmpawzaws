@@ -265,6 +265,11 @@ export function VendorDashboard({
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
   const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+  const isNutritionistVendor = hasVendorRole(vendorData, [
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+  ]);
   /** Groomer solo/center: hide Portfolio under Additional Features (UI only; capability/backend unchanged). */
   const isGroomerVendorForPortfolioUi = hasVendorRole(vendorData, [
     'groomer',
@@ -1094,8 +1099,9 @@ export function VendorDashboard({
           )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
-        {!isPharmacy && ((capabilities.gallery || (capabilities.portfolio && !isGroomerVendorForPortfolioUi) || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+        {!isPharmacy && ((capabilities.gallery || (capabilities.portfolio && !isGroomerVendorForPortfolioUi) || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.meal_plans || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
           onNavigateToGallery ||
+          isNutritionistVendor ||
           capabilities.controlled_substances ||
           capabilities.prescription_verification ||
           capabilities.delivery ||
@@ -1226,7 +1232,7 @@ export function VendorDashboard({
                     className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
                     title={
                       isWalkerVendor
-                        ? 'Start walks with customer OTP, live tracking, and end session when done'
+                        ? 'Opens your walk booking and Live tracker (start OTP, GPS, end OTP) when one is due'
                         : 'Training and program progress'
                     }
                   >
@@ -1339,11 +1345,13 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* ✅ NEW: Diet Charts */}
-                {onNavigateToDietCharts && capabilities.diet_charts && (
+                {/* Diet / nutrition hub (meal products & orders live under /nutrition/dashboard) */}
+                {onNavigateToDietCharts &&
+                  (capabilities.diet_charts || capabilities.meal_plans || isNutritionistVendor) && (
                   <button
                     onClick={onNavigateToDietCharts}
                     className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
+                    title="Diet, meal products, and orders"
                   >
                     <svg className="w-6 h-6 text-lime-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

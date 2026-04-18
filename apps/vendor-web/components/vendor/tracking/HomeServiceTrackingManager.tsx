@@ -376,7 +376,7 @@ export function HomeServiceTrackingManager({
     try {
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/start-session`, {
         vendorId,
-        startOtp: otp,
+        otp,
         startedAt: new Date().toISOString(),
         location: currentLocation
       });

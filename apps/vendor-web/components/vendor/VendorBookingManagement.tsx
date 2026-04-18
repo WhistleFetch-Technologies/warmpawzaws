@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -38,16 +38,15 @@ import {
   Phone, 
   Video, 
   MapPin, 
+  Navigation,
   MessageSquare, 
   CheckCircle, 
-  Play, 
-  Square, 
   Pill, 
   FileText, 
   RefreshCw, 
   X 
 } from 'lucide-react';
-import { getVendorRoleId, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
+import { getVendorRoleId, hasVendorRole, isSoloVendor, isVendorWalkerProgramProgress } from '@/lib/vendor-utils';
 import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
 
 interface VendorBookingManagementProps {
@@ -62,6 +61,8 @@ interface VendorBookingManagementProps {
   vendorName?: string;
   /** When true, omit outer shell and VendorHeader (parent provides them, e.g. VendorRouteShell). */
   embedded?: boolean;
+  /** Set when opening `/bookings?walkSessions=1` from the walker dashboard tile. */
+  walkSessionsFocus?: boolean;
 }
 
 interface Booking {
@@ -182,6 +183,43 @@ function formatDbTimeTo12h(raw: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+const WALK_SERVICE_HINT =
+  /walk|walking|dog\s*walk|pet\s*walk|stroll|outing|leash|पैदल|walkathon/i;
+/** Exclude obvious non-walk home visits when inferring from walker + at_home. */
+const NON_WALK_HOME_HINT =
+  /groom|bath|haircut|nail|vet\s|vaccin|dental|spa|trim|board|daycare|training\s*class|consult|pet\s*sit|house\s*sit|sitting/i;
+
+/**
+ * Bookings that should use `/bookings/home-service/[id]` (start/end OTP + GPS).
+ * Catalog names may omit the word "walk"; walker + at_home is a strong signal.
+ */
+function bookingNeedsWalkLiveTracker(booking: Booking, vendorData?: any): boolean {
+  const name = String(booking.serviceName || booking.service_name || '').toLowerCase();
+  const cat = String(
+    (booking as any).serviceCategory || (booking as any).service_category || ''
+  ).toLowerCase();
+  const hay = `${name} ${cat}`;
+  if (WALK_SERVICE_HINT.test(hay)) return true;
+
+  if (vendorData && isVendorWalkerProgramProgress(vendorData)) {
+    const st = String(booking.serviceType || (booking as any).service_type || '').toLowerCase();
+    const atHome =
+      st === 'at_home' ||
+      st.includes('home') ||
+      st.includes('home_visit') ||
+      st.includes('home_service');
+    if (
+      atHome &&
+      booking.status !== 'completed' &&
+      booking.status !== 'cancelled' &&
+      !NON_WALK_HOME_HINT.test(hay)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function VendorBookingManagement({
   vendorId,
   vendorData,
@@ -190,9 +228,48 @@ export function VendorBookingManagement({
   vendorPhone,
   vendorName,
   embedded = false,
+  walkSessionsFocus = false,
 }: VendorBookingManagementProps) {
   const router = useRouter();
-  
+  /** After walk-sessions deep link: auto-open tracker once or show one guidance toast. */
+  const walkSessionsWalkFlowDone = useRef(false);
+  const prevWalkSessionsFocus = useRef(false);
+
+  useEffect(() => {
+    if (walkSessionsFocus && !prevWalkSessionsFocus.current) {
+      walkSessionsWalkFlowDone.current = false;
+    }
+    prevWalkSessionsFocus.current = walkSessionsFocus;
+  }, [walkSessionsFocus]);
+
+  useEffect(() => {
+    if (!walkSessionsFocus || loading || walkSessionsWalkFlowDone.current) return;
+
+    const eligible = bookings.filter(
+      (b) =>
+        bookingNeedsWalkLiveTracker(b, vendorData) &&
+        (b.status === 'in_progress' || b.status === 'confirmed')
+    );
+
+    if (eligible.length > 0) {
+      walkSessionsWalkFlowDone.current = true;
+      const chosen =
+        eligible.find((b) => b.status === 'in_progress') || eligible[0];
+      const id = chosen.bookingId || chosen.id;
+      if (id) {
+        toast.message('Opening live tracker…');
+        router.replace(`/bookings/home-service/${id}`);
+      }
+      return;
+    }
+
+    walkSessionsWalkFlowDone.current = true;
+    toast.message('Walk sessions', {
+      description:
+        'No confirmed or in-progress walk in this date view. Pick a walk booking and tap Live tracker, or switch Today / Week / Month.',
+    });
+  }, [walkSessionsFocus, loading, bookings, vendorData, router]);
+
   // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
   const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
                         (vendorData?.vendorConfiguration === 'solo' || 
@@ -481,6 +558,13 @@ export function VendorBookingManagement({
           date: booking.booking_date || booking.scheduledDate || booking.date || selectedDate,
           price: booking.price || 0,
           serviceName: booking.service?.name || booking.service_name || booking.serviceName || 'Service',
+          serviceCategory:
+            booking.service?.category != null
+              ? String(booking.service.category)
+              : booking.service_category != null
+                ? String(booking.service_category)
+                : '',
+          service_style: booking.service_style || booking.serviceStyle || '',
           duration: booking.duration || 30,
           
           // ✅ NEW: Chat fields
@@ -820,14 +904,13 @@ export function VendorBookingManagement({
     setSelectedBooking(booking);
     setOtpInput('');
     setOtpError('');
-    
-    // Check if this is a dog walking service (requires session tracking)
-    const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
-                         booking.serviceName?.toLowerCase().includes('walking');
-    
-    if (isDogWalking && booking.status === 'confirmed') {
-      // For dog walking, show OTP modal to START session (not complete)
-      setShowOTPModal(true);
+
+    if (bookingNeedsWalkLiveTracker(booking, vendorData) && booking.status === 'confirmed') {
+      const id = booking.bookingId || booking.id;
+      if (id) {
+        router.push(`/bookings/home-service/${id}`);
+      }
+      return;
     } else if (booking.communicationType === 'video') {
       // For tele consultations, complete without OTP
       handleCompleteWithoutOTP(booking);
@@ -872,29 +955,14 @@ export function VendorBookingManagement({
     }
   };
   
-  // End session for dog walking (no OTP needed)
-  const handleEndSession = async (booking: Booking) => {
-    if (!confirm('End this walking session?')) return;
-    
-    try {
-      setCompletingBooking(true);
-      
-      const data = await apiClient.post(`/vendor/bookings/${booking.id}/end-session`, { vendorId }) as any;
-      
-      // data already available
-      
-      if (data && data.success) {
-        alert('✅ Session ended and booking completed!');
-        loadBookings(); // Reload bookings
-      } else {
-        alert(`❌ Error: ${data.error || 'Failed to end session'}`);
-      }
-    } catch (error) {
-      console.error('Error ending session:', error);
-      alert('❌ Error ending session. Please try again.');
-    } finally {
-      setCompletingBooking(false);
+  /** Walker live session: start OTP, GPS, end OTP — use dedicated tracking screen (not list + end-session API). */
+  const openWalkLiveTracker = (booking: Booking) => {
+    const id = booking.bookingId || booking.id;
+    if (!id) {
+      toast.error('Missing booking id');
+      return;
     }
+    router.push(`/bookings/home-service/${id}`);
   };
   
   // Complete booking without OTP (for tele consultations)
@@ -1198,47 +1266,14 @@ export function VendorBookingManagement({
                           );
                         }
 
-                        const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
-                                            booking.serviceName?.toLowerCase().includes('walking');
-                        
-                        if (isDogWalking) {
-                          // DOG WALKING: Show Start/End Session buttons
-                          if (booking.status === 'in_progress') {
-                            return (
-                              <div className="mt-3">
-                                <button
-                                  onClick={() => handleEndSession(booking)}
-                                  disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                  <Square className="w-4 h-4" />
-                                  End Session & Complete
-                                </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
-                                  🗺️ Customer is tracking your location
-                                </p>
-                              </div>
-                            );
-                          } else {
-                            return (
-                              <div className="mt-3">
-                                <button
-                                  onClick={() => handleCompleteBooking(booking)}
-                                  disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                  <Play className="w-4 h-4" />
-                                  Start Session with OTP
-                                </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
-                                  Enter customer OTP to start walk & enable live tracking
-                                </p>
-                              </div>
-                            );
-                          }
-                        } else {
-                          // REGULAR SERVICES: Complete with OTP (or without for tele)
-                          return (
+                        const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
+                        /* Walks use Live tracker in the action row (OTP + GPS); skip generic Complete here. */
+                        if (showWalkTracker) {
+                          return null;
+                        }
+
+                        // REGULAR SERVICES: Complete with OTP (or without for tele)
+                        return (
                             <div className="mt-3">
                               <button
                                 onClick={() => handleCompleteBooking(booking)}
@@ -1255,7 +1290,6 @@ export function VendorBookingManagement({
                               </p>
                             </div>
                           );
-                        }
                       })()}
                       
                       {booking.status === 'completed' && (
@@ -1264,8 +1298,25 @@ export function VendorBookingManagement({
                         </div>
                       )}
                       
-                      {/* ✅ ACTION BUTTONS: Chat, Prescription, Video Call */}
+                      {/* ✅ ACTION BUTTONS: Live tracker (walkers), Chat, Prescription, Video Call */}
                       <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">
+                        {bookingNeedsWalkLiveTracker(booking, vendorData) &&
+                          booking.status !== 'completed' &&
+                          booking.status !== 'cancelled' &&
+                          booking.status !== 'pending' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openWalkLiveTracker(booking);
+                            }}
+                            title="Start OTP, GPS route, end OTP"
+                            className="flex-1 min-w-[100px] py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            Live tracker
+                          </button>
+                        )}
                         {/* Video Call Button - TELE ONLY */}
                         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
                           <button
@@ -1765,8 +1816,7 @@ export function VendorBookingManagement({
 
       {/* OTP VERIFICATION MODAL */}
       {showOTPModal && selectedBooking && (() => {
-        const isDogWalking = selectedBooking.serviceName?.toLowerCase().includes('walk') || 
-                            selectedBooking.serviceName?.toLowerCase().includes('walking');
+        const isDogWalking = bookingNeedsWalkLiveTracker(selectedBooking, vendorData);
         const isStartSession = isDogWalking && selectedBooking.status === 'confirmed';
         
         return (

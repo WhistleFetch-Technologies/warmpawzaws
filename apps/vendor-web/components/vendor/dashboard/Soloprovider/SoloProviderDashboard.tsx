@@ -71,7 +71,10 @@ import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../typ
 import { DashboardStats } from '@/components/shared/DashboardStats';
 
 
-export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashboardProps) {
+export function SoloProviderDashboard({
+  session,
+  vendorData,
+}: SoloProviderDashboardProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -172,6 +175,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   // Copy-only role hints (allowedServiceStyles comes from admin launch config — do not override here)
   const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
   const isWalker = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+  const isNutritionist = hasVendorRole(vendorData, [
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+  ]);
 
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;
@@ -788,6 +796,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         {!isPharmacy &&
           (capabilities.progress_tracking ||
             isWalker ||
+            isNutritionist ||
+            capabilities.diet_charts ||
+            capabilities.meal_plans ||
             capabilities.distance_pricing ||
             capabilities.counseling ||
             hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
@@ -810,7 +821,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   type="button"
                   onClick={() => {
                     if (isWalker) {
-                      router.push('/bookings');
+                      router.push('/bookings?walkSessions=1');
                     } else {
                       router.push('/training/progress');
                     }
@@ -818,7 +829,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
                   title={
                     isWalker
-                      ? 'Open Bookings to start a walk (customer OTP), live GPS tracking, and end session when finished'
+                      ? 'Opens your walk booking and Live tracker when one is confirmed or in progress'
                       : 'Training and program progress'
                   }
                 >
@@ -830,6 +841,18 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   <span className="text-xs font-medium text-gray-900">
                     {isWalker ? 'Walk sessions' : 'Progress'}
                   </span>
+                </button>
+              )}
+
+              {(capabilities.diet_charts || capabilities.meal_plans || isNutritionist) && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/nutrition/dashboard')}
+                  className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
+                  title="Diet, meal products, and orders"
+                >
+                  <ClipboardList className="w-6 h-6 text-lime-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Diet</span>
                 </button>
               )}
 
