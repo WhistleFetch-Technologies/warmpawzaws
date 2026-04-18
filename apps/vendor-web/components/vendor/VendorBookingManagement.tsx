@@ -231,7 +231,28 @@ export function VendorBookingManagement({
   walkSessionsFocus = false,
 }: VendorBookingManagementProps) {
   const router = useRouter();
-  /** After walk-sessions deep link: auto-open tracker once or show one guidance toast. */
+
+  // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
+  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
+                        (vendorData?.vendorConfiguration === 'solo' || 
+                         vendorData?.vendorType === 'solo' || 
+                         vendorData?.vendor_type === 'solo' ||
+                         isSoloVendor(vendorData));
+  
+  // Get allowed service styles - solo groomers only have at_home
+  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
+                               vendorData?.serviceStyles?.selected || 
+                               vendorData?.serviceStyles?.solo || 
+                               [];
+  const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
+  const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  /** Walk-sessions effects must run AFTER bookings/loading exist (TDZ if placed above useState). */
   const walkSessionsWalkFlowDone = useRef(false);
   const prevWalkSessionsFocus = useRef(false);
 
@@ -270,25 +291,6 @@ export function VendorBookingManagement({
     });
   }, [walkSessionsFocus, loading, bookings, vendorData, router]);
 
-  // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
-  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
-                        (vendorData?.vendorConfiguration === 'solo' || 
-                         vendorData?.vendorType === 'solo' || 
-                         vendorData?.vendor_type === 'solo' ||
-                         isSoloVendor(vendorData));
-  
-  // Get allowed service styles - solo groomers only have at_home
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
-                               vendorData?.serviceStyles?.selected || 
-                               vendorData?.serviceStyles?.solo || 
-                               [];
-  const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
-  const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
-  const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     calls: 0,
     online: 0,

@@ -137,8 +137,9 @@ export function isRouteAllowed(route: string, status: OnboardingStatus): boolean
  */
 export function getRedirectRoute(route: string, status: OnboardingStatus): string {
   const routeConfig = ONBOARDING_ROUTES[route];
-  if (!routeConfig) return '/onboarding/status';
-  
+  // Only strict onboarding/dashboard paths are gated. All other app routes (e.g. /bookings) must pass through.
+  if (!routeConfig) return route;
+
   if (!isRouteAllowed(route, status)) {
     return routeConfig.redirectIfNotAllowed || getRouteForStatus(status);
   }
