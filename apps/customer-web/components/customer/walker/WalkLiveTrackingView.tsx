@@ -25,6 +25,8 @@ import { toast } from 'sonner';
 
 interface WalkTrackingData {
   isActive: boolean;
+  /** 'gps' = vendor web HomeServiceTrackingManager + gps_tracking_sessions; 'walker_legacy' = walker-gps.ts */
+  source?: 'gps' | 'walker_legacy';
   walker: {
     name: string;
     phone: string;
@@ -55,6 +57,88 @@ interface WalkTrackingData {
     timestamp: string;
   }>;
   startedAt: string;
+}
+
+function mapGpsTrackingToWalkData(
+  tracking: Record<string, unknown>,
+  booking: Record<string, unknown> | null | undefined
+): WalkTrackingData | null {
+  const st = String(tracking.status ?? '').toLowerCase();
+  if (st === 'completed' || st === 'cancelled') return null;
+
+  const cur = tracking.currentLocation as
+    | { latitude?: number; longitude?: number; heading?: number; speed?: number; timestamp?: string }
+    | undefined;
+  const start = tracking.startLocation as
+    | { latitude?: number; longitude?: number }
+    | undefined;
+  const dest = tracking.destinationLocation as
+    | { latitude?: number; longitude?: number }
+    | undefined;
+
+  const lat =
+    cur?.latitude ??
+    start?.latitude ??
+    dest?.latitude;
+  const lng =
+    cur?.longitude ??
+    start?.longitude ??
+    dest?.longitude;
+
+  if (lat == null || lng == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
+    return null;
+  }
+
+  const startedRaw = (tracking.startedAt || tracking.sessionStartedAt || tracking.arrivedAt) as string | undefined;
+  const startedAt = startedRaw || new Date().toISOString();
+  const durationSeconds = startedRaw
+    ? Math.max(0, Math.floor((Date.now() - new Date(startedRaw).getTime()) / 1000))
+    : 0;
+
+  const distKm = Number(tracking.distanceKm ?? tracking.distance ?? 0);
+  const distMeters = Math.round((Number.isFinite(distKm) ? distKm : 0) * 1000);
+
+  const vendorName =
+    (booking?.vendorName as string) ||
+    (booking?.vendor_name as string) ||
+    (tracking.providerName as string) ||
+    'Walker';
+  const petName =
+    (booking?.petName as string) ||
+    (booking?.pet_name as string) ||
+    'Your pet';
+  const phone =
+    (booking?.vendorPhone as string) ||
+    (booking?.vendor_phone as string) ||
+    (booking?.walkerPhone as string) ||
+    '';
+
+  return {
+    isActive: true,
+    source: 'gps',
+    walker: {
+      name: vendorName,
+      phone,
+      image: (booking?.vendorPhoto as string) || (booking?.vendor_photo as string) || undefined,
+    },
+    petName,
+    currentPosition: {
+      lat: Number(lat),
+      lng: Number(lng),
+      heading: cur?.heading != null ? Number(cur.heading) : undefined,
+      speed: cur?.speed != null ? Number(cur.speed) : undefined,
+      lastUpdated: (cur?.timestamp as string) || new Date().toISOString(),
+    },
+    route: [],
+    stats: {
+      distanceMeters: distMeters,
+      distanceKm: (Number.isFinite(distKm) ? distKm : 0).toFixed(2),
+      durationSeconds,
+      durationMinutes: Math.round(durationSeconds / 60),
+    },
+    photos: [],
+    startedAt,
+  };
 }
 
 interface WalkLiveTrackingViewProps {
@@ -90,12 +174,41 @@ export function WalkLiveTrackingView({
 
   const fetchTrackingData = async () => {
     try {
-      const response = await apiClient.get<any>(`/customer/${bookingId}/track-walk`);
-      
-      if (response?.success) {
-        setTracking(response as unknown as WalkTrackingData);
+      /**
+       * Vendor dog-walkers use `HomeServiceTrackingManager` → `gps_tracking_sessions` + POST …/location-update.
+       * Legacy/mobile path uses `walker-gps` → `walker_live_sessions` + GET /customer/:bookingId/track-walk.
+       * Try GPS first so customer sees the same live data as the vendor app.
+       */
+      const bookingRes = await apiClient
+        .get<any>(`/customer/bookings/${encodeURIComponent(bookingId)}`)
+        .catch(() => null);
+      const booking = (bookingRes?.booking ?? bookingRes) as Record<string, unknown> | undefined;
+
+      const gpsRes = await apiClient
+        .get<any>(`/tracking/booking/${encodeURIComponent(bookingId)}`)
+        .catch(() => null);
+
+      if (gpsRes?.success && gpsRes?.tracking) {
+        const mapped = mapGpsTrackingToWalkData(gpsRes.tracking as Record<string, unknown>, booking);
+        if (mapped) {
+          setTracking(mapped);
+          setError(null);
+          return;
+        }
+      }
+
+      const legacy = await apiClient
+        .get<any>(`/customer/${encodeURIComponent(bookingId)}/track-walk`)
+        .catch(() => null);
+
+      if (legacy?.success && legacy?.isActive) {
+        setTracking({
+          ...(legacy as WalkTrackingData),
+          source: 'walker_legacy',
+        });
         setError(null);
-      } else if (!response?.isActive) {
+      } else {
+        setTracking(null);
         setError('Walk has not started yet or has ended');
       }
     } catch (err: any) {

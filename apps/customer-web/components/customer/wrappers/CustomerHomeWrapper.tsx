@@ -702,7 +702,8 @@ export function CustomerHomeWrapper({
       setCurrentScreen('create-booking');
     } else if (screen === 'walk-live-tracking') {
       setPreviousScreen(currentScreen);
-      setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+      const bid = data?.bookingId ?? data?.sessionId;
+      setWalkerServiceData({ sessionId: bid, bookingId: bid });
       setCurrentScreen('walk-live-tracking');
     } else if (screen === 'schedule-walk') {
       setPreviousScreen(currentScreen);
@@ -1198,7 +1199,8 @@ export function CustomerHomeWrapper({
             handleViewBooking(data?.bookingId);
           } else if (screen === 'walk-live-tracking') {
             setPreviousScreen('walker-booking');
-            setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+            const bid = data?.bookingId ?? data?.sessionId;
+            setWalkerServiceData({ sessionId: bid, bookingId: bid });
             setCurrentScreen('walk-live-tracking');
           } else if (screen === 'schedule-walk') {
             setPreviousScreen('walker-booking');

@@ -31,6 +31,18 @@ import {
   mergeTrainingProgressWithBookingDerived,
 } from '../lib/vendor-progress-from-bookings';
 
+/** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
+async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName.toLowerCase()],
+  );
+  return new Set(
+    (r.rows || []).map((row: { column_name: string }) => String(row.column_name).toLowerCase()),
+  );
+}
+
 export function registerSpecializedServicesEndpoints(app: Hono) {
   // ============================================
   // CUSTOMER-FACING DISCOVERY ENDPOINTS (PUBLIC)
@@ -1618,10 +1630,21 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
         const rows = productsResult?.rows || [];
         for (const p of rows) {
+          let specObj: any = {};
+          try {
+            specObj =
+              typeof p.specifications === 'string' ? JSON.parse(p.specifications) : (p.specifications || {});
+          } catch (_) {
+            specObj = {};
+          }
           let meta: any = {};
           try {
-            meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
-          } catch (_) {}
+            const md =
+              typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+            meta = { ...specObj, ...(md || {}) };
+          } catch (_) {
+            meta = specObj || {};
+          }
           list.push({
             id: p.id,
             name: p.name,
@@ -1699,7 +1722,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/meal-products
-   * Create a meal product for a nutritionist vendor (products or meal_plans; metadata optional)
+   * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
@@ -1729,10 +1752,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         ...(mealImageUrl ? { mealImageUrl } : {}),
       };
 
-      // Try products table first (with metadata if column exists)
-      const hasMetadata = await query(
-        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
-      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+      // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
+      const productCols = await getPublicTableColumns('products');
+      const hasMetadata = productCols.has('metadata');
+      const hasSpecifications = productCols.has('specifications');
 
       try {
         const productPayload: any = {
@@ -1745,7 +1768,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           stock_quantity: data.stockQuantity || 100,
           is_active: true,
         };
-        if (hasMetadata) productPayload.metadata = JSON.stringify(dietaryPayload);
+        if (hasMetadata) {
+          productPayload.metadata = JSON.stringify(dietaryPayload);
+        } else if (hasSpecifications) {
+          productPayload.specifications = JSON.stringify(dietaryPayload);
+        }
         const product = await insert('products', productPayload);
         return c.json({ success: true, product: product[0] });
       } catch (productsErr: any) {
@@ -1780,7 +1807,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
-   * Update a meal product (supports both products and meal_plans; products.metadata optional)
+   * Update a meal product (meal_plans.dietary_requirements, or products.metadata / products.specifications)
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
@@ -1789,6 +1816,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const { productId } = c.req.param();
       const data = await c.req.json();
       const meta = data.metadata || {};
+      const productCols = await getPublicTableColumns('products');
 
       let existingDiet: any = {};
       const existingMp = await query(
@@ -1806,25 +1834,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
       let existingProdMeta: any = {};
       try {
-        const hasProductMetadataCol = await query(
-          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
-        ).then((r: any) => (r?.rows?.length ?? 0) > 0);
-        if (hasProductMetadataCol) {
+        const sel: string[] = [];
+        if (productCols.has('metadata')) sel.push('metadata');
+        if (productCols.has('specifications')) sel.push('specifications');
+        if (sel.length > 0) {
           const existingProductRow = await query(
-            `SELECT metadata FROM products WHERE id = $1 AND vendor_id = $2`,
+            `SELECT ${sel.join(', ')} FROM products WHERE id = $1 AND vendor_id = $2`,
             [productId, vendorId]
           );
-          if (existingProductRow.rows?.[0]?.metadata != null) {
+          const row = existingProductRow.rows?.[0];
+          let fromSpec: any = {};
+          let fromMeta: any = {};
+          if (productCols.has('specifications') && row?.specifications != null) {
             try {
-              const m = existingProductRow.rows[0].metadata;
-              existingProdMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
+              const s = row.specifications;
+              fromSpec = typeof s === 'string' ? JSON.parse(s) : (s || {});
             } catch {
-              existingProdMeta = {};
+              fromSpec = {};
             }
           }
+          if (productCols.has('metadata') && row?.metadata != null) {
+            try {
+              const m = row.metadata;
+              fromMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
+            } catch {
+              fromMeta = {};
+            }
+          }
+          existingProdMeta = { ...fromSpec, ...fromMeta };
         }
       } catch (prodMetaErr: any) {
-        console.warn('meal-products PUT: could not load products.metadata', prodMetaErr?.message);
+        console.warn('meal-products PUT: could not load products meal fields', prodMetaErr?.message);
       }
 
       const resolvedMealImageUrl = 'mealImageUrl' in data
@@ -1870,16 +1910,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ success: true, message: 'Product updated' });
       }
 
-      // 2) Update products table (avoid metadata if column doesn't exist)
-      const hasMetadata = await query(
-        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
-      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+      // 2) Update products table (prefer metadata JSONB; else specifications — base schema always has specifications)
+      const hasMetadata = productCols.has('metadata');
+      const hasSpecifications = productCols.has('specifications');
+
+      const mergedMealJson: any = { ...existingProdMeta, ...meta, ...dietaryPayload };
+      if ('mealImageUrl' in data && !(typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim())) {
+        delete mergedMealJson.mealImageUrl;
+      }
 
       if (hasMetadata) {
-        const mergedProductMeta: any = { ...existingProdMeta, ...meta, ...dietaryPayload };
-        if ('mealImageUrl' in data && !(typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim())) {
-          delete mergedProductMeta.mealImageUrl;
-        }
         await query(
           `UPDATE products SET 
             name = COALESCE($1, name),
@@ -1892,7 +1932,25 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             data.name,
             data.description,
             data.price,
-            JSON.stringify(mergedProductMeta),
+            JSON.stringify(mergedMealJson),
+            productId,
+            vendorId,
+          ]
+        );
+      } else if (hasSpecifications) {
+        await query(
+          `UPDATE products SET 
+            name = COALESCE($1, name),
+            description = COALESCE($2, description),
+            price = COALESCE($3, price),
+            specifications = COALESCE($4::jsonb, specifications),
+            updated_at = NOW()
+           WHERE id = $5 AND vendor_id = $6`,
+          [
+            data.name,
+            data.description,
+            data.price,
+            JSON.stringify(mergedMealJson),
             productId,
             vendorId,
           ]

@@ -1,6 +1,12 @@
 import type { PoolClient } from 'pg';
+import {
+  assertCustomerWalletMeetsCheckoutMinimum,
+  getEffectiveMinCustomerWalletBalanceForCheckout,
+} from '../lib/services/wallet-checkout-min-balance';
 
 const BOOKING_PAYMENT_DESC = 'Payment for booking';
+
+export { WalletCheckoutMinimumBalanceError } from '../lib/services/wallet-checkout-min-balance';
 
 async function walletTransactionsColumnSet(client: PoolClient): Promise<Set<string>> {
   const r = await client.query<{ column_name: string }>(
@@ -126,6 +132,10 @@ export async function debitCustomerWalletForBookingInTransaction(
   }
 
   const balanceBefore = parseFloat(String(walletRow.balance ?? '0')) || 0;
+
+  const checkoutMinInr = await getEffectiveMinCustomerWalletBalanceForCheckout(client);
+  assertCustomerWalletMeetsCheckoutMinimum(balanceBefore, checkoutMinInr);
+
   if (balanceBefore + 1e-9 < amount) {
     throw new Error('Insufficient wallet balance');
   }
