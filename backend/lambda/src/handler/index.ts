@@ -182,6 +182,7 @@ import { registerBookingDetailsEnhancedEndpoints } from 'src/endpoints/booking/e
 import { registerLoyaltySegmentsManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-segments-management';
 import { registerLoyaltyActionRulesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-rules-management';
 import { registerLoyaltyActionSourcesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-sources-management';
+import { registerWalletCheckoutRulesEndpoints } from 'src/endpoints/wallet-checkout-rules-endpoints';
 import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 
 // Create Hono app
@@ -647,6 +648,7 @@ registerPaymentGatewayManagementEndpoints(app);
 registerLoyaltyActionRulesManagementEndpoints(app);
 registerLoyaltySegmentsManagementEndpoints(app);
 registerLoyaltyActionSourcesManagementEndpoints(app);
+registerWalletCheckoutRulesEndpoints(app);
 registerCommunityEndpoints(app);
 registerReferralEndpoints(app);
 registerRewardsEndpoints(app);

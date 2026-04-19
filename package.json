@@ -99,6 +99,7 @@
     "local:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000&& set NEXT_PUBLIC_VENDOR_WEB_URL=http://localhost:3002&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "preview": "vite preview --host --port 3000",
     "serve": "vite preview --host --port 3000",
-    "test:vendor-profile-fixes": "ts-node scripts/test-vendor-profile-fixes.ts"
+    "test:vendor-profile-fixes": "ts-node scripts/test-vendor-profile-fixes.ts",
+    "test:walk-tracking-sync": "npx tsx scripts/walk-vendor-customer-tracking-sync.e2e.ts"
   }
 }
