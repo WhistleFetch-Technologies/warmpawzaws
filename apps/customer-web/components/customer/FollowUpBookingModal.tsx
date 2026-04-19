@@ -5,6 +5,7 @@ import { X, Calendar, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface FollowUpBookingModalProps {
   originalBookingId: string;
@@ -175,7 +176,7 @@ export function FollowUpBookingModal({
             </label>
             <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
               {getAvailableDates().map((date) => {
-                const dateStr = date.toISOString().split('T')[0];
+                const dateStr = formatLocalDateYYYYMMDD(date);
                 return (
                   <button
                     key={dateStr}

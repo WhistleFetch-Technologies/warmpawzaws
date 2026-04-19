@@ -1538,16 +1538,6 @@ export function CustomerHomeComplete({
 
   return (
     <div className={containerClassName}>
-      {!hideHeaderFooter && (
-        <button
-          type="button"
-          onClick={() => handleNavigation('booking-messages')}
-          className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] text-white shadow-lg ring-2 ring-white/90 hover:opacity-95 sm:bottom-28"
-          aria-label="Open messages"
-        >
-          <MessageSquare className="h-7 w-7" strokeWidth={2} />
-        </button>
-      )}
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
       {!hideHeaderFooter && (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">

@@ -2215,10 +2215,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ---------- 2) Slot-based advance availability only: vendor_availability_v2 (no fallback) ----------
       // Only vendors who have set advance availability in the dashboard get slots. No weekly fallback.
       const normalizedServiceStyle = (serviceStyle === 'at_vendor' || serviceStyle === 'at_center') ? 'at_center' : serviceStyle;
+      // Training (and some grooming) vendors store vendor_availability_v2.service_styles as
+      // `training` / `trainer` rather than `at_center`; without these, center training bookings got zero slots.
       const acceptableStylesForSlot: string[] =
-        normalizedServiceStyle === 'at_center' ? ['at_center', 'at_vendor'] :
-          normalizedServiceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] :
-            [normalizedServiceStyle];
+        normalizedServiceStyle === 'at_center'
+          ? ['at_center', 'at_vendor', 'at_clinic', 'training', 'trainer', 'pet_training']
+          : normalizedServiceStyle === 'at_home'
+            ? ['at_home', 'training', 'trainer', 'pet_training']
+            : normalizedServiceStyle === 'tele'
+              ? ['tele', 'online', 'video_consultation']
+              : [normalizedServiceStyle];
       const dayOfWeekValues = dayOfWeek === 0 ? [0, 7] : [dayOfWeek];
       let va2Slots: any[] = [];
 

@@ -192,13 +192,23 @@ export function normalizeDiscoveryProvider(
     subtitle = CATEGORY_DEFAULT_SUBTITLE[category];
   }
 
-  const photoUrl =
+  let photoUrl =
     str(r.photo) ||
     str(r.photoUrl) ||
     str(r.photo_url) ||
+    str(r.vendorPhoto) ||
+    str(r.vendor_photo) ||
     str(r.logo_url) ||
     str(r.profile_photo_url) ||
+    str(r.vendorProfileImage) ||
+    str(r.businessPhoto) ||
     null;
+  if (!photoUrl && Array.isArray(r.photos) && r.photos.length > 0) {
+    const p0 = r.photos[0] as unknown;
+    if (typeof p0 === 'string') photoUrl = p0;
+    else if (p0 && typeof p0 === 'object' && 'url' in (p0 as object))
+      photoUrl = str((p0 as { url?: unknown }).url);
+  }
 
   const ratingRaw =
     num(r.rating) ?? num(r.vendorRating) ?? num(r.vendor_rating) ?? 0;
@@ -230,6 +240,34 @@ export function normalizeDiscoveryProvider(
   };
 }
 
+function mergeFeaturedDuplicates(
+  a: FeaturedProvider,
+  b: FeaturedProvider
+): FeaturedProvider {
+  const fromA = a.fromPrice;
+  const fromB = b.fromPrice;
+  let fromPrice: number | null = null;
+  if (fromA != null && fromB != null) fromPrice = Math.min(fromA, fromB);
+  else fromPrice = fromA ?? fromB;
+
+  return {
+    ...a,
+    photoUrl: a.photoUrl || b.photoUrl,
+    distanceKm:
+      a.distanceKm != null && Number.isFinite(a.distanceKm)
+        ? a.distanceKm
+        : b.distanceKm,
+    fromPrice,
+    rating: a.rating > 0 ? a.rating : b.rating > 0 ? b.rating : a.rating,
+    reviewCount: Math.max(a.reviewCount, b.reviewCount),
+    experienceYears: a.experienceYears ?? b.experienceYears,
+  };
+}
+
+/**
+ * Deduplicate by vendor id. When discover-services (or by-style) returns multiple rows per vendor
+ * (e.g. one per service), merge so we keep photo and distance from whichever row has them.
+ */
 export function normalizeAndDedupeDiscoveryProviders(
   rows: unknown[] | null | undefined,
   category: FeaturedProviderCategory
@@ -238,7 +276,12 @@ export function normalizeAndDedupeDiscoveryProviders(
   for (const row of rows || []) {
     const n = normalizeDiscoveryProvider(row, category);
     if (!n) continue;
-    if (!map.has(n.id)) map.set(n.id, n);
+    const existing = map.get(n.id);
+    if (!existing) {
+      map.set(n.id, n);
+    } else {
+      map.set(n.id, mergeFeaturedDuplicates(existing, n));
+    }
   }
   return Array.from(map.values());
 }

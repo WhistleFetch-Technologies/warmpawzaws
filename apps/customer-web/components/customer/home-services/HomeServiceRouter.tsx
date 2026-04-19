@@ -30,6 +30,7 @@ import { PromotionBanner } from '../shared/PromotionBanner';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
@@ -334,7 +335,7 @@ export function HomeServiceRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { pickBookingApiMessage } from '@/lib/booking-response-message';
+import { toast } from 'sonner';
 import { Calendar, Clock, IndianRupee, Info } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +48,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
   const handleSubmit = async () => {
     if (!selectedSlot) {
-      alert('Please select a time slot');
+      toast.error('Please select a time slot');
       return;
     }
 
@@ -61,13 +63,19 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
         }
       );
 
+      if ((data as any).error) {
+        toast.error(String((data as any).error));
+        return;
+      }
       if (data.success !== false) {
-        alert('Reschedule request submitted!');
+        toast.success(pickBookingApiMessage(data, 'Reschedule request submitted!'));
         onSuccess?.();
+      } else {
+        toast.error('Failed to reschedule');
       }
     } catch (error) {
       console.error('Failed to reschedule:', error);
-      alert('Failed to submit reschedule request');
+      toast.error('Failed to submit reschedule request');
     } finally {
       setSubmitting(false);
     }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface SmartTimeSlotSelectionProps {
   serviceType: string;
@@ -108,7 +109,7 @@ export function SmartTimeSlotSelection({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       });
     }

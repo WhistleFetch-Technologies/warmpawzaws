@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plane, Truck, Shield, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 
@@ -172,7 +173,7 @@ export function RelocationBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),

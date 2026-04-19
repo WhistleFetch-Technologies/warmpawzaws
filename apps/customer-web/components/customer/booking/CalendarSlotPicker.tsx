@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import Image from 'next/image';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface TimeSlot {
   time: string;
@@ -69,7 +70,7 @@ export function CalendarSlotPicker({
 
   const handleDateClick = (date: Date) => {
     if (!isDateAvailable(date)) return;
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatLocalDateYYYYMMDD(date);
     setSelectedDateState(dateStr);
     onDateSelect(dateStr);
   };

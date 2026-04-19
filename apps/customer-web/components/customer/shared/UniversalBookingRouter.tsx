@@ -10,6 +10,7 @@ import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -259,7 +260,7 @@ export function UniversalBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
