@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
@@ -19,6 +19,46 @@ interface SearchResult {
   city: string;
   price?: number;
   imageUrl?: string;
+}
+
+function mapSearchApiToResults(response: any): SearchResult[] {
+  const vendors = (response.vendors || []).map((v: any) => ({
+    id: v.id,
+    type: 'vendor' as const,
+    name: v.businessName ?? v.business_name ?? '',
+    category: v.category ?? '',
+    rating: parseFloat(v.rating ?? v.avg_rating) || 0,
+    reviewCount: v.review_count ?? v.completedBookings ?? 0,
+    city: v.city ?? '',
+    imageUrl: v.profile_image ?? v.photoUrl,
+  }));
+
+  const services = (response.services || []).map((s: any) => ({
+    id: s.id,
+    type: 'service' as const,
+    name: s.serviceName ?? s.service_name ?? '',
+    category: s.category ?? '',
+    rating: 0,
+    reviewCount: 0,
+    city: s.city ?? '',
+    price: parseFloat(s.price ?? s.base_price) || undefined,
+    imageUrl: s.image_url,
+  }));
+
+  return [...vendors, ...services];
+}
+
+function categoryEmoji(cat: string): string {
+  const c = (cat || '').toLowerCase();
+  if (c.includes('vet') || c.includes('veterinar') || c.includes('clinic')) return '🏥';
+  if (c.includes('groom')) return '✂️';
+  if (c.includes('train')) return '🎓';
+  if (c.includes('board')) return '🏨';
+  if (c.includes('walk')) return '🚶';
+  if (c.includes('cafe')) return '☕';
+  if (c.includes('resort')) return '🏝️';
+  if (c.includes('pharma') || c.includes('chemist')) return '💊';
+  return '🐾';
 }
 
 export default function SearchPage() {
@@ -49,6 +89,17 @@ function SearchContent() {
   const [error, setError] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   const [showVendorServices, setShowVendorServices] = useState(!!vendorIdParam);
+  /** Bumps on explicit Search submit / Try again so the same query refetches. */
+  const [searchNonce, setSearchNonce] = useState(0);
+
+  /** Refetch when query and/or category changes — always send both to API when set (hub + keyword). */
+  const fetchKey = useMemo(() => {
+    if (vendorIdParam) return '';
+    const q = (query || '').trim();
+    const c = (category || '').trim();
+    if (!q && !c) return '';
+    return JSON.stringify({ q, c });
+  }, [query, category, vendorIdParam]);
 
   const categories = [
     { id: '', label: 'All', icon: '🔍' },
@@ -64,14 +115,58 @@ function SearchContent() {
 
   useEffect(() => {
     if (vendorIdParam) {
-      // Load vendor services when vendorId is in URL
       loadVendorServices(vendorIdParam);
       setShowVendorServices(true);
-    } else if (query || category) {
-      performSearch();
+    } else {
       setShowVendorServices(false);
     }
-  }, [query, category, vendorIdParam]);
+  }, [vendorIdParam]);
+
+  useEffect(() => {
+    if (vendorIdParam) return;
+    if (!fetchKey) {
+      setResults([]);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        let parsed: { q: string; c: string };
+        try {
+          parsed = JSON.parse(fetchKey) as { q: string; c: string };
+        } catch {
+          parsed = { q: '', c: '' };
+        }
+        const params = new URLSearchParams();
+        if (parsed.q) params.set('q', parsed.q);
+        if (parsed.c) params.set('category', parsed.c);
+        const response = await apiClient.get<any>(`/search?${params.toString()}`);
+        if (cancelled) return;
+        const mapped = mapSearchApiToResults(response);
+        setResults(mapped);
+        saveSearchContext({
+          query: parsed.q || '',
+          category: parsed.c || undefined,
+          results: mapped,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error('Search error:', err);
+          setError(err.message || 'Search failed');
+          setResults([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchKey, vendorIdParam, searchNonce]);
 
   const loadVendorServices = async (vendorId: string) => {
     try {
@@ -110,68 +205,10 @@ function SearchContent() {
     }
   };
 
-  const performSearch = async () => {
-    if (!query?.trim() && !category) {
-      setResults([]);
-      setError(null);
-      return;
-    }
-    try {
-      setLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
-      if (query?.trim()) params.append('q', query.trim());
-      if (category) params.append('category', category);
-
-      // Backend exposes GET /search (not /search/universal)
-      const response = await apiClient.get<any>(`/search?${params.toString()}`);
-      
-      // Map backend response (camelCase: businessName, rating, etc.)
-      const vendors = (response.vendors || []).map((v: any) => ({
-        id: v.id,
-        type: 'vendor' as const,
-        name: v.businessName ?? v.business_name ?? '',
-        category: v.category ?? '',
-        rating: parseFloat(v.rating ?? v.avg_rating) || 0,
-        reviewCount: v.review_count ?? v.completedBookings ?? 0,
-        city: v.city ?? '',
-        imageUrl: v.profile_image ?? v.photoUrl,
-      }));
-
-      const services = (response.services || []).map((s: any) => ({
-        id: s.id,
-        type: 'service' as const,
-        name: s.serviceName ?? s.service_name ?? '',
-        category: s.category ?? '',
-        rating: 0,
-        reviewCount: 0,
-        city: s.city ?? '',
-        price: parseFloat(s.price ?? s.base_price) || undefined,
-        imageUrl: s.image_url,
-      }));
-
-      const allResults = [...vendors, ...services];
-      setResults(allResults);
-
-      // Save search context for search-first flow enforcement
-      saveSearchContext({
-        query: query || '',
-        category: category || undefined,
-        results: allResults,
-        timestamp: Date.now(),
-      });
-    } catch (err: any) {
-      console.error('Search error:', err);
-      setError(err.message || 'Search failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch();
+    if (!query?.trim() && !category) return;
+    setSearchNonce((n) => n + 1);
   };
 
   const mainBottomPad =
@@ -322,7 +359,11 @@ function SearchContent() {
           <div className="text-center py-12">
             <p className="text-red-500">{error}</p>
             <button
-              onClick={performSearch}
+              type="button"
+              onClick={() => {
+                setError(null);
+                setSearchNonce((n) => n + 1);
+              }}
               className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-full"
             >
               Try Again
@@ -360,13 +401,7 @@ function SearchContent() {
                 className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
               >
                 <div className="flex h-32 items-center justify-center bg-gradient-to-br from-orange-100 to-amber-100 text-5xl">
-                  {result.category === 'vet' ? '🏥' :
-                   result.category === 'grooming' ? '✂️' :
-                   result.category === 'training' ? '🎓' :
-                   result.category === 'boarding' ? '🏨' :
-                   result.category === 'walker' ? '🚶' :
-                   result.category === 'cafe' ? '☕' :
-                   result.category === 'resort' ? '🏝️' : '🐾'}
+                  {categoryEmoji(result.category)}
                 </div>
                 <div className="p-4">
                   <div className="flex items-start justify-between">

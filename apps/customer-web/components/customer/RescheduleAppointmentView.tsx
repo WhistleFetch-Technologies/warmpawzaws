@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Calendar } from 'lucide-react';
 import { SmartTimeSlotSelection } from './vet/SmartTimeSlotSelection';
 import { apiClient } from '@/lib/api-client';
+import { pickBookingApiMessage } from '@/lib/booking-response-message';
+import { toast } from 'sonner';
 import {
   getResolvedCustomerId,
   isCustomerDatabaseUuid,
@@ -81,7 +83,7 @@ export function RescheduleAppointmentView({
 
   const handleReschedule = async (date: string, time: string) => {
     if (!customerDbId) {
-      alert('Unable to verify your account. Please try again.');
+      toast.error('Unable to verify your account. Please try again.');
       return;
     }
     try {
@@ -96,14 +98,14 @@ export function RescheduleAppointmentView({
       );
 
       if ((data as any).error) {
-        alert(String((data as any).error));
+        toast.error(String((data as any).error));
       } else {
-        alert('Appointment rescheduled successfully!');
+        toast.success(pickBookingApiMessage(data, 'Appointment rescheduled successfully!'));
         onSuccess();
       }
     } catch (error) {
       console.error('Error rescheduling appointment:', error);
-      alert('Failed to reschedule appointment');
+      toast.error('Failed to reschedule appointment');
     } finally {
       setRescheduling(false);
     }

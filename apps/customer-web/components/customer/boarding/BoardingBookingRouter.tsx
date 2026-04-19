@@ -22,6 +22,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -304,7 +305,7 @@ export function BoardingBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -394,7 +395,7 @@ export function BoardingBookingRouter({
     if (checkOutDate && checkOutDate > checkInDate) return;
     const next = new Date(checkInDate);
     next.setDate(next.getDate() + 1);
-    setCheckOutDate(next.toISOString().split('T')[0]);
+    setCheckOutDate(formatLocalDateYYYYMMDD(next));
   }, [step, isPetSitting, sittingSameDay, checkInDate, checkOutDate]);
 
   /** Same-day visits: checkout stays on the selected calendar day; duration comes from start/end time. */
@@ -1186,7 +1187,7 @@ export function BoardingBookingRouter({
                           ) {
                             const nextDay = new Date(d.date);
                             nextDay.setDate(nextDay.getDate() + 1);
-                            setCheckOutDate(nextDay.toISOString().split('T')[0]);
+                            setCheckOutDate(formatLocalDateYYYYMMDD(nextDay));
                           }
                         }}
                         className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${

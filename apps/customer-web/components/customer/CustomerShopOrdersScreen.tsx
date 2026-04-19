@@ -16,6 +16,13 @@ import {
   RefreshCcw, AlertCircle, Search, Download, ShoppingBag,
 } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /** Backend may return 404 for “no orders” or missing route — show empty state, not an error. */
 function isOrdersListTreatAsEmpty(err: unknown): boolean {
@@ -332,22 +339,86 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
               className="w-full min-h-11 pl-10 pr-3 py-2.5 text-[15px] sm:text-sm border border-orange-100/90 rounded-2xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300/80 touch-manipulation"
             />
           </div>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="w-full min-h-11 px-3 py-2.5 text-[15px] sm:text-sm border border-orange-100/90 rounded-2xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300/80 touch-manipulation appearance-none bg-[length:1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-            }}
+          <Select
+            value={filterStatus === '' ? 'all' : filterStatus}
+            onValueChange={(v) => setFilterStatus(v === 'all' ? '' : v)}
           >
-            <option value="">All Orders</option>
-            <option value="pending">Pending</option>
-            <option value="processing">Processing</option>
-            <option value="shipped">Shipped</option>
-            <option value="delivered">Delivered</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="returned">Returned</option>
-          </select>
+            <SelectTrigger
+              className="w-full min-h-11 h-auto py-2.5 px-3.5 text-[15px] sm:text-sm font-medium text-slate-800 border border-orange-100/90 rounded-2xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300/80 focus-visible:ring-orange-300/80 data-[size=default]:h-auto [&_svg]:text-orange-400/90 touch-manipulation"
+              aria-label="Filter orders by status"
+            >
+              <SelectValue placeholder="All Orders" />
+            </SelectTrigger>
+            <SelectContent
+              position="popper"
+              sideOffset={8}
+              className="rounded-2xl border border-orange-100/90 bg-white p-1.5 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18),0_4px_16px_-4px_rgba(255,107,53,0.12)] z-[200] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+            >
+              <SelectItem
+                value="all"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <ShoppingBag className="size-4 shrink-0 text-orange-500" strokeWidth={2} />
+                  All Orders
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="pending"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Clock className="size-4 shrink-0 text-amber-500" strokeWidth={2} />
+                  Pending
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="processing"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Package className="size-4 shrink-0 text-indigo-500" strokeWidth={2} />
+                  Processing
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="shipped"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Truck className="size-4 shrink-0 text-violet-500" strokeWidth={2} />
+                  Shipped
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="delivered"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Check className="size-4 shrink-0 text-emerald-600" strokeWidth={2} />
+                  Delivered
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="cancelled"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <XIcon className="size-4 shrink-0 text-red-500" strokeWidth={2} />
+                  Cancelled
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="returned"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <RefreshCcw className="size-4 shrink-0 text-orange-600" strokeWidth={2} />
+                  Returned
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {loading ? (

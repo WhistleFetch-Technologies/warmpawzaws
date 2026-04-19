@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
 interface SavedAddress {
@@ -268,8 +269,8 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         `/booking/create`,
         requestBody
       );
-        
-      toast.success('Booking created successfully!');
+
+      toast.success(pickBookingApiMessage(data, 'Booking created successfully!'));
       const bookingId = data.data?.bookingId || data.booking?.id || data.booking?.bookingId || '';
       onSuccess(bookingId);
     } catch (err: any) {

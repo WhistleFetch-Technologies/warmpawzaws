@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
@@ -342,18 +344,25 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         refundMethod: refundMethod,
       }) as any;
 
-      const payload = result.data ?? result;
+      const payload = getBookingResponsePayload(result);
       if (result.success) {
-        toast.success('Booking cancelled successfully');
-        const refund = payload.refund ?? result.refund;
-        if (refund && typeof refund.amount === 'number') {
-          toast.success(`Refund of ₹${refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`);
+        toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
+        const refund = (payload.refund ?? (result as any).refund) as Record<string, unknown> | null | undefined;
+        if (refund && typeof refund.message === 'string' && refund.message.trim()) {
+          toast.info(refund.message.trim());
+        } else if (refund && typeof refund.amount === 'number' && refund.amount > 0) {
+          toast.info(
+            `Refund of ₹${refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`
+          );
         }
         setShowCancelModal(null);
         setCancellationReason('');
         loadBookings(); // Refresh list
       } else {
-        toast.error(result.error || 'Failed to cancel booking');
+        const err = (result as any).error;
+        const errText =
+          typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        toast.error(errText || 'Failed to cancel booking');
       }
     } catch (error: any) {
       console.error('Cancel booking error:', error);
@@ -990,7 +999,7 @@ function RescheduleModal({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       });
     }
@@ -1010,7 +1019,7 @@ function RescheduleModal({
     setLoading(true);
     try {
       const result = await apiClient.get(
-        `/customer/vendor/${booking.vendorId}/available-slots?date=${selectedDate}&serviceStyle=${booking.serviceStyle || 'at_center'}`
+        `/customer/vendor/${booking.vendorId}/available-slots?date=${encodeURIComponent(selectedDate)}&serviceStyle=${encodeURIComponent(booking.serviceStyle || 'at_center')}`
       ) as any;
       setAvailableSlots(result.slots || []);
     } catch (error) {
@@ -1035,9 +1044,13 @@ function RescheduleModal({
       }) as any;
 
       if (result.success) {
+        toast.success(pickBookingApiMessage(result, 'Booking rescheduled successfully'));
         onRescheduled();
       } else {
-        toast.error(result.error || 'Failed to reschedule');
+        const err = (result as any).error;
+        const errText =
+          typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        toast.error(errText || 'Failed to reschedule');
       }
     } catch (error: any) {
       console.error('Reschedule error:', error);

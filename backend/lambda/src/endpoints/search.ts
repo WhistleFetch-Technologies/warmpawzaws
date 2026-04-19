@@ -26,6 +26,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { CATEGORY_ROLES } from './customer/constants/index';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -34,6 +35,39 @@ try {
   openSearchClient = getOpenSearchClient();
 } catch (error) {
   console.warn('⚠️  OpenSearch client not available, will use SQL fallback');
+}
+
+/**
+ * Customer /search UI sends hub slugs (vet, grooming, walker, …).
+ * `vendors.category` / `vendor_services.category` store role-style strings; values may differ in case.
+ */
+function expandCategoryBucket(slug: string | undefined): string[] | undefined {
+  if (!slug) return undefined;
+  const raw = new Set<string>();
+  raw.add(slug);
+  (CATEGORY_ROLES[slug] || []).forEach((m) => raw.add(m));
+  const list = Array.from(raw)
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+  return list.length ? list : undefined;
+}
+
+function expandCategoryLower(slug: string | undefined): string[] | undefined {
+  const list = expandCategoryBucket(slug);
+  if (!list?.length) return undefined;
+  return Array.from(new Set(list.map((v) => v.toLowerCase())));
+}
+
+/** OpenSearch keyword field may be indexed with mixed case — send both forms. */
+function expandCategoryTermsAnyCase(slug: string | undefined): string[] | undefined {
+  const list = expandCategoryBucket(slug);
+  if (!list?.length) return undefined;
+  const out = new Set<string>();
+  for (const v of list) {
+    out.add(v);
+    out.add(v.toLowerCase());
+  }
+  return Array.from(out);
 }
 
 // ============================================================================
@@ -88,19 +122,29 @@ class UniversalSearchHandler extends BaseHandler {
     };
 
     // Add search query
+    // Text + category: keyword is often the hub name ("Walker") which does not appear in business names —
+    // make text optional (ranking) and rely on category filter for inclusion.
     if (searchQuery) {
-      searchBody.query.bool.must.push({
+      const mm = {
         multi_match: {
           query: searchQuery,
           fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
-          fuzziness: 'AUTO',
+          fuzziness: 'AUTO' as const,
         },
-      });
+      };
+      if (category) {
+        searchBody.query.bool.should = searchBody.query.bool.should || [];
+        searchBody.query.bool.should.push(mm);
+        searchBody.query.bool.minimum_should_match = 0;
+      } else {
+        searchBody.query.bool.must.push(mm);
+      }
     }
 
-    // Add category filter
-    if (category) {
-      searchBody.query.bool.filter.push({ term: { category } });
+    // Add category filter (UI slug → multiple DB role/category strings)
+    const categoryTerms = expandCategoryTermsAnyCase(category);
+    if (categoryTerms?.length) {
+      searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
     }
 
     // Add location filter
@@ -194,7 +238,8 @@ class UniversalSearchHandler extends BaseHandler {
     const params: any[] = [];
     let paramIndex = 1;
 
-    if (searchQuery) {
+    // Without a category chip, narrow vendors by name/specialization. With a chip, list the hub (text is optional).
+    if (searchQuery && !category) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
         v.owner_name ILIKE $${paramIndex} OR
@@ -204,9 +249,20 @@ class UniversalSearchHandler extends BaseHandler {
       paramIndex++;
     }
 
-    if (category) {
-      vendorsQuery += ` AND v.category = $${paramIndex}`;
-      params.push(category);
+    const vendorCategoryValues = expandCategoryLower(category);
+    if (vendorCategoryValues?.length) {
+      // Prefer published service categories — vendors.category is often null or stale.
+      vendorsQuery += ` AND (
+        EXISTS (
+          SELECT 1 FROM vendor_services vscat
+          WHERE vscat.vendor_id = v.id
+            AND vscat.is_enabled = true
+            AND vscat.publish_status = 'published'
+            AND LOWER(TRIM(COALESCE(vscat.category, ''))) = ANY($${paramIndex}::text[])
+        )
+        OR (v.category IS NOT NULL AND LOWER(TRIM(COALESCE(v.category, ''))) = ANY($${paramIndex}::text[]))
+      )`;
+      params.push(vendorCategoryValues);
       paramIndex++;
     }
 
@@ -243,7 +299,7 @@ class UniversalSearchHandler extends BaseHandler {
     const serviceParams: any[] = [];
     let serviceParamIndex = 1;
 
-    if (searchQuery) {
+    if (searchQuery && !category) {
       servicesQuery += ` AND (
         vs.service_name ILIKE $${serviceParamIndex}
       )`;
@@ -251,9 +307,10 @@ class UniversalSearchHandler extends BaseHandler {
       serviceParamIndex++;
     }
 
-    if (category) {
-      servicesQuery += ` AND vs.category = $${serviceParamIndex}`;
-      serviceParams.push(category);
+    const serviceCategoryValues = expandCategoryLower(category);
+    if (serviceCategoryValues?.length) {
+      servicesQuery += ` AND LOWER(TRIM(COALESCE(vs.category, ''))) = ANY($${serviceParamIndex}::text[])`;
+      serviceParams.push(serviceCategoryValues);
       serviceParamIndex++;
     }
 

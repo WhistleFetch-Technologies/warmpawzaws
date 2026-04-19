@@ -7,7 +7,7 @@ import {
   MessageSquare, Heart, Settings, ChevronRight, Package,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
-  Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
+  Trash2, Plus, Check, ArrowRight, Wallet, ShoppingBag,
   Gift, Users, Award, Smartphone, Building2
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
@@ -527,7 +527,6 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -545,26 +544,8 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
     }
   }, [phone]);
 
-  // Handle scroll to hide indicator
+  // Reset scroll position when view changes
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      if (container.scrollTop > 50) {
-        setShowScrollIndicator(false);
-      } else {
-        setShowScrollIndicator(true);
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  // Reset scroll indicator when view changes
-  useEffect(() => {
-    setShowScrollIndicator(true);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -1270,17 +1251,6 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Scroll Indicator - Shows user can scroll */}
-          {showScrollIndicator &&
-            activeView !== 'menu' &&
-            !(activeView === 'cart' && !loadingCart && cartItems.length === 0) && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none animate-bounce">
-              <div className="bg-[#FF8C42] text-white rounded-full p-2 shadow-lg">
-                <ChevronDown className="w-5 h-5" />
-              </div>
-            </div>
-          )}
-
           {activeView === 'menu' && (
             <div className="p-5 space-y-3">
               {menuItems.map((item, index) => (

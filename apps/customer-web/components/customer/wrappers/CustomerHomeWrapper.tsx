@@ -29,7 +29,6 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { GroomingServiceRouter } from '../GroomingServiceRouter';
 import { GroomingServicesByStyle } from '../grooming/GroomingServicesByStyle';
 import { TrainingServiceRouter } from '../TrainingServiceRouter';
-import { TrainingBookingRouter } from '../training/TrainingBookingRouter';
 import { GroomingBookingRouter } from '../grooming/GroomingBookingRouter';
 import { UniversalServicesByStyle } from '../shared/UniversalServicesByStyle';
 import { BoardingServiceRouter } from '../BoardingServiceRouter';
@@ -147,6 +146,12 @@ const ChimeVideoCall = dynamic(
     ssr: false, 
     loading: () => <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div></div> 
   }
+);
+
+/** Client-only: date chips use local "today"; SSR/UTC mismatch caused wrong ?date= vs visible label. */
+const TrainingBookingRouter = dynamic(
+  () => import('../training/TrainingBookingRouter').then((m) => ({ default: m.TrainingBookingRouter })),
+  { ssr: false, loading: () => <div className="flex items-center justify-center min-h-[40vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" /></div> }
 );
 
 type ScreenType = 

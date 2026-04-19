@@ -7,6 +7,8 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-calendar-date';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
@@ -42,6 +44,8 @@ interface TimeSlot {
   time: string;
   available: boolean;
 }
+
+type DateChip = { date: string; day: string; dayNum: number; month: string };
 
 interface Pet {
   id: string;
@@ -98,7 +102,7 @@ export function TrainingBookingRouter({
   }, [serviceId, serviceType, serviceStyle, step]);
   const [loading, setLoading] = useState(false);
   // ✅ FIX: Use serviceStyle if provided, otherwise fall back to serviceType
-  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'at_home');
+  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'at_center');
   const [selectedDate, setSelectedDate] = useState(preFilledDate || '');
   const [selectedTime, setSelectedTime] = useState(preFilledTime || '');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(
@@ -173,69 +177,115 @@ export function TrainingBookingRouter({
     ? getServicesForStyle(selectedServiceType) 
     : defaultServiceTypeOptions;
 
-  const generateDates = () => {
-    const dates = [];
+  const generateDates = (): DateChip[] => {
+    const out: DateChip[] = [];
     const today = new Date();
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
-      dates.push({
-        date: date.toISOString().split('T')[0],
+      out.push({
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
       });
     }
-    return dates;
+    return out;
   };
+
+  // Build chips only on the client so "today" matches the user's timezone (SSR uses UTC and can shift the whole strip vs labels).
+  const [dates, setDates] = useState<DateChip[]>([]);
+  useEffect(() => {
+    setDates(generateDates());
+  }, []);
+
+  /** Ignore out-of-order slot responses when the user switches dates quickly */
+  const slotFetchSeq = useRef(0);
 
   // ✅ FIX B6: Generate time slots based on vendor operating hours
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Load slots when date is selected and vendor is known
+  /** Minutes for slot fitting (backend default 30); refetch when vendor catalog loads real duration */
+  const slotDurationMinutes = Math.max(
+    15,
+    Number(
+      selectedVendorService?.duration ??
+        selectedVendorService?.duration_minutes ??
+        duration ??
+        60
+    ) || 60
+  );
+
+  const loadTimeSlots = async (date: string) => {
+    if (!vendorId) return;
+    const seq = ++slotFetchSeq.current;
+
+    try {
+      setLoadingSlots(true);
+      const sid = String(
+        selectedVendorService?.serviceId ??
+          selectedVendorService?.id ??
+          serviceId ??
+          ''
+      ).trim();
+      const params = new URLSearchParams();
+      params.set('date', date);
+      params.set('serviceStyle', selectedServiceType);
+      params.set('totalDuration', String(slotDurationMinutes));
+      if (sid) params.set('serviceId', sid);
+
+      const raw = await apiClient.get(
+        `/customer/vendor/${vendorId}/available-slots?${params.toString()}`
+      );
+
+      if (seq !== slotFetchSeq.current) return;
+
+      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw);
+
+      if (success && normalized.length > 0) {
+        setTimeSlots(normalized);
+        return;
+      }
+
+      if (!success) {
+        const defaultSlots: TimeSlot[] = [
+          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+        ].map((time) => ({ time, available: true }));
+        setTimeSlots(defaultSlots);
+        return;
+      }
+
+      // success but no slot rows (or unparsed) — UI shows "No slots available"; optional API hint in dev
+      setTimeSlots([]);
+      if (message && process.env.NODE_ENV === 'development') {
+        console.warn('[TrainingBooking] available-slots:', message);
+      }
+    } catch (error) {
+      if (seq !== slotFetchSeq.current) return;
+      console.error('Error loading time slots:', error);
+      const defaultSlots: TimeSlot[] = [
+        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+      ].map((time) => ({ time, available: true }));
+      setTimeSlots(defaultSlots);
+    } finally {
+      if (seq === slotFetchSeq.current) {
+        setLoadingSlots(false);
+      }
+    }
+  };
+
+  // Load slots when date is selected and vendor is known (re-run when service duration/id resolves from catalog)
   useEffect(() => {
     if (selectedDate && vendorId) {
       loadTimeSlots(selectedDate);
     } else {
-      // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType]);
-
-  const loadTimeSlots = async (date: string) => {
-    if (!vendorId) return;
-    
-    try {
-      setLoadingSlots(true);
-      const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
-      ) as any;
-
-      if (response.success && response.slots) {
-        setTimeSlots(response.slots);
-      } else {
-        // Fallback to default slots if API fails
-        const defaultSlots: TimeSlot[] = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ].map(time => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
-      }
-    } catch (error) {
-      console.error('Error loading time slots:', error);
-      // Fallback to default slots on error
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-      ].map(time => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
-    } finally {
-      setLoadingSlots(false);
-    }
-  };
-
-  const [dates] = useState(generateDates());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadTimeSlots uses latest slotDurationMinutes / selectedVendorService
+  }, [selectedDate, vendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
 
   useEffect(() => {
     loadCustomerData();
@@ -424,6 +474,13 @@ export function TrainingBookingRouter({
   const handleBack = useCallback(() => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
+
+    // When we skipped the in-flow service step (hasServiceContext → start at datetime), Date/Time is the
+    // first visible step — back must leave the booking flow, not navigate to the hidden `service` step.
+    if (step === 'datetime' && hasServiceContext) {
+      onBack();
+      return;
+    }
     
     // ✅ FIX: Handle back from payment for tele and at_center (both skip address - customer goes to center)
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
@@ -436,7 +493,7 @@ export function TrainingBookingRouter({
     } else {
       onBack();
     }
-  }, [step, selectedServiceType, onBack]);
+  }, [step, selectedServiceType, onBack, hasServiceContext]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -666,10 +723,13 @@ export function TrainingBookingRouter({
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {dates.map((d) => (
+              <div className="flex gap-2 overflow-x-auto pb-2 min-h-[5.5rem]">
+                {dates.length === 0 ? (
+                  <div className="flex items-center justify-center w-full py-4 text-sm text-gray-500">Loading dates…</div>
+                ) : dates.map((d) => (
                   <button
                     key={d.date}
+                    type="button"
                     onClick={() => setSelectedDate(d.date)}
                     className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
                       selectedDate === d.date 
@@ -685,7 +745,7 @@ export function TrainingBookingRouter({
               </div>
             </div>
 
-            {selectedDate && (
+            {dates.length > 0 && selectedDate && (
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
                 {loadingSlots ? (
@@ -957,7 +1017,7 @@ export function TrainingBookingRouter({
                 <div className="flex-1">
                   <p className="text-sm text-gray-500">Date & Time</p>
                   <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
+                    {parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
                   </p>
                 </div>
               </div>
@@ -1055,7 +1115,7 @@ export function TrainingBookingRouter({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Date</span>
-                  <span className="font-medium">{new Date(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  <span className="font-medium">{parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Time</span>

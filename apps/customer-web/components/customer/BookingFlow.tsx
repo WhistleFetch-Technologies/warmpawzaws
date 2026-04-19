@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { X, Camera, Upload, MapPin, Plus, ArrowLeft } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -476,7 +477,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       const date = new Date();
       date.setDate(date.getDate() + i);
       days.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
       });
     }
@@ -556,7 +557,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         customerId: customerId,
         vendorId: service.vendor_id,
         serviceId: serviceId,
-        bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+        bookingDate: selectedDate || formatLocalDateYYYYMMDD(new Date()),
         bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
         serviceType: service.service_style || 'at_center',
         
@@ -630,7 +631,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             serviceId: serviceId,
             vendorId: service.vendor_id,
             staffId: selectedStaff || undefined,
-            bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+            bookingDate: selectedDate || formatLocalDateYYYYMMDD(new Date()),
             bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
             serviceStyle: service.service_style,
             petId: selectedPet || undefined,

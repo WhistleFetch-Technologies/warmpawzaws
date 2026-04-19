@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
 import { AlertTriangle, IndianRupee, Info, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
@@ -94,9 +95,12 @@ export function CancelBookingModal({
         actorType: 'customer'
       }) as any;
 
-      toast.success(result.message || 'Booking cancelled successfully');
-      if (result.refund) {
-        toast.info(`Refund of ₹${result.refund.amount} will be processed`);
+      toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
+      const refund = getBookingResponsePayload(result).refund as Record<string, unknown> | undefined;
+      if (refund && typeof refund.message === 'string' && refund.message.trim()) {
+        toast.info(refund.message.trim());
+      } else if (refund && typeof refund.amount === 'number' && refund.amount > 0) {
+        toast.info(`Refund of ₹${refund.amount} will be processed`);
       }
       onSuccess();
     } catch (error: any) {

@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 
 // ============================================================================
@@ -203,7 +204,7 @@ export function UniversalProviderProfile({
     const date = new Date();
     date.setDate(date.getDate() + i);
     return {
-      date: date.toISOString().split('T')[0],
+      date: formatLocalDateYYYYMMDD(date),
       day: date.toLocaleDateString('en-US', { weekday: 'short' }),
       dayNum: date.getDate(),
       month: date.toLocaleDateString('en-US', { month: 'short' }),

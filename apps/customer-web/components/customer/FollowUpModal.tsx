@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { Button } from '@/components/ui/button';
 import { 
   X, 
@@ -331,7 +332,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const date = new Date();
       date.setDate(date.getDate() + i);
       dates.push({
-        value: date.toISOString().split('T')[0],
+        value: formatLocalDateYYYYMMDD(date),
         label: date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
       });
     }
