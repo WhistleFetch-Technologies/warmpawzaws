@@ -14,8 +14,8 @@ import {
   ActivityIndicator,
   Alert,
   Share,
-  Clipboard,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ReferralApi } from '../../services/api';
@@ -66,20 +66,44 @@ export function ReferralSystemScreen({
     if (activeTab === 'history') {
       loadReferralHistory();
     }
-  }, [customerId, activeTab]);
+  }, [customerId, phone, activeTab]);
+
+  const resolveCustomerId = async (): Promise<string> => {
+    const fromProps = customerId?.trim() || '';
+    if (fromProps) return fromProps;
+    const digits = phone.replace(/\D/g, '');
+    if (!digits) return '';
+    try {
+      const cust = await CustomerApi.getCustomerByPhone(digits);
+      const id = cust?.id ?? cust?.customer_id ?? cust?.customerId;
+      return id != null ? String(id).trim() : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const phoneFallbackReferralCode = () => {
+    const digits = phone.replace(/\D/g, '');
+    return (digits.slice(-6) || 'REF123').toUpperCase();
+  };
 
   const loadReferralProfile = async () => {
     try {
       setLoading(true);
-      if (customerId) {
+      const resolvedId = await resolveCustomerId();
+
+      if (resolvedId) {
         const [codeResponse, statsResponse] = await Promise.all([
-          ReferralApi.getReferralCode(customerId).catch(() => ({ referralCode: 'WARM' + customerId.slice(-4).toUpperCase() })),
-          ReferralApi.getReferralStats(customerId).catch(() => ({})),
+          ReferralApi.getReferralCode(resolvedId).catch(() => ({
+            referralCode: 'WARM' + resolvedId.slice(-4).toUpperCase(),
+          })),
+          ReferralApi.getReferralStats(resolvedId).catch(() => ({})),
         ]);
-        
+
         setProfile({
-          customerId: customerId,
-          referralCode: codeResponse.referralCode || 'WARM' + customerId.slice(-4).toUpperCase(),
+          customerId: resolvedId,
+          referralCode:
+            codeResponse.referralCode || 'WARM' + resolvedId.slice(-4).toUpperCase(),
           totalReferrals: statsResponse.totalReferrals || 0,
           completedReferrals: statsResponse.completedReferrals || 0,
           pendingReferrals: statsResponse.pendingReferrals || 0,
@@ -87,13 +111,25 @@ export function ReferralSystemScreen({
           monthlyReferrals: statsResponse.monthlyReferrals || 0,
           monthlyEarnings: statsResponse.monthlyEarnings || 0,
         });
+      } else {
+        setProfile({
+          customerId: '',
+          referralCode: phoneFallbackReferralCode(),
+          totalReferrals: 0,
+          completedReferrals: 0,
+          pendingReferrals: 0,
+          totalEarnings: 0,
+          monthlyReferrals: 0,
+          monthlyEarnings: 0,
+        });
       }
     } catch (error: any) {
       console.error('Error loading referral profile:', error);
-      // Set fallback profile
       setProfile({
-        customerId: customerId || '',
-        referralCode: 'WARM' + (customerId || '').slice(-4).toUpperCase(),
+        customerId: customerId?.trim() || '',
+        referralCode: customerId
+          ? 'WARM' + customerId.slice(-4).toUpperCase()
+          : phoneFallbackReferralCode(),
         totalReferrals: 0,
         completedReferrals: 0,
         pendingReferrals: 0,
@@ -108,8 +144,9 @@ export function ReferralSystemScreen({
 
   const loadReferralHistory = async () => {
     try {
-      if (customerId) {
-        const response = await ReferralApi.getReferralHistory(customerId, 50);
+      const resolvedId = await resolveCustomerId();
+      if (resolvedId) {
+        const response = await ReferralApi.getReferralHistory(resolvedId, 50);
         const history = response.history || response || [];
         
         const referralHistory: ReferralHistory[] = history.map((h: any) => ({
@@ -124,6 +161,8 @@ export function ReferralSystemScreen({
         }));
         
         setReferralHistory(referralHistory);
+      } else {
+        setReferralHistory([]);
       }
     } catch (error: any) {
       console.error('Error loading referral history:', error);
@@ -141,7 +180,7 @@ export function ReferralSystemScreen({
   };
 
   const shareReferral = async () => {
-    if (!profile || !customerId) return;
+    if (!profile) return;
 
     const shareMessage = `Join Warmpawz! Use my code ${profile.referralCode} to join and get a welcome bonus!`;
 
@@ -150,27 +189,22 @@ export function ReferralSystemScreen({
         message: shareMessage,
         title: 'Join Warmpawz!',
       });
-      
-      // Track share event
-      if (result.action === Share.sharedAction) {
-        // Optionally track share event via API
-        try {
-          await ReferralApi.sendInvite({
-            customerId,
-            message: shareMessage,
-          });
-        } catch (error) {
-          // Silent fail for tracking
-          console.log('Share tracking failed:', error);
-        }
-      }
 
       if (result.action === Share.sharedAction) {
+        if (profile.customerId) {
+          try {
+            await ReferralApi.sendInvite({
+              customerId: profile.customerId,
+              message: shareMessage,
+            });
+          } catch (error) {
+            console.log('Share tracking failed:', error);
+          }
+        }
         Alert.alert('Shared!', 'Your referral code has been shared');
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      // Fallback to copy
       copyToClipboard();
     }
   };
