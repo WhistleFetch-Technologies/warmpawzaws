@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { resolveMinRedemptionPointsFromRuleRow } from '../../utils/loyalty-rule-fields';
 
 /** Platform KV: extra INR floor (max with loyalty-derived + table override). */
 export const MIN_CUSTOMER_WALLET_BALANCE_PLATFORM_KEY = 'min_customer_wallet_balance_to_use_checkout_inr';
@@ -38,7 +39,8 @@ function parseJsonbNumeric(v: unknown): number {
 /**
  * INR minimum balance required before any booking wallet debit.
  * MAX( loyalty redeem equivalent, platform_settings floor, table override ) when enabled.
- * Loyalty part matches POST /loyalty/redeem: cash = round(min_redemption_points / redemption_rate, 2).
+ * Loyalty part matches POST /loyalty/redeem: cash = round(minRedemptionPts / redemption_rate, 2)
+ * (minRedemptionPts = min_points_to_redeem or min_redemption_points on the active rule).
  */
 export async function getEffectiveMinCustomerWalletBalanceForCheckout(
   client: PoolClient
@@ -86,15 +88,11 @@ export async function getEffectiveMinCustomerWalletBalanceForCheckout(
   let loyaltyFloor = 0;
   if (respectLoyalty) {
     try {
-      const lr = await client.query<{ min_redemption_points?: string | null; redemption_rate?: string | null }>(
-        `SELECT min_redemption_points::text, redemption_rate::text
-         FROM loyalty_rules
-         WHERE is_active = true`
-      );
+      const lr = await client.query(`SELECT * FROM loyalty_rules WHERE is_active = true`);
       const rows = lr.rows || [];
       if (rows.length === 1) {
-        const minRp = parseInt(String(rows[0].min_redemption_points ?? ''), 10);
-        const rr = parseFloat(String(rows[0].redemption_rate ?? ''));
+        const minRp = resolveMinRedemptionPointsFromRuleRow(rows[0] as Record<string, unknown>);
+        const rr = parseFloat(String((rows[0] as any).redemption_rate ?? ''));
         if (Number.isFinite(minRp) && minRp >= 1 && Number.isFinite(rr) && rr > 0) {
           loyaltyFloor = roundMoney2(minRp / rr);
         }
