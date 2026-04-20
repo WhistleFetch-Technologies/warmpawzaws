@@ -401,7 +401,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
             ₹{wallet?.balance?.toLocaleString() ?? '0'}
           </p>
 
-          {wallet?.pending_credits && wallet.pending_credits > 0 && (
+          {(wallet?.pending_credits ?? 0) > 0 && (
             <div className="mt-3 flex items-center gap-2 text-sm text-orange-600">
               <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
               ₹{wallet.pending_credits.toLocaleString()} pending
