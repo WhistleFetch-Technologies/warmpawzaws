@@ -1678,20 +1678,20 @@ export function ChimeVideoCall({
           : 'rounded-2xl h-[100dvh] max-h-[100dvh] min-h-[100dvh] sm:h-[min(100dvh,920px)] sm:max-h-[min(100dvh,920px)] sm:min-h-0'
       }`}
     >
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-slate-900/90 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+      {/* Header — wraps on small screens; extra top offset for video so controls never sit under the bar */}
+      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-slate-900/90 to-transparent px-3 sm:px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-2 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shrink-0">
               <User className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <p className="text-white font-medium text-sm">{otherParticipantName}</p>
-              <p className="text-slate-400 text-xs">{serviceName}</p>
+            <div className="min-w-0">
+              <p className="text-white font-medium text-sm truncate">{otherParticipantName}</p>
+              <p className="text-slate-400 text-xs truncate">{serviceName}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0 flex-wrap">
             <div className="bg-slate-800/80 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
               <span className="text-white text-sm font-mono">{formatDuration(callRemainingSeconds)}</span>
@@ -1700,7 +1700,7 @@ export function ChimeVideoCall({
             <button
               type="button"
               onClick={() => void toggleFullScreen()}
-              className="p-2 bg-slate-800/80 backdrop-blur rounded-full hover:bg-slate-700 transition-colors"
+              className="min-h-[40px] min-w-[40px] p-2 bg-slate-800/80 backdrop-blur rounded-full hover:bg-slate-700 transition-colors touch-manipulation"
             >
               {isFullScreen || pseudoFullScreen ? (
                 <Minimize2 className="w-4 h-4 text-white" />
@@ -1712,7 +1712,7 @@ export function ChimeVideoCall({
             <button
               type="button"
               onClick={() => setShowChat(!showChat)}
-              className={`p-2 rounded-full transition-colors relative ${showChat ? 'bg-[#FF8C42]' : 'bg-slate-800/80 backdrop-blur hover:bg-slate-700'
+              className={`min-h-[40px] min-w-[40px] p-2 rounded-full transition-colors relative touch-manipulation ${showChat ? 'bg-[#FF8C42]' : 'bg-slate-800/80 backdrop-blur hover:bg-slate-700'
                 }`}
             >
               <MessageSquare className="w-4 h-4 text-white" />
@@ -1726,7 +1726,7 @@ export function ChimeVideoCall({
         </div>
       </div>
 
-      <div ref={videoStageRef} className="flex-1 min-h-0 bg-slate-800 relative mt-16 mb-0">
+      <div ref={videoStageRef} className="flex-1 min-h-0 bg-slate-800 relative mt-[max(5.5rem,calc(env(safe-area-inset-top,0px)+4.5rem))] sm:mt-16 mb-0">
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -1864,24 +1864,24 @@ export function ChimeVideoCall({
       {/* Chat Panel — safe-area so header clears notch / status bar (iOS/Android) */}
       {showChat && (
         <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)]">
-          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex items-center gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
             <div className="min-w-0 flex-1">
               <h3 className="text-white font-semibold text-sm sm:text-base truncate">Chat with {otherParticipantName}</h3>
               {isOtherTyping && (
-                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                  <span className="flex gap-0.5">
+                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 min-w-0">
+                  <span className="flex gap-0.5 shrink-0">
                     <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                     <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '150ms' }} />
                     <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '300ms' }} />
                   </span>
-                  {otherTypingName} is typing...
+                  <span className="truncate">{otherTypingName} is typing...</span>
                 </p>
               )}
             </div>
             <button
               type="button"
               onClick={() => setShowChat(false)}
-              className="p-2 hover:bg-slate-700 rounded-xl shrink-0 touch-manipulation"
+              className="min-h-[44px] min-w-[44px] self-end sm:self-center p-2 hover:bg-slate-700 rounded-xl shrink-0 touch-manipulation flex items-center justify-center"
               aria-label="Close chat"
             >
               <X className="w-5 h-5 text-white" />

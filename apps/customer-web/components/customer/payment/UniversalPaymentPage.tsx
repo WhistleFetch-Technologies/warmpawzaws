@@ -86,7 +86,7 @@ interface UniversalPaymentPageProps {
 
   // Customer
   customerPhone: string;
-  /** When set with contact, Razorpay can open UPI with collect/VPA entry (per checkout docs), not QR-only desktop defaults. */
+  /** When set, Razorpay prefill improves checkout; UPI layout no longer requires email (see Razorpay `config.display.blocks` below). */
   customerEmail?: string;
   customerId?: string;
 
@@ -2269,7 +2269,8 @@ export function UniversalPaymentPage({
       const razorpayPrefill: Record<string, string> = {};
       if (prefillContact) razorpayPrefill.contact = prefillContact;
       if (resolvedCheckoutEmail) razorpayPrefill.email = resolvedCheckoutEmail;
-      const canPreselectUpi = Boolean(prefillContact && resolvedCheckoutEmail);
+      /** Prefer explicit UPI-first instrument layout whenever we have a valid E.164 contact (matches EnhancedPaymentPage). Requiring email left most users on default checkout → UPI QR on desktop/Android while iOS mobile web still showed collect. */
+      const preferUpiInstrumentLayout = Boolean(prefillContact);
 
       const rawOfferId = selectedRazorpayOffer?.id;
       const razorpayOfferIds =
@@ -2439,11 +2440,22 @@ export function UniversalPaymentPage({
           }
         },
         ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-        ...(canPreselectUpi
+        ...(preferUpiInstrumentLayout
           ? {
-              method: 'upi',
               config: {
                 display: {
+                  blocks: {
+                    banks: {
+                      name: 'Pay using UPI/Cards',
+                      instruments: [
+                        { method: 'upi' },
+                        { method: 'card' },
+                        { method: 'netbanking' },
+                        { method: 'wallet' },
+                      ],
+                    },
+                  },
+                  sequence: ['block.banks'],
                   preferences: {
                     show_default_blocks: true,
                   },

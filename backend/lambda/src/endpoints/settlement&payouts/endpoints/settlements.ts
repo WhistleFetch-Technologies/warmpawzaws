@@ -29,6 +29,70 @@ import { validateBody } from 'src/middleware/validation-middleware';
 import { processPayoutSchema } from 'src/zodContracts/settlement.contract';
 import { z } from 'zod';
 
+/** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
+const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
+
+/**
+ * Parse `cancellation_policies.vendor_cancellation_penalty` JSONB:
+ * `{ enabled?, penaltyPercentage?, compensationPercentage? }` (snake_case keys also accepted).
+ * When `enabled` is false, both percentages are 0 (no deduction / no extra compensation from this policy).
+ */
+function parseVendorCancellationPenaltyFromPolicyRow(
+  row: Record<string, unknown> | undefined
+): { penaltyPct: number; compensationPct: number; enabled: boolean } {
+  const defaultPenalty = 10;
+  const defaultComp = 50;
+  if (!row) {
+    return { penaltyPct: defaultPenalty, compensationPct: defaultComp, enabled: true };
+  }
+
+  let raw: unknown = row.vendor_cancellation_penalty ?? (row as { vendorCancellationPenalty?: unknown }).vendorCancellationPenalty;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = null;
+    }
+  }
+
+  if (raw != null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const enabled = o.enabled !== false;
+    if (!enabled) {
+      return { penaltyPct: 0, compensationPct: 0, enabled: false };
+    }
+    const p = Number(o.penaltyPercentage ?? o.penalty_percentage ?? defaultPenalty);
+    const c = Number(o.compensationPercentage ?? o.compensation_percentage ?? defaultComp);
+    return {
+      penaltyPct: clampPenaltyPercent(p, defaultPenalty),
+      compensationPct: clampPenaltyPercent(c, defaultComp),
+      enabled: true,
+    };
+  }
+
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return {
+      penaltyPct: clampPenaltyPercent(raw, defaultPenalty),
+      compensationPct: defaultComp,
+      enabled: true,
+    };
+  }
+
+  const flatComp = Number((row as { customer_compensation_percentage?: unknown }).customer_compensation_percentage);
+  return {
+    penaltyPct: defaultPenalty,
+    compensationPct: clampPenaltyPercent(flatComp, defaultComp),
+    enabled: true,
+  };
+}
+
+function clampPenaltyPercent(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
+}
+
 /**
  * Resolve vendorId (may be vendor_identity id) to vendors.id for bank-details and settlements.
  * If vendor not in vendors table but identity exists and is approved, resolves by phone or auto-creates vendor row.
@@ -392,7 +456,7 @@ export function registerSettlementEndpoints(app: Hono) {
            b.status,
            b.cancelled_by
          FROM bookings b
-         WHERE (b.status = 'vendor_no_show' OR (b.status = 'cancelled' AND b.cancelled_by = 'vendor'))
+         WHERE (b.status = 'vendor_no_show' OR (b.status = 'cancelled' AND ${CANCELLED_BY_VENDOR_SQL}))
          AND b.created_at < $1
          AND b.penalty_processed IS NOT TRUE
          ORDER BY b.created_at ASC`,
@@ -407,8 +471,9 @@ export function registerSettlementEndpoints(app: Hono) {
          LIMIT 1`
         ).catch(() => ({ rows: [] }));
 
-        const vendorPenaltyPercentage = cancellationPolicy.rows[0]?.vendor_cancellation_penalty || 10;
-        const customerCompensationPercentage = cancellationPolicy.rows[0]?.customer_compensation_percentage || 50;
+        const parsedPenalty = parseVendorCancellationPenaltyFromPolicyRow(
+          cancellationPolicy.rows[0] as Record<string, unknown> | undefined
+        );
 
         // Track penalties by vendor
         const penaltiesByVendor: Record<string, { penaltyAmount: number; compensations: any[] }> = {};
@@ -416,8 +481,8 @@ export function registerSettlementEndpoints(app: Hono) {
         for (const penalty of vendorPenalties.rows) {
           const vendorId = penalty.vendor_id;
           const bookingAmount = parseFloat(penalty.total_amount || '0');
-          const penaltyAmount = (bookingAmount * vendorPenaltyPercentage) / 100;
-          const compensationAmount = (bookingAmount * customerCompensationPercentage) / 100;
+          const penaltyAmount = (bookingAmount * parsedPenalty.penaltyPct) / 100;
+          const compensationAmount = (bookingAmount * parsedPenalty.compensationPct) / 100;
 
           if (!penaltiesByVendor[vendorId]) {
             penaltiesByVendor[vendorId] = { penaltyAmount: 0, compensations: [] };
