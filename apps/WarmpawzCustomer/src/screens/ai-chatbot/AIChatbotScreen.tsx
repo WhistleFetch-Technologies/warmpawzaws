@@ -81,6 +81,14 @@ interface AIChatbotScreenProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+type BookingSuggestedProvider = {
+  id: string;
+  businessName: string;
+  city?: string;
+  roleName?: string;
+  distanceKm?: number;
+};
+
 interface Message {
   id: string;
   type: 'user' | 'bot' | 'system';
@@ -88,7 +96,19 @@ interface Message {
   timestamp: string;
   intent?: string;
   suggestedActions?: string[];
+  suggestedProviders?: BookingSuggestedProvider[];
   requiresAgent?: boolean;
+}
+
+async function getBookingAssistLocation(): Promise<{ lat: number; lng: number } | undefined> {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return undefined;
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  } catch {
+    return undefined;
+  }
 }
 
 export function AIChatbotScreen({
@@ -170,7 +190,7 @@ export function AIChatbotScreen({
     setInputText('');
     setSending(true);
 
-    if (mode !== 'booking') {
+    if (mode !== 'booking' && mode !== 'symptoms') {
       lastBookingUrlRef.current = null;
     }
 
@@ -178,54 +198,35 @@ export function AIChatbotScreen({
       let response;
       
       if (mode === 'symptoms') {
-        // Symptoms checker
         response = await AIChatbotApi.symptomsChecker({
           symptoms: sentText,
           petId,
           customerId,
           customerPhone: phone,
         });
-        
+
+        const bookingPath =
+          typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
+            ? response.bookingUrl
+            : '/search?category=vet';
+        lastBookingUrlRef.current = bookingPath;
+
+        const vetBook = Boolean(response.vetBookingSuggested);
+        const suggestedActions = vetBook ? ['Go to Booking', 'Continue to booking'] : undefined;
+
         const botMessage: Message = {
           id: `bot-${Date.now()}`,
           type: 'bot',
           content: response.response || 'I understand your concern. Please consult with a veterinarian for proper diagnosis.',
           timestamp: new Date().toISOString(),
           intent: 'symptoms',
-          suggestedActions: ['Find Vet Clinic', 'Book Consultation', 'Search Providers'],
+          ...(suggestedActions && suggestedActions.length > 0 ? { suggestedActions } : {}),
         };
-        
+
         setMessages(prev => [...prev, botMessage]);
-        
-        if (response.shouldSeeVet && response.vetBookingSuggested) {
-          Alert.alert(
-            'Veterinary Consultation Recommended',
-            'Based on the symptoms, I recommend consulting with a veterinarian. Would you like me to help you find a nearby vet clinic?',
-            [
-              { text: 'Later', style: 'cancel' },
-              {
-                text: 'Find Vet',
-                onPress: () => {
-                  if (onNavigate) {
-                    onNavigate('ServiceDiscovery', { category: 'vet' });
-                  }
-                },
-              },
-            ]
-          );
-        }
       } else if (mode === 'booking') {
-        // Booking assist — pass device coordinates when already permitted (enables closest-vet RDS merge).
-        let bookingLocation: { lat: number; lng: number } | undefined;
-        try {
-          const fg = await Location.getForegroundPermissionsAsync();
-          if (fg.status === 'granted') {
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            bookingLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          }
-        } catch {
-          /* optional */
-        }
+        // Booking assist (optional GPS improves RDS nearby-provider ranking)
+        const bookingLocation = await getBookingAssistLocation();
         response = await AIChatbotApi.bookingAssist({
           query: sentText,
           customerId,
@@ -251,6 +252,12 @@ export function AIChatbotScreen({
           new Set([...(stepLabels as string[]), 'Continue to booking', 'Browse Bookings'])
         );
         
+        const suggestedProviders: BookingSuggestedProvider[] | undefined = Array.isArray(
+          response.suggestedProviders
+        )
+          ? (response.suggestedProviders as BookingSuggestedProvider[])
+          : undefined;
+
         const botMessage: Message = {
           id: `bot-${Date.now()}`,
           type: 'bot',
@@ -258,6 +265,7 @@ export function AIChatbotScreen({
           timestamp: new Date().toISOString(),
           intent: 'booking',
           suggestedActions,
+          suggestedProviders,
         };
         
         setMessages(prev => [...prev, botMessage]);
@@ -359,6 +367,16 @@ export function AIChatbotScreen({
   const handleSuggestedAction = (action: string) => {
     const a = action.toLowerCase();
 
+    if (a === 'book in chat' || (a.includes('book') && a.includes('in chat'))) {
+      setMode('booking');
+      return;
+    }
+
+    if (a === 'go to booking' || (a.includes('go to') && a.includes('booking'))) {
+      setMode('booking');
+      return;
+    }
+
     if ((a.includes('create') && a.includes('ticket')) || a.replace(/\s+/g, '') === 'createticket') {
       const recent = [...messages].reverse().filter(m => m.type === 'user').slice(0, 3);
       const transcript = recent.map(m => m.content).join('\n---\n').slice(0, 2000);
@@ -397,6 +415,14 @@ export function AIChatbotScreen({
 
     if (a === 'continue to booking') {
       openBookingFromUrl(lastBookingUrlRef.current);
+      return;
+    }
+
+    if (a.startsWith('vendor:')) {
+      const vid = action.slice('vendor:'.length).trim();
+      if (vid && onNavigate) {
+        onNavigate('VendorProfile', { vendorId: vid });
+      }
       return;
     }
 
@@ -502,6 +528,23 @@ export function AIChatbotScreen({
                       onPress={() => handleSuggestedAction(action)}
                     >
                       <Text style={styles.actionButtonText}>{action}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {message.suggestedProviders && message.suggestedProviders.length > 0 && (
+                <View style={styles.nearbyProviders}>
+                  {message.suggestedProviders.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.providerChip}
+                      onPress={() => handleSuggestedAction(`vendor:${p.id}`)}
+                    >
+                      <Text style={styles.providerChipText} numberOfLines={2}>
+                        {p.businessName}
+                        {typeof p.distanceKm === 'number' ? ` · ${p.distanceKm} km` : ''}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -647,6 +690,26 @@ const styles = StyleSheet.create({
   },
   botMessageText: {
     color: colors.text,
+  },
+  nearbyProviders: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  providerChip: {
+    maxWidth: '100%',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  providerChipText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.text,
+    fontWeight: typography.fontWeights.medium,
   },
   suggestedActions: {
     marginTop: spacing.sm,

@@ -39,6 +39,20 @@ describe('parseSymptomsBedrockCompletion', () => {
     expect(p.shouldSeeVet).toBe(false);
     expect(p.vetBookingSuggested).toBe(false);
   });
+
+  it('defaults vetBookingSuggested to false when omitted', () => {
+    const p = parseSymptomsBedrockCompletion(
+      '{"response":"X","possibleCauses":[],"urgency":"routine","recommendations":["r"]}'
+    );
+    expect(p.vetBookingSuggested).toBe(false);
+  });
+
+  it('sets vetBookingSuggested true only when explicitly true', () => {
+    const p = parseSymptomsBedrockCompletion(
+      '{"response":"X","urgency":"routine","vetBookingSuggested":true}'
+    );
+    expect(p.vetBookingSuggested).toBe(true);
+  });
 });
 
 describe('parseBookingAssistBedrockCompletion', () => {

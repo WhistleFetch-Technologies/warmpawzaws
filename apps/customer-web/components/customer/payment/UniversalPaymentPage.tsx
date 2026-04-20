@@ -86,6 +86,8 @@ interface UniversalPaymentPageProps {
 
   // Customer
   customerPhone: string;
+  /** When set with contact, Razorpay can open UPI with collect/VPA entry (per checkout docs), not QR-only desktop defaults. */
+  customerEmail?: string;
   customerId?: string;
 
   /** 
@@ -184,6 +186,15 @@ interface RazorpayOffer {
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** E.164 contact for Razorpay prefill (improves UPI flows vs raw digits-only strings). */
+function razorpayPrefillContactE164(digitsOnly: string): string | undefined {
+  const d = String(digitsOnly || '').replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('91')) return `+${d}`;
+  if (d.length === 10) return `+91${d}`;
+  if (d.length >= 11 && d.length <= 15) return `+${d}`;
+  return undefined;
+}
 
 /** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
 function taxCalculateResponseHasPayload(res: any): boolean {
@@ -285,6 +296,7 @@ export function UniversalPaymentPage({
   quantity = 1,
   selectedServices,
   customerPhone,
+  customerEmail,
   customerId,
   flowType,
   layoutVariant = 'fullscreen',
@@ -2234,6 +2246,31 @@ export function UniversalPaymentPage({
         ? `${String(titlePart).trim()} — ${vendorPart}`
         : `Payment — ${vendorPart}`;
       const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+
+      let resolvedCheckoutEmail: string | undefined =
+        typeof customerEmail === 'string' && customerEmail.includes('@') ? customerEmail.trim() : undefined;
+      if (!resolvedCheckoutEmail && customerPhone) {
+        try {
+          const profileResponse = (await apiClient.get(
+            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
+          )) as any;
+          const profile = profileResponse?.profile ?? profileResponse;
+          const em = profile?.email;
+          if (typeof em === 'string' && em.includes('@')) {
+            const t = em.trim();
+            if (t) resolvedCheckoutEmail = t;
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+
+      const prefillContact = razorpayPrefillContactE164(phoneDigits);
+      const razorpayPrefill: Record<string, string> = {};
+      if (prefillContact) razorpayPrefill.contact = prefillContact;
+      if (resolvedCheckoutEmail) razorpayPrefill.email = resolvedCheckoutEmail;
+      const canPreselectUpi = Boolean(prefillContact && resolvedCheckoutEmail);
+
       const rawOfferId = selectedRazorpayOffer?.id;
       const razorpayOfferIds =
         typeof rawOfferId === 'string' &&
@@ -2401,7 +2438,19 @@ export function UniversalPaymentPage({
             setProcessing(false);
           }
         },
-        ...(phoneDigits.length > 0 ? { prefill: { contact: phoneDigits } } : {}),
+        ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
+        ...(canPreselectUpi
+          ? {
+              method: 'upi',
+              config: {
+                display: {
+                  preferences: {
+                    show_default_blocks: true,
+                  },
+                },
+              },
+            }
+          : {}),
         theme: {
           color: '#FF8C42',
         },

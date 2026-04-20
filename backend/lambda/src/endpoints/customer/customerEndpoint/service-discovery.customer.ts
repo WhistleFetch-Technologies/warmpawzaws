@@ -26,6 +26,9 @@ import { taxCalculationService } from '../../../lib/services/tax-calculation-ser
 import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
 import { CATEGORY_ROLES } from '../constants';
 import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../constants/helper';
+import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
+
+export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -397,20 +400,6 @@ async function resolveTargetRolesForDiscovery(category?: string | null, roleId?:
   return discoverable;
 }
 
-/** Resolve customer ID from phone for vendor-specific package badges (hasActivePackage, inActivePackage). */
-async function resolveCustomerIdFromPhoneForDiscovery(phone: string): Promise<string | null> {
-  if (!phone || typeof phone !== 'string') return null;
-  const clean = phone.replace(/[^0-9]/g, '');
-  if (clean.length < 10) return null;
-  const customers = await select('customers', { phone: clean }, { columns: ['id', 'phone'] });
-  if (customers.length > 0) return (customers[0] as any).id;
-  if (clean.length === 10) {
-    const with91 = await select('customers', { phone: `+91${clean}` }, { columns: ['id', 'phone'] });
-    if (with91.length > 0) return (with91[0] as any).id;
-  }
-  return null;
-}
-
 export async function getCoordinates(
   source: 'customer' | 'vendor',
   identifier: string,
@@ -467,111 +456,6 @@ export async function getCoordinates(
       error: error instanceof Error ? error.message : String(error),
       source,
       identifier,
-    });
-    return null;
-  }
-}
-
-/**
- * Get customer coordinates from their default address.
- * Fetches coordinates from customer_addresses table (JSONB format only).
- * Note: customer_addresses table only has coordinates JSONB field, not separate latitude/longitude columns.
- * 
- * @param customerPhone - Customer phone number (optional, used to resolve customerId)
- * @param customerId - Customer ID (optional, if already known)
- * @returns Object with latitude and longitude, or null if not found
- * 
- * @example
- * // Using phone number
- * const coords = await getCustomerCoordinates('9326977987');
- * if (coords) {
- *   console.log(`Lat: ${coords.latitude}, Lng: ${coords.longitude}`);
- * }
- * 
- * @example
- * // Using customer ID
- * const coords = await getCustomerCoordinates(null, 'customer-uuid');
- */
-export async function getCustomerCoordinates(
-  customerPhone?: string | null,
-  customerId?: string | null
-): Promise<{ latitude: number; longitude: number } | null> {
-  try {
-    let resolvedCustomerId: string | null = customerId || null;
-    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId, customerPhone);
-    // Resolve customerId from phone if not provided
-    if (resolvedCustomerId === null && customerPhone) {
-      resolvedCustomerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
-    }
-    console.log('resolvedCustomerId_______________________________>', resolvedCustomerId);
-    if (!resolvedCustomerId) {
-      console.warn('[getCustomerCoordinates] No customerId resolved', { customerPhone, customerId });
-      return null;
-    }
-
-    // ✅ FIX: customer_addresses only has coordinates JSONB, not separate latitude/longitude columns
-    const addressResult = await query(
-      `SELECT coordinates 
-       FROM customer_addresses 
-       WHERE customer_id = $1 AND is_default = true 
-       LIMIT 1`,
-      [resolvedCustomerId]
-    );
-
-    if (addressResult.rows.length === 0) {
-      console.warn('[getCustomerCoordinates] No default address found', { customerId: resolvedCustomerId });
-      return null;
-    }
-
-    const addr = addressResult.rows[0];
-    let latitude: number | null = null;
-    let longitude: number | null = null;
-
-    // Extract from coordinates JSON field (format: {"lat": 12.9756425, "lng": 77.6032208})
-    if (addr.coordinates) {
-      try {
-        const coords = typeof addr.coordinates === 'string'
-          ? JSON.parse(addr.coordinates)
-          : addr.coordinates;
-
-        if (coords?.lat != null && coords?.lng != null) {
-          latitude = parseFloat(String(coords.lat));
-          longitude = parseFloat(String(coords.lng));
-          console.log('[getCustomerCoordinates] Extracted from JSON coordinates', {
-            customerId: resolvedCustomerId,
-            latitude,
-            longitude
-          });
-        }
-      } catch (e) {
-        console.warn('[getCustomerCoordinates] Failed to parse coordinates JSON', {
-          error: e instanceof Error ? e.message : String(e),
-          raw: addr.coordinates
-        });
-      }
-    }
-
-    // ✅ REMOVED: Fallback to latitude/longitude columns - they don't exist in customer_addresses
-
-    if (latitude != null && longitude != null) {
-      return { latitude, longitude };
-    }
-
-    // Log failure details for debugging
-    console.warn('[getCustomerCoordinates] Could not extract valid coordinates', {
-      customerId: resolvedCustomerId,
-      hasCoordinates: !!addr.coordinates,
-      coordinatesType: typeof addr.coordinates,
-      finalLat: latitude,
-      finalLng: longitude,
-    });
-
-    return null;
-  } catch (error) {
-    console.error('[getCustomerCoordinates] Unexpected error', {
-      error: error instanceof Error ? error.message : String(error),
-      customerPhone,
-      customerId,
     });
     return null;
   }
@@ -3067,7 +2951,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendorServiceIdToPackagePurchaseId = new Map<string, string>();
       if (customerPhone) {
         try {
-          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          const customerId = await resolveCustomerIdFromPhone(customerPhone);
           if (customerId) {
             const purchases = await query(
               `SELECT id, package_id, package_snapshot FROM package_purchases
@@ -3533,7 +3417,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorIdsWithActivePackage = new Set<string>();
       if (customerPhone) {
         try {
-          const customerId = await resolveCustomerIdFromPhoneForDiscovery(customerPhone);
+          const customerId = await resolveCustomerIdFromPhone(customerPhone);
           if (customerId) {
             const activePackages = await query(
               `SELECT DISTINCT vendor_id FROM package_purchases
