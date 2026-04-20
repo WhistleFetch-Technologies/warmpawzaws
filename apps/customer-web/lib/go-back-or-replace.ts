@@ -84,6 +84,41 @@ export type ShopReturnSpaScreen = string;
 
 const SHOP_BACK_INTENT_KEY = 'warmpawz_shop_back_intent';
 
+/** Set when using the wishlist entry point from the full `/shop` route (see `markWishlistOpenedFromShop`). */
+const WISHLIST_OPENED_FROM_SHOP_KEY = 'warmpawz_wishlist_opened_from_shop';
+
+/** Call when navigating from `/shop` to `/wishlist` so empty wishlist “Start Shopping” can use `router.back()` without stacking a second `/shop`. */
+export function markWishlistOpenedFromShop(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(WISHLIST_OPENED_FROM_SHOP_KEY, '1');
+}
+
+/**
+ * Returns true once if the last hop to wishlist was from `/shop`. Clears the mark.
+ * Used by empty wishlist “Start Shopping”.
+ */
+export function consumeWishlistOpenedFromShop(): boolean {
+  if (typeof window === 'undefined') return false;
+  const v = sessionStorage.getItem(WISHLIST_OPENED_FROM_SHOP_KEY);
+  if (v === '1') {
+    sessionStorage.removeItem(WISHLIST_OPENED_FROM_SHOP_KEY);
+    return true;
+  }
+  return false;
+}
+
+/** Call before `router.push('/wishlist')` from routes other than `/shop` so a stale “from shop” mark does not flip Start Shopping behavior. */
+export function clearWishlistOpenedFromShopMark(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(WISHLIST_OPENED_FROM_SHOP_KEY);
+}
+
+/** Clears pinned shop back target (e.g. before `router.back()` from wishlist when returning to existing `/shop`). */
+export function clearShopBackIntent(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(SHOP_BACK_INTENT_KEY);
+}
+
 type ShopBackIntent =
   | { kind: 'path'; path: string }
   | { kind: 'spa'; screen: string };

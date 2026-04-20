@@ -52,7 +52,7 @@ function sanitizeSuggestedActions(raw: unknown): string[] {
   return out;
 }
 
-function extractFirstJsonObjectString(text: string): string | null {
+export function extractFirstJsonObjectString(text: string): string | null {
   const m = text.match(/\{[\s\S]*\}/);
   return m ? m[0] : null;
 }

@@ -130,8 +130,8 @@ export default function CheckoutPage() {
 
         // Load wallet balance
         try {
-          const walletData = await apiClient.get<{ balance?: number }>(`/wallet/${customerId}`);
-          setWalletBalance(walletData?.balance || 0);
+          const walletData = await apiClient.get<{ balance?: number | string }>(`/wallet/${customerId}`);
+          setWalletBalance(Number(walletData?.balance ?? 0) || 0);
         } catch (e) {
           console.warn('Could not load wallet');
         }

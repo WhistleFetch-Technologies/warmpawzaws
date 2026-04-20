@@ -1204,7 +1204,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address: fullAddressText,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
-          status: isPackageBooking ? 'confirmed' : 'pending',
+          // Slot was validated in this transaction — treat as vendor-confirmed (no separate accept step).
+          // Note: omit confirmed_at / confirmed_by here — many RDS schemas lack these columns; INSERT retry budget is limited.
+          status: 'confirmed',
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           // Coordinates from base schema
           latitude: bookingLatitude,
@@ -1321,8 +1323,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let insertedBooking: any = null;
         let insertAttempt = 0;
         let currentBookingData = { ...bookingData };
-        
-        while (insertAttempt < 5) {
+        let lastInsertErrMsg = '';
+        const maxInsertAttempts = 40;
+
+        while (insertAttempt < maxInsertAttempts) {
           insertAttempt++;
           try {
             await client.query('SAVEPOINT sp_booking_insert');
@@ -1342,23 +1346,34 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (insertError: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_booking_insert').catch(() => {});
             const errMsg = insertError?.message || '';
-            
-            // Check if error is about a missing column
-            const colMatch = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/);
-            if (colMatch && colMatch[1]) {
-              const missingCol = colMatch[1];
-              console.warn(`[BOOKING] Column "${missingCol}" does not exist in bookings table, removing and retrying (attempt ${insertAttempt})`);
-              delete currentBookingData[missingCol];
-              continue; // Retry without this column
+            lastInsertErrMsg = errMsg || String(insertError);
+
+            // PostgreSQL undefined_column / missing column on bookings
+            let missingCol: string | null = null;
+            const m1 = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/i);
+            if (m1) missingCol = m1[1];
+            else if (insertError?.code === '42703') {
+              const m2 = errMsg.match(/column "(\w+)"/i);
+              if (m2 && errMsg.toLowerCase().includes('bookings')) missingCol = m2[1];
             }
-            
-            // Not a missing column error, re-throw
+            if (missingCol) {
+              console.warn(
+                `[BOOKING] Column "${missingCol}" does not exist on bookings, removing and retrying (attempt ${insertAttempt}/${maxInsertAttempts})`
+              );
+              delete currentBookingData[missingCol];
+              continue;
+            }
+
             throw insertError;
           }
         }
         
         if (!insertedBooking) {
-          throw new Error('Failed to insert booking after removing missing columns');
+          throw new Error(
+            lastInsertErrMsg
+              ? `Failed to insert booking after removing missing columns: ${lastInsertErrMsg}`
+              : 'Failed to insert booking after removing missing columns'
+          );
         }
 
         // ✅ Wallet at booking time: debit inside same transaction (Razorpay path does not debit wallet).
@@ -1507,14 +1522,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Log initial status
+      // Log initial status (matches persisted row — auto-confirmed when slot is available)
       await logBookingStatusChange(
         booking.id,
         null,
-        'pending',
+        booking.status,
         customerId,
         'customer',
-        'Booking created'
+        booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
       // Publish event
@@ -2709,8 +2724,15 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
         total_amount: currentBooking.total_amount,
         discount_amount: currentBooking.discount_amount,
-        payment_status: currentBooking.payment_status,
+        payment_status: (currentBooking as any).payment_status ?? (currentBooking as any).paymentStatus,
       });
+
+      const customerIdForRefund =
+        (currentBooking as any).customer_id ??
+        (currentBooking as any).customerId ??
+        body.customerId ??
+        body.customer_id ??
+        actorId;
 
       let refundInfo = null;
       if (bookingPaidForRefund) {
@@ -2731,10 +2753,10 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           const refundPercentage = preview.refundPercentage;
           
           if (refundAmount > 0) {
-            if (refundMethod === 'wallet' && currentBooking.customer_id) {
+            if (refundMethod === 'wallet' && customerIdForRefund) {
               try {
                 await creditCustomerWalletForBookingRefund({
-                  customerId: currentBooking.customer_id,
+                  customerId: String(customerIdForRefund),
                   bookingId,
                   refundAmount,
                   refundPercentage,
@@ -2758,6 +2780,16 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                     'Cancellation succeeded but wallet refund failed. Please contact support with your booking ID.',
                 };
               }
+            } else if (refundMethod === 'wallet' && !customerIdForRefund) {
+              console.error('[CancelBooking] Wallet refund skipped: booking has no customer_id', { bookingId });
+              refundInfo = {
+                amount: refundAmount,
+                percentage: refundPercentage,
+                method: 'wallet',
+                status: 'failed',
+                message:
+                  'Cancellation succeeded but wallet refund could not run (missing customer on booking). Please contact support with your booking ID.',
+              };
             } else if (refundMethod === 'original') {
               const payments = await query(
                 `SELECT id FROM payments
@@ -2785,7 +2817,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   [
                     paymentId,
                     bookingId,
-                    currentBooking.customer_id,
+                    customerIdForRefund ?? currentBooking.customer_id,
                     currentBooking.vendor_id || null,
                     refundAmount,
                     `Booking cancellation: ${reason} (${refundPercentage}% refund)`,

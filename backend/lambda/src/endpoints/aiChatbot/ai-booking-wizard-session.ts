@@ -1,23 +1,23 @@
-/**
+﻿/**
  * AI booking wizard — server-backed draft sessions for customer-web in-chat flow.
  * Routes are mounted under /ai-chatbot/* (same rate limit / optional auth as other ai-chatbot).
  */
 
 import type { Hono } from 'hono';
 import type { Context } from 'hono';
-import { query } from '../database/rds-connection';
-import { logErrorSafe, redactForLog } from '../utils/redact-for-log';
+import { query } from '../../database/rds-connection';
+import { logErrorSafe, redactForLog } from '../../utils/redact-for-log';
 import {
   extractSlotsFromApiPayload,
   isSlotTimeAvailable,
   parseSlotsSnapshotJson,
-} from '../utils/ai-booking-wizard-slots';
+} from '../../utils/ai/ai-booking-wizard-slots';
 import {
   interpretActionsToPatch,
   parseInterpretActionsFromModelJson,
-} from '../utils/ai-booking-wizard-interpret';
-import { getBedrockConfig, invokeBedrock } from '../utils/bedrock-client';
-import { withRetry } from '../utils/error-recovery';
+} from '../../utils/ai/ai-booking-wizard-interpret';
+import { getBedrockConfig, invokeBedrock } from '../../utils/bedrock-client';
+import { withRetry } from '../../utils/error-recovery';
 
 type WizardRow = Record<string, unknown>;
 

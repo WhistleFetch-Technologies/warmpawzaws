@@ -67,6 +67,42 @@ interface EnhancedWalletPageProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+/** Lambda GET /wallet/:id returns a flat body (no success/data wrapper). Some routes wrap — accept both. */
+function walletPayloadFromGetWalletResponse(res: any): WalletData | null {
+  if (!res || typeof res !== 'object') return null;
+  const d = res.success && res.data ? res.data : res;
+  if (!d || typeof d !== 'object') return null;
+  if (d.balance == null && d.customerId == null && d.customer_id == null) return null;
+  return {
+    balance: Number(d.balance ?? 0),
+    pending_credits: Number(d.pending_credits ?? d.pendingCredits ?? 0),
+    total_earned: Number(d.total_earned ?? d.totalEarned ?? 0),
+    total_spent: Number(d.total_spent ?? d.totalSpent ?? 0),
+    loyalty_points: Number(d.loyalty_points ?? d.loyaltyPoints ?? 0),
+    tier: (d.tier as WalletData['tier']) || 'bronze',
+  };
+}
+
+/** GET /wallet/:id/transactions returns flat { transactions } from Lambda. */
+function transactionsFromWalletTxResponse(res: any): Transaction[] {
+  if (!res || typeof res !== 'object') return [];
+  const raw =
+    (res.success && res.data && Array.isArray(res.data.transactions) && res.data.transactions) ||
+    (Array.isArray(res.transactions) && res.transactions) ||
+    (res.data && Array.isArray(res.data.transactions) && res.data.transactions) ||
+    [];
+  return raw.map((t: any) => ({
+    id: String(t.id ?? ''),
+    type: (t.type === 'credit' || t.type === 'debit' ? t.type : t.transaction_type) as Transaction['type'],
+    amount: Number(t.amount ?? 0),
+    description: String(t.description ?? ''),
+    reference_type: t.reference_type ?? t.referenceType,
+    reference_id: t.reference_id != null ? String(t.reference_id) : t.referenceId != null ? String(t.referenceId) : undefined,
+    status: (t.status === 'pending' || t.status === 'failed' ? t.status : 'completed') as Transaction['status'],
+    created_at: String(t.created_at ?? t.timestamp ?? new Date().toISOString()),
+  }));
+}
+
 export function EnhancedWalletPage({ 
   customerPhone, 
   customerId: propCustomerId,
@@ -117,18 +153,16 @@ export function EnhancedWalletPage({
         // Load wallet
         try {
           const walletRes = await apiClient.get<any>(`/wallet/${id}`);
-          if (walletRes.success && walletRes.data) {
-            setWallet({
-              balance: walletRes.data.balance || 0,
-              pending_credits: walletRes.data.pending_credits || 0,
-              total_earned: walletRes.data.total_earned || 0,
-              total_spent: walletRes.data.total_spent || 0,
-              loyalty_points: walletRes.data.loyalty_points || 0,
-              tier: walletRes.data.tier || 'bronze',
-            });
+          const normalized = walletPayloadFromGetWalletResponse(walletRes);
+          if (normalized) {
+            setWallet(normalized);
+          } else {
+            const fallback = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+            if (fallback.wallet) {
+              setWallet(fallback.wallet);
+            }
           }
         } catch {
-          // Fallback
           const fallback = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
           if (fallback.wallet) {
             setWallet(fallback.wallet);
@@ -151,29 +185,28 @@ export function EnhancedWalletPage({
       params.append('limit', '50');
       
       const res = await apiClient.get<any>(`/wallet/${customerId}/transactions?${params.toString()}`);
-      if (res.success && res.data) {
-        setTransactions(res.data.transactions || []);
-        
-        // Calculate spending by category
-        const spending: Record<string, SpendingCategory> = {};
-        (res.data.transactions || []).forEach((t: Transaction) => {
-          if (t.type === 'debit' && t.reference_type) {
-            const key = t.reference_type;
-            if (!spending[key]) {
-              spending[key] = {
-                category: key,
-                amount: 0,
-                count: 0,
-                icon: getCategoryIcon(key),
-                color: getCategoryColor(key),
-              };
-            }
-            spending[key].amount += t.amount;
-            spending[key].count += 1;
+      const list = transactionsFromWalletTxResponse(res);
+      setTransactions(list);
+
+      const spending: Record<string, SpendingCategory> = {};
+      list.forEach((t: Transaction) => {
+        const ref = t.reference_type;
+        if (t.type === 'debit' && ref) {
+          const key = ref;
+          if (!spending[key]) {
+            spending[key] = {
+              category: key,
+              amount: 0,
+              count: 0,
+              icon: getCategoryIcon(key),
+              color: getCategoryColor(key),
+            };
           }
-        });
-        setSpendingByCategory(Object.values(spending).sort((a, b) => b.amount - a.amount));
-      }
+          spending[key].amount += t.amount;
+          spending[key].count += 1;
+        }
+      });
+      setSpendingByCategory(Object.values(spending).sort((a, b) => b.amount - a.amount));
     } catch (error) {
       console.error('Error loading transactions:', error);
     }

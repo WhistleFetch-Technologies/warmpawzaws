@@ -116,8 +116,8 @@ import { registerPaymentGatewayManagementEndpoints } from '../endpoints/payment-
 import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
-import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
-import { registerAIBookingWizardSessionEndpoints } from '../endpoints/ai-booking-wizard-session';
+import { registerAIChatbotEndpoints } from '../endpoints/aiChatbot/ai-chatbot';
+import { registerAIBookingWizardSessionEndpoints } from '../endpoints/aiChatbot/ai-booking-wizard-session';
 import { registerSupportCrmEndpoints } from '../endpoints/supportCrm/endpoint/support-crm';
 import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor/endpoints/vendor-security';

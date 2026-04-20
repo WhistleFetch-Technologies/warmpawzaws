@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
+import { getCustomerWebOrigin } from '@/lib/customer-web-url';
 
 /** Print without a popup — works on many mobile WebViews where window.open is blocked. */
 function printPrescriptionFromHtml(htmlBody: string, title: string): boolean {
@@ -466,34 +468,99 @@ export default function PrescriptionDocument({
       pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
       const safePet = String(prescription.pet.name || 'Pet').replace(/[^\w\s-]+/g, '_');
       const fileName = `Prescription_${safePet}_${prescription.prescriptionDate}.pdf`;
-      pdf.save(fileName);
-      toast.success('Download started. Check your Downloads or Files app.');
+      const blob = pdf.output('blob');
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+      };
+      if (
+        typeof nav.canShare === 'function' &&
+        nav.canShare({ files: [file] }) &&
+        typeof navigator.share === 'function'
+      ) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Prescription — ${prescription.pet.name}`,
+            text: 'Save to Files (iPhone) or pick another app.',
+          });
+          toast.success('If you do not see a file, choose “Save to Files” in the share sheet.');
+          onDownload?.();
+          return;
+        } catch (shareErr) {
+          console.warn('[PrescriptionDocument] share(files) failed, using download link', shareErr);
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(
+        'PDF exported. On iPhone, open Files → Downloads or On My iPhone; on Android, check Downloads or Files.'
+      );
+      onDownload?.();
     } catch (err) {
       console.warn('[PrescriptionDocument] PDF export failed', err);
       toast.message('PDF export failed on this device. Opening print instead…');
       handlePrint();
+      onDownload?.();
     }
+  };
 
-    onDownload?.();
+  const mintCustomerViewUrl = async (): Promise<string | null> => {
+    try {
+      const mint = (await apiClient.post(`/prescriptions/${prescription.id}/mint-share-token`, {})) as {
+        success?: boolean;
+        exp?: number;
+        sig?: string;
+      };
+      if (!mint?.success || mint.exp == null || !mint.sig) return null;
+      const base = getCustomerWebOrigin();
+      const q = new URLSearchParams({ exp: String(mint.exp), sig: mint.sig });
+      return `${base}/prescriptions/${encodeURIComponent(prescription.id)}/view?${q.toString()}`;
+    } catch (e) {
+      console.warn('[PrescriptionDocument] mint-share-token', e);
+      return null;
+    }
   };
 
   const handleShare = async () => {
-    // Try Web Share API first
+    const customerUrl = await mintCustomerViewUrl();
+    const title = `Prescription for ${prescription.pet.name}`;
+    const text = `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`;
+
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Prescription for ${prescription.pet.name}`,
-          text: `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`,
-          url: window.location.href
+          title,
+          text,
+          ...(customerUrl ? { url: customerUrl } : {}),
         });
         onShare?.();
         return;
-      } catch (err) {
-        console.log('Share cancelled');
+      } catch {
+        /* user cancelled or share failed */
       }
     }
 
-    // Fallback: Copy prescription summary to clipboard for WhatsApp
+    if (customerUrl) {
+      try {
+        await navigator.clipboard.writeText(`${text}\n${customerUrl}`);
+        toast.success('Link copied — opens the customer site so anyone with the link can view the prescription.');
+        onShare?.();
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+
     const summary = generatePrescriptionText(prescription);
     try {
       await navigator.clipboard.writeText(summary);

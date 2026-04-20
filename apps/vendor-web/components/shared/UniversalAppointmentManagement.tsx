@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AppointmentDetailModal } from '../vendor/AppointmentDetailModal';
+import { DeclineBookingModal } from '../vendor/DeclineBookingModal';
 import { VendorChatModal } from '../vendor/VendorChatModal';
 import { VendorTeleConsultationFlow } from '../vendor/VendorTeleConsultationFlow';
 import {
@@ -153,6 +154,7 @@ export function UniversalAppointmentManagement({
   // Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  const [declineVendorBooking, setDeclineVendorBooking] = useState<Booking | null>(null);
 
   // GPS tracking state
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
@@ -321,47 +323,41 @@ export function UniversalAppointmentManagement({
     }
   };
 
-  const handleAccept = async (booking: Booking) => {
-    try {
-      setCompletingBooking(true);
-      const endpoint = getActionEndpoint(booking.id, 'accept');
-      const data = await apiClient.put<any>(endpoint, {}) as any;
-
-      if (data && data.success) {
-        toast.success('Booking accepted!');
-        loadBookings();
-      } else {
-        toast.error(data?.error || 'Failed to accept booking');
-      }
-    } catch (error: any) {
-      console.error('Error accepting booking:', error);
-      toast.error(error.message || 'Failed to accept booking');
-    } finally {
-      setCompletingBooking(false);
-    }
-  };
+  const declineVendorId =
+    userType === 'staff'
+      ? String(userData?.vendor_id || userData?.vendorId || '')
+      : userId;
 
   const handleReject = async (booking: Booking) => {
-    const reason = prompt('Reason for rejection (optional):');
-    if (reason === null) return;
+    if (userType === 'staff') {
+      const reason = prompt('Reason for rejection (optional):');
+      if (reason === null) return;
 
-    try {
-      setCompletingBooking(true);
-      const endpoint = getActionEndpoint(booking.id, 'reject');
-      const data = await apiClient.put<any>(endpoint, { reason }) as any;
+      try {
+        setCompletingBooking(true);
+        const endpoint = getActionEndpoint(booking.id, 'reject');
+        const data = await apiClient.put<any>(endpoint, { reason }) as any;
 
-      if (data && data.success) {
-        toast.success('Booking rejected');
-        loadBookings();
-      } else {
-        toast.error(data?.error || 'Failed to reject booking');
+        if (data && data.success) {
+          toast.success('Booking rejected');
+          loadBookings();
+        } else {
+          toast.error(data?.error || 'Failed to reject booking');
+        }
+      } catch (error: any) {
+        console.error('Error rejecting booking:', error);
+        toast.error(error.message || 'Failed to reject booking');
+      } finally {
+        setCompletingBooking(false);
       }
-    } catch (error: any) {
-      console.error('Error rejecting booking:', error);
-      toast.error(error.message || 'Failed to reject booking');
-    } finally {
-      setCompletingBooking(false);
+      return;
     }
+
+    setDeclineVendorBooking({
+      ...booking,
+      scheduledDate: booking.date,
+      scheduledTime: booking.time,
+    } as any);
   };
 
   // Helper function to check if booking is tele consultation
@@ -872,28 +868,31 @@ export function UniversalAppointmentManagement({
 
                       {/* Action Buttons */}
                       <div className="flex gap-2 flex-wrap mt-3" onClick={(e) => e.stopPropagation()}>
-                        {booking.status === 'pending' && (
-                          <>
-                            <Button
-                              onClick={() => handleAccept(booking)}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                              size="sm"
-                              disabled={completingBooking}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Accept
-                            </Button>
-                            <Button
-                              onClick={() => handleReject(booking)}
-                              variant="outline"
-                              className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
-                              size="sm"
-                              disabled={completingBooking}
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Reject
-                            </Button>
-                          </>
+                        {userType === 'staff' && booking.status === 'pending' && (
+                          <Button
+                            onClick={() => handleReject(booking)}
+                            variant="outline"
+                            className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
+                            size="sm"
+                            disabled={completingBooking}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Reject
+                          </Button>
+                        )}
+
+                        {(userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor') &&
+                          (booking.status === 'pending' || booking.status === 'confirmed') && (
+                          <Button
+                            onClick={() => handleReject(booking)}
+                            variant="outline"
+                            className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
+                            size="sm"
+                            disabled={completingBooking}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Decline (refund per policy)
+                          </Button>
                         )}
 
                         {booking.status === 'confirmed' && (
@@ -1161,6 +1160,18 @@ export function UniversalAppointmentManagement({
             setDetailBookingId(null);
           }}
           onRefresh={() => loadBookings()}
+        />
+      )}
+
+      {declineVendorBooking && declineVendorId && (
+        <DeclineBookingModal
+          booking={declineVendorBooking as any}
+          vendorId={declineVendorId}
+          onClose={() => setDeclineVendorBooking(null)}
+          onSuccess={() => {
+            setDeclineVendorBooking(null);
+            loadBookings();
+          }}
         />
       )}
     </div>

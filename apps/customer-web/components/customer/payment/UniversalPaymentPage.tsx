@@ -86,10 +86,14 @@ interface UniversalPaymentPageProps {
 
   // Customer
   customerPhone: string;
+<<<<<<< dev-pranay
   /**
    * Used for Razorpay `prefill.email` via {@link buildSanitizedStandardRazorpayCheckoutOptions}.
    * Desktop checkout may still default to UPI QR per Razorpay/NPCI; email + E.164 contact is best-effort for collect/VPA where supported.
    */
+=======
+  /** When set, Razorpay prefill improves checkout; UPI layout no longer requires email (see Razorpay `config.display.blocks` below). */
+>>>>>>> develop
   customerEmail?: string;
   customerId?: string;
 
@@ -2259,6 +2263,16 @@ export function UniversalPaymentPage({
         }
       }
 
+<<<<<<< dev-pranay
+=======
+      const prefillContact = razorpayPrefillContactE164(phoneDigits);
+      const razorpayPrefill: Record<string, string> = {};
+      if (prefillContact) razorpayPrefill.contact = prefillContact;
+      if (resolvedCheckoutEmail) razorpayPrefill.email = resolvedCheckoutEmail;
+      /** Prefer explicit UPI-first instrument layout whenever we have a valid E.164 contact (matches EnhancedPaymentPage). Requiring email left most users on default checkout → UPI QR on desktop/Android while iOS mobile web still showed collect. */
+      const preferUpiInstrumentLayout = Boolean(prefillContact);
+
+>>>>>>> develop
       const rawOfferId = selectedRazorpayOffer?.id;
       const razorpayOfferIds =
         typeof rawOfferId === 'string' &&
@@ -2445,7 +2459,46 @@ export function UniversalPaymentPage({
             setProcessing(false);
           }
         },
+<<<<<<< dev-pranay
       });
+=======
+        ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
+        ...(preferUpiInstrumentLayout
+          ? {
+              config: {
+                display: {
+                  blocks: {
+                    banks: {
+                      name: 'Pay using UPI/Cards',
+                      instruments: [
+                        { method: 'upi' },
+                        { method: 'card' },
+                        { method: 'netbanking' },
+                        { method: 'wallet' },
+                      ],
+                    },
+                  },
+                  sequence: ['block.banks'],
+                  preferences: {
+                    show_default_blocks: true,
+                  },
+                },
+              },
+            }
+          : {}),
+        theme: {
+          color: '#FF8C42',
+        },
+        ...(razorpayOfferIds.length > 0 ? { offers: razorpayOfferIds } : {}),
+        modal: {
+          ondismiss: () => {
+            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
+            setProcessing(false);
+            toast.info('Payment cancelled');
+          },
+        },
+      };
+>>>>>>> develop
 
       // ✅ FIX: Double-check Razorpay is available before opening
       if (!window.Razorpay) {
