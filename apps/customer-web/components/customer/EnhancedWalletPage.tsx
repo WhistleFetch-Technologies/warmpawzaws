@@ -377,7 +377,7 @@ export function EnhancedWalletPage({
                 <Sparkles className="w-3 h-3 mr-1" />
                 {tierBadge.text} Member
               </Badge>
-              {wallet?.loyalty_points && wallet.loyalty_points > 0 && (
+              {(wallet?.loyalty_points ?? 0) > 0 && (
                 <div className="flex items-center gap-1 text-amber-200 text-sm">
                   <Coins className="w-4 h-4" />
                   {wallet.loyalty_points} pts
@@ -391,7 +391,7 @@ export function EnhancedWalletPage({
               <p className="text-5xl font-bold tracking-tight">
                 ₹{(wallet?.balance || 0).toLocaleString()}
               </p>
-              {wallet?.pending_credits && wallet.pending_credits > 0 && (
+              {(wallet?.pending_credits ?? 0) > 0 && (
                 <div className="flex items-center justify-center gap-1 mt-2 text-amber-200 text-sm">
                   <Clock className="w-4 h-4" />
                   ₹{wallet.pending_credits.toLocaleString()} pending
