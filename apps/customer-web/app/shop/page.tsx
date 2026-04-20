@@ -11,7 +11,7 @@ import {
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { handleShopPageBack } from '@/lib/go-back-or-replace';
+import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
 
 // ============================================================================
 // TYPES
@@ -370,6 +370,7 @@ export default function ShopPage() {
             </div>
             <a
               href="/wishlist"
+              onClick={() => markWishlistOpenedFromShop()}
               className="shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-600 active:scale-95 transition-transform"
               aria-label="Wishlist"
             >
