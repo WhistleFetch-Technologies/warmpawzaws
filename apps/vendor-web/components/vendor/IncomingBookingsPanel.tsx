@@ -7,11 +7,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
   Calendar, Clock, User, Phone, MapPin, IndianRupee,
-  Check, X, AlertCircle, ChevronRight, PawPrint
+  X, AlertCircle, ChevronRight, PawPrint
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { AcceptBookingModal } from './AcceptBookingModal';
 import { DeclineBookingModal } from './DeclineBookingModal';
 
 interface IncomingBookingsPanelProps {
@@ -24,9 +23,8 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
-  const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'today'>('pending');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'today'>('today');
 
   useEffect(() => {
     loadBookings();
@@ -50,18 +48,12 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
     }
   };
 
-  const handleAcceptClick = (booking: any) => {
-    setSelectedBooking(booking);
-    setShowAcceptModal(true);
-  };
-
   const handleDeclineClick = (booking: any) => {
     setSelectedBooking(booking);
     setShowDeclineModal(true);
   };
 
   const handleActionSuccess = () => {
-    setShowAcceptModal(false);
     setShowDeclineModal(false);
     setSelectedBooking(null);
     loadBookings();
@@ -69,6 +61,9 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   };
 
   const pendingCount = bookings.filter(b => b.status === 'pending').length;
+  const actionableCount = bookings.filter((b) =>
+    ['pending', 'confirmed'].includes(String(b.status || '').toLowerCase())
+  ).length;
 
   if (loading && bookings.length === 0) {
     return <LoadingState message="Loading booking requests..." />;
@@ -85,12 +80,12 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
         <div>
           <h2 className="text-xl font-bold text-gray-900">Booking Requests</h2>
           <p className="text-sm text-gray-600">
-            {pendingCount > 0 ? (
+            {actionableCount > 0 ? (
               <span className="text-orange-600 font-semibold">
-                {pendingCount} pending request{pendingCount !== 1 ? 's' : ''}
+                {actionableCount} booking{actionableCount !== 1 ? 's' : ''} you can decline if needed
               </span>
             ) : (
-              'No pending requests'
+              'Bookings are auto-confirmed when the slot is available'
             )}
           </p>
         </div>
@@ -138,7 +133,6 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
             <BookingRequestCard
               key={booking.id}
               booking={booking}
-              onAccept={() => handleAcceptClick(booking)}
               onDecline={() => handleDeclineClick(booking)}
             />
           ))}
@@ -146,15 +140,6 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
       )}
 
       {/* Modals */}
-      {showAcceptModal && selectedBooking && (
-        <AcceptBookingModal
-          booking={selectedBooking}
-          vendorId={vendorId}
-          onClose={() => setShowAcceptModal(false)}
-          onSuccess={handleActionSuccess}
-        />
-      )}
-
       {showDeclineModal && selectedBooking && (
         <DeclineBookingModal
           booking={selectedBooking}
@@ -169,12 +154,13 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
 
 interface BookingRequestCardProps {
   booking: any;
-  onAccept: () => void;
   onDecline: () => void;
 }
 
-function BookingRequestCard({ booking, onAccept, onDecline }: BookingRequestCardProps) {
-  const isPending = booking.status === 'pending';
+function BookingRequestCard({ booking, onDecline }: BookingRequestCardProps) {
+  const st = String(booking.status || '').toLowerCase();
+  const isPending = st === 'pending';
+  const canDecline = st === 'pending' || st === 'confirmed';
   const isUrgent = () => {
     if (!booking.scheduledDate) return false;
     const bookingDate = new Date(`${booking.scheduledDate}T${booking.scheduledTime || '00:00'}`);
@@ -196,7 +182,7 @@ function BookingRequestCard({ booking, onAccept, onDecline }: BookingRequestCard
   };
 
   return (
-    <Card className={`p-4 ${isPending ? 'border-l-4 border-l-orange-500' : ''}`}>
+    <Card className={`p-4 ${isPending ? 'border-l-4 border-l-orange-500' : canDecline ? 'border-l-4 border-l-green-200' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3 flex-1">
           <div className="p-2 bg-blue-50 rounded-lg">
@@ -287,23 +273,16 @@ function BookingRequestCard({ booking, onAccept, onDecline }: BookingRequestCard
         </div>
       )}
 
-      {/* Action Buttons */}
-      {isPending && (
-        <div className="grid grid-cols-2 gap-2 pt-3 border-t">
+      {/* Action Buttons — accept removed: bookings are auto-confirmed when the slot is bookable */}
+      {canDecline && (
+        <div className="grid grid-cols-1 gap-2 pt-3 border-t">
           <Button
             onClick={onDecline}
             variant="outline"
             className="text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <X className="w-4 h-4 mr-2" />
-            Decline
-          </Button>
-          <Button
-            onClick={onAccept}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Accept
+            Decline (refund per policy)
           </Button>
         </div>
       )}

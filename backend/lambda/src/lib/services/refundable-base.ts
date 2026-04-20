@@ -110,8 +110,12 @@ export async function getRefundableCustomerPaidBreakdown(
     return { refundableBase: 0, platformFeeNonRefundable: 0 };
   }
 
-  const gross = parseFloat(String(bookingRow?.total_amount ?? 0)) || 0;
-  const disc = parseFloat(String(bookingRow?.discount_amount ?? 0)) || 0;
+  const br = bookingRow as BookingMoneySnapshot & {
+    totalAmount?: number | string | null;
+    discountAmount?: number | string | null;
+  } | null | undefined;
+  const gross = parseFloat(String(br?.total_amount ?? br?.totalAmount ?? 0)) || 0;
+  const disc = parseFloat(String(br?.discount_amount ?? br?.discountAmount ?? 0)) || 0;
   const fromBookingNet = Math.max(0, gross - disc);
 
   const paymentTotals = await loadCompletedPaymentTotals(bookingId);
@@ -158,7 +162,8 @@ export async function hasCustomerPaidCapture(
   bookingRow?: BookingMoneySnapshot | null
 ): Promise<boolean> {
   if (!bookingId) return false;
-  const ps = String(bookingRow?.payment_status ?? '').toLowerCase();
+  const row = bookingRow as BookingMoneySnapshot & { paymentStatus?: string | null } | null | undefined;
+  const ps = String(row?.payment_status ?? row?.paymentStatus ?? '').toLowerCase();
   if (ps === 'paid' || ps === 'completed') return true;
   const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
   if (walletPaid > 0.009) return true;

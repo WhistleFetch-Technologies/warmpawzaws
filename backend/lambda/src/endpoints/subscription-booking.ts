@@ -47,9 +47,11 @@ class CheckSubscriptionCoverageHandler extends BaseHandler {
     }
 
     try {
-      // Get active subscriptions for customer
-      const { rows: subscriptions } = await query(
-        `SELECT 
+      // Get active subscriptions for customer (subscription_types may not exist on older DBs)
+      let subscriptions: Record<string, unknown>[] = [];
+      try {
+        const res = await query(
+          `SELECT 
           cs.id as subscription_id,
           cs.subscription_type_id,
           cs.status,
@@ -70,10 +72,24 @@ class CheckSubscriptionCoverageHandler extends BaseHandler {
           AND cs.status = 'active'
           AND (cs.end_date IS NULL OR cs.end_date > NOW())
         ORDER BY cs.created_at DESC`,
-        [customerId]
-      );
+          [customerId]
+        );
+        subscriptions = (res as any).rows || [];
+      } catch (schemaErr: any) {
+        const sm = String(schemaErr?.message || schemaErr || '');
+        if (
+          /subscription_types/i.test(sm) ||
+          /relation "customer_subscriptions" does not exist/i.test(sm) ||
+          /relation "subscription_types" does not exist/i.test(sm)
+        ) {
+          console.warn('[subscription-booking] check-coverage: schema/tables missing, treating as no coverage:', sm);
+          subscriptions = [];
+        } else {
+          throw schemaErr;
+        }
+      }
 
-      if (subscriptions.length === 0) {
+      if (!subscriptions.length) {
         return this.success({
           covered: false,
           subscriptionId: null,

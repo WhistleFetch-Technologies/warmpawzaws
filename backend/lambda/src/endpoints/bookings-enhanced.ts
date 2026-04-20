@@ -1018,7 +1018,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address: fullAddressText,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
-          status: isPackageBooking ? 'confirmed' : 'pending',
+          // Slot was validated in this transaction — treat as vendor-confirmed (no separate accept step).
+          // Note: omit confirmed_at / confirmed_by — many schemas lack these; INSERT retry budget is limited.
+          status: 'confirmed',
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           // Coordinates from base schema
           latitude: bookingLatitude,
@@ -1123,8 +1125,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let insertedBooking: any = null;
         let insertAttempt = 0;
         let currentBookingData = { ...bookingData };
-        
-        while (insertAttempt < 5) {
+        let lastInsertErrMsg = '';
+        const maxInsertAttempts = 40;
+
+        while (insertAttempt < maxInsertAttempts) {
           insertAttempt++;
           try {
             await client.query('SAVEPOINT sp_booking_insert');
@@ -1144,23 +1148,33 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (insertError: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_booking_insert').catch(() => {});
             const errMsg = insertError?.message || '';
-            
-            // Check if error is about a missing column
-            const colMatch = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/);
-            if (colMatch && colMatch[1]) {
-              const missingCol = colMatch[1];
-              console.warn(`[BOOKING] Column "${missingCol}" does not exist in bookings table, removing and retrying (attempt ${insertAttempt})`);
-              delete currentBookingData[missingCol];
-              continue; // Retry without this column
+            lastInsertErrMsg = errMsg || String(insertError);
+
+            let missingCol: string | null = null;
+            const m1 = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/i);
+            if (m1) missingCol = m1[1];
+            else if (insertError?.code === '42703') {
+              const m2 = errMsg.match(/column "(\w+)"/i);
+              if (m2 && errMsg.toLowerCase().includes('bookings')) missingCol = m2[1];
             }
-            
-            // Not a missing column error, re-throw
+            if (missingCol) {
+              console.warn(
+                `[BOOKING] Column "${missingCol}" does not exist on bookings, removing and retrying (attempt ${insertAttempt}/${maxInsertAttempts})`
+              );
+              delete currentBookingData[missingCol];
+              continue;
+            }
+
             throw insertError;
           }
         }
         
         if (!insertedBooking) {
-          throw new Error('Failed to insert booking after removing missing columns');
+          throw new Error(
+            lastInsertErrMsg
+              ? `Failed to insert booking after removing missing columns: ${lastInsertErrMsg}`
+              : 'Failed to insert booking after removing missing columns'
+          );
         }
 
         // ✅ Package booking: deduct session and log usage inside same transaction
@@ -1226,14 +1240,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Log initial status
+      // Log initial status (matches persisted row — auto-confirmed when slot is available)
       await logBookingStatusChange(
         booking.id,
         null,
-        'pending',
+        booking.status,
         customerId,
         'customer',
-        'Booking created'
+        booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
       // Publish event
