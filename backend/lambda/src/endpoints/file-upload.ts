@@ -56,14 +56,22 @@ export function registerFileUploadEndpoints(app: Hono) {
 
       const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
 
-      // Public URL (after upload)
+      // Public URL (after upload) — often 403 if bucket blocks public read
       const publicUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileKey}`;
+
+      // Presigned GET so UIs (e.g. meal product image preview) work with private buckets
+      const getCmd = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+      });
+      const displayUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: 604800 });
 
       return c.json({
         success: true,
         presignedUrl,
         fileKey,
         publicUrl,
+        displayUrl,
         expiresIn: 3600,
       });
     } catch (error: any) {

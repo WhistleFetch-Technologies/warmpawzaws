@@ -46,6 +46,55 @@ async function resolveCustomerIdFromPhone(phone: string): Promise<string | null>
   return null;
 }
 
+/** Ledger-based lifetime totals (aligned with GET /wallet/:customerId). */
+async function getWalletLedgerTotalsByCustomerId(
+  customerId: string
+): Promise<{ totalEarned: number; totalSpent: number }> {
+  try {
+    const result = await query(
+      `SELECT
+        COALESCE(
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(COALESCE(wt.transaction_type::text, ''))) IN (
+                'credit','c','refund','r','topup','top_up','cashback','credit_adjustment'
+              )
+              THEN ABS(wt.amount::numeric)
+              ELSE 0::numeric
+            END
+          ),
+          0
+        )::text AS total_earned,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN LOWER(TRIM(COALESCE(wt.transaction_type::text, ''))) IN (
+                'debit','d','payout','payment','purchase','withdraw','debit_adjustment'
+              )
+              THEN ABS(wt.amount::numeric)
+              ELSE 0::numeric
+            END
+          ),
+          0
+        )::text AS total_spent
+       FROM wallet_transactions wt
+       WHERE wt.customer_id = $1::uuid
+          OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $1::uuid)`,
+      [customerId]
+    );
+    if (!result.rows.length) {
+      return { totalEarned: 0, totalSpent: 0 };
+    }
+    const r = result.rows[0] as { total_earned?: string; total_spent?: string };
+    return {
+      totalEarned: parseFloat(String(r.total_earned ?? '0')) || 0,
+      totalSpent: parseFloat(String(r.total_spent ?? '0')) || 0,
+    };
+  } catch {
+    return { totalEarned: 0, totalSpent: 0 };
+  }
+}
+
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   /**
    * GET /customer/bookings/active?phone=...
@@ -459,19 +508,17 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json(defaultWallet);
       }
 
-      // Get or create wallet with better error handling
-      let wallet: any = { balance: 0, currency: 'INR' };
-      
+      let wallet: any = { balance: 0, currency: 'INR', pending_credits: 0 };
+
       try {
         const walletResult = await query(
           `SELECT * FROM customer_wallets WHERE customer_id = $1 LIMIT 1`,
           [customerId]
         );
-        
+
         if (walletResult.rows && walletResult.rows.length > 0) {
           wallet = walletResult.rows[0];
         } else {
-          // Try to create wallet - ignore failures
           try {
             await query(
               `INSERT INTO customer_wallets (customer_id, balance, currency)
@@ -480,15 +527,22 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
               [customerId]
             );
           } catch (insertError) {
-            // Table might not exist or constraint violation - that's okay
             console.log('[WALLET] Could not create wallet (table may not exist)');
+          }
+          const afterUpsert = await query(
+            `SELECT * FROM customer_wallets WHERE customer_id = $1 LIMIT 1`,
+            [customerId]
+          );
+          if (afterUpsert.rows && afterUpsert.rows.length > 0) {
+            wallet = afterUpsert.rows[0];
           }
         }
       } catch (dbError: any) {
-        // Database error - return default wallet, don't throw
         console.warn('[WALLET] Database query failed:', dbError?.message || dbError);
         return c.json(defaultWallet);
       }
+
+      const { totalEarned, totalSpent } = await getWalletLedgerTotalsByCustomerId(customerId);
 
       return c.json({
         success: true,
@@ -496,8 +550,8 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
           balance: parseFloat(wallet.balance || '0') || 0,
           currency: wallet.currency || 'INR',
           pending_credits: parseFloat(wallet.pending_credits || '0') || 0,
-          total_earned: parseFloat(wallet.total_earned || '0') || 0,
-          total_spent: parseFloat(wallet.total_spent || '0') || 0,
+          total_earned: totalEarned,
+          total_spent: totalSpent,
         },
       });
     } catch (error: any) {

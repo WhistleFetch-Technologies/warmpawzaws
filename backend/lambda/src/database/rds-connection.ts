@@ -116,13 +116,18 @@ export async function getRdsPool(): Promise<Pool> {
       throw new Error('Database credentials not available');
     }
 
-    console.log('[DB] Creating connection pool...');
     // ✅ FIX: Reduce pool size to prevent connection exhaustion
     // Lambda functions share the same RDS instance, so we need to be conservative
     // Each Lambda instance can have its own pool, so max: 5 per instance is safer
     // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
     const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
-    
+    const connectionTimeoutMillis = parseInt(
+      process.env.DB_CONNECTION_TIMEOUT_MS || '10000',
+      10,
+    );
+
+    console.log('[DB] Creating connection pool...', { poolMax, connectionTimeoutMillis });
+
     // ✅ FIX: RDS Proxy doesn't support statement_timeout option
     // Only set statement_timeout if NOT using RDS Proxy (direct RDS connection)
     const isRdsProxy = DB_HOST?.includes('proxy') || DB_HOST?.includes('.proxy.');
@@ -134,7 +139,9 @@ export async function getRdsPool(): Promise<Pool> {
       password: DB_PASSWORD,
       max: poolMax, // Reduced from 50 to 10 to prevent connection exhaustion
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
+      // Time to wait when acquiring a connection from the pool (or opening a new one). If all
+      // connections are busy (pool exhaustion / RDS at max_connections), this fires ~at this limit.
+      connectionTimeoutMillis,
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     };
     
@@ -257,9 +264,24 @@ export async function query(
       throw new Error('Database connection pool exhausted. Please try again in a moment. If this persists, contact support.');
     }
     
-    // Handle query timeout
-    if (error?.message?.includes('Query exceeded') || error?.message?.includes('timeout')) {
-      throw new Error(`Query timeout: ${error.message}. Query took ${duration}ms. Consider optimizing or adding indexes.`);
+    // Connection checkout / TCP timeout from pg pool (connectionTimeoutMillis, default 10s)
+    if (
+      error?.message?.includes('Connection terminated due to connection timeout') ||
+      error?.message?.includes('timeout exceeded when trying to connect')
+    ) {
+      throw new Error(
+        `Database connection acquisition timed out after ${duration}ms. ` +
+          `This usually means the pool could not get a free connection in time (RDS max_connections, high Lambda concurrency, or slow new connects), ` +
+          `or the database was unreachable from Lambda (VPC/security group). It is not the same as a slow SQL query. ` +
+          `Original: ${error.message}`
+      );
+    }
+
+    // Our explicit query-statement race timeout (QUERY_TIMEOUT_MS)
+    if (error?.message?.includes('Query exceeded')) {
+      throw new Error(
+        `Query timeout: ${error.message}. Query took ${duration}ms. Consider optimizing or adding indexes.`
+      );
     }
     
     // Provide more helpful error messages

@@ -30,6 +30,11 @@ import {
   fetchVendorProgressRowsFromBookings,
   mergeTrainingProgressWithBookingDerived,
 } from '../lib/vendor-progress-from-bookings';
+import {
+  presignMealImageUrlInRecord,
+  presignMealPlanRowDisplayFields,
+  stripS3PresignQueryFromUrl,
+} from '../utils/s3-media-presign';
 
 /** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
 async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
@@ -82,11 +87,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       params.push(limit, offset);
 
       const mealPlans = await query(mealPlanQuery, params).catch(() => ({ rows: [] }));
+      const rawRows = mealPlans.rows || [];
+      const enriched = await Promise.all(
+        rawRows.map(async (mp: Record<string, unknown>) => {
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(mp);
+          return { ...mp, dietary_requirements, photos, mealImageUrl };
+        }),
+      );
 
       return c.json({
         success: true,
-        mealPlans: mealPlans.rows,
-        total: mealPlans.rows.length,
+        mealPlans: enriched,
+        total: enriched.length,
       });
     } catch (error: any) {
       console.error('Error discovering meal plans:', error);
@@ -1560,26 +1572,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       
       const result = await query(queryStr, params);
       const rawPlans = result.rows || [];
-      const mealPlans = rawPlans.map((mp: any) => {
-        let dr: any = {};
-        try {
-          dr =
-            typeof mp.dietary_requirements === 'string'
-              ? JSON.parse(mp.dietary_requirements)
-              : mp.dietary_requirements || {};
-        } catch {
-          dr = {};
-        }
-        let photos = mp.photos;
-        try {
-          photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
-        } catch {
-          photos = [];
-        }
-        const mealImageUrl =
-          dr.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
-        return { ...mp, dietary_requirements: dr, photos, mealImageUrl };
-      });
+      const mealPlans = await Promise.all(
+        rawPlans.map(async (mp: any) => {
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+            mp as Record<string, unknown>,
+          );
+          return { ...mp, dietary_requirements, photos, mealImageUrl };
+        }),
+      );
 
       return c.json({
         success: true,
@@ -1645,13 +1645,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           } catch (_) {
             meta = specObj || {};
           }
+          const metaForApi = await presignMealImageUrlInRecord(meta as Record<string, unknown>);
           list.push({
             id: p.id,
             name: p.name,
             description: p.description,
             price: p.price,
             category: p.category || 'meal_plan',
-            metadata: meta,
+            metadata: metaForApi,
             petTypes: meta.petTypes || [],
             dietType: meta.dietType,
             ingredients: meta.ingredients || [],
@@ -1682,6 +1683,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               ? JSON.parse(mp.dietary_requirements)
               : (mp.dietary_requirements || {});
           } catch (_) {}
+          const dietForApi = await presignMealImageUrlInRecord(dietaryReqs as Record<string, unknown>);
           list.push({
             id: mp.id,
             name: mp.plan_name,
@@ -1689,7 +1691,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             description: mp.description,
             price: mp.price,
             category: 'meal_plan',
-            metadata: dietaryReqs,
+            metadata: dietForApi,
             petTypes: dietaryReqs.petTypes || [],
             dietType: dietaryReqs.dietType,
             ingredients: dietaryReqs.ingredients || [],
@@ -1737,8 +1739,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
-      const mealImageUrl =
+      const mealImageUrlRaw =
         typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
+      const mealImageUrl = mealImageUrlRaw ? stripS3PresignQueryFromUrl(mealImageUrlRaw) : undefined;
       const dietaryPayload = {
         petTypes: data.petTypes || ['Dog', 'Cat'],
         dietType: data.dietType,
@@ -1867,9 +1870,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         console.warn('meal-products PUT: could not load products meal fields', prodMetaErr?.message);
       }
 
+      const stripIfStr = (u: unknown): string | null =>
+        typeof u === 'string' && u.trim() ? stripS3PresignQueryFromUrl(u.trim()) : null;
       const resolvedMealImageUrl = 'mealImageUrl' in data
-        ? (typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : null)
-        : (existingDiet.mealImageUrl ?? existingProdMeta.mealImageUrl ?? meta.mealImageUrl ?? null);
+        ? typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim()
+          ? stripS3PresignQueryFromUrl(data.mealImageUrl.trim())
+          : null
+        : stripIfStr(existingDiet.mealImageUrl) ??
+          stripIfStr(existingProdMeta.mealImageUrl) ??
+          stripIfStr(meta.mealImageUrl);
 
       const dietaryPayload = {
         petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
