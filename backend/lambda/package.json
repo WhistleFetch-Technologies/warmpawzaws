@@ -11,14 +11,14 @@
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",
     "build:legacy": "npm run clean && tsc && npm run package",
-    "package": "powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath api-handler.zip -Force\"",
+    "package": "powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath api-handler.zip -Force; if (Test-Path 'dist\\loyalty-consumer.js') { Compress-Archive -LiteralPath 'dist\\loyalty-consumer.js' -DestinationPath 'loyalty-consumer.zip' -Force }\"",
     "test": "jest",
     "test:local": "./test-local.sh",
     "test:sentry": "node scripts/test-sentry.js",
     "start:local": "npm run build:contracts && npm run build:bundle && dotenv -e .env.local -- npx serverless offline --config serverless.local.yml",
     "start:local:logs": "powershell -ExecutionPolicy Bypass -File ./start-local-with-logs.ps1",
     "lint": "eslint src --ext .ts",
-    "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')) fs.rmSync('dist',{recursive:true,force:true}); if(fs.existsSync('api-handler.zip')) fs.unlinkSync('api-handler.zip')\""
+    "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')) fs.rmSync('dist',{recursive:true,force:true}); for (const z of ['api-handler.zip','loyalty-consumer.zip']) if (fs.existsSync(z)) fs.unlinkSync(z)\""
   },
   "dependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.975.0",
