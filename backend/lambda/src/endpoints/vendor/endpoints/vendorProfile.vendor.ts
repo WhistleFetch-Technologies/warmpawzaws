@@ -124,9 +124,24 @@ export async function getVendorIdsForAvailabilityLookup(vendorIdOrResolved: stri
   if (!vendor || !vendor.id) return [String(vendorIdOrResolved || '')];
   const ids: string[] = [String(vendor.id)];
   try {
+    const phoneRaw = vendor.phone || '';
     const res = await query(
-      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2`,
-      [String(vendor.id), vendor.phone || '']
+      `SELECT id FROM vendor_identity
+       WHERE vendor_id::text = $1
+          OR (
+            COALESCE($2::text, '') <> ''
+            AND (
+              phone = $2
+              OR regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE($2::text, ''), '[^0-9]', '', 'g')
+              OR (
+                LENGTH(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')) >= 10
+                AND LENGTH(regexp_replace(COALESCE($2::text, ''), '[^0-9]', '', 'g')) >= 10
+                AND RIGHT(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10)
+                  = RIGHT(regexp_replace(COALESCE($2::text, ''), '[^0-9]', '', 'g'), 10)
+              )
+            )
+          )`,
+      [String(vendor.id), phoneRaw]
     );
     for (const row of res.rows || []) {
       if (row?.id) {

@@ -7,7 +7,7 @@
  * Env: AI_CHATBOT_NEARBY_RADIUS_KM (default 80), AI_CHATBOT_NEARBY_VENDOR_LIMIT (default 10).
  */
 
-import { query } from '../database/rds-connection';
+import { query } from '../../database/rds-connection';
 import { roleFilterListForCategory } from './ai-chatbot-booking-roles';
 import { sqlAndVendorHasBookableV2Windows } from './ai-chatbot-vendor-has-schedule';
 

@@ -1,4 +1,4 @@
-import { CATEGORY_ROLES } from '../endpoints/customer/constants';
+import { CATEGORY_ROLES } from '../../endpoints/customer/constants';
 
 /** Role name list (lowercase) for SQL LOWER(r.name) = ANY($n) — used by booking nearby vendor query. */
 export function roleFilterListForCategory(category: string): string[] {
