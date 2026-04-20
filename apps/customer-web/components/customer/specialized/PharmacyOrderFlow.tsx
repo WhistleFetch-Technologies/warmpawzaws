@@ -29,6 +29,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { PharmacyBroadcastMap, type BroadcastPharmacy } from '../pharmacy/PharmacyBroadcastMap';
@@ -553,14 +557,20 @@ export function PharmacyOrderFlow({
         throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
       }
 
-      // Open Razorpay checkout
-      const options = {
-        key: paymentRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: Math.round((paymentRes.amount || invoice.totalAmount) * 100), // Convert to paise
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (paymentRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(
+          1,
+          Math.round(Number(paymentRes.amount || invoice.totalAmount) * 100)
+        ),
         currency: paymentRes.currency || 'INR',
         name: 'Warmpawz',
         description: 'Medicine Order',
         order_id: paymentRes.orderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -588,9 +598,6 @@ export function PharmacyOrderFlow({
           }
           setLoading(false);
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#FF8C42',
         },
@@ -599,7 +606,7 @@ export function PharmacyOrderFlow({
             setLoading(false);
           },
         },
-      };
+      });
 
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();

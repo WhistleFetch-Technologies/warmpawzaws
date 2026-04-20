@@ -197,28 +197,50 @@ export function registerCustomerContentEndpoints(app: Hono) {
         LIMIT $${paramIndex}`;
       params.push(limit);
 
-      const articlesResult = await query(articlesQuery, params).catch((err: any) => {
+      let articlesResult: { rows?: any[] };
+      try {
+        articlesResult = await query(articlesQuery, params);
+      } catch (err: any) {
         const duration = Date.now() - startTime;
-        // ✅ Enhanced logging for 503 diagnosis
-        console.warn(`[articles] Query failed after ${duration}ms:`, err?.message || err);
-        if (err?.message?.includes('connection pool') || err?.message?.includes('too many clients')) {
-          console.error('[articles] ⚠️ Connection pool exhausted - returning default articles');
+        console.error('[articles] Query failed', {
+          durationMs: duration,
+          code: err?.code,
+          message: err?.message || String(err),
+        });
+        const poolExhausted =
+          typeof err?.message === 'string' &&
+          (err.message.includes('connection pool') || err.message.includes('too many clients'));
+        if (poolExhausted) {
+          console.error('[articles] Connection pool exhausted');
         }
-        return { rows: [] };
-      });
+        return c.json(
+          {
+            success: false,
+            articles: [],
+            total: 0,
+            error: 'Articles could not be loaded. Please try again shortly.',
+            code: 'ARTICLES_UNAVAILABLE',
+          },
+          503
+        );
+      }
 
       // Map articles to frontend format
-      const articles = (articlesResult.rows || []).map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        slug: a.slug,
-        category: a.category,
-        readTime: a.metadata?.read_time || '5 min',
-        featured: a.metadata?.featured || false,
-        excerpt: a.content?.substring(0, 150) + '...',
-        createdAt: a.created_at,
-        updatedAt: a.updated_at,
-      }));
+      const articles = (articlesResult.rows || []).map((a: any) => {
+        const text = a.content != null ? String(a.content) : '';
+        const excerpt = text.length > 150 ? `${text.slice(0, 150)}...` : text;
+        return {
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          category: a.category,
+          readTime: a.metadata?.read_time || '5 min',
+          featured: a.metadata?.featured || false,
+          excerpt,
+          createdAt: a.created_at,
+          updatedAt: a.updated_at,
+        };
+      });
 
       return c.json({
         success: true,
@@ -227,35 +249,16 @@ export function registerCustomerContentEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer articles:', error);
-      // Return default articles on error
-      return c.json({
-        success: true,
-        articles: [
-          {
-            id: 'default-1',
-            title: '10 Tips for Puppy Training',
-            category: 'Training',
-            readTime: '5 min',
-            icon: '🐕',
-          },
-          {
-            id: 'default-2',
-            title: 'Best Foods for Senior Dogs',
-            category: 'Nutrition',
-            readTime: '7 min',
-            icon: '🥗',
-          },
-          {
-            id: 'default-3',
-            title: 'Understanding Pet Insurance',
-            category: 'Insurance',
-            readTime: '6 min',
-            icon: '🛡️',
-          },
-        ],
-        total: 3,
-        isDefault: true,
-      });
+      return c.json(
+        {
+          success: false,
+          articles: [],
+          total: 0,
+          error: 'Articles could not be loaded. Please try again shortly.',
+          code: 'ARTICLES_ERROR',
+        },
+        500
+      );
     }
   });
 

@@ -802,7 +802,7 @@ export default function App() {
                         {...props}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Home' })}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -826,7 +826,7 @@ export default function App() {
                         {...props}
                         productId={props.route?.params?.productId || ''}
                         phone={session.phone}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Store' })}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -1423,7 +1423,7 @@ export default function App() {
                         {...props}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Store' })}
                         onNavigate={handleNavigate}
                       />
                     )}

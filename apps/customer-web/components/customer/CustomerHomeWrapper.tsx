@@ -337,7 +337,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   
   // Navigation handlers (kept same mostly)
   const handleProfileClick = () => setUserSidebarOpen(true);
-  const handleViewCustomerProfile = () => { setUserSidebarOpen(false); navigateToScreen('customer-profile'); };
   /** Blue chevron on home pet chip → view/edit pet (not booking sessions quick view). */
   const handlePetClick = (petId: string) => { setSelectedPetId(petId); navigateToScreen('pet-details'); };
   const handleViewPetProfile = (petData: any) => { setSelectedPetData(petData); setSelectedPetId(petData.id); navigateToScreen('pet-profile'); };
@@ -529,7 +528,6 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             phone={phone}
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
-            onViewCustomerProfile={handleViewCustomerProfile}
             onNavigate={handleAccountNavigate}
           />
         )}

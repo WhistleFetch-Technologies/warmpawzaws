@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { toast } from 'sonner';
 
@@ -52,6 +53,7 @@ interface PaymentPageProps {
   
   // Customer
   customerPhone: string;
+  customerEmail?: string;
   customerId?: string;
   
   // Navigation
@@ -119,6 +121,7 @@ export function PaymentPage({
   baseAmount,
   duration,
   customerPhone,
+  customerEmail,
   customerId,
   onBack,
   onSuccess,
@@ -130,6 +133,7 @@ export function PaymentPage({
   const [useWallet, setUseWallet] = useState(false);
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([]);
   const [selectedMethod, setSelectedMethod] = useState<string>('razorpay');
+  const [profileCheckoutEmail, setProfileCheckoutEmail] = useState<string | undefined>(undefined);
   
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -251,6 +255,32 @@ export function PaymentPage({
     loadRazorpayScript();
     calculateTax();
   }, [customerPhone, baseAmount, calculateTax]);
+
+  useEffect(() => {
+    if (customerEmail) {
+      setProfileCheckoutEmail(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const profileResponse = (await apiClient.get(
+          `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
+        )) as any;
+        const profile = profileResponse?.profile ?? profileResponse;
+        const em = profile?.email;
+        if (!cancelled && typeof em === 'string' && em.includes('@')) {
+          const t = em.trim();
+          if (t) setProfileCheckoutEmail(t);
+        }
+      } catch {
+        if (!cancelled) setProfileCheckoutEmail(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerPhone, customerEmail]);
 
   const loadRazorpayScript = () => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
@@ -404,14 +434,21 @@ export function PaymentPage({
         throw new Error('Failed to create payment order');
       }
       
-      // Step 4: Open Razorpay checkout
-      const options = {
-        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: finalAmount * 100,
+      // Step 4: Open Razorpay Standard Checkout (shared options; desktop UPI may still be QR-only per Razorpay)
+      const resolvedCheckoutEmail =
+        typeof customerEmail === 'string' && customerEmail.includes('@')
+          ? customerEmail.trim()
+          : profileCheckoutEmail;
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(finalAmount) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `${serviceName} - ${vendorName}`,
         order_id: orderRes.orderId,
+        customerPhone,
+        customerEmail: resolvedCheckoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -452,9 +489,6 @@ export function PaymentPage({
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#FF8C42',
         },
@@ -464,7 +498,7 @@ export function PaymentPage({
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
       
       if (window.Razorpay) {
         const razorpay = new window.Razorpay(options);

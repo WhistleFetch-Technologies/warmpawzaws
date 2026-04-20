@@ -55,6 +55,29 @@ function hashAdminPasswordPlain(password: string): string {
   return `${salt}:${hash}`;
 }
 
+/** Normalizes content_pages.metadata from API body or DB (JSONB / string). */
+function normalizeContentPagesMetadataInput(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (o.read_time != null) out.read_time = String(o.read_time);
+    if (o.featured != null) out.featured = Boolean(o.featured);
+    if (o.image_url != null) out.image_url = String(o.image_url);
+    if (o.seo_title != null) out.seo_title = String(o.seo_title);
+    if (o.seo_description != null) out.seo_description = String(o.seo_description);
+    return out;
+  }
+  if (typeof raw === 'string') {
+    try {
+      return normalizeContentPagesMetadataInput(JSON.parse(raw) as unknown);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -8265,6 +8288,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         category: String(p.category || 'other'),
         isPublished: p.is_published !== false && p.is_published !== 'false',
         updatedAt: String(p.updated_at || p.updatedAt || ''),
+        metadata: normalizeContentPagesMetadataInput(p.metadata),
       }));
 
       return c.json({ success: true, pages: safePages });
@@ -8277,11 +8301,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/content/pages', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { title, slug, content, category, isPublished } = body;
+      const { title, slug, content, category, isPublished, metadata } = body;
 
       if (!title || !slug) {
         return c.json({ error: 'title and slug are required' }, 400);
       }
+
+      const metadataObj = normalizeContentPagesMetadataInput(metadata);
 
       const page = await insert('content_pages', {
         title,
@@ -8289,6 +8315,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         content: content || '',
         category: category || 'other',
         is_published: isPublished !== false,
+        metadata: metadataObj,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -8338,6 +8365,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           content,
           category,
           is_published,
+          metadata,
           created_at,
           updated_at
         FROM content_pages
@@ -8381,6 +8409,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             content,
             category,
             is_published,
+            metadata,
             created_at,
             updated_at
           FROM content_pages
@@ -8403,6 +8432,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             content,
             category,
             is_published,
+            metadata,
             created_at,
             updated_at
           FROM content_pages
@@ -8413,6 +8443,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
         if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
           const page = caseInsensitiveResult.rows[0];
+          const meta = normalizeContentPagesMetadataInput(page.metadata);
           return c.json({
             success: true,
             page: {
@@ -8421,11 +8452,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               slug: page.slug,
               content: page.content,
               category: page.category,
-              readTime: '5 min', // Default since metadata column doesn't exist
-              featured: false,
-              imageUrl: null,
-              seoTitle: page.title,
-              seoDescription: page.content?.substring(0, 160) || '',
+              readTime: (meta.read_time as string) || '5 min',
+              featured: Boolean(meta.featured),
+              imageUrl: (meta.image_url as string) || null,
+              seoTitle: (meta.seo_title as string) || page.title,
+              seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
               createdAt: page.created_at,
               updatedAt: page.updated_at,
               isPublished: page.is_published === true || page.is_published === 'true',
@@ -8440,7 +8471,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
 
       const page = pageResult.rows[0];
-      
+      const meta = normalizeContentPagesMetadataInput(page.metadata);
+
       return c.json({
         success: true,
         page: {
@@ -8449,11 +8481,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           slug: page.slug,
           content: page.content,
           category: page.category,
-          readTime: '5 min', // Default since metadata column doesn't exist
-          featured: false,
-          imageUrl: null,
-          seoTitle: page.title,
-          seoDescription: page.content?.substring(0, 160) || '',
+          readTime: (meta.read_time as string) || '5 min',
+          featured: Boolean(meta.featured),
+          imageUrl: (meta.image_url as string) || null,
+          seoTitle: (meta.seo_title as string) || page.title,
+          seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
           createdAt: page.created_at,
           updatedAt: page.updated_at,
           isPublished: page.is_published === true || page.is_published === 'true',
@@ -8486,6 +8518,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.content !== undefined) updateData.content = body.content;
       if (body.category !== undefined) updateData.category = body.category;
       if (body.isPublished !== undefined) updateData.is_published = body.isPublished !== false;
+      if (body.metadata !== undefined) {
+        updateData.metadata = normalizeContentPagesMetadataInput(body.metadata);
+      }
 
       const updated = await update('content_pages', { id: pageId }, updateData);
 

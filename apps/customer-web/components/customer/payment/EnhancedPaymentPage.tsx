@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 
 // Razorpay type declaration
 declare global {
@@ -70,6 +71,7 @@ interface EnhancedPaymentPageProps {
   
   // Customer
   customerPhone: string;
+  customerEmail?: string;
   customerId?: string;
   
   // Navigation
@@ -126,6 +128,7 @@ export function EnhancedPaymentPage({
   address,
   showAddressSelection = false,
   customerPhone,
+  customerEmail,
   customerId,
   onBack,
   onSuccess,
@@ -469,16 +472,28 @@ export function EnhancedPaymentPage({
         throw new Error('Failed to create payment order');
       }
       
-      // Step 4: Open Razorpay checkout with mobile-optimized config
-      const options = {
-        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToCharge * 100,
+      // Step 4: Open Razorpay Standard Checkout (shared UPI-friendly options; desktop may still show QR per Razorpay)
+      const rawOfferId = selectedBankOffer?.id;
+      const razorpayOfferIds =
+        typeof rawOfferId === 'string' &&
+        rawOfferId.trim() &&
+        rawOfferId.trim() !== 'undefined' &&
+        rawOfferId.trim() !== 'null'
+          ? [rawOfferId.trim()]
+          : [];
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amountToCharge) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
-        description: items.length === 1 
-          ? items[0].name 
-          : `${items.length} items`,
+        description:
+          items.length === 1 ? items[0].name : `${items.length} items`,
         order_id: orderRes.orderId,
+        customerPhone,
+        customerEmail,
+        offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -545,32 +560,9 @@ export function EnhancedPaymentPage({
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#FF8C42',
           backdrop_color: 'rgba(0,0,0,0.7)',
-        },
-        // Mobile optimizations
-        config: {
-          display: {
-            blocks: {
-              banks: {
-                name: 'Pay using UPI/Cards',
-                instruments: [
-                  { method: 'upi' },
-                  { method: 'card' },
-                  { method: 'netbanking' },
-                  { method: 'wallet' },
-                ],
-              },
-            },
-            sequence: ['block.banks'],
-            preferences: {
-              show_default_blocks: true,
-            },
-          },
         },
         modal: {
           ondismiss: () => {
@@ -585,7 +577,7 @@ export function EnhancedPaymentPage({
           enabled: true,
           max_count: 3,
         },
-      };
+      });
       
       if (window.Razorpay) {
         const razorpay = new window.Razorpay(options);

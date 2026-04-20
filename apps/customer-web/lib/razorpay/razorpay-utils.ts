@@ -3,6 +3,15 @@
  * Centralized functions for Razorpay payment processing
  */
 
+/** E.164 contact for Razorpay `prefill.contact` (better UPI flows than raw digits-only strings). */
+export function digitsToRazorpayContactE164(digitsOnly: string): string | undefined {
+  const d = String(digitsOnly || '').replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('91')) return `+${d}`;
+  if (d.length === 10) return `+91${d}`;
+  if (d.length >= 11 && d.length <= 15) return `+${d}`;
+  return undefined;
+}
+
 /**
  * Standard Checkout may request bad static chunks (e.g. …/build/undefined) and fail
  * validate/account when options include undefined values, string "undefined", or
@@ -85,6 +94,8 @@ export interface RazorpayCheckoutOptions {
   currency?: string;
   description: string;
   customerPhone?: string;
+  /** When set with E.164 contact, improves UPI collect / VPA entry on surfaces Razorpay still allows (often mobile). */
+  customerEmail?: string;
   keyId?: string; // Razorpay key ID from API response
   onSuccess: (response: any) => Promise<void>;
   onDismiss?: () => void;
@@ -167,6 +178,16 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     options.customerPhone && String(options.customerPhone).trim()
       ? String(options.customerPhone).replace(/\D/g, '')
       : '';
+  const e164 = digitsToRazorpayContactE164(digits);
+  const emailRaw = options.customerEmail?.trim();
+  const email =
+    emailRaw && emailRaw.includes('@') && emailRaw !== 'undefined' && emailRaw !== 'null'
+      ? emailRaw
+      : undefined;
+  const prefill: Record<string, string> = {};
+  if (e164) prefill.contact = e164;
+  if (email) prefill.email = email;
+
   const razorpayOptions = sanitizeRazorpayInstanceOptions({
     key: razorpayKey,
     amount: Math.round(options.amount * 100), // Convert to paise
@@ -175,7 +196,18 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     description: options.description?.trim() ? options.description : 'Payment',
     order_id: options.orderId,
     handler: options.onSuccess,
-    ...(digits.length > 0 ? { prefill: { contact: digits } } : {}),
+    ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
+    // Razorpay: root `method` pre-selection applies only when BOTH contact and email are prefilled.
+    ...(e164 && email
+      ? {
+          method: 'upi',
+          config: {
+            display: {
+              preferences: { show_default_blocks: true },
+            },
+          },
+        }
+      : {}),
     theme: {
       color: '#FF8C42',
     },

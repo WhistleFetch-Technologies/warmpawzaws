@@ -7,6 +7,10 @@ import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { toast } from 'sonner';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 
 declare global {
   interface Window {
@@ -394,13 +398,17 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
         throw new Error('Failed to create payment order');
       }
 
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amount * 100,
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amount) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: 'Diagnostic tests booking',
         order_id: orderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -458,7 +466,6 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             setProcessing(false);
           }
         },
-        prefill: { contact: customerPhone },
         theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => {
@@ -466,7 +473,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
 
       if (!window.Razorpay) {
         await loadRazorpayScript();

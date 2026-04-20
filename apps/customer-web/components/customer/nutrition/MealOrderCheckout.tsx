@@ -9,6 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 
 interface MealOrderCheckoutProps {
@@ -187,13 +191,17 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         script.onload = () => resolve();
       });
 
-      const options = {
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
         key: keyId,
-        amount: razorpayRes.amount,
+        amountPaise: Math.max(1, Math.round(Number(razorpayRes.amount))),
         currency: razorpayRes.currency || 'INR',
         name: 'Warmpawz',
         description: `Meal plan: ${mealPlan.name || 'Order'}`,
         order_id: razorpayRes.razorpayOrderId,
+        customerPhone: phone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
@@ -206,10 +214,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             toast.error(err?.message || 'Payment confirmation failed');
           }
         },
-        prefill: { contact: phone },
         theme: { color: '#FF8C42' },
         modal: { ondismiss: () => setSubmitting(false) },
-      };
+      });
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();
     } catch (err: any) {

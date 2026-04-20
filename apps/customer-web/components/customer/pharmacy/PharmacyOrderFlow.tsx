@@ -29,6 +29,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { PharmacyOrderStatus } from './PharmacyOrderStatus';
 import { PharmacyBroadcastMap } from './PharmacyBroadcastMap';
@@ -435,13 +439,18 @@ export function PharmacyOrderFlow({
           await loadRazorpayScript();
         }
 
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: Math.round(feeBreakdown.total * 100), // Amount in paise
+        const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+        const options = buildSanitizedStandardRazorpayCheckoutOptions({
+          key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+            process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+          amountPaise: Math.max(1, Math.round(feeBreakdown.total * 100)),
           currency: 'INR',
           name: 'Warmpawz',
           description: `Medicine Order - ${orderId.slice(0, 8)}`,
           order_id: response.razorpayOrderId,
+          customerPhone: phone,
+          customerEmail: checkoutEmail,
+          includeInstrumentBlocks: true,
           handler: async function (razorpayResponse: any) {
             // Verify payment
             try {
@@ -463,13 +472,10 @@ export function PharmacyOrderFlow({
               toast.error('Payment verification failed');
             }
           },
-          prefill: {
-            contact: phone
-          },
           theme: {
             color: '#F97316'
           }
-        };
+        });
 
         const razorpay = new (window as any).Razorpay(options);
         razorpay.open();

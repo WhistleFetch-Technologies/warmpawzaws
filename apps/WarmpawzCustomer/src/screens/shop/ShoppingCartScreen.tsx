@@ -199,7 +199,7 @@ export function ShoppingCartScreen({
           <Text style={styles.emptySubtitle}>Add items to get started</Text>
           <TouchableOpacity
             style={styles.shopButton}
-            onPress={() => onNavigate && onNavigate('ShopDashboard')}
+            onPress={() => onNavigate && onNavigate('MainTabs', { screen: 'Store' })}
           >
             <Text style={styles.shopButtonText}>Start Shopping</Text>
           </TouchableOpacity>
