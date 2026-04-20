@@ -2724,8 +2724,15 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
         total_amount: currentBooking.total_amount,
         discount_amount: currentBooking.discount_amount,
-        payment_status: currentBooking.payment_status,
+        payment_status: (currentBooking as any).payment_status ?? (currentBooking as any).paymentStatus,
       });
+
+      const customerIdForRefund =
+        (currentBooking as any).customer_id ??
+        (currentBooking as any).customerId ??
+        body.customerId ??
+        body.customer_id ??
+        actorId;
 
       let refundInfo = null;
       if (bookingPaidForRefund) {
@@ -2746,10 +2753,10 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           const refundPercentage = preview.refundPercentage;
           
           if (refundAmount > 0) {
-            if (refundMethod === 'wallet' && currentBooking.customer_id) {
+            if (refundMethod === 'wallet' && customerIdForRefund) {
               try {
                 await creditCustomerWalletForBookingRefund({
-                  customerId: currentBooking.customer_id,
+                  customerId: String(customerIdForRefund),
                   bookingId,
                   refundAmount,
                   refundPercentage,
@@ -2773,6 +2780,16 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                     'Cancellation succeeded but wallet refund failed. Please contact support with your booking ID.',
                 };
               }
+            } else if (refundMethod === 'wallet' && !customerIdForRefund) {
+              console.error('[CancelBooking] Wallet refund skipped: booking has no customer_id', { bookingId });
+              refundInfo = {
+                amount: refundAmount,
+                percentage: refundPercentage,
+                method: 'wallet',
+                status: 'failed',
+                message:
+                  'Cancellation succeeded but wallet refund could not run (missing customer on booking). Please contact support with your booking ID.',
+              };
             } else if (refundMethod === 'original') {
               const payments = await query(
                 `SELECT id FROM payments
@@ -2800,7 +2817,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   [
                     paymentId,
                     bookingId,
-                    currentBooking.customer_id,
+                    customerIdForRefund ?? currentBooking.customer_id,
                     currentBooking.vendor_id || null,
                     refundAmount,
                     `Booking cancellation: ${reason} (${refundPercentage}% refund)`,

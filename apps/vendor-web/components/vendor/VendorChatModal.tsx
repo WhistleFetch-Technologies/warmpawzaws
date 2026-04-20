@@ -511,55 +511,57 @@ export function VendorChatModal({
     <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl h-[min(85dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[100dvh] flex flex-col shadow-2xl overflow-hidden min-h-0">
         
-        {/* Header — responsive row: title truncates; actions stay visible (tele + close); clear notch/status bar */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5 flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
-              <MessageSquare className="w-5 h-5 text-white" aria-hidden />
+        {/* Header — stack on very narrow widths; safe-area + 44px tap targets */}
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5 shrink-0">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                <MessageSquare className="w-5 h-5 text-white" aria-hidden />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                  {customerName || 'Customer'}
+                </h2>
+                {(bookingShortId || serviceName) && (
+                  <p className="text-white/90 text-xs sm:text-sm truncate">
+                    {bookingShortId ? `Booking #${bookingShortId}` : ''}
+                    {bookingShortId && serviceName ? ' · ' : ''}
+                    {serviceName || ''}
+                  </p>
+                )}
+                {customerPhone && (
+                  <p className="text-white/75 text-xs truncate flex items-center gap-1 mt-0.5">
+                    <Phone className="w-3 h-3 shrink-0" />
+                    {customerPhone}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-base sm:text-lg font-bold text-white truncate">
-                {customerName || 'Customer'}
-              </h2>
-              {(bookingShortId || serviceName) && (
-                <p className="text-white/90 text-xs sm:text-sm truncate">
-                  {bookingShortId ? `Booking #${bookingShortId}` : ''}
-                  {bookingShortId && serviceName ? ' · ' : ''}
-                  {serviceName || ''}
-                </p>
-              )}
-              {customerPhone && (
-                <p className="text-white/75 text-xs truncate flex items-center gap-1 mt-0.5">
-                  <Phone className="w-3 h-3 shrink-0" />
-                  {customerPhone}
-                </p>
-              )}
-            </div>
-          </div>
 
-          <div className="flex items-center gap-1 shrink-0">
-            {isTeleConsultation && chatActive && (
+            <div className="flex items-center justify-end gap-1 shrink-0 sm:pl-2">
+              {isTeleConsultation && chatActive && (
+                <button
+                  type="button"
+                  onClick={handleStartVideoCall}
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
+                  title="Start Video Call"
+                >
+                  {isVideoCallActive ? (
+                    <VideoOff className="w-5 h-5 text-white" />
+                  ) : (
+                    <Video className="w-5 h-5 text-white" />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleStartVideoCall}
-                className="p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
-                title="Start Video Call"
+                onClick={onClose}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
+                aria-label="Close chat"
               >
-                {isVideoCallActive ? (
-                  <VideoOff className="w-5 h-5 text-white" />
-                ) : (
-                  <Video className="w-5 h-5 text-white" />
-                )}
+                <X className="w-5 h-5 text-white" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
-              aria-label="Close chat"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
+            </div>
           </div>
         </div>
 

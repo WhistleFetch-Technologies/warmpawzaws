@@ -1599,7 +1599,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const date = c.req.query('date');
-      const serviceStyle = c.req.query('serviceStyle') || 'at_home';
+      // Vendor VA2 rows use canonical styles (tele, at_home); listings/catalog often send video_consultation / home_visit.
+      const serviceStyleRaw = String(c.req.query('serviceStyle') || 'at_home').trim();
+      const serviceStyle = normalizeServiceStyle(serviceStyleRaw) || serviceStyleRaw;
       const staffId = c.req.query('staffId');
       const serviceId = c.req.query('serviceId');
       const totalDuration = Math.max(15, parseInt(c.req.query('totalDuration') || '30', 10) || 30);

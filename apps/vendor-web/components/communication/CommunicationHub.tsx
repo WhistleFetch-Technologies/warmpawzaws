@@ -153,9 +153,9 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
 
   if (mode === 'video') {
     return (
-      <div className="fixed inset-0 bg-black z-[60] flex flex-col">
+      <div className="fixed inset-0 bg-black z-[60] flex flex-col pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
         {/* Remote Video (placeholder - would be peer video in real WebRTC) */}
-        <div className="flex-1 relative bg-gradient-to-br from-gray-800 to-gray-900">
+        <div className="flex-1 relative bg-gradient-to-br from-gray-800 to-gray-900 min-h-0">
           <div className="absolute inset-0 flex items-center justify-center">
             {videoCallState === 'connecting' ? (
               <div className="text-center text-white">
@@ -196,15 +196,15 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
 
           {/* Call Duration */}
           {videoCallState === 'connected' && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 px-4 py-2 rounded-full">
+            <div className="absolute top-[max(0.75rem,env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 bg-black/50 px-4 py-2 rounded-full">
               <p className="text-white text-sm font-medium">00:00</p>
             </div>
           )}
         </div>
 
         {/* Call Controls */}
-        <div className="bg-gray-900 p-6">
-          <div className="flex items-center justify-center gap-6">
+        <div className="bg-gray-900 p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] shrink-0">
+          <div className="flex items-center justify-center gap-4 sm:gap-6 flex-wrap">
             <button 
               onClick={toggleMute}
               className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'bg-red-500' : 'bg-gray-700 hover:bg-gray-600'}`}
@@ -248,40 +248,44 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex flex-col">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] text-white p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-            <MessageCircle className="w-5 h-5" />
+    <div className="fixed inset-0 bg-black/60 z-[60] flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
+      {/* Header — safe-area + wrap so title/actions never collide on narrow phones */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] text-white shrink-0 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] py-3 sm:py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold truncate text-base sm:text-lg">{otherUserName || 'Customer'}</h3>
+              <p className="text-xs text-white/80 truncate">Booking #{bookingId.length > 8 ? `${bookingId.slice(0, 8)}…` : bookingId}</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold">{otherUserName || 'Customer'}</h3>
-            <p className="text-xs text-white/80">Booking #{bookingId.slice(0, 8)}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* ✅ P2P VIDEO CALL: Start video call button for tele consultations */}
-          {(serviceStyle === 'tele' || serviceStyle === 'online' || serviceStyle === 'video') && onStartVideoCall && (
-            <button 
-              onClick={() => onStartVideoCall(bookingId)}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-green-500 transition-colors"
-              title="Start Video Call"
+          <div className="flex items-center justify-end gap-2 shrink-0 self-stretch sm:self-center">
+            {(serviceStyle === 'tele' || serviceStyle === 'online' || serviceStyle === 'video') && onStartVideoCall && (
+              <button
+                type="button"
+                onClick={() => onStartVideoCall(bookingId)}
+                className="min-h-[44px] min-w-[44px] bg-white/20 rounded-full flex items-center justify-center hover:bg-green-500 transition-colors touch-manipulation"
+                title="Start Video Call"
+              >
+                <Video className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-[44px] min-w-[44px] bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors touch-manipulation"
+              aria-label="Close"
             >
-              <Video className="w-5 h-5" />
+              <X className="w-5 h-5" />
             </button>
-          )}
-          <button 
-            onClick={onClose}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 bg-gray-100 overflow-y-auto p-4">
+      <div className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin w-8 h-8 border-3 border-[#FF8C42] border-t-transparent rounded-full"></div>
@@ -321,21 +325,22 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
       </div>
 
       {/* Input */}
-      <div className="bg-white p-4 border-t border-gray-200">
-        <div className="flex gap-2">
+      <div className="bg-white p-3 sm:p-4 border-t border-gray-200 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+        <div className="flex gap-2 min-w-0">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Type a message..."
-            className="flex-1 px-4 py-3 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+            className="flex-1 min-w-0 px-4 py-3 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
             disabled={sending}
           />
           <button
+            type="button"
             onClick={sendMessage}
             disabled={!newMessage.trim() || sending}
-            className="w-12 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-full flex items-center justify-center disabled:opacity-50 transition-colors"
+            className="min-h-[44px] min-w-[44px] shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-full flex items-center justify-center disabled:opacity-50 transition-colors touch-manipulation"
           >
             <Send className="w-5 h-5" />
           </button>

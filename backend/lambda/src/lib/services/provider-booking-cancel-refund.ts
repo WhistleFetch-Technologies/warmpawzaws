@@ -43,6 +43,10 @@ export type ProviderCancelRefundInfo = {
   method: string;
   status: string;
   message: string;
+  /** Present after a successful wallet credit (for support / debugging). */
+  walletBalanceAfter?: number;
+  /** True when refund row already existed (idempotent). */
+  alreadyCredited?: boolean;
 };
 
 /** PG rows are snake_case; some API layers use camelCase — normalize so refund math and wallet credit always see the same fields. */
@@ -136,7 +140,7 @@ export async function applyRefundAfterProviderCancellation(
     const customerIdForWallet = row.customer_id ? String(row.customer_id) : '';
     if (refundMethod === 'wallet' && customerIdForWallet) {
       try {
-        await creditCustomerWalletForBookingRefund({
+        const credit = await creditCustomerWalletForBookingRefund({
           customerId: customerIdForWallet,
           bookingId,
           refundAmount,
@@ -149,6 +153,8 @@ export async function applyRefundAfterProviderCancellation(
           method: 'wallet',
           status: 'completed',
           message: `₹${refundAmount.toFixed(2)} credited to customer wallet (${refundPercentage}% per policy).`,
+          walletBalanceAfter: credit.newBalance,
+          alreadyCredited: credit.alreadyCredited === true,
         };
       } catch (e) {
         console.error('[provider-cancel-refund] wallet credit failed:', e);

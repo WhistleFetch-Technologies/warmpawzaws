@@ -417,7 +417,7 @@ export function registerVendorPoliciesEndpoints(app: Hono) {
       const bookingStats = await query(
         `SELECT 
            COUNT(*) FILTER (WHERE status = 'completed') as completed,
-           COUNT(*) FILTER (WHERE status = 'cancelled' AND cancelled_by = 'vendor') as vendor_cancellations,
+           COUNT(*) FILTER (WHERE status = 'cancelled' AND cancelled_by IN ('provider', 'vendor')) as vendor_cancellations,
            COUNT(*) FILTER (WHERE status = 'no_show') as no_shows,
            COUNT(*) as total
          FROM bookings
