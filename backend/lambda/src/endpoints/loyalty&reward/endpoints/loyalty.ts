@@ -16,11 +16,28 @@
  */
 
 import { Hono } from 'hono';
+import type { PoolClient } from 'pg';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { select, insert, update, query, upsert, deleteRows, withTransaction } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { resolveMinRedemptionPointsFromRuleRow } from '../../../utils/loyalty-rule-fields';
+
+async function walletTransactionsColumnSet(client: PoolClient): Promise<Set<string>> {
+  const r = await client.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'wallet_transactions'`
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
+async function customerWalletsColumnSetForRedeem(client: PoolClient): Promise<Set<string>> {
+  const r = await client.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
 
 /** Active basic loyalty rule for point → wallet redeem (same rules as POST /loyalty/redeem). */
 async function loadActiveLoyaltyRedeemRule(): Promise<
@@ -149,8 +166,13 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
         }
       }
       await client.query(`SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`, [customerId]);
+
+      const cwCols = await customerWalletsColumnSetForRedeem(client);
+      const cwSetBal = cwCols.has('updated_at')
+        ? 'SET balance = balance + $1::numeric, updated_at = NOW()'
+        : 'SET balance = balance + $1::numeric';
       const wup = await client.query(
-        `UPDATE customer_wallets SET balance = balance + $1::numeric, updated_at = NOW()
+        `UPDATE customer_wallets ${cwSetBal}
            WHERE customer_id = $2::uuid RETURNING id, balance::text`,
         [cashValue, customerId]
       );
@@ -158,29 +180,35 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
       const newBal = parseFloat(String(walletRow?.balance ?? '0')) || 0;
 
       const wtxnDesc = `Loyalty redeem: ${pts} points → ₹${cashValue.toFixed(2)} (${rr} pts = ₹1)`;
-      await client.query('SAVEPOINT sp_loyalty_redeem_wt');
-      try {
-        await client.query(
-          `INSERT INTO wallet_transactions (
-               customer_id, transaction_type, amount, balance_after, description, source
-             ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4, 'loyalty_redeem')`,
-          [customerId, cashValue, newBal, wtxnDesc]
-        );
-        await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_wt');
-      } catch (colErr: any) {
-        await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
-        const msg = String(colErr?.message || '');
-        if (msg.includes('source') || msg.includes('column')) {
-          await client.query(
-            `INSERT INTO wallet_transactions (
-                 customer_id, transaction_type, amount, balance_after, description
-               ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4)`,
-            [customerId, cashValue, newBal, wtxnDesc]
-          );
-        } else {
-          throw colErr;
-        }
+      const wtCols = await walletTransactionsColumnSet(client);
+      const hasWtCustomerId = wtCols.has('customer_id');
+      const hasWtWalletId = wtCols.has('wallet_id');
+      const hasWtSource = wtCols.has('source');
+      if (!hasWtCustomerId && !hasWtWalletId) {
+        throw new Error('wallet_transactions has neither wallet_id nor customer_id');
       }
+
+      const insertCols: string[] = [];
+      const insertParams: unknown[] = [];
+      if (hasWtWalletId) {
+        insertCols.push('wallet_id');
+        insertParams.push(walletRow.id);
+      }
+      if (hasWtCustomerId) {
+        insertCols.push('customer_id');
+        insertParams.push(customerId);
+      }
+      insertCols.push('transaction_type', 'amount', 'balance_after', 'description');
+      insertParams.push('credit', cashValue, newBal, wtxnDesc);
+      if (hasWtSource) {
+        insertCols.push('source');
+        insertParams.push('loyalty_redeem');
+      }
+      const ph = insertCols.map((_, i) => `$${i + 1}`).join(', ');
+      await client.query(
+        `INSERT INTO wallet_transactions (${insertCols.join(', ')}) VALUES (${ph})`,
+        insertParams as any[]
+      );
 
       await client
         .query(
