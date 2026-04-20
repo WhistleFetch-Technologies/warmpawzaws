@@ -8,7 +8,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Bot, User, AlertCircle, Headphones } from 'lucide-react';
-import { aiChatbotApi, supportCrmApi } from '@/lib/api-client';
+import { aiChatbotApi, apiClient, supportCrmApi } from '@/lib/api-client';
+import {
+  bookingServiceStyleShortLabel,
+  defaultServiceStyleForCategory,
+  distinctBookingStyleKeysFromServices,
+  normalizeVendorServiceStyleToBookingKey,
+  normalizeWizardCategory,
+  paymentCategoryLabel,
+  servicesFilteredByBookingStyleKey,
+  vendorServicesQueryAllStyles,
+  type BookingServiceStyleKey,
+  type WizardCategory,
+} from '@/lib/ai-booking-wizard-category-config';
+import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { toast } from 'sonner';
 
 interface AIChatbotWidgetProps {
@@ -24,6 +37,72 @@ interface AIChatbotWidgetProps {
   presentation?: 'dock' | 'modal';
 }
 
+type BookingSuggestedProvider = {
+  id: string;
+  businessName: string;
+  city?: string;
+  roleName?: string;
+  distanceKm?: number;
+};
+
+type WizardFsmStep = 'assist' | 'serviceType' | 'service' | 'date' | 'slot' | 'review';
+
+type SessionDraft = {
+  id: string;
+  version: number;
+  category: string;
+  vendorId: string | null;
+  vendorServiceId: string | null;
+  serviceStyle: string | null;
+  bookingDate: string | null;
+  slotTime: string | null;
+  totalDuration: number;
+  status: string;
+};
+
+function mapSessionDraft(d: any): SessionDraft {
+  return {
+    id: String(d.id),
+    version: Number(d.version ?? 1),
+    category: String(d.category || 'vet'),
+    vendorId: d.vendorId ? String(d.vendorId) : null,
+    vendorServiceId: d.vendorServiceId ? String(d.vendorServiceId) : null,
+    serviceStyle: d.serviceStyle ? String(d.serviceStyle) : null,
+    bookingDate: d.bookingDate ? String(d.bookingDate) : null,
+    slotTime: d.slotTime ? String(d.slotTime) : null,
+    totalDuration: Number(d.totalDuration ?? 30),
+    status: String(d.status || 'draft'),
+  };
+}
+
+function nextSevenDates(): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/** Local calendar add (avoids UTC shift vs YYYY-MM-DD from date chips). */
+function addCalendarDays(isoDate: string, days: number): string {
+  const parts = isoDate.split('-').map((x) => parseInt(x, 10));
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return isoDate;
+  const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+  dt.setDate(dt.getDate() + days);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function countOpenSlots(slots: unknown): number {
+  if (!Array.isArray(slots)) return 0;
+  return slots.filter((x: any) => x?.available !== false).length;
+}
+
 interface Message {
   id: string;
   type: 'user' | 'bot' | 'system';
@@ -31,9 +110,27 @@ interface Message {
   timestamp: string;
   intent?: string;
   suggestedActions?: string[];
+  suggestedProviders?: BookingSuggestedProvider[];
   requiresAgent?: boolean;
   /** When set, "Continue to booking" uses this path */
   bookingUrl?: string;
+}
+
+function getClientGeoForBooking(): Promise<{ lat: number; lng: number } | undefined> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.resolve(undefined);
+  }
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        }),
+      () => resolve(undefined),
+      { enableHighAccuracy: false, maximumAge: 300_000, timeout: 12_000 }
+    );
+  });
 }
 
 /** Match backend inferBookingCategoryFromText — fixes API URLs that wrongly use category=vet for "grooming" etc. */
@@ -75,6 +172,27 @@ function alignBookingSearchPath(path: string, userMessage: string): string {
     /* ignore */
   }
   return path;
+}
+
+/** Normalize API provider rows so chips always render (camelCase + valid id). */
+function mapSuggestedProvidersFromApi(raw: unknown): BookingSuggestedProvider[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const mapped = (raw as any[])
+    .map((x) => ({
+      id: String(x?.id ?? x?.vendor_id ?? x?.vendorId ?? '').trim(),
+      businessName: String(x?.businessName ?? x?.business_name ?? 'Provider').trim(),
+      city: x?.city != null ? String(x.city) : undefined,
+      roleName:
+        x?.roleName != null || x?.role_name != null ? String(x.roleName ?? x.role_name) : undefined,
+      distanceKm:
+        typeof x?.distanceKm === 'number'
+          ? x.distanceKm
+          : typeof x?.distance_km === 'number'
+            ? x.distance_km
+            : undefined,
+    }))
+    .filter((p) => p.id.length > 0 && p.businessName.length > 0);
+  return mapped.length > 0 ? mapped : undefined;
 }
 
 export function AIChatbotWidget({
@@ -128,10 +246,308 @@ export function AIChatbotWidget({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [mode, setMode] = useState<'chat' | 'symptoms' | 'booking'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastBookingQueryRef = useRef('');
+  const [bookingSessionId, setBookingSessionId] = useState<string | null>(null);
+  const [bookingDraft, setBookingDraft] = useState<SessionDraft | null>(null);
+  const [wizardStep, setWizardStep] = useState<WizardFsmStep>('assist');
+  const [wizardCategory, setWizardCategory] = useState<WizardCategory>('vet');
+  const [wizardVendorServicesAll, setWizardVendorServicesAll] = useState<any[]>([]);
+  const [wizardServices, setWizardServices] = useState<any[]>([]);
+  const [wizardSlots, setWizardSlots] = useState<any[]>([]);
+  const [wizardSlotsRaw, setWizardSlotsRaw] = useState<unknown>(null);
+  const [wizardDate, setWizardDate] = useState<string | null>(null);
+  const [wizardBusy, setWizardBusy] = useState(false);
+  /** Slot list fetch + 3-week scan — separate from wizardBusy so user actions are not stuck if an effect run is cancelled. */
+  const [wizardSlotsLoading, setWizardSlotsLoading] = useState(false);
+  const [wizardSuggestedDates, setWizardSuggestedDates] = useState<{ date: string; openCount: number }[]>([]);
+  const [wizardAlternativesLoading, setWizardAlternativesLoading] = useState(false);
+  const [paymentHandoff, setPaymentHandoff] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'booking') {
+      setBookingSessionId(null);
+      setBookingDraft(null);
+      setWizardStep('assist');
+      setWizardVendorServicesAll([]);
+      setWizardServices([]);
+      setWizardSlots([]);
+      setWizardSlotsRaw(null);
+      setWizardDate(null);
+      setWizardSuggestedDates([]);
+      setWizardAlternativesLoading(false);
+      setWizardSlotsLoading(false);
+      setPaymentHandoff(null);
+    }
+  }, [mode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const patchBookingDraft = useCallback(
+    async (partial: Record<string, unknown>) => {
+      if (!bookingSessionId || !bookingDraft) {
+        throw new Error('No booking session');
+      }
+      const r: any = await aiChatbotApi.patchBookingSession(bookingSessionId, {
+        expectedVersion: bookingDraft.version,
+        customerId,
+        customerPhone,
+        ...partial,
+      });
+      if (r?.draft) {
+        const d = mapSessionDraft(r.draft);
+        setBookingDraft(d);
+        return d;
+      }
+      throw new Error(r?.error || 'Could not update booking draft');
+    },
+    [bookingSessionId, bookingDraft, customerId, customerPhone]
+  );
+
+  const pickWizardServiceType = useCallback(
+    async (key: BookingServiceStyleKey) => {
+      if (!bookingSessionId || !bookingDraft) return;
+      const filtered = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, key);
+      if (filtered.length === 0) {
+        toast.error('No services for that visit type.');
+        return;
+      }
+      setWizardBusy(true);
+      try {
+        await patchBookingDraft({ serviceStyle: key });
+        setWizardServices(filtered);
+        setWizardStep('service');
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `bot-${Date.now()}`,
+            type: 'bot',
+            content:
+              key === 'at_center'
+                ? 'Pick an in-clinic / center service below, then a date and time.'
+                : key === 'at_home'
+                  ? 'Pick a home-visit service below, then a date and time.'
+                  : 'Pick a tele / video service below, then a date and time.',
+            timestamp: new Date().toISOString(),
+            intent: 'booking',
+          },
+        ]);
+      } catch (e: any) {
+        toast.error(e?.message || 'Could not set visit type');
+      } finally {
+        setWizardBusy(false);
+      }
+    },
+    [bookingSessionId, bookingDraft, wizardVendorServicesAll, patchBookingDraft]
+  );
+
+  const handlePickSuggestedProvider = useCallback(
+    async (p: BookingSuggestedProvider) => {
+      setMode('booking');
+      setWizardStep('serviceType');
+      setWizardDate(null);
+      setWizardSlots([]);
+      setWizardSlotsRaw(null);
+      setWizardSuggestedDates([]);
+      setWizardAlternativesLoading(false);
+      setWizardSlotsLoading(false);
+      setWizardVendorServicesAll([]);
+      setWizardServices([]);
+      setWizardBusy(true);
+      try {
+        const cat = wizardCategory;
+        const ss = defaultServiceStyleForCategory(cat);
+        const created: any = await aiChatbotApi.createBookingSession({
+          customerId,
+          customerPhone,
+          category: cat,
+          serviceStyle: ss,
+        });
+        if (!created?.draft?.id) {
+          toast.error(created?.error || 'Could not start booking session');
+          return;
+        }
+        const sid = String(created.draft.id);
+        const ver = Number(created.draft.version ?? 1);
+        setBookingSessionId(sid);
+        setBookingDraft(mapSessionDraft(created.draft));
+
+        const patched: any = await aiChatbotApi.patchBookingSession(sid, {
+          expectedVersion: ver,
+          customerId,
+          customerPhone,
+          vendorId: p.id,
+          category: cat,
+          serviceStyle: ss,
+          ...(petId ? { petId } : {}),
+        });
+        if (!patched?.success) {
+          toast.error(patched?.error || 'Could not select provider');
+          return;
+        }
+        const draftAfterVendor = mapSessionDraft(patched.draft);
+        setBookingDraft(draftAfterVendor);
+
+        const qs = vendorServicesQueryAllStyles(cat);
+        const svcRes: any = await apiClient.get(`/customer/vendor/${encodeURIComponent(p.id)}/services${qs}`);
+        const list = Array.isArray(svcRes?.services)
+          ? svcRes.services
+          : Array.isArray(svcRes)
+            ? svcRes
+            : [];
+        setWizardVendorServicesAll(list);
+
+        if (list.length === 0) {
+          toast.error('No bookable services for this provider in this category.');
+          return;
+        }
+
+        const styles = distinctBookingStyleKeysFromServices(list);
+        if (styles.length === 1) {
+          const key = styles[0];
+          const filtered = servicesFilteredByBookingStyleKey(list, key);
+          const stPatch: any = await aiChatbotApi.patchBookingSession(sid, {
+            expectedVersion: draftAfterVendor.version,
+            customerId,
+            customerPhone,
+            serviceStyle: key,
+          });
+          if (!stPatch?.success) {
+            toast.error(stPatch?.error || 'Could not set visit type');
+            return;
+          }
+          if (stPatch.draft) setBookingDraft(mapSessionDraft(stPatch.draft));
+          setWizardServices(filtered);
+          setWizardStep('service');
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `bot-${Date.now()}`,
+              type: 'bot',
+              content: `**${p.businessName}** — pick a service below, then choose a date and time.`,
+              timestamp: new Date().toISOString(),
+              intent: 'booking',
+            },
+          ]);
+        } else {
+          setWizardStep('serviceType');
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `bot-${Date.now()}`,
+              type: 'bot',
+              content: `**${p.businessName}** — pick a **visit type** (clinic, home, or video), then a service, date, and time.`,
+              timestamp: new Date().toISOString(),
+              intent: 'booking',
+            },
+          ]);
+        }
+      } catch (e: any) {
+        console.error(e);
+        toast.error(e?.message || 'Could not start in-chat booking');
+      } finally {
+        setWizardBusy(false);
+      }
+    },
+    [wizardCategory, customerId, customerPhone, petId]
+  );
+
+  useEffect(() => {
+    if (mode !== 'booking') return;
+    if (wizardStep !== 'slot') return;
+    if (!wizardDate || !bookingDraft?.vendorId || !bookingDraft.vendorServiceId) return;
+
+    let cancelled = false;
+    setWizardSuggestedDates([]);
+
+    (async () => {
+      setWizardSlotsLoading(true);
+      setWizardAlternativesLoading(false);
+      if (!cancelled) {
+        setWizardSlots([]);
+        setWizardSlotsRaw(null);
+      }
+      const st = bookingDraft.serviceStyle
+        ? normalizeVendorServiceStyleToBookingKey(bookingDraft.serviceStyle)
+        : defaultServiceStyleForCategory(normalizeWizardCategory(wizardCategory));
+      const dur = bookingDraft.totalDuration || 30;
+      const vendorId = bookingDraft.vendorId;
+      const serviceId = bookingDraft.vendorServiceId;
+
+      const fetchSlotsForDate = async (dateStr: string) => {
+        const q = new URLSearchParams({
+          date: dateStr,
+          serviceStyle: st,
+          serviceId,
+          totalDuration: String(dur),
+        });
+        const res: any = await apiClient.get(
+          `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
+        );
+        const slots = Array.isArray(res?.slots) ? res.slots : [];
+        return { res, slots, open: countOpenSlots(slots) };
+      };
+
+      try {
+        const { res, slots, open } = await fetchSlotsForDate(wizardDate);
+        if (cancelled) return;
+        setWizardSlotsRaw(res);
+        setWizardSlots(slots);
+
+        if (open === 0) {
+          setWizardAlternativesLoading(true);
+          const found: { date: string; openCount: number }[] = [];
+          const maxDaysAhead = 21;
+          const maxSuggestions = 8;
+          for (let batchStart = 1; batchStart <= maxDaysAhead && found.length < maxSuggestions; batchStart += 5) {
+            const tasks: Promise<{ date: string; openCount: number }>[] = [];
+            for (let k = 0; k < 5 && batchStart + k <= maxDaysAhead; k++) {
+              const dayOffset = batchStart + k;
+              const dateStr = addCalendarDays(wizardDate, dayOffset);
+              tasks.push(
+                fetchSlotsForDate(dateStr)
+                  .then(({ open: o }) => ({ date: dateStr, openCount: o }))
+                  .catch(() => ({ date: dateStr, openCount: 0 }))
+              );
+            }
+            const chunk = await Promise.all(tasks);
+            if (cancelled) return;
+            for (const row of chunk.sort((a, b) => a.date.localeCompare(b.date))) {
+              if (row.openCount > 0) found.push(row);
+            }
+          }
+          if (!cancelled) {
+            setWizardSuggestedDates(found.slice(0, maxSuggestions));
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error(e);
+          toast.error(e?.message || 'Could not load time slots');
+          setWizardSlots([]);
+          setWizardSlotsRaw(null);
+        }
+      } finally {
+        setWizardSlotsLoading(false);
+        setWizardAlternativesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      setWizardSlotsLoading(false);
+    };
+  }, [
+    mode,
+    wizardStep,
+    wizardDate,
+    bookingDraft?.vendorId,
+    bookingDraft?.vendorServiceId,
+    bookingDraft?.serviceStyle,
+    bookingDraft?.totalDuration,
+    wizardCategory,
+  ]);
 
   const sendMessage = async () => {
     if (!inputText.trim() || sending) return;
@@ -148,7 +564,7 @@ export function AIChatbotWidget({
     setInputText('');
     setSending(true);
 
-    if (mode !== 'booking') {
+    if (mode !== 'booking' && mode !== 'symptoms') {
       lastBookingUrlRef.current = null;
     }
 
@@ -162,71 +578,98 @@ export function AIChatbotWidget({
           customerId,
           customerPhone,
         });
-        
+
+        let bookingPath =
+          typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
+            ? response.bookingUrl
+            : '/search?category=vet';
+        bookingPath = alignBookingSearchPath(bookingPath, messageText);
+        lastBookingUrlRef.current = bookingPath;
+
+        const vetBook = Boolean(response.vetBookingSuggested);
+        const suggestedActions = vetBook ? ['Go to Booking', 'Continue to booking'] : undefined;
+
         const botMessage: Message = {
           id: `bot-${Date.now()}`,
           type: 'bot',
           content: response.response || 'I understand your concern. Please consult with a veterinarian for proper diagnosis.',
           timestamp: new Date().toISOString(),
           intent: 'symptoms',
-          suggestedActions: response.vetBookingSuggested
-            ? ['Find Vet Clinic', 'Book Consultation', 'Search Providers']
-            : ['Find Vet Clinic', 'Search Providers', 'Book Consultation'],
-        };
-        
-        setMessages(prev => [...prev, botMessage]);
-      } else if (mode === 'booking') {
-        let browserLoc: { lat: number; lng: number } | undefined;
-        if (typeof navigator !== 'undefined' && navigator.geolocation) {
-          try {
-            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: false,
-                timeout: 8000,
-                maximumAge: 120_000,
-              });
-            });
-            browserLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          } catch {
-            /* denied or timeout */
-          }
-        }
-        response = await aiChatbotApi.bookingAssist({
-          query: messageText,
-          customerId,
-          customerPhone,
-          petId,
-          ...(browserLoc ? { location: browserLoc } : {}),
-        });
-        
-        let bookingPath =
-          typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
-            ? response.bookingUrl
-            : '/search';
-        bookingPath = alignBookingSearchPath(bookingPath, messageText);
-        lastBookingUrlRef.current = bookingPath;
-
-        const stepLabels = Array.isArray(response.nextSteps)
-          ? response.nextSteps.filter(
-              (s: unknown) =>
-                typeof s === 'string' && s.trim() && !/^browse services$/i.test(String(s).trim())
-            )
-          : [];
-        const suggestedActions = Array.from(
-          new Set([...stepLabels, 'Continue to booking', 'Browse Bookings'])
-        );
-
-        const botMessage: Message = {
-          id: `bot-${Date.now()}`,
-          type: 'bot',
-          content: response.response || "I'd be happy to help you book a service!",
-          timestamp: new Date().toISOString(),
-          intent: 'booking',
-          suggestedActions,
+          ...(suggestedActions && suggestedActions.length > 0 ? { suggestedActions } : {}),
           bookingUrl: bookingPath,
         };
-        
+
         setMessages(prev => [...prev, botMessage]);
+      } else if (mode === 'booking') {
+        lastBookingQueryRef.current = messageText;
+        const inferred = inferCategoryFromBookingMessage(messageText);
+        if (inferred) {
+          setWizardCategory(normalizeWizardCategory(inferred));
+        }
+
+        if (bookingSessionId && wizardStep !== 'assist') {
+          const interp: any = await aiChatbotApi.interpretBookingSession(bookingSessionId, {
+            message: messageText,
+          });
+          if (interp?.draft) {
+            setBookingDraft(mapSessionDraft(interp.draft));
+          }
+          const botMessage: Message = {
+            id: `bot-${Date.now()}`,
+            type: 'bot',
+            content:
+              interp?.assistantMessage ||
+              'I updated your booking draft where it was safe to do so. Use the chips below for date and time.',
+            timestamp: new Date().toISOString(),
+            intent: 'booking',
+          };
+          setMessages((prev) => [...prev, botMessage]);
+        } else {
+          const bookingLocation = await getClientGeoForBooking();
+          response = await aiChatbotApi.bookingAssist({
+            query: messageText,
+            customerId,
+            customerPhone,
+            petId,
+            ...(bookingLocation ? { location: bookingLocation } : {}),
+          });
+
+          let bookingPath =
+            typeof response.bookingUrl === 'string' && response.bookingUrl.startsWith('/')
+              ? response.bookingUrl
+              : '/search';
+          bookingPath = alignBookingSearchPath(bookingPath, messageText);
+          lastBookingUrlRef.current = bookingPath;
+
+          const stepLabels = Array.isArray(response.nextSteps)
+            ? response.nextSteps.filter(
+                (s: unknown) =>
+                  typeof s === 'string' && s.trim() && !/^browse services$/i.test(String(s).trim())
+              )
+            : [];
+          const suggestedActions = Array.from(
+            new Set([...stepLabels, 'Continue to booking', 'Browse Bookings'])
+          );
+
+          const suggestedProviders = mapSuggestedProvidersFromApi(response.suggestedProviders);
+          const bookingActions =
+            suggestedProviders && suggestedProviders.length > 0
+              ? Array.from(new Set(['Book in chat', ...suggestedActions]))
+              : suggestedActions;
+
+          const botMessage: Message = {
+            id: `bot-${Date.now()}`,
+            type: 'bot',
+            content: response.response || "I'd be happy to help you book a service!",
+            timestamp: new Date().toISOString(),
+            intent: 'booking',
+            suggestedActions: bookingActions,
+            suggestedProviders,
+            bookingUrl: bookingPath,
+          };
+
+          setMessages((prev) => [...prev, botMessage]);
+        }
       } else {
         response = await aiChatbotApi.chat({
           message: messageText,
@@ -359,6 +802,16 @@ export function AIChatbotWidget({
 
   const handleSuggestedAction = (action: string) => {
     const a = action.toLowerCase();
+
+    if (a === 'book in chat' || (a.includes('book') && a.includes('in chat'))) {
+      setMode('booking');
+      return;
+    }
+
+    if (a === 'go to booking' || (a.includes('go to') && a.includes('booking'))) {
+      setMode('booking');
+      return;
+    }
 
     if (
       (a.includes('create') && a.includes('ticket')) ||
@@ -588,7 +1041,7 @@ export function AIChatbotWidget({
         </div>
         <p className="text-[11px] text-white/85 leading-snug">
           {mode === 'symptoms' &&
-            'Describe symptoms — we match care areas from our catalog and suggest providers you can book.'}
+            'Describe signs for general triage only (not a diagnosis). No doctors are suggested here — if it is serious, use Go to Booking to open the Booking tab.'}
           {mode === 'booking' &&
             'Say the service you want — we match catalog services and providers, then use the buttons to continue.'}
           {mode === 'chat' && 'Ask anything about the app, orders, or pet care. Use buttons below the reply when shown.'}
@@ -631,6 +1084,27 @@ export function AIChatbotWidget({
                   ))}
                 </div>
               )}
+
+              {message.suggestedProviders && message.suggestedProviders.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {message.suggestedProviders.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        void handlePickSuggestedProvider(p);
+                      }}
+                      disabled={wizardBusy}
+                      className="text-left px-3 py-2 text-xs rounded-md border border-gray-200 bg-white hover:bg-orange-50 text-gray-900 disabled:opacity-50"
+                    >
+                      <span className="font-medium">{p.businessName}</span>
+                      {typeof p.distanceKm === 'number' ? (
+                        <span className="text-gray-500"> · {p.distanceKm} km</span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              )}
               
               {message.requiresAgent && (
                 <button
@@ -661,6 +1135,306 @@ export function AIChatbotWidget({
         
         <div ref={messagesEndRef} />
       </div>
+
+      {mode === 'booking' && bookingSessionId && bookingDraft && (
+        <div className="shrink-0 border-t border-orange-100 bg-orange-50/40 px-3 py-2 space-y-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-gray-800">In-chat booking</span>
+            {wizardBusy || wizardSlotsLoading ? (
+              <span className="text-gray-500">Loading…</span>
+            ) : null}
+          </div>
+          {wizardStep === 'serviceType' && (
+            <div className="flex flex-col gap-1.5">
+              {wizardVendorServicesAll.length === 0 && wizardBusy ? (
+                <span className="text-gray-600">Loading this provider&apos;s catalogue…</span>
+              ) : distinctBookingStyleKeysFromServices(wizardVendorServicesAll).length === 0 ? (
+                <span className="text-gray-600">No services available.</span>
+              ) : (
+                <>
+                  <p className="text-[11px] text-gray-600">
+                    Visit type first — only options this provider actually offers are shown.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {distinctBookingStyleKeysFromServices(wizardVendorServicesAll).map((key) => {
+                      const count = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, key).length;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={wizardBusy || count === 0}
+                          onClick={() => void pickWizardServiceType(key)}
+                          className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-orange-50 text-[11px] font-medium"
+                        >
+                          {bookingServiceStyleShortLabel(key)}
+                          <span className="text-gray-500 font-normal"> ({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {wizardStep === 'service' && (
+            <div className="space-y-1.5">
+              {distinctBookingStyleKeysFromServices(wizardVendorServicesAll).length > 1 &&
+              !bookingDraft.vendorServiceId ? (
+                <button
+                  type="button"
+                  className="text-left text-[11px] font-semibold text-[#E85D04] underline"
+                  onClick={() => {
+                    setWizardServices([]);
+                    setWizardStep('serviceType');
+                  }}
+                >
+                  ← Change visit type
+                </button>
+              ) : null}
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+              {wizardServices.length === 0 ? (
+                <span className="text-gray-600">No services returned for this provider.</span>
+              ) : (
+                wizardServices.map((s: any) => (
+                  <button
+                    key={String(s.id)}
+                    type="button"
+                    disabled={wizardBusy}
+                    onClick={async () => {
+                      setWizardBusy(true);
+                      try {
+                        const rowKey = normalizeVendorServiceStyleToBookingKey(
+                          s.serviceStyle ?? s.service_style ?? bookingDraft.serviceStyle
+                        );
+                        await patchBookingDraft({
+                          vendorServiceId: String(s.id),
+                          totalDuration: Number(s.duration ?? s.duration_minutes ?? 30),
+                          serviceStyle: rowKey,
+                        });
+                        setWizardStep('date');
+                        setMessages((prev) => [
+                          ...prev,
+                          {
+                            id: `bot-${Date.now()}`,
+                            type: 'bot',
+                            content: 'Pick a date below, then a time.',
+                            timestamp: new Date().toISOString(),
+                            intent: 'booking',
+                          },
+                        ]);
+                      } catch (e: any) {
+                        toast.error(e?.message || 'Could not select service');
+                      } finally {
+                        setWizardBusy(false);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-orange-50 text-[11px] max-w-[11rem] truncate"
+                  >
+                    {String(s.name || s.serviceName || s.service_name || 'Service')}
+                  </button>
+                ))
+              )}
+              </div>
+            </div>
+          )}
+          {wizardStep === 'date' && (
+            <div className="flex flex-wrap gap-1.5">
+              {nextSevenDates().map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => {
+                    setWizardDate(d);
+                    void (async () => {
+                      setWizardBusy(true);
+                      try {
+                        await patchBookingDraft({ bookingDate: d });
+                        setWizardStep('slot');
+                      } catch (e: any) {
+                        toast.error(e?.message || 'Could not set date');
+                      } finally {
+                        setWizardBusy(false);
+                      }
+                    })();
+                  }}
+                  disabled={wizardBusy || wizardSlotsLoading}
+                  className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-orange-50 text-[11px]"
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+          {wizardStep === 'slot' && (
+            <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
+              {wizardSlots.filter((x: any) => x?.available !== false).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {wizardSlots
+                    .filter((x: any) => x?.available !== false)
+                    .map((slot: any) => (
+                      <button
+                        key={String(slot.time)}
+                        type="button"
+                        disabled={wizardBusy || wizardSlotsLoading}
+                        onClick={async () => {
+                          setWizardBusy(true);
+                          try {
+                            const snap = wizardSlotsRaw ?? { slots: wizardSlots };
+                            const d1 = await patchBookingDraft({ slotsSnapshot: snap });
+                            const commit: any = await aiChatbotApi.commitBookingSlot(bookingSessionId, {
+                              slotTime: String(slot.time),
+                              expectedVersion: d1.version,
+                            });
+                            if (!commit?.success) {
+                              toast.error(commit?.error || 'Slot could not be reserved');
+                              if (commit?.slots) {
+                                const slots = Array.isArray((commit.slots as any)?.slots)
+                                  ? (commit.slots as any).slots
+                                  : [];
+                                setWizardSlots(slots);
+                                setWizardSlotsRaw(commit.slots);
+                              }
+                              return;
+                            }
+                            if (commit.draft) setBookingDraft(mapSessionDraft(commit.draft));
+                            setWizardStep('review');
+                          } catch (e: any) {
+                            const status = e?.statusCode ?? e?.status;
+                            const data = e?.responseData ?? e?.response;
+                            if (status === 409 && data?.slots) {
+                              const slots = Array.isArray(data.slots?.slots) ? data.slots.slots : [];
+                              setWizardSlots(slots);
+                              setWizardSlotsRaw(data.slots);
+                              toast.error('That time was just taken — pick another slot.');
+                            } else {
+                              toast.error(e?.message || 'Could not reserve slot');
+                            }
+                          } finally {
+                            setWizardBusy(false);
+                          }
+                        }}
+                        className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-orange-50 text-[11px]"
+                      >
+                        {String(slot.time)}
+                      </button>
+                    ))}
+                </div>
+              ) : (
+                <div className="space-y-2 text-gray-700">
+                  <p className="leading-snug">
+                    No open slots on <span className="font-semibold">{wizardDate}</span> for this provider and service.
+                  </p>
+                  {wizardAlternativesLoading ? (
+                    <p className="text-gray-500">Checking the next 3 weeks for days with availability…</p>
+                  ) : wizardSlotsLoading ? (
+                    <p className="text-gray-500">Loading times for this day…</p>
+                  ) : wizardSuggestedDates.length > 0 ? (
+                    <>
+                      <p className="text-[11px] text-gray-600">Pick a day that has openings (same vendor & service):</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {wizardSuggestedDates.map((row) => (
+                          <button
+                            key={row.date}
+                            type="button"
+                            disabled={wizardBusy || wizardSlotsLoading}
+                            onClick={() => {
+                              setWizardSuggestedDates([]);
+                              void (async () => {
+                                setWizardBusy(true);
+                                try {
+                                  await patchBookingDraft({ bookingDate: row.date });
+                                  setWizardDate(row.date);
+                                } catch (e: any) {
+                                  toast.error(e?.message || 'Could not switch date');
+                                } finally {
+                                  setWizardBusy(false);
+                                }
+                              })();
+                            }}
+                            className="px-2 py-1 rounded-full border border-[#FF8C42] bg-white hover:bg-orange-50 text-[11px] font-medium"
+                          >
+                            {row.date}
+                            <span className="text-gray-500 font-normal"> ({row.openCount})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-gray-600">
+                      No openings in the next 3 weeks for this service. Try <span className="font-medium">Change date</span>{' '}
+                      from the calendar or choose another provider.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    className="text-left text-[11px] font-semibold text-[#E85D04] underline"
+                    onClick={() => {
+                      setWizardSuggestedDates([]);
+                      setWizardStep('date');
+                    }}
+                  >
+                    Change date
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {wizardStep === 'review' && (
+            <div className="space-y-2">
+              <p className="text-gray-700 leading-snug">
+                Review: {bookingDraft.vendorServiceId ? `Service ${bookingDraft.vendorServiceId}` : 'Service'} on{' '}
+                {bookingDraft.bookingDate || '—'} at {bookingDraft.slotTime || '—'}.
+              </p>
+              <button
+                type="button"
+                disabled={wizardBusy || !customerPhone}
+                onClick={async () => {
+                  setWizardBusy(true);
+                  try {
+                    const prep: any = await aiChatbotApi.prepareBookingPayment(bookingSessionId, {
+                      customerId,
+                      customerPhone,
+                    });
+                    if (!prep?.universalPaymentProps) {
+                      toast.error(prep?.error || 'Could not start payment');
+                      return;
+                    }
+                    const up = prep.universalPaymentProps as Record<string, unknown>;
+                    up.category = paymentCategoryLabel(wizardCategory);
+                    setPaymentHandoff(up);
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Could not prepare payment');
+                  } finally {
+                    setWizardBusy(false);
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white text-xs font-semibold disabled:opacity-50"
+              >
+                Continue to payment
+              </button>
+              {!customerPhone ? (
+                <p className="text-[11px] text-red-600">Sign in with a verified phone to pay.</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+
+      {paymentHandoff ? (
+        <div className="fixed inset-0 z-[70] bg-white overflow-y-auto">
+          <UniversalPaymentPage
+            {...(paymentHandoff as any)}
+            onBack={() => setPaymentHandoff(null)}
+            onSuccess={() => {
+              toast.success('Booking confirmed');
+              setPaymentHandoff(null);
+              setIsOpen(false);
+              onClose?.();
+              goTo('/bookings');
+            }}
+          />
+        </div>
+      ) : null}
 
       {/* Input */}
       <div className="p-4 border-t border-gray-200">
