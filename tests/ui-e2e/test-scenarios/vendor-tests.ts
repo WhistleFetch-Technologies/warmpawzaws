@@ -313,48 +313,26 @@ export const vendorTests: UITest[] = [
 
   {
     id: 'vendor-150',
-    name: 'Accept Booking',
-    description: 'Vendor accepts an incoming booking',
+    name: 'Bookings list (auto-confirmed flow)',
+    description:
+      'Vendor bookings screen: new bookings are created as confirmed when the slot is available; no separate vendor accept step.',
     role: 'vendor',
     screen: 'bookings',
-    component: 'AcceptBookingModal',
-    element: 'acceptButton',
-    action: 'click',
+    component: 'VendorBookingManagement',
+    element: 'bookingsList',
+    action: 'navigate',
     category: 'functional',
     priority: 'critical',
     preconditions: ['vendor-001'],
     steps: [
       { id: 's1', action: 'navigate', target: '/vendor/bookings' },
-      { id: 's2', action: 'click', target: 'incomingBooking' },
-      { id: 's3', action: 'click', target: 'acceptButton' },
-      { id: 's4', action: 'wait', target: 'bookingAccepted', value: 1000 },
+      { id: 's2', action: 'wait', target: 'bookingsLoaded', value: 1000 },
     ],
-    apiValidations: [
-      {
-        endpoint: '/vendor/bookings/{bookingId}/accept',
-        method: 'POST',
-        expectedStatus: 200,
-      },
-    ],
-    dbValidations: [
-      {
-        table: 'bookings',
-        query: 'SELECT status FROM bookings WHERE id = {{bookingId}}',
-        expectedResult: { status: 'confirmed' },
-        operation: 'select',
-      },
-    ],
-    eventValidations: [
-      {
-        eventSource: 'SNS',
-        eventType: 'booking.accepted',
-      },
-    ],
-    expectedResults: [
-      { uiState: 'booking.status.confirmed' },
-      { notificationSent: true },
-    ],
-    tags: ['bookings', 'accept', 'critical-path'],
+    apiValidations: [],
+    dbValidations: [],
+    eventValidations: [],
+    expectedResults: [{ uiState: 'bookings.screen.loaded' }],
+    tags: ['bookings', 'auto-confirm', 'critical-path'],
   },
 
   {

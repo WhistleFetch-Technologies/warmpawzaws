@@ -6,10 +6,11 @@
  * Loud notification - use with playOrderAlertSound when showing.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Calendar, User, MapPin, Video, Building2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { playOrderAlertSound } from '@/lib/audio-alerts';
+import { DeclineBookingModal } from '@/components/vendor/DeclineBookingModal';
 
 export interface NewBookingAlertData {
   bookingId: string;
@@ -30,6 +31,7 @@ interface VendorNewBookingOrderAlertProps {
     message?: string;
     data?: string | NewBookingAlertData;
   };
+  vendorId: string;
   onView: (bookingId: string) => void;
   onDismiss: () => void;
   playSound?: boolean;
@@ -37,10 +39,12 @@ interface VendorNewBookingOrderAlertProps {
 
 export function VendorNewBookingOrderAlert({
   notification,
+  vendorId,
   onView,
   onDismiss,
   playSound = true,
 }: VendorNewBookingOrderAlertProps) {
+  const [showDecline, setShowDecline] = useState(false);
   const data: NewBookingAlertData | null =
     typeof notification.data === 'string'
       ? (() => {
@@ -73,7 +77,10 @@ export function VendorNewBookingOrderAlert({
     ? `${data.bookingDate || ''} ${data.bookingTime || ''}`.trim()
     : notification.message || '';
 
+  // When decline opens, unmount this overlay — Dialog is z-[60]/[70]; this shell is z-[90] and would sit on top and steal clicks.
   return (
+    <>
+      {!showDecline && (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-5 text-white">
@@ -87,7 +94,8 @@ export function VendorNewBookingOrderAlert({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <h2 className="text-xl font-bold mt-2">You have a new booking</h2>
+          <h2 className="text-xl font-bold mt-2">New booking confirmed</h2>
+          <p className="text-sm opacity-90 mt-1">The slot was available — no accept step needed.</p>
         </div>
         <div className="p-6 space-y-4">
           <div className="flex items-center gap-3">
@@ -115,26 +123,56 @@ export function VendorNewBookingOrderAlert({
               {typeof data.address === 'string' ? data.address : (data.address as any)?.address || ''}
             </p>
           )}
-          <div className="flex gap-3 pt-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={onDismiss}
-            >
-              Dismiss
-            </Button>
-            <Button
-              className="flex-1 bg-[#FF8C42] hover:bg-[#FF7829]"
-              onClick={() => {
-                if (data?.bookingId) onView(data.bookingId);
-                onDismiss();
-              }}
-            >
-              View details
-            </Button>
+          <div className="flex flex-col gap-2 pt-2">
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={onDismiss}
+              >
+                Dismiss
+              </Button>
+              <Button
+                className="flex-1 bg-[#FF8C42] hover:bg-[#FF7829]"
+                onClick={() => {
+                  if (data?.bookingId) onView(data.bookingId);
+                  onDismiss();
+                }}
+              >
+                View details
+              </Button>
+            </div>
+            {vendorId && data?.bookingId && (
+              <Button
+                variant="outline"
+                className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                onClick={() => setShowDecline(true)}
+              >
+                Decline booking (refund per policy)
+              </Button>
+            )}
           </div>
         </div>
       </div>
     </div>
+      )}
+
+      {showDecline && vendorId && data?.bookingId && (
+        <DeclineBookingModal
+          booking={{
+            id: data.bookingId,
+            customerName,
+            scheduledDate: data.bookingDate,
+            scheduledTime: data.bookingTime || '',
+          }}
+          vendorId={vendorId}
+          onClose={() => setShowDecline(false)}
+          onSuccess={() => {
+            setShowDecline(false);
+            onDismiss();
+          }}
+        />
+      )}
+    </>
   );
 }

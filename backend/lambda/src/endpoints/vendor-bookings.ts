@@ -478,18 +478,20 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: `Booking cannot be declined. Current status: ${oldStatus}` }, 400);
       }
 
+      const baseReason = (typeof reason === 'string' && reason.trim()) ? reason.trim() : 'Vendor declined booking';
+      const alt =
+        typeof suggestAlternative === 'string' && suggestAlternative.trim()
+          ? ` Suggested alternative: ${suggestAlternative.trim()}`
+          : '';
+      const cancellation_reason = baseReason + alt;
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'cancelled',
-          cancellation_reason: reason || 'Vendor declined booking',
+          cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
-          metadata: {
-            ...(booking.metadata || {}),
-            suggestAlternative: suggestAlternative || null,
-            declinedBy: 'vendor',
-          },
         }
       );
 

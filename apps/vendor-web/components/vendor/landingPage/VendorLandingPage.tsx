@@ -1702,9 +1702,10 @@ export function VendorLandingPage({
               </DialogContent>
             </Dialog>
           )}
-          {newBookingAlert && (
+          {newBookingAlert && vendorId && (
             <VendorNewBookingOrderAlert
               notification={newBookingAlert}
+              vendorId={vendorId}
               onView={(bookingId) => {
                 setNewBookingAlert(null);
                 setShowBookingManagement(true);

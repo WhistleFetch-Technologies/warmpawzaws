@@ -442,10 +442,6 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const cancellation_reason = extraNote
         ? `Provider cancelled (${reasonLabel}). ${extraNote}`
         : `Provider cancelled: ${reasonLabel}.`;
-      const priorMeta =
-        booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
-          ? booking.metadata
-          : {};
 
       const updated = await update('bookings',
         { id: bookingId },
@@ -454,10 +450,6 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
-          metadata: {
-            ...priorMeta,
-            vendorCancellationReason,
-          },
         }
       );
 
@@ -545,13 +537,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const reasonLabel = vendorCancellationReasonLabel(vendorCancellationReason);
       const extraNote = typeof reason === 'string' && reason.trim() ? reason.trim() : '';
-      const cancellation_reason = extraNote
-        ? `Provider declined (${reasonLabel}). ${extraNote}`
-        : `Provider declined: ${reasonLabel}.`;
-      const priorMeta =
-        booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
-          ? booking.metadata
-          : {};
+      const alt =
+        typeof suggestAlternative === 'string' && suggestAlternative.trim()
+          ? ` Suggested alternative: ${suggestAlternative.trim()}`
+          : '';
+      const cancellation_reason =
+        (extraNote
+          ? `Provider declined (${reasonLabel}). ${extraNote}`
+          : `Provider declined: ${reasonLabel}.`) + alt;
 
       const updated = await update('bookings',
         { id: bookingId },
@@ -560,12 +553,6 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
-          metadata: {
-            ...priorMeta,
-            suggestAlternative: suggestAlternative || null,
-            declinedBy: 'vendor',
-            vendorCancellationReason,
-          },
         }
       );
 
