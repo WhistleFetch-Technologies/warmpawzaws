@@ -11,7 +11,7 @@ alwaysApply: true
 
 | Component | Script |
 |-----------|--------|
-| Backend (Lambda) | `./scripts/deploy-lambda-direct.sh` |
+| Backend (Lambda) | `./scripts/deploy-lambda-direct.sh` (updates **API handler** and, when `backend/lambda/loyalty-consumer.zip` exists after build, **warmpawz-dev-loyalty-events-consumer**) |
 | Admin Web | `./scripts/deploy-admin-web.sh` |
 | Vendor Web | `./scripts/deploy-vendor-web.sh` |
 | Customer Web | `./scripts/deploy-customer-web.sh` |
