@@ -34,16 +34,49 @@ function roundMoney(n: number): number {
 /** Wallet applied to the booking (split-pay / wallet-only), not in Razorpay `payments.amount`. */
 async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number> {
   if (!bookingId) return 0;
+  let cols: Set<string>;
+  try {
+    const meta = await query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'wallet_transactions'`
+    );
+    cols = new Set((meta as any).rows?.map((r: { column_name: string }) => r.column_name) ?? []);
+  } catch {
+    return 0;
+  }
+
+  const hasBookingId = cols.has('booking_id');
+  const hasReferenceId = cols.has('reference_id');
+  const hasReferenceType = cols.has('reference_type');
+
+  const bookingMatch =
+    hasBookingId ?
+      `(booking_id = $1::uuid AND (
+          ${hasReferenceType ? `COALESCE(reference_type, '') IN ('booking_payment', 'payment', 'booking', '')` : 'TRUE'}
+          OR description ILIKE '%Payment for booking%'
+        ))`
+    : 'FALSE';
+
+  const refMatch =
+    hasReferenceId ?
+      `(reference_id = $1::uuid AND (
+          ${hasReferenceType ? `COALESCE(reference_type, '') IN ('booking_payment', 'payment', 'booking', '')` : 'TRUE'}
+        ))`
+    : 'FALSE';
+
+  const descMatch = `(transaction_type = 'debit' AND description = 'Payment for booking ' || $1::text)`;
+
+  const whereCore = [bookingMatch, refMatch, descMatch].filter((s) => s !== 'FALSE').join(' OR ');
+  if (!whereCore || whereCore === 'FALSE') {
+    return 0;
+  }
+
   try {
     const res = await query(
       `SELECT COALESCE(SUM(amount::numeric), 0)::text AS w
        FROM wallet_transactions
-       WHERE booking_id = $1::uuid
-         AND transaction_type = 'debit'
-         AND (
-           COALESCE(reference_type, '') IN ('booking_payment', 'payment', '')
-           OR description ILIKE '%Payment for booking%'
-         )`,
+       WHERE transaction_type = 'debit'
+         AND (${whereCore})`,
       [bookingId]
     );
     const row = (res as any).rows?.[0];
