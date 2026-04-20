@@ -46,7 +46,13 @@ import {
   RefreshCw, 
   X 
 } from 'lucide-react';
-import { getVendorRoleId, hasVendorRole, isSoloVendor, isVendorWalkerProgramProgress } from '@/lib/vendor-utils';
+import {
+  getVendorRoleId,
+  getVendorAllowedServiceStyles,
+  hasVendorRole,
+  isSoloVendor,
+  isVendorWalkerProgramProgress,
+} from '@/lib/vendor-utils';
 import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
 
 interface VendorBookingManagementProps {
@@ -239,11 +245,7 @@ export function VendorBookingManagement({
                          vendorData?.vendor_type === 'solo' ||
                          isSoloVendor(vendorData));
   
-  // Get allowed service styles - solo groomers only have at_home
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
-                               vendorData?.serviceStyles?.selected || 
-                               vendorData?.serviceStyles?.solo || 
-                               [];
+  const allowedServiceStyles = getVendorAllowedServiceStyles(vendorData);
   const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');

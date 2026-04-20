@@ -205,8 +205,7 @@ export function VendorDashboardScreen({
     loadDashboardData();
   };
 
-  // ✅ FIX: Get vendor capabilities from vendorData to filter buttons
-  const vendorCapabilities = vendorData?.capabilities || [];
+  const vendorCapabilities = Array.isArray(vendorData?.capabilities) ? vendorData.capabilities : [];
   const hasCapability = (cap: string) => {
     if (!vendorCapabilities || vendorCapabilities.length === 0) return false;
     return vendorCapabilities.includes(cap) ||

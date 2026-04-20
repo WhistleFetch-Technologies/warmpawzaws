@@ -105,9 +105,12 @@ export async function uploadImageWithProgress(
 
       if (onProgress) onProgress(100);
 
+      const displayUrl =
+        (typeof presignedResponse.displayUrl === 'string' && presignedResponse.displayUrl) ||
+        presignedResponse.publicUrl;
       return {
         success: true,
-        url: presignedResponse.publicUrl,
+        url: displayUrl,
         publicUrl: presignedResponse.publicUrl,
         fileName: presignedResponse.fileKey,
         retries,

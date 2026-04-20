@@ -22,6 +22,7 @@ import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-c
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
+import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 
 export function registerMealPlanEndpoints(app: Hono) {
 
@@ -309,28 +310,13 @@ export function registerMealPlanEndpoints(app: Hono) {
         });
       }
 
-      return c.json({
-        success: true,
-        mealPlans: filteredPlans.map((mp: any) => {
+      const mealPlans = await Promise.all(
+        filteredPlans.map(async (mp: any) => {
           const distanceKm = mp.distance_km || null;
           const estimatedDeliveryMinutes = distanceKm != null ? Math.round(15 + distanceKm * 3) : null; // Phase 1: ETA ~15min + 3min/km
-          let dietaryReqs: any = {};
-          try {
-            dietaryReqs =
-              typeof mp.dietary_requirements === 'string'
-                ? JSON.parse(mp.dietary_requirements)
-                : mp.dietary_requirements || {};
-          } catch {
-            dietaryReqs = {};
-          }
-          let photos = mp.photos;
-          try {
-            photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
-          } catch {
-            photos = [];
-          }
-          const mealImageUrl =
-            dietaryReqs.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+            mp as Record<string, unknown>,
+          );
           let suitableFor = mp.suitable_for;
           let ingredients = mp.ingredients;
           let nutritionInfo = mp.nutrition_info;
@@ -356,12 +342,17 @@ export function registerMealPlanEndpoints(app: Hono) {
             suitableFor,
             ingredients,
             nutritionInfo,
-            dietary_requirements: dietaryReqs,
+            dietary_requirements,
             mealImageUrl,
             distanceKm,
             estimatedDeliveryMinutes, // Phase 1: for customer UI "ETA ~X min"
           };
         }),
+      );
+
+      return c.json({
+        success: true,
+        mealPlans,
         filters: {
           maxRadius: maxRadius > 0 ? maxRadius : null,
           appliedFilters: filters ? filters.split(',').map(f => f.trim()) : [],
@@ -396,23 +387,9 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const mp = result.rows[0];
 
-      let dietaryReqs: any = {};
-      try {
-        dietaryReqs =
-          typeof mp.dietary_requirements === 'string'
-            ? JSON.parse(mp.dietary_requirements)
-            : mp.dietary_requirements || {};
-      } catch {
-        dietaryReqs = {};
-      }
-      let photos = mp.photos;
-      try {
-        photos = typeof photos === 'string' ? JSON.parse(photos) : photos;
-      } catch {
-        photos = [];
-      }
-      const mealImageUrl =
-        dietaryReqs.mealImageUrl || mp.thumbnail_url || (Array.isArray(photos) && photos[0]) || null;
+      const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+        mp as Record<string, unknown>,
+      );
 
       return c.json({
         success: true,
@@ -423,7 +400,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
           nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
           deliverySlots: typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots,
-          dietary_requirements: dietaryReqs,
+          dietary_requirements,
           mealImageUrl,
         },
       });

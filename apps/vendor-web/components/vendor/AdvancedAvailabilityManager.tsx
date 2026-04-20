@@ -13,7 +13,7 @@
  * - Go Offline slider (solo providers only)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Save, Clock, Plus, X, Copy, Calendar, 
@@ -94,12 +94,63 @@ const ALL_SERVICE_STYLES = [
   { id: 'tele', label: 'Tele/Video', icon: '📹', leadLabel: 'Setup time (min)' },
 ] as const;
 
+type SlotCanonicalStyle = 'at_center' | 'at_home' | 'tele';
+
+/** Map admin/API aliases to the three slot checkboxes (matches profile + GET /availability). */
+const STYLE_ALIAS_TO_CANONICAL: Record<string, SlotCanonicalStyle> = {
+  at_home: 'at_home',
+  home_visit: 'at_home',
+  at_center: 'at_center',
+  at_clinic: 'at_center',
+  tele: 'tele',
+  video_consultation: 'tele',
+};
+
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((x): x is string => typeof x === 'string' && x.length > 0);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string' && x.length > 0);
+      }
+    } catch {
+      /* not JSON */
+    }
+    return [value.trim()];
+  }
+  return [];
+}
+
+function normalizeStylesToSlotCanonical(styles: unknown): SlotCanonicalStyle[] {
+  const list = coerceStringArray(styles);
+  const out = new Set<SlotCanonicalStyle>();
+  for (const raw of list) {
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const k = raw.toLowerCase();
+    const mapped = STYLE_ALIAS_TO_CANONICAL[k];
+    if (mapped) {
+      out.add(mapped);
+      continue;
+    }
+    if (k === 'at_home' || k === 'at_center' || k === 'tele') {
+      out.add(k as SlotCanonicalStyle);
+    }
+  }
+  return Array.from(out);
+}
+
 /** Default lead times per style when creating a new slot */
 const DEFAULT_LEAD_TIME_BY_STYLE: LeadTimeByStyle = {
   at_home: 45,
   at_center: 15,
   tele: 5,
 };
+
+/** Stable fallback when allowedServiceStyles state is not an array (malformed API). */
+const EMPTY_ALLOWED_STYLES: readonly SlotCanonicalStyle[] = [];
 
 const BREAK_TYPES = [
   { id: 'lunch', label: 'Lunch Break', icon: '🍽️' },
@@ -222,7 +273,7 @@ export function AdvancedAvailabilityManager({
 
   const buildLocationDataForSave = useCallback(
     (slot: TimeSlot): TimeSlot['locationData'] | undefined => {
-      const styles = slot.serviceStyles || [];
+      const styles = Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [];
       if (!styles.includes('at_home')) {
         const ld = slot.locationData;
         if (!ld || typeof ld !== 'object') return undefined;
@@ -247,63 +298,47 @@ export function AdvancedAvailabilityManager({
     [vendorData?.address, vendorData?.latitude, vendorData?.longitude, travelRadiusKm]
   );
   
-  // Filter service styles based on role and allowed styles
-  const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedServiceStyles.includes(style.id as any));
-  
-  // Get default service style (first allowed style, or 'at_home' for groomer_solo)
+  const allowedStylesSafe = useMemo(
+    () => (Array.isArray(allowedServiceStyles) ? allowedServiceStyles : EMPTY_ALLOWED_STYLES),
+    [allowedServiceStyles]
+  );
+  const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedStylesSafe.includes(style.id as any));
+
   const getDefaultServiceStyle = useCallback((): ('at_center' | 'at_home' | 'tele')[] => {
     if (roleName?.toLowerCase() === 'groomer_solo') {
       return ['at_home'];
     }
-    return allowedServiceStyles.length > 0 ? [allowedServiceStyles[0]] : ['at_home'];
-  }, [roleName, allowedServiceStyles]);
+    return allowedStylesSafe.length > 0 ? [allowedStylesSafe[0]] : ['at_home'];
+  }, [roleName, allowedStylesSafe]);
 
-  // Load allowed service styles from vendor services endpoint
   useEffect(() => {
     const loadAllowedServiceStyles = async () => {
       try {
-        let styles: string[] = [];
-        
-        // ✅ Priority 1: Check vendorData.serviceStyles.selected (what vendor has actually configured)
-        // This is the most important - shows only what the vendor has selected/enabled
-        if (vendorData?.serviceStyles?.selected && Array.isArray(vendorData.serviceStyles.selected) && vendorData.serviceStyles.selected.length > 0) {
-          // Map role config style names to database style names
-          const styleMap: Record<string, string> = {
-            'at_home': 'at_home',
-            'home_visit': 'at_home',
-            'tele': 'tele',
-            'video_consultation': 'tele',
-            'at_center': 'at_center',
-            'at_clinic': 'at_center',
-          };
-          styles = vendorData.serviceStyles.selected
-            .map((s: string) => styleMap[s.toLowerCase()] || s)
-            .filter((s: string) => ['at_home', 'at_center', 'tele'].includes(s));
-          console.log('[AVAILABILITY] Using serviceStyles.selected from vendorData:', styles);
-        }
-        // ✅ Priority 2: Check vendorData.allowedServiceStyles (direct array)
-        else if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles)) {
-          styles = vendorData.allowedServiceStyles;
-          console.log('[AVAILABILITY] Using allowedServiceStyles from vendorData:', styles);
-        }
-        // ✅ Priority 3: Fetch from vendor services endpoint
-        else {
+        let rawStyles: string[] = [];
+
+        if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles) && vendorData.allowedServiceStyles.length > 0) {
+          rawStyles = [...vendorData.allowedServiceStyles];
+          console.log('[AVAILABILITY] Using allowedServiceStyles from vendorData:', rawStyles);
+        } else if (vendorData?.serviceStyles?.selected && Array.isArray(vendorData.serviceStyles.selected) && vendorData.serviceStyles.selected.length > 0) {
+          rawStyles = [...vendorData.serviceStyles.selected];
+          console.log('[AVAILABILITY] Using serviceStyles.selected from vendorData:', rawStyles);
+        } else {
           const servicesRes = await apiClient.get(`/vendor/${vendorId}/services`) as any;
-          if (servicesRes?.success && servicesRes?.allowedServiceStyles) {
-            styles = servicesRes.allowedServiceStyles;
-            console.log('[AVAILABILITY] Using allowedServiceStyles from services endpoint:', styles);
+          if (servicesRes?.success && servicesRes?.allowedServiceStyles != null) {
+            rawStyles = coerceStringArray(servicesRes.allowedServiceStyles);
+            console.log('[AVAILABILITY] Using allowedServiceStyles from services endpoint:', rawStyles);
           } else {
-            // Fallback: Use role-based defaults
             const roleNameLower = roleName?.toLowerCase() || '';
             if (roleNameLower === 'groomer_solo') {
-              styles = ['at_home'];
+              rawStyles = ['at_home'];
             } else {
-              // Default to all styles for other roles
-              styles = ['at_home', 'at_center', 'tele'];
+              rawStyles = ['at_home', 'at_center', 'tele'];
             }
           }
         }
-        
+
+        let styles = normalizeStylesToSlotCanonical(rawStyles as unknown);
+
         // ✅ CRITICAL: Filter out 'at_center' for ALL solo vendors (vet_solo, groomer_solo, etc.)
         // Solo vendors don't have a physical center/clinic location
         if (isSoloVendor(vendorData)) {
@@ -398,8 +433,10 @@ export function AdvancedAvailabilityManager({
             availRes.availability.slots.forEach((slot: any) => {
               const dayIdx = slot.day_of_week ?? slot.dayOfWeek;
               if (dayIdx >= 0 && dayIdx <= 6) {
-                const slotStyles = slot.service_styles || slot.serviceStyles || [];
-                let filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+                const slotStylesRaw = slot.service_styles ?? slot.serviceStyles ?? [];
+                const slotStyles = normalizeStylesToSlotCanonical(slotStylesRaw);
+                const allowed = Array.isArray(allowedServiceStyles) ? allowedServiceStyles : [];
+                let filteredStyles = slotStyles.filter((s) => allowed.includes(s));
                 if (isSoloVendor(vendorData)) {
                   filteredStyles = filteredStyles.filter((s: string) => s !== 'at_center');
                 }
@@ -592,7 +629,7 @@ export function AdvancedAvailabilityManager({
             slots: day.slots.map((slot, idx) => {
               if (idx === slotIdx) {
                 // Get current styles
-                const currentStyles = [...slot.serviceStyles];
+                const currentStyles = [...(Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [])];
                 
                 // Toggle the style: if already selected, remove it; otherwise add it
                 const newStyles = currentStyles.includes(style)
@@ -895,7 +932,9 @@ export function AdvancedAvailabilityManager({
               dayOfWeek: day.dayOfWeek,
               timeWindowStart: slot.startTime,
               timeWindowEnd: slot.endTime,
-              serviceStyles: slot.serviceStyles,
+              serviceStyles: Array.isArray(slot.serviceStyles)
+                ? slot.serviceStyles
+                : normalizeStylesToSlotCanonical(slot.serviceStyles as unknown),
               locationData: buildLocationDataForSave(slot),
               leadTimeByStyle: slot.leadTimeByStyle || undefined,
               maxCapacity: slot.maxCapacity,
@@ -1152,7 +1191,9 @@ export function AdvancedAvailabilityManager({
               </div>
             ) : (
               <div className="space-y-4">
-                {currentDaySlots.map((slot, slotIdx) => (
+                {currentDaySlots.map((slot, slotIdx) => {
+                  const slotStylesSafe = Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [];
+                  return (
                   <div key={slot.id || `slot-${selectedDay}-${slotIdx}`} className="border rounded-lg p-4 bg-gray-50">
                     <div className="flex items-start justify-between mb-3">
                       <span className="text-sm font-medium text-gray-500">Slot {slotIdx + 1}</span>
@@ -1197,7 +1238,7 @@ export function AdvancedAvailabilityManager({
                                 toggleServiceStyle(slotIdx, style.id as any);
                               }}
                               className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
-                                slot.serviceStyles.includes(style.id as any)
+                                slotStylesSafe.includes(style.id as any)
                                   ? 'bg-[#FF8C42] text-white'
                                   : 'bg-white border text-gray-600 hover:border-[#FF8C42]'
                               }`}
@@ -1216,7 +1257,7 @@ export function AdvancedAvailabilityManager({
                     <div className="mb-4">
                       <p className="text-sm text-gray-600 mb-2">Lead time (min) per style</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {SERVICE_STYLES.filter(style => slot.serviceStyles.includes(style.id as any)).map(style => (
+                        {SERVICE_STYLES.filter(style => slotStylesSafe.includes(style.id as any)).map(style => (
                           <div key={style.id}>
                             <label className="text-xs text-gray-500 block mb-1">
                               {style.icon} {style.label} — {style.leadLabel}
@@ -1240,7 +1281,7 @@ export function AdvancedAvailabilityManager({
                             />
                           </div>
                         ))}
-                        {slot.serviceStyles.length === 0 && (
+                        {slotStylesSafe.length === 0 && (
                           <p className="text-sm text-gray-500 col-span-2">Select at least one service style above to set lead time.</p>
                         )}
                       </div>
@@ -1258,7 +1299,8 @@ export function AdvancedAvailabilityManager({
                       />
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             )}
           </div>

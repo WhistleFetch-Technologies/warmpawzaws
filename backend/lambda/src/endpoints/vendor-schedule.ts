@@ -23,7 +23,10 @@ import {
   resolveAndPersistVendorType,
   parseRoleConfigJson,
 } from './vendor/endpoints/vendor-profile.vendor';
-import { computeEffectiveAllowedServiceStyles } from '../utils/effective-service-styles';
+import {
+  computeEffectiveAllowedServiceStyles,
+  parseRoleConfigSelectedServiceStyles,
+} from '../utils/effective-service-styles';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1770,9 +1773,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
               : roleConfig.vendorConfiguration === 'solo' || roleConfig.vendorConfiguration === 'business'
                 ? roleConfig.vendorConfiguration
                 : null;
-          selectedServiceStyles = Array.isArray(roleConfig?.serviceStyles?.selected)
-            ? roleConfig.serviceStyles.selected
-            : [];
+          selectedServiceStyles = parseRoleConfigSelectedServiceStyles(roleConfig?.serviceStyles);
         }
       } catch (_) {
         /* ignore */

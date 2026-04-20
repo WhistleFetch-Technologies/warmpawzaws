@@ -109,6 +109,60 @@ export function stripS3PresignQueryFromUrl(url: string): string {
   return url;
 }
 
+/**
+ * Presign `mealImageUrl` on a metadata / dietary_requirements object (private S3 bucket).
+ */
+export async function presignMealImageUrlInRecord(
+  record: Record<string, unknown> | null | undefined
+): Promise<Record<string, unknown>> {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {};
+  const out = { ...record };
+  const u = out.mealImageUrl;
+  if (typeof u === 'string' && u.trim()) {
+    out.mealImageUrl = (await presignS3GetUrlIfApplicable(u.trim())) ?? u;
+  }
+  return out;
+}
+
+/**
+ * For `meal_plans` API rows: parse `dietary_requirements` + `photos`, resolve hero image
+ * (`mealImageUrl` → `thumbnail_url` → first photo), presign when stored on private S3.
+ */
+export async function presignMealPlanRowDisplayFields(mp: Record<string, unknown>): Promise<{
+  dietary_requirements: Record<string, unknown>;
+  photos: unknown;
+  mealImageUrl: string | null;
+}> {
+  let dietaryReqs: Record<string, unknown> = {};
+  try {
+    const dr = mp.dietary_requirements;
+    dietaryReqs =
+      typeof dr === 'string'
+        ? (JSON.parse(dr) as Record<string, unknown>)
+        : ((dr as Record<string, unknown>) || {});
+  } catch {
+    dietaryReqs = {};
+  }
+  let photos: unknown = mp.photos;
+  try {
+    photos = typeof photos === 'string' ? JSON.parse(photos as string) : photos;
+  } catch {
+    photos = [];
+  }
+  const drSigned = await presignMealImageUrlInRecord(dietaryReqs);
+  const thumb = mp.thumbnail_url;
+  let mealImageUrl: string | null =
+    (typeof drSigned.mealImageUrl === 'string' && drSigned.mealImageUrl) ||
+    (typeof thumb === 'string' && thumb) ||
+    (Array.isArray(photos) && typeof photos[0] === 'string' && photos[0]) ||
+    null;
+  if (typeof mealImageUrl === 'string') {
+    mealImageUrl = (await presignS3GetUrlIfApplicable(mealImageUrl)) ?? mealImageUrl;
+  }
+  const dietary_requirements = { ...drSigned, ...(mealImageUrl ? { mealImageUrl } : {}) };
+  return { dietary_requirements, photos, mealImageUrl };
+}
+
 export function stripPresignFromProductImagesJsonb(raw: unknown): unknown {
   if (raw == null) return raw;
   let parsed: unknown = raw;

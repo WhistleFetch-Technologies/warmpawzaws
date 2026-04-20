@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
-import { hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorAllowedServiceStyles, hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 
 const logoImage = '/warmpawz-logo.svg';
@@ -161,16 +161,10 @@ export function SoloProviderDashboard({
   const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || vendorData?.selected_role_id;
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
 
-  // Service styles from role config (profile/dashboard API intersects selected with solo/business bucket)
-  const selectedStyles = Array.isArray(vendorData?.serviceStyles)
-    ? vendorData.serviceStyles
-    : (vendorData?.serviceStyles?.selected ?? vendorData?.serviceStyles?.solo ?? []);
-  let allowedServiceStyles: string[] =
-    vendorData?.allowedServiceStyles?.length > 0
-      ? [...vendorData.allowedServiceStyles]
-      : selectedStyles.length > 0
-        ? [...selectedStyles]
-        : ['at_home', 'tele'];
+  const allowedServiceStyles = useMemo(() => {
+    const list = getVendorAllowedServiceStyles(vendorData);
+    return list.length > 0 ? list : (['at_home', 'tele'] as const);
+  }, [vendorData]);
 
   // Copy-only role hints (allowedServiceStyles comes from admin launch config — do not override here)
   const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);

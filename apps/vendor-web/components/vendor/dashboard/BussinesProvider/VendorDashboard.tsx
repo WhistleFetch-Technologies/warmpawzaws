@@ -10,7 +10,7 @@ import { CapabilityGate } from '../../CapabilityGate';
 import { useVendorCapabilities } from '../../hooks/useVendorCapabilities';
 // AWS Serverless: apiClient with Cognito auth
 import { getRoleColorScheme } from '@/lib/vendor-icon-themes';
-import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorRoleId, normalizeServiceStyle, hasVendorRole, getVendorAllowedServiceStyles } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
@@ -257,9 +257,9 @@ export function VendorDashboard({
   });
 
   const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendorType || vendorData?.vendor_type || null;
-  const selectedServiceStyles = vendorData?.serviceStyles || vendorData?.selectedServiceStyles || [];
+  /** Never use vendorData.serviceStyles raw — it is often `{ selected, solo, business }`; `.includes` would throw. */
+  const allowedServiceStyles = useMemo(() => getVendorAllowedServiceStyles(vendorData), [vendorData]);
   const profileType = vendorData?.profileType || (vendorConfiguration === 'solo' ? 'professional' : 'center');
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || [];
   const customerService = vendorData?.customer_service || null;
 
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
@@ -1539,20 +1539,20 @@ export function VendorDashboard({
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
               <button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</button>
 
-              {/* ✅ Filter service style tabs based on selectedServiceStyles from backend with role-aware labels */}
-              {selectedServiceStyles.includes('at_center') && (
+              {/* ✅ Filter tabs from effective allowed styles (canonical at_center | at_home | tele) */}
+              {allowedServiceStyles.includes('at_center') && (
                 <button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Stethoscope className="w-3.5 h-3.5" /> {labels.atCenterLabel}
                 </button>
               )}
 
-              {selectedServiceStyles.includes('at_home') && (
+              {allowedServiceStyles.includes('at_home') && (
                 <button onClick={() => setAppointmentTypeFilter('home')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Home className="w-3.5 h-3.5" /> {labels.atHomeLabel}
                 </button>
               )}
 
-              {selectedServiceStyles.includes('tele') && capabilities.tele && (
+              {allowedServiceStyles.includes('tele') && capabilities.tele && (
                 <button onClick={() => setAppointmentTypeFilter('tele')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Monitor className="w-3.5 h-3.5" /> {labels.teleLabel}
                 </button>
