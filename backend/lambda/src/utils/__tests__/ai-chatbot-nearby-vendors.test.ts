@@ -1,4 +1,4 @@
-import { roleFilterListForCategory } from '../ai-chatbot-booking-roles';
+import { roleFilterListForCategory } from '../ai/ai-chatbot-booking-roles';
 
 describe('ai-chatbot-nearby-vendors', () => {
   it('roleFilterListForCategory returns vet role names', () => {
