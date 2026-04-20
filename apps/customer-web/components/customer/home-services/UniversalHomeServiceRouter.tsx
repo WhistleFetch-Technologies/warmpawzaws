@@ -29,6 +29,7 @@ import { HomeServiceProviderListView } from './HomeServiceProviderListView';
 import { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
 import { HomeServiceLanding } from './HomeServiceLanding';
 import { apiClient } from '@/lib/api-client';
+import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { toast } from 'sonner';
 
 // Service type definitions
@@ -63,8 +64,8 @@ export const SERVICE_CONFIGS: Record<HomeServiceType, ServiceConfig> = {
     roleId: 'dog_walker',
     displayName: 'Dog Walking',
     icon: '🚶',
-    primaryColor: '#22C55E',
-    bgGradient: 'from-green-500 to-emerald-600',
+    primaryColor: '#FF8C42',
+    bgGradient: 'from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
     problems: [
       { id: '30-min', name: '30 Min Walk', icon: '🚶' },
       { id: '60-min', name: '60 Min Walk', icon: '🏃' },
@@ -333,13 +334,14 @@ export function UniversalHomeServiceRouter({
     try {
       const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
       const vendor = data.vendor || data;
+      const raw = vendor as Record<string, unknown>;
       setBookingFlow(prev => ({
         ...prev,
         vendorId: vendor.id,
-        vendorName: vendor.businessName || vendor.fullName,
+        vendorName: vendor.business_name || vendor.businessName || vendor.fullName,
         vendorAddress: vendor.address,
         vendorPhone: vendor.phone,
-        vendorPhoto: vendor.photo || vendor.logo,
+        vendorPhoto: resolveVendorProfilePhotoUrl(raw) || (vendor.photo as string) || (vendor.logo as string) || null,
       }));
     } catch (error) {
       console.error('Error loading vendor details:', error);
@@ -434,13 +436,14 @@ export function UniversalHomeServiceRouter({
 
   const handleProviderSelect = (provider: any) => {
     console.log('✅ [HOME-SERVICE-ROUTER] Provider selected:', provider);
+    const raw = provider as Record<string, unknown>;
     setBookingFlow(prev => ({
       ...prev,
       vendorId: provider.id || provider.vendorId,
       vendorName: provider.businessName || provider.name || provider.fullName,
       vendorAddress: provider.address,
       vendorPhone: provider.phone,
-      vendorPhoto: provider.photo || provider.logo,
+      vendorPhoto: resolveVendorProfilePhotoUrl(raw) || provider.photo || provider.logo || null,
     }));
     setCurrentStep('provider_profile');
   };

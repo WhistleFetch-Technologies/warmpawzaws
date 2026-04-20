@@ -232,9 +232,9 @@ export function CustomerHomeComplete({
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
-  const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
+  const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
 
-  /** Featured providers, Adoption & Breeding rows, Premium Pet Food — shared spotlight navigation. */
+  /** Featured providers, Adoption row, Premium Pet Food — shared spotlight navigation. */
   const navigateFromFeaturedVendorMeta = useCallback(
     (v: Record<string, unknown>, extraNavigateData?: Record<string, unknown>) => {
       const dest = resolveFeaturedVendorDestination(v);
@@ -532,9 +532,13 @@ export function CustomerHomeComplete({
         }
       }
 
-      // Handle adoption stats
+      // Handle adoption stats (home row is adoption-only; ignore legacy breeder counts from API)
       if (adoptionResp.status === 'fulfilled' && adoptionResp.value?.stats) {
-        setAdoptionStats(adoptionResp.value.stats);
+        const s = adoptionResp.value.stats as Record<string, unknown>;
+        setAdoptionStats((prev) => ({
+          adoptablePets: (s.adoptablePets as string | number | undefined) ?? prev.adoptablePets,
+          rehomingListings: (s.rehomingListings as string | number | undefined) ?? prev.rehomingListings,
+        }));
       } else if (adoptionResp.status === 'rejected') {
         const error = adoptionResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -921,7 +925,7 @@ export function CustomerHomeComplete({
       if (pick('walker') || pick('walking')) return 'walker';
       if (pick('training') || pick('trainer')) return 'training';
       if (pick('boarding') || pick('board')) return 'boarding';
-      if (pick('adoption')) return 'adoption';
+      if (pick('adoption') || pick('breeder')) return 'adoption';
       if (pick('cafes') || pick('cafe')) return 'cafes';
       if (pick('insurance')) return 'insurance';
       if (pick('photography') || pick('photo')) return 'photography';
@@ -933,7 +937,6 @@ export function CustomerHomeComplete({
       if (pick('ambulance') || pick('emergency')) return 'ambulance';
       if (pick('nutritionist') || pick('nutrition')) return 'nutritionist';
       if (pick('behaviorist') || pick('behavior')) return 'behaviorist';
-      if (pick('breeder')) return 'breeder';
       if (pick('mating')) return 'mating-dating-hub';
 
       const head = (segments[0] || path).toLowerCase();
@@ -975,8 +978,6 @@ export function CustomerHomeComplete({
           return Wheat;
         case 'behaviorist':
           return Heart;
-        case 'breeder':
-          return Users;
         case 'mating-dating-hub':
           return Heart;
         case 'sunset':
@@ -2337,24 +2338,24 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* Adoption Services — full section coming soon (not launched) */}
-        <div className="mb-6" aria-label="Adoption and Breeding — coming soon">
+        {/* Adoption — full section coming soon (not launched) */}
+        <div className="mb-6" aria-label="Adoption — coming soon">
           <div className="px-6 mb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Heart className="w-5 h-5 text-red-600 shrink-0" />
-                <h2 className="text-black font-semibold">Adoption & Breeding</h2>
+                <h2 className="text-black font-semibold">Adoption</h2>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full shrink-0">
                 Soon
               </span>
             </div>
             <p className="text-xs text-gray-600">
-              Coming soon — adoption, breeders, and rehoming when we launch. Find your perfect companion then.
+              Coming soon — adoption and rehoming when we launch. Find your perfect companion then.
             </p>
           </div>
           <div className="px-6 space-y-3 pointer-events-none select-none">
-            {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, certifiedBreeders: adoptionStats.certifiedBreeders, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
+            {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
               <div
                 key={index}
                 className="bg-gradient-to-r from-red-50/90 to-pink-50/90 rounded-2xl p-4 border border-red-100/90 flex items-center justify-between w-full text-left opacity-[0.92] grayscale-[0.08]"

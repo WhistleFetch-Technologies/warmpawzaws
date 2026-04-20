@@ -14,7 +14,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { 
@@ -41,7 +41,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import {
+  mergeCustomerFacilityPayload,
+  ratingFromFacilityRoot,
+  resolveVendorCoverImageUrl,
+  resolveVendorProfilePhotoUrl,
+} from '@/lib/vendor-display-media';
+import { HomeServiceType } from './UniversalHomeServiceRouter';
 
 interface ServiceConfig {
   roleId: string;
@@ -134,6 +140,8 @@ export function HomeServiceProviderProfile({
   const [isFavorite, setIsFavorite] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [avatarImageFailed, setAvatarImageFailed] = useState(false);
+  const [coverImageFailed, setCoverImageFailed] = useState(false);
 
   useEffect(() => {
     loadProviderDetails();
@@ -142,31 +150,63 @@ export function HomeServiceProviderProfile({
   const loadProviderDetails = async () => {
     try {
       setLoading(true);
+      setAvatarImageFailed(false);
+      setCoverImageFailed(false);
       console.log(`📍 [HOME-SERVICE-PROFILE] Loading vendor details for: ${vendorId}`);
 
-      let vendor: any = null;
-      
-      // Load vendor details using apiClient
+      let facilityRoot: Record<string, unknown> | null = null;
       try {
-        const data = await apiClient.get<{ facility?: any; vendor?: any }>(`/customer/facility/${vendorId}`);
-        vendor = data.facility || data.vendor || data;
-        console.log('📦 [HOME-SERVICE-PROFILE] Facility response:', vendor);
+        facilityRoot = (await apiClient.get(`/customer/facility/${vendorId}`)) as Record<string, unknown>;
       } catch (e) {
-        // Fallback to vendor endpoint
+        facilityRoot = null;
+        console.log('📦 [HOME-SERVICE-PROFILE] Facility request failed, will try /vendor/:id');
+      }
+
+      let merged: Record<string, unknown>;
+      let ratingMeta: { average?: number; count?: number } = {};
+
+      if (
+        facilityRoot &&
+        (facilityRoot as { success?: boolean }).success !== false &&
+        (facilityRoot.vendor || facilityRoot.facility)
+      ) {
+        merged = mergeCustomerFacilityPayload(facilityRoot);
+        ratingMeta = ratingFromFacilityRoot(facilityRoot);
+        console.log('📦 [HOME-SERVICE-PROFILE] Facility merged vendor row:', merged);
+      } else {
         try {
           const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
-          vendor = data.vendor || data;
-          console.log('📦 [HOME-SERVICE-PROFILE] Vendor fallback response:', vendor);
+          merged = (data.vendor || data) as Record<string, unknown>;
+          console.log('📦 [HOME-SERVICE-PROFILE] Vendor fallback response:', merged);
         } catch (e2) {
           console.error('❌ [HOME-SERVICE-PROFILE] Could not load vendor');
+          setLoading(false);
+          return;
         }
       }
 
-      if (!vendor) {
-        console.error('❌ [HOME-SERVICE-PROFILE] Could not load vendor');
-        setLoading(false);
-        return;
-      }
+      const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
+      const coverUrl = resolveVendorCoverImageUrl(merged);
+
+      const galleryFromFacility =
+        facilityRoot &&
+        typeof facilityRoot.facility === 'object' &&
+        facilityRoot.facility !== null &&
+        Array.isArray((facilityRoot.facility as { photos?: unknown }).photos)
+          ? ((facilityRoot.facility as { photos: string[] }).photos)
+          : [];
+
+      const galleryFallback = [
+        ...(Array.isArray(merged.gallery) ? merged.gallery : []),
+        ...(Array.isArray(merged.photos) ? merged.photos : []),
+      ].filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+      const gallery = galleryFromFacility.length > 0 ? galleryFromFacility : galleryFallback;
+
+      const latRaw = merged.latitude ?? merged.lat;
+      const lngRaw = merged.longitude ?? merged.lng;
+      const lat = latRaw != null && latRaw !== '' ? Number(latRaw) : NaN;
+      const lng = lngRaw != null && lngRaw !== '' ? Number(lngRaw) : NaN;
 
       // Load services (prefer customer endpoint so only published + vendor price)
       let services: any[] = [];
@@ -197,31 +237,69 @@ export function HomeServiceProviderProfile({
         console.log('No reviews found');
       }
 
+      const businessName =
+        (merged.businessName as string) ||
+        (merged.business_name as string) ||
+        (merged.name as string) ||
+        (merged.fullName as string) ||
+        'Provider';
+      const fullName = (merged.fullName as string) || (merged.owner_name as string) || (merged.ownerName as string) || '';
+
+      const ratingAvg =
+        ratingMeta.average ??
+        (typeof merged.rating === 'number' ? merged.rating : parseFloat(String(merged.rating || merged.avgRating || '')) || undefined) ??
+        4.5;
+
+      const rcMerge = merged.reviewCount;
+      const parsedRc =
+        typeof rcMerge === 'number' && !Number.isNaN(rcMerge)
+          ? rcMerge
+          : rcMerge != null && String(rcMerge).trim() !== ''
+            ? parseInt(String(rcMerge), 10)
+            : NaN;
+      const reviewCount =
+        ratingMeta.count != null && Number.isFinite(ratingMeta.count)
+          ? ratingMeta.count
+          : Number.isFinite(parsedRc)
+            ? parsedRc
+            : reviews.length;
+
+      const specs = merged.specializations;
+      const specFallback = merged.services;
+      const specializations: string[] = Array.isArray(specs)
+        ? (specs as string[])
+        : Array.isArray(specFallback)
+          ? (specFallback as string[])
+          : [];
+
       setProvider({
-        id: vendor.id || vendorId,
-        vendorId: vendor.vendorId || vendorId,
-        businessName: vendor.businessName || vendor.name || vendor.fullName,
-        fullName: vendor.fullName || vendor.name,
-        photo: vendor.photo || vendor.logo || vendor.profilePhoto,
-        logo: vendor.logo || vendor.photo,
-        coverImage: vendor.coverImage || vendor.banner || vendor.photo,
-        address: vendor.address || 'Address not specified',
-        phone: vendor.phone || '',
-        email: vendor.email || '',
-        website: vendor.website || '',
-        bio: vendor.bio || vendor.description || '',
-        description: vendor.description || vendor.bio || '',
-        rating: vendor.rating || vendor.avgRating || 4.5,
-        reviewCount: vendor.reviewCount || reviews.length || 0,
-        specializations: vendor.specializations || vendor.services || [],
-        amenities: vendor.amenities || [],
-        certifications: vendor.certifications || [],
-        experience: vendor.experience || vendor.yearsOfExperience || 0,
-        serviceCount: vendor.serviceCount || vendor.completedServices || 0,
-        isVerified: vendor.isVerified || vendor.verified || false,
-        operatingHours: vendor.operatingHours || vendor.hours || {},
-        coordinates: vendor.coordinates || { lat: 0, lng: 0 },
-        gallery: vendor.gallery || vendor.photos || [],
+        id: (merged.id as string) || vendorId,
+        vendorId: (merged.vendorId as string) || vendorId,
+        businessName,
+        fullName,
+        photo: profilePhotoUrl || '',
+        logo: (merged.logo as string) || (merged.logo_url as string) || profilePhotoUrl || '',
+        coverImage: coverUrl || '',
+        address:
+          (merged.address as string) ||
+          [merged.city, merged.state].filter(Boolean).join(', ') ||
+          'Address not specified',
+        phone: (merged.phone as string) || '',
+        email: (merged.email as string) || '',
+        website: (merged.website as string) || '',
+        bio: (merged.bio as string) || (merged.description as string) || '',
+        description: (merged.description as string) || (merged.bio as string) || '',
+        rating: Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 4.5,
+        reviewCount,
+        specializations,
+        amenities: (Array.isArray(merged.amenities) ? merged.amenities : []) as string[],
+        certifications: (Array.isArray(merged.certifications) ? merged.certifications : []) as string[],
+        experience: Number(merged.experience ?? merged.yearsOfExperience ?? merged.years_of_experience ?? 0),
+        serviceCount: Number(merged.serviceCount ?? merged.completedServices ?? merged.completed_bookings ?? 0),
+        isVerified: Boolean(merged.isVerified ?? merged.verified ?? merged.is_verified),
+        operatingHours: (merged.operatingHours || merged.operating_hours || merged.hours || {}) as ProviderDetails['operatingHours'],
+        coordinates: !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : { lat: 0, lng: 0 },
+        gallery,
         services: services,
         reviews: reviews
       });
@@ -297,59 +375,72 @@ export function HomeServiceProviderProfile({
     );
   }
 
+  const accentSoft: CSSProperties = {
+    backgroundColor: `color-mix(in srgb, ${config.primaryColor} 14%, white)`,
+  };
+  const accentFg: CSSProperties = { color: config.primaryColor };
+
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
       {/* Cover Image & Header */}
       <div className="relative">
         <div className="h-48 bg-gray-200 overflow-hidden">
-          {provider.coverImage ? (
+          {provider.coverImage && !coverImageFailed ? (
             <img
               src={provider.coverImage}
               alt={provider.businessName}
               className="w-full h-full object-cover"
+              onError={() => setCoverImageFailed(true)}
             />
           ) : (
             <div className={`w-full h-full bg-gradient-to-br ${config.bgGradient}`} />
           )}
         </div>
 
-        {/* Back & Action Buttons */}
-        <div className="absolute top-4 left-4 right-4 flex justify-between">
+        {/* Toolbar: safe-area so back/actions clear status bar (iOS / WebView) — matches UniversalProviderProfile */}
+        <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
           <button
+            type="button"
             onClick={onBack}
-            className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
+            className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md"
+            aria-label="Go back"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
+            <ArrowLeft className="h-5 w-5 text-gray-700" />
           </button>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2 pointer-events-auto">
             <button
+              type="button"
               onClick={toggleFavorite}
-              className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
+              className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-md"
+              aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
             >
-              <Heart 
-                className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} 
+              <Heart
+                className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`}
               />
             </button>
             <button
+              type="button"
               onClick={handleShare}
-              className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
+              className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-md"
+              aria-label="Share"
             >
-              <Share2 className="w-5 h-5 text-gray-700" />
+              <Share2 className="h-5 w-5 text-gray-700" />
             </button>
           </div>
         </div>
 
         {/* Profile Photo */}
-        <div className="absolute -bottom-12 left-4">
+        <div className="absolute -bottom-12 left-[max(1rem,env(safe-area-inset-left,0px))]">
           <div className="w-24 h-24 rounded-2xl border-4 border-white bg-white shadow-lg overflow-hidden">
-            {provider.photo ? (
+            {provider.photo && !avatarImageFailed ? (
               <img
                 src={provider.photo}
                 alt={provider.businessName}
                 className="w-full h-full object-cover"
+                onError={() => setAvatarImageFailed(true)}
               />
             ) : (
-              <div 
+              <div
                 className={`w-full h-full bg-gradient-to-br ${config.bgGradient} flex items-center justify-center text-white text-3xl`}
               >
                 {config.icon}
@@ -377,10 +468,10 @@ export function HomeServiceProviderProfile({
 
         {/* Rating & Stats */}
         <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-1 bg-green-50 px-2.5 py-1 rounded-full">
-            <Star className="w-4 h-4 text-green-600 fill-green-600" />
-            <span className="text-sm font-semibold text-green-700">{provider.rating.toFixed(1)}</span>
-            <span className="text-xs text-green-600">({provider.reviewCount})</span>
+          <div className="flex items-center gap-1 rounded-full px-2.5 py-1" style={accentSoft}>
+            <Star className="w-4 h-4 fill-current" style={accentFg} />
+            <span className="text-sm font-semibold" style={accentFg}>{provider.rating.toFixed(1)}</span>
+            <span className="text-xs opacity-90" style={accentFg}>({provider.reviewCount})</span>
           </div>
           {provider.experience > 0 && (
             <div className="flex items-center gap-1 text-sm text-gray-600">
@@ -400,7 +491,9 @@ export function HomeServiceProviderProfile({
         <div className="flex gap-2 mb-4">
           <button
             onClick={handleCall}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-50 text-green-600 font-medium"
+            type="button"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium"
+            style={{ ...accentSoft, ...accentFg }}
           >
             <Phone className="w-4 h-4" />
             Call
@@ -486,7 +579,7 @@ export function HomeServiceProviderProfile({
                 <div className="grid grid-cols-2 gap-2">
                   {provider.amenities.map((amenity, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      <div className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: config.primaryColor }} />
                       {amenity}
                     </div>
                   ))}
@@ -684,7 +777,7 @@ export function HomeServiceProviderProfile({
       </div>
 
       {/* Fixed Book Now Button – standard orange to match vet dashboard (forensic theme compliance) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-w-md mx-auto">
         <button
           onClick={onSelectService}
           className="w-full py-4 rounded-xl text-white font-semibold text-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] shadow-lg"
@@ -702,12 +795,16 @@ export function HomeServiceProviderProfile({
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black z-50 flex items-center justify-center"
           >
-            <button
-              onClick={() => setShowGallery(false)}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
-            >
-              <X className="w-6 h-6 text-white" />
-            </button>
+            <div className="absolute right-0 top-0 z-10 flex justify-end cw-header-safe-top cw-header-safe-x">
+              <button
+                type="button"
+                onClick={() => setShowGallery(false)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/20"
+                aria-label="Close gallery"
+              >
+                <X className="h-6 w-6 text-white" />
+              </button>
+            </div>
             <img
               src={selectedImage}
               alt="Gallery"

@@ -454,7 +454,7 @@ export function HomeServiceLanding({
                 <Package className="w-5 h-5 text-[#FF8C42]" />
                 <h2 className="text-lg font-semibold">Packages</h2>
               </div>
-              <Badge className="bg-green-100 text-green-700 border-none">Save more</Badge>
+              <Badge className="border-none bg-orange-100 text-orange-800">Save more</Badge>
             </div>
             <div className="space-y-3">
               {featuredPackages.slice(0, 3).map((pkg) => (
@@ -475,7 +475,7 @@ export function HomeServiceLanding({
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-[#FF8C42]">₹{pkg.price}</span>
                         {pkg.discount > 0 && (
-                          <Badge className="bg-green-500 text-white border-none text-xs">
+                          <Badge className="border-none bg-[#FF8C42] text-xs text-white">
                             -{pkg.discount}%
                           </Badge>
                         )}

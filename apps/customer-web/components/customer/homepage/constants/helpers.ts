@@ -98,7 +98,6 @@ export type AdoptionHomeNavMeta = Record<string, unknown>;
 
 export const adoptionOptions = (adoptionStats: {
   adoptablePets: string | number;
-  certifiedBreeders: string | number;
   rehomingListings: string | number;
 }) => {
   return [
@@ -108,13 +107,6 @@ export const adoptionOptions = (adoptionStats: {
       Icon: Heart,
       count: `${adoptionStats.adoptablePets}+ pets`,
       navMeta: { cta_link: '/adoption' } satisfies AdoptionHomeNavMeta,
-    },
-    {
-      title: 'Certified Breeders',
-      description: 'Ethical & verified breeders',
-      Icon: Star,
-      count: `${adoptionStats.certifiedBreeders}+ breeders`,
-      navMeta: { cta_link: '/breeder' } satisfies AdoptionHomeNavMeta,
     },
     {
       title: 'Pet Rehoming',
