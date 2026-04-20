@@ -39,6 +39,14 @@ async function customerWalletsColumnSetForRedeem(client: PoolClient): Promise<Se
   return new Set(r.rows.map((x) => x.column_name));
 }
 
+async function customerLoyaltyPointsColumnSet(client: PoolClient): Promise<Set<string>> {
+  const r = await client.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'customer_loyalty_points'`
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
 /** Active basic loyalty rule for point → wallet redeem (same rules as POST /loyalty/redeem). */
 async function loadActiveLoyaltyRedeemRule(): Promise<
   | { ok: true; rule: Record<string, any> }
@@ -133,11 +141,16 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
         [customerId, -pts, params.referenceType || null, params.referenceId || null, redeemDescription]
       );
 
-      await client.query(
-        `UPDATE customer_loyalty_points
-           SET total_points = COALESCE(total_points, 0) - $1,
+      const clpCols = await customerLoyaltyPointsColumnSet(client);
+      const clpSet =
+        clpCols.has('updated_at') ?
+          `SET total_points = COALESCE(total_points, 0) - $1,
                lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1,
-               updated_at = NOW()
+               updated_at = NOW()`
+        : `SET total_points = COALESCE(total_points, 0) - $1,
+               lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1`;
+      await client.query(
+        `UPDATE customer_loyalty_points ${clpSet}
            WHERE customer_id = $2::uuid`,
         [pts, customerId]
       );
@@ -210,12 +223,19 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
         insertParams as any[]
       );
 
-      await client
-        .query(
+      // Denormalized mirror on `customers` — MUST use SAVEPOINT: a failed UPDATE still aborts the
+      // whole txn in PostgreSQL even if Node swallows the promise; next SELECT would see
+      // "current transaction is aborted".
+      await client.query('SAVEPOINT sp_loyalty_redeem_cust_mirror');
+      try {
+        await client.query(
           `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
           [cashValue, customerId]
-        )
-        .catch(() => null);
+        );
+        await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_cust_mirror');
+      } catch {
+        await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_cust_mirror');
+      }
 
       const after = await client.query(
         `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid`,
