@@ -34,6 +34,38 @@ interface ReferralStats {
   referral_code: string;
 }
 
+/** Clipboard API + execCommand fallback (Android WebView / older Chrome). */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to execCommand
+  }
+  try {
+    if (typeof document === 'undefined') return false;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Android intent URLs are length-sensitive; keep extras under a safe budget. */
+const ANDROID_INTENT_TEXT_MAX = 4000;
+
 export function ReferralSystemPage(props: ReferralSystemPageProps) {
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,43 +106,47 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     }
   };
 
-  const copyReferralCode = () => {
-    if (stats?.referral_code) {
-      navigator.clipboard.writeText(stats.referral_code);
+  const copyReferralCode = async () => {
+    if (!stats?.referral_code) return;
+    const ok = await copyTextToClipboard(stats.referral_code);
+    if (ok) {
       setCopied(true);
       toast.success('Referral code copied!');
       setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error('Could not copy automatically. Long-press the code to copy it.');
     }
   };
 
   const shareReferral = async () => {
     if (!stats?.referral_code) return;
 
-    const referralLink = `${window.location.origin}/auth?ref=${stats.referral_code}`;
-    const shareText = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats.referral_code}`;
-    const combinedBody = `${shareText}\n${referralLink}`;
     const shareTitle = 'Join Warmpawz';
+    const combinedBody = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats.referral_code}\n${window.location.origin}/auth?ref=${encodeURIComponent(stats.referral_code)}`;
     const isAndroid = /Android/i.test(navigator.userAgent);
 
-    const openAndroidSendIntent = () => {
-      const intent =
-        'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
-        `S.android.intent.extra.TEXT=${encodeURIComponent(combinedBody)};` +
-        `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
-      window.location.href = intent;
-    };
-
-    const fallbackCopy = async () => {
-      await navigator.clipboard.writeText(combinedBody);
-      toast.success('Referral link copied to clipboard!');
+    const tryAndroidSendIntent = (): boolean => {
+      const textPayload =
+        combinedBody.length > ANDROID_INTENT_TEXT_MAX
+          ? `${combinedBody.slice(0, ANDROID_INTENT_TEXT_MAX - 20)}…`
+          : combinedBody;
+      try {
+        const intent =
+          'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
+          `S.android.intent.extra.TEXT=${encodeURIComponent(textPayload)};` +
+          `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
+        window.location.href = intent;
+        return true;
+      } catch {
+        return false;
+      }
     };
 
     if (typeof navigator.share === 'function') {
       try {
         await navigator.share({
           title: shareTitle,
-          text: shareText,
-          url: referralLink,
+          text: combinedBody,
         });
         return;
       } catch (err) {
@@ -118,12 +154,21 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
       }
     }
 
-    if (isAndroid) {
-      openAndroidSendIntent();
+    const copied = await copyTextToClipboard(combinedBody);
+    if (copied) {
+      toast.success('Referral message and link copied — paste into your chat or email.');
       return;
     }
 
-    await fallbackCopy();
+    if (isAndroid) {
+      tryAndroidSendIntent();
+      toast.info(
+        'If nothing opened to share, use Copy next to your code — you can paste the link from there.'
+      );
+      return;
+    }
+
+    toast.error('Could not share or copy. Use the copy button next to your referral code.');
   };
 
   if (!phone) {
