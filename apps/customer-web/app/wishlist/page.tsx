@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
+import {
+  goBackOrHome,
+  consumeWishlistOpenedFromShop,
+  clearShopBackIntent,
+} from '@/lib/go-back-or-replace';
 import {
   Heart,
   ShoppingCart,
@@ -302,7 +306,14 @@ export default function WishlistPage() {
             <button
               type="button"
               onClick={() => {
-                rememberShopBackFromCurrentUrl();
+                if (consumeWishlistOpenedFromShop()) {
+                  clearShopBackIntent();
+                  router.back();
+                  return;
+                }
+                // Keep `/wishlist` in the history stack so Shop → back → Wishlist → back → Home.
+                // Clear any pinned shop target (e.g. `/orders` → shop) so the header uses real `back()`.
+                clearShopBackIntent();
                 router.push('/shop');
               }}
               className="min-h-11 w-full max-w-xs mx-auto px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-md active:opacity-95"

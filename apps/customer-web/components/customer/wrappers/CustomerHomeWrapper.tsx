@@ -75,6 +75,7 @@ import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
   rememberPromotionsBackSpaScreen,
+  clearWishlistOpenedFromShopMark,
 } from '@/lib/go-back-or-replace';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
@@ -612,7 +613,10 @@ export function CustomerHomeWrapper({
     }
     else if (service === 'whats-new') router.push('/whats-new');
     else if (service === 'articles' || service === 'customer-articles') router.push('/articles');
-    else if (service === 'wishlist') router.push('/wishlist');
+    else if (service === 'wishlist') {
+      clearWishlistOpenedFromShopMark();
+      router.push('/wishlist');
+    }
     else if (service === 'home') {
       handleBack();
     } else {
