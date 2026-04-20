@@ -20,7 +20,12 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
+import {
+  isWarmpawzCustomerNativeWebView,
+  waitForWarmpawzNativeRazorpayResult,
+  WARMPAWZ_RAZORPAY_NATIVE_MSG,
+} from '@/lib/razorpay/native-webview-bridge';
 
 // Razorpay type declaration
 declare global {
@@ -86,14 +91,10 @@ interface UniversalPaymentPageProps {
 
   // Customer
   customerPhone: string;
-<<<<<<< dev-pranay
   /**
    * Used for Razorpay `prefill.email` via {@link buildSanitizedStandardRazorpayCheckoutOptions}.
    * Desktop checkout may still default to UPI QR per Razorpay/NPCI; email + E.164 contact is best-effort for collect/VPA where supported.
    */
-=======
-  /** When set, Razorpay prefill improves checkout; UPI layout no longer requires email (see Razorpay `config.display.blocks` below). */
->>>>>>> develop
   customerEmail?: string;
   customerId?: string;
 
@@ -489,7 +490,9 @@ export function UniversalPaymentPage({
 
   useEffect(() => {
     loadPaymentData();
-    loadRazorpayScript();
+    if (!isWarmpawzCustomerNativeWebView()) {
+      loadRazorpayScript();
+    }
     calculateTax();
     loadPromotions();
     loadRazorpayOffers();
@@ -771,6 +774,9 @@ export function UniversalPaymentPage({
 
   //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
   useEffect(() => {
+    if (isWarmpawzCustomerNativeWebView()) {
+      return;
+    }
     if (typeof window !== 'undefined' && !window.Razorpay) {
       console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
       loadRazorpayScript().catch((error) => {
@@ -2225,7 +2231,7 @@ export function UniversalPaymentPage({
       console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
 
       // ✅ FIX: Wait for Razorpay script to load before opening checkout
-      if (typeof window !== 'undefined' && !window.Razorpay) {
+      if (!isWarmpawzCustomerNativeWebView() && typeof window !== 'undefined' && !window.Razorpay) {
         console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
         try {
           await loadRazorpayScript();
@@ -2263,16 +2269,6 @@ export function UniversalPaymentPage({
         }
       }
 
-<<<<<<< dev-pranay
-=======
-      const prefillContact = razorpayPrefillContactE164(phoneDigits);
-      const razorpayPrefill: Record<string, string> = {};
-      if (prefillContact) razorpayPrefill.contact = prefillContact;
-      if (resolvedCheckoutEmail) razorpayPrefill.email = resolvedCheckoutEmail;
-      /** Prefer explicit UPI-first instrument layout whenever we have a valid E.164 contact (matches EnhancedPaymentPage). Requiring email left most users on default checkout → UPI QR on desktop/Android while iOS mobile web still showed collect. */
-      const preferUpiInstrumentLayout = Boolean(prefillContact);
-
->>>>>>> develop
       const rawOfferId = selectedRazorpayOffer?.id;
       const razorpayOfferIds =
         typeof rawOfferId === 'string' &&
@@ -2283,256 +2279,233 @@ export function UniversalPaymentPage({
           : [];
       const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
 
-      if (!resolvedCheckoutEmail) {
-        toast.info(
-          'Add an email to your profile for UPI ID (VPA) entry where Razorpay allows it. On desktop, UPI may show as QR without email.',
-          { duration: 6000 }
-        );
-      }
+      const processRazorpaySuccess = async (response: any) => {
+        try {
+          console.log('✅ [RAZORPAY] Payment response received:', {
+            order_id: response.razorpay_order_id,
+            payment_id: response.razorpay_payment_id,
+            has_signature: !!response.razorpay_signature,
+          });
 
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
-        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
-        amountPaise,
+          // ✅ Step 1: Verify payment with backend (with retry)
+          console.log('🔄 [RAZORPAY] Verifying payment...');
+          let verifyRes: any = null;
+          const MAX_VERIFY_RETRIES = 3;
+          for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
+            try {
+              verifyRes = await apiClient.post('/razorpay/verify-payment', {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }, undefined, 30000);
+              console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
+              break; // success – exit retry loop
+            } catch (verifyErr: any) {
+              console.error(`❌ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
+              if (attempt === MAX_VERIFY_RETRIES) {
+                // All retries exhausted – throw so outer catch can handle
+                throw verifyErr;
+              }
+              // Exponential backoff: 1s, 2s
+              await new Promise((r) => setTimeout(r, attempt * 1000));
+            }
+          }
+
+          // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
+          if (type === 'booking' && flowType === 'tele-instant') {
+            const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              vendorId,
+              customerId,
+              petId: effectivePetId ?? null,
+              serviceId: resolvedServiceId || serviceId,
+              amount: amountToCharge,
+              serviceName,
+              vendorName,
+              petName: effectivePetName,
+            });
+            const bid = instantRes?.bookingId;
+            if (!bid) {
+              throw new Error(instantRes?.error || 'Instant booking creation failed');
+            }
+            toast.success('Payment successful! Connecting to vet...');
+            setProcessing(false);
+            onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
+            return;
+          }
+
+          // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
+          if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
+            const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
+              bookingId: currentBookingId,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            if (!confirmRes?.success) {
+              throw new Error(confirmRes?.error || 'Payment confirmation failed');
+            }
+            toast.success('Payment successful! Connecting to vet...');
+            setProcessing(false);
+            onSuccess(currentBookingId, response.razorpay_order_id, undefined, { isInstantTele: true });
+            return;
+          }
+
+          // ✅ If booking creation was deferred, create booking now with payment info
+          if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
+            const createPayload = {
+              ...deferredBookingPayload,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpayOrderId: response.razorpay_order_id,
+            };
+            console.log('🔄 Creating booking after payment:', createPayload);
+            const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+            const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
+            if (!bookingIdValue) {
+              console.error('❌ No booking ID after payment:', bookingRes);
+              throw new Error('Payment succeeded but booking creation failed. Please contact support.');
+            }
+            currentBookingId = bookingIdValue;
+            bookingCreationDeferred = false;
+          }
+
+          // ✅ Step 2: Apply coupon if used
+          if (appliedCoupon) {
+            try {
+              await apiClient.post('/coupons/apply', {
+                couponCode: appliedCoupon.code,
+                bookingId: currentBookingId,
+                orderId: currentOrderId,
+                customerId,
+                amount: amountToCharge,
+              });
+              console.log('✅ [COUPON] Applied successfully');
+            } catch (couponErr) {
+              console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
+              // Don't block payment success if coupon fails
+            }
+          }
+
+          // ✅ Step 3: Apply promotion if used
+          if (appliedPromotion) {
+            try {
+              await apiClient.post('/promotions/apply', {
+                promotionId: appliedPromotion.id,
+                bookingId: currentBookingId,
+                orderId: currentOrderId,
+                customerId,
+                amount: amountToCharge,
+              });
+              console.log('✅ [PROMOTION] Applied successfully');
+            } catch (promoErr) {
+              console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
+              // Don't block payment success if promotion fails
+            }
+          }
+
+          // ✅ Step 4: Generate OTP for eligible bookings
+          let otpCode: string | undefined = undefined;
+          if (type === 'booking' && serviceStyle !== 'tele') {
+            try {
+              otpCode = await generateBookingOTP(currentBookingId || '', customerId);
+              console.log('✅ [OTP] Generated successfully');
+            } catch (otpErr) {
+              console.warn('⚠️ [OTP] Failed to generate:', otpErr);
+              // Don't block payment success if OTP fails
+            }
+          }
+
+          // ✅ Step 5: Success - booking is now confirmed
+          console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
+          toast.success('Payment successful! Booking confirmed.');
+          setProcessing(false);
+          onSuccess(currentBookingId || '', currentOrderId, otpCode);
+        } catch (err: any) {
+          console.error('❌ [PAYMENT] Verification failed:', err);
+          const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
+          toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
+          setProcessing(false);
+        }
+      };
+
+      const options = {
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: amountPaise,
         currency: 'INR',
         name: 'Warmpawz',
         description: paymentDescription,
         order_id: razorpayOrderId,
-        customerPhone: phoneDigits || customerPhone,
-        customerEmail: resolvedCheckoutEmail,
-        offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
-        includeInstrumentBlocks: true,
-        theme: { color: '#FF8C42' },
-        modal: {
-          ondismiss: () => {
-            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
-            setProcessing(false);
-            toast.info('Payment cancelled');
-          },
-        },
         handler: async (response: any) => {
-          try {
-            console.log('✅ [RAZORPAY] Payment response received:', {
-              order_id: response.razorpay_order_id,
-              payment_id: response.razorpay_payment_id,
-              has_signature: !!response.razorpay_signature,
-            });
-
-            // ✅ Step 1: Verify payment with backend (with retry)
-            console.log('🔄 [RAZORPAY] Verifying payment...');
-            let verifyRes: any = null;
-            const MAX_VERIFY_RETRIES = 3;
-            for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
-              try {
-                verifyRes = await apiClient.post('/razorpay/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                }, undefined, 30000);
-                console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
-                break; // success – exit retry loop
-              } catch (verifyErr: any) {
-                console.error(`❌ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
-                if (attempt === MAX_VERIFY_RETRIES) {
-                  // All retries exhausted – throw so outer catch can handle
-                  throw verifyErr;
-                }
-                // Exponential backoff: 1s, 2s
-                await new Promise((r) => setTimeout(r, attempt * 1000));
-              }
-            }
-
-            // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
-            if (type === 'booking' && flowType === 'tele-instant') {
-              const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                vendorId,
-                customerId,
-                petId: effectivePetId ?? null,
-                serviceId: resolvedServiceId || serviceId,
-                amount: amountToCharge,
-                serviceName,
-                vendorName,
-                petName: effectivePetName,
-              });
-              const bid = instantRes?.bookingId;
-              if (!bid) {
-                throw new Error(instantRes?.error || 'Instant booking creation failed');
-              }
-              toast.success('Payment successful! Connecting to vet...');
-              setProcessing(false);
-              onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
-              return;
-            }
-
-            // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
-            if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
-              const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
-                bookingId: currentBookingId,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              });
-              if (!confirmRes?.success) {
-                throw new Error(confirmRes?.error || 'Payment confirmation failed');
-              }
-              toast.success('Payment successful! Connecting to vet...');
-              setProcessing(false);
-              onSuccess(currentBookingId, response.razorpay_order_id, undefined, { isInstantTele: true });
-              return;
-            }
-
-            // ✅ If booking creation was deferred, create booking now with payment info
-            if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
-              const createPayload = {
-                ...deferredBookingPayload,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpayOrderId: response.razorpay_order_id,
-              };
-              console.log('🔄 Creating booking after payment:', createPayload);
-              const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
-              const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
-              if (!bookingIdValue) {
-                console.error('❌ No booking ID after payment:', bookingRes);
-                throw new Error('Payment succeeded but booking creation failed. Please contact support.');
-              }
-              currentBookingId = bookingIdValue;
-              bookingCreationDeferred = false;
-            }
-
-            // ✅ Step 2: Apply coupon if used
-            if (appliedCoupon) {
-              try {
-                await apiClient.post('/coupons/apply', {
-                  couponCode: appliedCoupon.code,
-                  bookingId: currentBookingId,
-                  orderId: currentOrderId,
-                  customerId,
-                  amount: amountToCharge,
-                });
-                console.log('✅ [COUPON] Applied successfully');
-              } catch (couponErr) {
-                console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
-                // Don't block payment success if coupon fails
-              }
-            }
-
-            // ✅ Step 3: Apply promotion if used
-            if (appliedPromotion) {
-              try {
-                await apiClient.post('/promotions/apply', {
-                  promotionId: appliedPromotion.id,
-                  bookingId: currentBookingId,
-                  orderId: currentOrderId,
-                  customerId,
-                  amount: amountToCharge,
-                });
-                console.log('✅ [PROMOTION] Applied successfully');
-              } catch (promoErr) {
-                console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
-                // Don't block payment success if promotion fails
-              }
-            }
-
-            // ✅ Step 4: Generate OTP for eligible bookings
-            let otpCode: string | undefined = undefined;
-            if (type === 'booking' && serviceStyle !== 'tele') {
-              try {
-                otpCode = await generateBookingOTP(currentBookingId || '', customerId);
-                console.log('✅ [OTP] Generated successfully');
-              } catch (otpErr) {
-                console.warn('⚠️ [OTP] Failed to generate:', otpErr);
-                // Don't block payment success if OTP fails
-              }
-            }
-
-            // ✅ Step 5: Success - booking is now confirmed
-            console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
-            toast.success('Payment successful! Booking confirmed.');
-            setProcessing(false);
-            onSuccess(currentBookingId || '', currentOrderId, otpCode);
-          } catch (err: any) {
-            console.error('❌ [PAYMENT] Verification failed:', err);
-            const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
-            toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
-            setProcessing(false);
-          }
+          await processRazorpaySuccess(response);
         },
-<<<<<<< dev-pranay
       });
-=======
-        ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-        ...(preferUpiInstrumentLayout
-          ? {
-              config: {
-                display: {
-                  blocks: {
-                    banks: {
-                      name: 'Pay using UPI/Cards',
-                      instruments: [
-                        { method: 'upi' },
-                        { method: 'card' },
-                        { method: 'netbanking' },
-                        { method: 'wallet' },
-                      ],
-                    },
-                  },
-                  sequence: ['block.banks'],
-                  preferences: {
-                    show_default_blocks: true,
-                  },
-                },
-              },
-            }
-          : {}),
-        theme: {
-          color: '#FF8C42',
-        },
-        ...(razorpayOfferIds.length > 0 ? { offers: razorpayOfferIds } : {}),
-        modal: {
-          ondismiss: () => {
-            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
-            setProcessing(false);
-            toast.info('Payment cancelled');
-          },
-        },
-      };
->>>>>>> develop
-
-      // ✅ FIX: Double-check Razorpay is available before opening
-      if (!window.Razorpay) {
-        console.error('❌ [PAYMENT] Razorpay not available after script load');
-        throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
-      }
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
         amount: amountToCharge,
-        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing'
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
+        nativeHost: isWarmpawzCustomerNativeWebView(),
       });
 
-      try {
-        const razorpay = new window.Razorpay(options);
-        // ✅ Listen for payment failures (these don't trigger the handler callback)
-        razorpay.on('payment.failed', (resp: any) => {
-          console.error('❌ [RAZORPAY] Payment failed event:', {
-            code: resp?.error?.code,
-            description: resp?.error?.description,
-            source: resp?.error?.source,
-            step: resp?.error?.step,
-            reason: resp?.error?.reason,
-            orderId: resp?.error?.metadata?.order_id,
-            paymentId: resp?.error?.metadata?.payment_id,
-          });
-          toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+      if (isWarmpawzCustomerNativeWebView()) {
+        const w = window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } };
+        const nativeOpenPayload: Record<string, unknown> = {
+          description: paymentDescription,
+          currency: 'INR',
+          key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+          amount: amountPaise,
+          name: 'Warmpawz',
+          order_id: razorpayOrderId,
+          ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
+          theme: { color: '#FF8C42' },
+        };
+        try {
+          const resultPromise = waitForWarmpawzNativeRazorpayResult();
+          w.ReactNativeWebView!.postMessage(
+            JSON.stringify({ type: WARMPAWZ_RAZORPAY_NATIVE_MSG.OPEN, payload: nativeOpenPayload })
+          );
+          const nativeResponse = await resultPromise;
+          await processRazorpaySuccess(nativeResponse);
+        } catch (nativeErr: any) {
+          const msg = nativeErr?.message || 'Payment cancelled';
+          if (msg === 'Payment cancelled' || msg.toLowerCase().includes('cancel')) {
+            toast.info('Payment cancelled');
+          } else {
+            toast.error(msg);
+          }
           setProcessing(false);
-        });
-        razorpay.open();
-        console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
-      } catch (openError: any) {
-        console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
-        throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
+        }
+      } else {
+        // ✅ FIX: Double-check Razorpay is available before opening (browser / PWA)
+        if (!window.Razorpay) {
+          console.error('❌ [PAYMENT] Razorpay not available after script load');
+          throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+        }
+
+        try {
+          const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
+          // ✅ Listen for payment failures (these don't trigger the handler callback)
+          razorpay.on('payment.failed', (resp: any) => {
+            console.error('❌ [RAZORPAY] Payment failed event:', {
+              code: resp?.error?.code,
+              description: resp?.error?.description,
+              source: resp?.error?.source,
+              step: resp?.error?.step,
+              reason: resp?.error?.reason,
+              orderId: resp?.error?.metadata?.order_id,
+              paymentId: resp?.error?.metadata?.payment_id,
+            });
+            toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+            setProcessing(false);
+          });
+          razorpay.open();
+          console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
+        } catch (openError: any) {
+          console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
+          throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
+        }
       }
 
     } catch (error: any) {

@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
@@ -30,7 +30,8 @@ import {
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { HomeServiceType } from './UniversalHomeServiceRouter';
 
 interface ServiceConfig {
   roleId: string;
@@ -69,6 +70,36 @@ interface Provider {
   experience: number;
   serviceCount: number;
   previouslyUsed?: boolean;
+}
+
+function ProviderListAvatar({
+  photoUrl,
+  businessName,
+  icon,
+  bgGradient,
+}: {
+  photoUrl: string;
+  businessName: string;
+  icon: string;
+  bgGradient: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [photoUrl]);
+  const show = Boolean(photoUrl && !failed);
+  return show ? (
+    <img
+      src={photoUrl}
+      alt={businessName}
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${bgGradient} text-3xl text-white`}>
+      {icon}
+    </div>
+  );
 }
 
 interface HomeServiceProviderListViewProps {
@@ -172,7 +203,13 @@ export function HomeServiceProviderListView({
             businessName: p.businessName || p.name || p.fullName,
             fullName: p.fullName ?? p.name ?? p.businessName,
             name: p.businessName || p.name || p.fullName || 'Provider',
-            photo: p.photoUrl || p.vendorProfileImage || p.photo || p.logo || '',
+            photo:
+              resolveVendorProfilePhotoUrl(p as Record<string, unknown>) ||
+              p.photoUrl ||
+              p.vendorProfileImage ||
+              p.photo ||
+              p.logo ||
+              '',
             logo: p.photoUrl || p.vendorProfileImage || p.logo || p.photo || '',
             address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
             phone: p.phone || '',
@@ -352,6 +389,11 @@ export function HomeServiceProviderListView({
     verifiedOnly
   ].filter(Boolean).length;
 
+  const accentSoft: CSSProperties = {
+    backgroundColor: `color-mix(in srgb, ${config.primaryColor} 14%, white)`,
+  };
+  const accentFg: CSSProperties = { color: config.primaryColor };
+
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
       {/* Header – standard orange to match vet dashboard (forensic theme compliance) */}
@@ -488,20 +530,13 @@ export function HomeServiceProviderListView({
                 <div className="flex gap-4">
                   {/* Provider Photo */}
                   <div className="relative">
-                    <div className="w-24 h-24 rounded-xl bg-gray-100 overflow-hidden">
-                      {provider.photo ? (
-                        <img
-                          src={provider.photo}
-                          alt={provider.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div 
-                          className={`w-full h-full bg-gradient-to-br ${config.bgGradient} flex items-center justify-center text-white text-3xl`}
-                        >
-                          {config.icon}
-                        </div>
-                      )}
+                    <div className="h-24 w-24 overflow-hidden rounded-xl bg-gray-100">
+                      <ProviderListAvatar
+                        photoUrl={provider.photo}
+                        businessName={provider.name}
+                        icon={config.icon}
+                        bgGradient={config.bgGradient}
+                      />
                     </div>
                     {provider.isVerified && (
                       <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
@@ -509,8 +544,11 @@ export function HomeServiceProviderListView({
                       </div>
                     )}
                     {provider.previouslyUsed && (
-                      <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 bg-green-500 rounded-full">
-                        <span className="text-[10px] text-white font-medium">Used</span>
+                      <div
+                        className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5"
+                        style={{ backgroundColor: config.primaryColor }}
+                      >
+                        <span className="text-[10px] font-medium text-white">Used</span>
                       </div>
                     )}
                   </div>
@@ -526,9 +564,9 @@ export function HomeServiceProviderListView({
 
                     {/* Rating & Reviews */}
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded-full">
-                        <Star className="w-3.5 h-3.5 text-green-600 fill-green-600" />
-                        <span className="text-sm font-medium text-green-700">
+                      <div className="flex items-center gap-1 rounded-full px-2 py-0.5" style={accentSoft}>
+                        <Star className="h-3.5 w-3.5 fill-current" style={accentFg} />
+                        <span className="text-sm font-medium" style={accentFg}>
                           {provider.rating.toFixed(1)}
                         </span>
                       </div>
