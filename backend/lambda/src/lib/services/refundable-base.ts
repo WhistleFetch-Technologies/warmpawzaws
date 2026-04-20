@@ -64,7 +64,11 @@ async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number
         ))`
     : 'FALSE';
 
-  const descMatch = `(transaction_type = 'debit' AND description = 'Payment for booking ' || $1::text)`;
+  // Exact match (legacy) or any "Payment for booking …" line that contains this booking id (e.g. idempotency suffix).
+  const descMatch = `(transaction_type = 'debit' AND (
+       description = 'Payment for booking ' || $1::text
+       OR (description ILIKE 'payment for booking%' AND description ILIKE '%' || $1::text || '%')
+     ))`;
 
   const whereCore = [bookingMatch, refMatch, descMatch].filter((s) => s !== 'FALSE').join(' OR ');
   if (!whereCore || whereCore === 'FALSE') {
@@ -190,19 +194,39 @@ export async function getRefundableCustomerPaidBreakdown(
  * Used so cancellation can refund wallet/Razorpay even when `bookings.payment_status` was not
  * updated yet (e.g. wallet debited, Razorpay still pending) or when the row uses `completed`.
  */
+/** Booking row values that imply money was taken (not only `paid` / `completed`). */
+function bookingPaymentStatusImpliesCapture(psRaw: string | null | undefined): boolean {
+  const ps = String(psRaw ?? '').toLowerCase().trim();
+  if (!ps) return false;
+  return (
+    ps === 'paid' ||
+    ps === 'completed' ||
+    ps === 'partial' ||
+    ps === 'processing' ||
+    ps === 'successful' ||
+    ps === 'succeeded' ||
+    ps === 'captured' ||
+    ps === 'capture_done'
+  );
+}
+
 export async function hasCustomerPaidCapture(
   bookingId: string,
   bookingRow?: BookingMoneySnapshot | null
 ): Promise<boolean> {
   if (!bookingId) return false;
   const row = bookingRow as BookingMoneySnapshot & { paymentStatus?: string | null } | null | undefined;
-  const ps = String(row?.payment_status ?? row?.paymentStatus ?? '').toLowerCase();
-  if (ps === 'paid' || ps === 'completed') return true;
+  const ps = row?.payment_status ?? row?.paymentStatus;
+  if (bookingPaymentStatusImpliesCapture(ps != null ? String(ps) : '')) return true;
   const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
   if (walletPaid > 0.009) return true;
   try {
     const payRes = await query(
-      `SELECT 1 FROM payments WHERE booking_id = $1::uuid AND payment_status = 'completed' LIMIT 1`,
+      `SELECT 1 FROM payments
+       WHERE booking_id = $1::uuid
+         AND payment_status IN ('completed', 'partially_refunded', 'processing', 'paid')
+         AND COALESCE(amount::numeric, 0) > 0.009
+       LIMIT 1`,
       [bookingId]
     );
     const pr = payRes as { rows?: unknown[] };
