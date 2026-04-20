@@ -25,11 +25,11 @@ import {
   parseChatBedrockCompletion,
   parseSymptomsBedrockCompletion,
   parseBookingAssistBedrockCompletion,
-} from '../utils/ai-chatbot-response-parse';
+} from '../utils/ai/ai-chatbot-response-parse';
 import { getCustomerCoordinates } from '../utils/customer-coordinates';
-import { lookupNearbyBookingVendors, type NearbyBookingVendorRow } from '../utils/ai-chatbot-nearby-vendors';
-import { roleFilterListForCategory } from '../utils/ai-chatbot-booking-roles';
-import { sqlAndVendorHasBookableV2Windows } from '../utils/ai-chatbot-vendor-has-schedule';
+import { lookupNearbyBookingVendors, type NearbyBookingVendorRow } from '../utils/ai/ai-chatbot-nearby-vendors';
+import { roleFilterListForCategory } from '../utils/ai/ai-chatbot-booking-roles';
+import { sqlAndVendorHasBookableV2Windows } from '../utils/ai/ai-chatbot-vendor-has-schedule';
 
 const GUARDRAIL_CHAT_FALLBACK =
   "I'm not able to respond to that in a way that meets our safety guidelines. Try rephrasing, or use **Contact support** for help.";

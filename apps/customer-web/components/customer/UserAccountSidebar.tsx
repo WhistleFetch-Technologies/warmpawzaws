@@ -7,7 +7,7 @@ import {
   MessageSquare, Heart, Settings, ChevronRight, Package,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
-  Trash2, Plus, Check, ArrowRight, Wallet, ShoppingBag,
+  Trash2, Plus, Check, Wallet, ShoppingBag,
   Gift, Users, Award, Smartphone, Building2
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
@@ -459,13 +459,12 @@ interface UserAccountSidebarProps {
   /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
   onNavigateHome?: () => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
-  onViewCustomerProfile?: () => void;
   onViewAppointments?: () => void;
   onViewWallet?: () => void;
   onNavigate?: (path: string) => void;
 }
 
-export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooking, onViewCustomerProfile, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
+export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooking, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'>('menu');
   
@@ -1581,20 +1580,8 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
           {/* Bookings View */}
           {activeView === 'bookings' && (
             <div className="p-5 pb-8">
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6">
                 <h3 className="text-2xl font-bold text-gray-800">My Bookings</h3>
-                {onViewCustomerProfile && (
-                  <button
-                    onClick={() => {
-                      onViewCustomerProfile();
-                      handleClose();
-                    }}
-                    className="text-sm text-[#FF8C42] hover:text-[#FF7029] font-medium flex items-center gap-1"
-                  >
-                    View Full History
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                )}
               </div>
               
               {/* Stats */}

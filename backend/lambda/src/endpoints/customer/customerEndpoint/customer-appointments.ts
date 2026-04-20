@@ -408,8 +408,11 @@ class CancelAppointmentHandler extends BaseHandler {
       const bookingPaidForRefund = await hasCustomerPaidCapture(String(bookingId), {
         total_amount: bookingRow.total_amount as number | string | null,
         discount_amount: (bookingRow as any).discount_amount ?? null,
-        payment_status: bookingRow.payment_status as string | null,
+        payment_status: (bookingRow as any).payment_status ?? (bookingRow as any).paymentStatus,
       });
+      const customerIdForRefund = String(
+        (bookingRow as any).customer_id ?? (bookingRow as any).customerId ?? customerId
+      );
       if (bookingPaidForRefund) {
         try {
           const preview = await previewCustomerCancellationRefund({
@@ -439,7 +442,7 @@ class CancelAppointmentHandler extends BaseHandler {
             if (refundMethod === 'wallet') {
               try {
                 await creditCustomerWalletForBookingRefund({
-                  customerId: bookingRow.customer_id,
+                  customerId: customerIdForRefund,
                   bookingId,
                   refundAmount,
                   refundPercentage,
@@ -454,12 +457,20 @@ class CancelAppointmentHandler extends BaseHandler {
                 };
               } catch (e) {
                 console.error('[appointments] wallet credit failed:', e);
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but wallet refund failed. Please contact support with your appointment ID.',
+                };
               }
             } else if (paymentId) {
               await query(
                 `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
                  VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
-                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`]
+                [paymentId, bookingId, customerIdForRefund, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`]
               ).catch(() => null);
               refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
             }

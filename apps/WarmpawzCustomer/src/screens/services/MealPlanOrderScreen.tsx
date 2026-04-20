@@ -19,6 +19,10 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
+import {
+  applyWarmpawzCustomerToRazorpayOptions,
+  profileEmailAndName,
+} from '../../utils/razorpay-checkout-options';
 
 interface MealPlanOrderScreenProps {
   vendorId: string;
@@ -238,8 +242,15 @@ export function MealPlanOrderScreen({
             throw new Error('Failed to create payment order');
           }
 
-          // Open Razorpay checkout
-          const options = {
+          let profile: any = null;
+          try {
+            profile = await CustomerApi.getCustomerByPhone(phone);
+          } catch {
+            /* non-fatal */
+          }
+          const { email: profileEmail, name: profileName } = profileEmailAndName(profile);
+
+          const baseOptions = {
             description: `Meal Plan Order - ${plan?.name}`,
             image: 'https://your-logo-url.com/logo.png',
             currency: 'INR',
@@ -247,13 +258,16 @@ export function MealPlanOrderScreen({
             amount: totalAmount * 100,
             name: 'Warmpawz',
             order_id: orderRes.order_id,
-            prefill: {
-              contact: phone,
-            },
             theme: {
               color: '#FF8C42',
             },
           };
+
+          const options = applyWarmpawzCustomerToRazorpayOptions(baseOptions, {
+            phone,
+            email: profileEmail,
+            name: profileName,
+          });
 
           const razorpayResponse = await RazorpayCheckout.open(options);
 

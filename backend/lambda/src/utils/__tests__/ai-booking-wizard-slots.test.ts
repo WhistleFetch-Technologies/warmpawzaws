@@ -3,7 +3,7 @@ import {
   isSlotTimeAvailable,
   normalizeSlotTime,
   parseSlotsSnapshotJson,
-} from '../ai-booking-wizard-slots';
+} from '../ai/ai-booking-wizard-slots';
 
 describe('ai-booking-wizard-slots', () => {
   it('normalizes slot times for comparison', () => {

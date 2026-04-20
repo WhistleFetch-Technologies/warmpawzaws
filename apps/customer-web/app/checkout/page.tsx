@@ -7,6 +7,10 @@ import {
   Truck, Shield, Tag, Plus, ChevronRight, AlertCircle, Package
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
@@ -126,8 +130,8 @@ export default function CheckoutPage() {
 
         // Load wallet balance
         try {
-          const walletData = await apiClient.get<{ balance?: number }>(`/wallet/${customerId}`);
-          setWalletBalance(walletData?.balance || 0);
+          const walletData = await apiClient.get<{ balance?: number | string }>(`/wallet/${customerId}`);
+          setWalletBalance(Number(walletData?.balance ?? 0) || 0);
         } catch (e) {
           console.warn('Could not load wallet');
         }
@@ -267,13 +271,22 @@ export default function CheckoutPage() {
         await loadRazorpayScript();
       }
 
-      const options = {
+      const selectedAddr = addresses.find((a) => a.id === selectedAddressId);
+      const checkoutEmail = selectedAddr?.phone
+        ? await fetchCheckoutEmailForPrefill(String(selectedAddr.phone))
+        : undefined;
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
         key: razorpayOrder.keyId,
-        amount: razorpayOrder.amount * 100, // in paise
+        amountPaise: Math.max(1, Math.round(Number(razorpayOrder.amount) * 100)),
         currency: razorpayOrder.currency || 'INR',
         name: 'Warmpawz',
         description: 'Order Payment',
         order_id: razorpayOrder.orderId,
+        customerPhone: selectedAddr?.phone,
+        customerEmail: checkoutEmail,
+        prefillName: selectedAddr?.fullName,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment
@@ -293,10 +306,6 @@ export default function CheckoutPage() {
             alert('Payment verification failed. Please contact support.');
           }
         },
-        prefill: {
-          name: addresses.find(a => a.id === selectedAddressId)?.fullName || '',
-          contact: addresses.find(a => a.id === selectedAddressId)?.phone || '',
-        },
         theme: {
           color: '#f97316', // orange-500
         },
@@ -305,7 +314,7 @@ export default function CheckoutPage() {
             setSubmitting(false);
           },
         },
-      };
+      });
 
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();

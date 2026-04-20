@@ -82,5 +82,7 @@ export const acceptBookingRequestSchema = z.object({
 export const rejectBookingRequestSchema = z.object({
     vendorId: uuidSchema,
     reason: safeStringSchema(2000).optional(),
+    /** Drives refund % from Admin → Finance → provider cancellation tiers (defaults to operational). */
+    vendorCancellationReason: z.enum(['emergency', 'operational', 'technical']).optional(),
 }).strict();
 

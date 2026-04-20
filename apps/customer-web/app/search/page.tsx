@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
 
@@ -26,7 +27,13 @@ function mapSearchApiToResults(response: any): SearchResult[] {
     id: v.id,
     type: 'vendor' as const,
     name: v.businessName ?? v.business_name ?? '',
-    category: v.category ?? '',
+    category:
+      v.category ??
+      v.roleId ??
+      v.role_id ??
+      v.serviceType ??
+      v.service_type ??
+      '',
     rating: parseFloat(v.rating ?? v.avg_rating) || 0,
     reviewCount: v.review_count ?? v.completedBookings ?? 0,
     city: v.city ?? '',
@@ -37,7 +44,7 @@ function mapSearchApiToResults(response: any): SearchResult[] {
     id: s.id,
     type: 'service' as const,
     name: s.serviceName ?? s.service_name ?? '',
-    category: s.category ?? '',
+    category: s.category ?? s.serviceType ?? s.service_type ?? '',
     rating: 0,
     reviewCount: 0,
     city: s.city ?? '',
@@ -84,7 +91,8 @@ function SearchContent() {
 
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState(initialCategory);
-  const [results, setResults] = useState<SearchResult[]>([]);
+  /** Last successful API payload (keyword search = full “All” list; hub-only = category browse). */
+  const [apiResults, setApiResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
@@ -92,14 +100,32 @@ function SearchContent() {
   /** Bumps on explicit Search submit / Try again so the same query refetches. */
   const [searchNonce, setSearchNonce] = useState(0);
 
-  /** Refetch when query and/or category changes — always send both to API when set (hub + keyword). */
-  const fetchKey = useMemo(() => {
-    if (vendorIdParam) return '';
+  const categoryRef = React.useRef(category);
+  const queryRef = React.useRef(query);
+  const apiResultsRef = React.useRef(apiResults);
+  categoryRef.current = category;
+  queryRef.current = query;
+  apiResultsRef.current = apiResults;
+
+  /**
+   * Keyword present → fetch GET /search?q=… only (no category); hub chips filter client-side.
+   * No keyword but hub selected → fetch GET /search?category=… (browse-by-hub).
+   */
+  const searchFetchTrigger = useMemo(() => {
+    if (vendorIdParam) return null;
     const q = (query || '').trim();
     const c = (category || '').trim();
-    if (!q && !c) return '';
-    return JSON.stringify({ q, c });
-  }, [query, category, vendorIdParam]);
+    if (q) return { kind: 'keyword' as const, q, n: searchNonce };
+    if (c) return { kind: 'hub' as const, c, n: searchNonce };
+    return null;
+  }, [query, category, vendorIdParam, searchNonce]);
+
+  const displayedResults = useMemo(() => {
+    const q = (query || '').trim();
+    const hub = (category || '').trim();
+    if (!q) return apiResults;
+    return applyHubCategoryFilter(apiResults, hub, q);
+  }, [apiResults, query, category]);
 
   const categories = [
     { id: '', label: 'All', icon: '🔍' },
@@ -124,8 +150,8 @@ function SearchContent() {
 
   useEffect(() => {
     if (vendorIdParam) return;
-    if (!fetchKey) {
-      setResults([]);
+    if (!searchFetchTrigger) {
+      setApiResults([]);
       setError(null);
       return;
     }
@@ -134,30 +160,40 @@ function SearchContent() {
       setLoading(true);
       setError(null);
       try {
-        let parsed: { q: string; c: string };
-        try {
-          parsed = JSON.parse(fetchKey) as { q: string; c: string };
-        } catch {
-          parsed = { q: '', c: '' };
-        }
         const params = new URLSearchParams();
-        if (parsed.q) params.set('q', parsed.q);
-        if (parsed.c) params.set('category', parsed.c);
+        if (searchFetchTrigger.kind === 'keyword') {
+          params.set('q', searchFetchTrigger.q);
+          params.set('limit', '50');
+        } else {
+          params.set('category', searchFetchTrigger.c);
+        }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
         const mapped = mapSearchApiToResults(response);
-        setResults(mapped);
-        saveSearchContext({
-          query: parsed.q || '',
-          category: parsed.c || undefined,
-          results: mapped,
-          timestamp: Date.now(),
-        });
+        setApiResults(mapped);
+        if (searchFetchTrigger.kind === 'keyword') {
+          const qStr = searchFetchTrigger.q;
+          const hub = categoryRef.current.trim();
+          const contextResults = hub ? applyHubCategoryFilter(mapped, hub, qStr) : mapped;
+          saveSearchContext({
+            query: qStr,
+            category: hub || undefined,
+            results: contextResults,
+            timestamp: Date.now(),
+          });
+        } else {
+          saveSearchContext({
+            query: '',
+            category: searchFetchTrigger.c,
+            results: mapped,
+            timestamp: Date.now(),
+          });
+        }
       } catch (err: any) {
         if (!cancelled) {
           console.error('Search error:', err);
           setError(err.message || 'Search failed');
-          setResults([]);
+          setApiResults([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -166,7 +202,22 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [fetchKey, vendorIdParam, searchNonce]);
+  }, [searchFetchTrigger, vendorIdParam]);
+
+  /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
+  useEffect(() => {
+    if (vendorIdParam) return;
+    const q = queryRef.current.trim();
+    if (!q || !apiResultsRef.current.length) return;
+    const hub = category.trim();
+    const filtered = hub ? applyHubCategoryFilter(apiResultsRef.current, hub, q) : apiResultsRef.current;
+    saveSearchContext({
+      query: q,
+      category: hub || undefined,
+      results: filtered,
+      timestamp: Date.now(),
+    });
+  }, [category, vendorIdParam]);
 
   const loadVendorServices = async (vendorId: string) => {
     try {
@@ -369,7 +420,7 @@ function SearchContent() {
               Try Again
             </button>
           </div>
-        ) : results.length === 0 ? (
+        ) : displayedResults.length === 0 ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center px-2 py-10 text-center">
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
               <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
@@ -381,7 +432,7 @@ function SearchContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
-            {results.map((result) => (
+            {displayedResults.map((result) => (
               <a
                 key={`${result.type}-${result.id}`}
                 href={result.type === 'service' ? `/booking/${result.id}` : `/search?vendorId=${result.id}`}

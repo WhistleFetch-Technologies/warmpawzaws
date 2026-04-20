@@ -43,7 +43,30 @@ export type ProviderCancelRefundInfo = {
   method: string;
   status: string;
   message: string;
+  /** Present after a successful wallet credit (for support / debugging). */
+  walletBalanceAfter?: number;
+  /** True when refund row already existed (idempotent). */
+  alreadyCredited?: boolean;
 };
+
+/** PG rows are snake_case; some API layers use camelCase — normalize so refund math and wallet credit always see the same fields. */
+function normalizeBookingRowForRefund(row: Record<string, any>): Record<string, any> {
+  if (!row || typeof row !== 'object') return row;
+  return {
+    ...row,
+    customer_id: row.customer_id ?? row.customerId,
+    vendor_id: row.vendor_id ?? row.vendorId,
+    service_id: row.service_id ?? row.serviceId,
+    total_amount: row.total_amount ?? row.totalAmount,
+    discount_amount: row.discount_amount ?? row.discountAmount ?? null,
+    payment_status: row.payment_status ?? row.paymentStatus,
+    booking_date: row.booking_date ?? row.bookingDate,
+    booking_time: row.booking_time ?? row.bookingTime,
+    booking_datetime: row.booking_datetime ?? row.bookingDatetime ?? null,
+    scheduled_at: row.scheduled_at ?? row.scheduledAt ?? null,
+    service_type: row.service_type ?? row.serviceType,
+  };
+}
 
 function rowToBookingForPolicy(bookingRow: Record<string, any>): BookingForPolicy {
   return {
@@ -70,17 +93,23 @@ export async function applyRefundAfterProviderCancellation(
   options?: { refundMethod?: 'wallet' | 'original' }
 ): Promise<ProviderCancelRefundInfo | null> {
   const refundMethod = options?.refundMethod ?? 'wallet';
-  const bookingId = String(bookingRow.id);
+  const row = normalizeBookingRowForRefund(bookingRow);
+  const bookingId = String(row.id);
   const hasPaid = await hasCustomerPaidCapture(bookingId, {
-    total_amount: bookingRow.total_amount,
-    discount_amount: bookingRow.discount_amount,
-    payment_status: bookingRow.payment_status,
+    total_amount: row.total_amount,
+    discount_amount: row.discount_amount,
+    payment_status: row.payment_status,
   });
   if (!hasPaid) {
+    console.warn('[provider-cancel-refund] skipped — no paid capture for booking', {
+      bookingId,
+      payment_status: row.payment_status,
+      hint: 'Expect bookings.payment_status paid/completed, a completed payments row, or wallet debits for this booking_id',
+    });
     return null;
   }
 
-  const bookingForPolicy = rowToBookingForPolicy(bookingRow);
+  const bookingForPolicy = rowToBookingForPolicy(row);
 
   try {
     const preview = await previewProviderCancellationRefund(bookingForPolicy, vendorCancellationReason);
@@ -108,10 +137,11 @@ export async function applyRefundAfterProviderCancellation(
     ).catch(() => ({ rows: [] as { id: string }[] }));
     const paymentId = (payments as any).rows?.[0]?.id;
 
-    if (refundMethod === 'wallet' && bookingRow.customer_id) {
+    const customerIdForWallet = row.customer_id ? String(row.customer_id) : '';
+    if (refundMethod === 'wallet' && customerIdForWallet) {
       try {
-        await creditCustomerWalletForBookingRefund({
-          customerId: String(bookingRow.customer_id),
+        const credit = await creditCustomerWalletForBookingRefund({
+          customerId: customerIdForWallet,
           bookingId,
           refundAmount,
           refundPercentage,
@@ -123,11 +153,19 @@ export async function applyRefundAfterProviderCancellation(
           method: 'wallet',
           status: 'completed',
           message: `₹${refundAmount.toFixed(2)} credited to customer wallet (${refundPercentage}% per policy).`,
+          walletBalanceAfter: credit.newBalance,
+          alreadyCredited: credit.alreadyCredited === true,
         };
       } catch (e) {
         console.error('[provider-cancel-refund] wallet credit failed:', e);
         return null;
       }
+    }
+
+    if (refundMethod === 'wallet' && !customerIdForWallet) {
+      console.warn('[provider-cancel-refund] wallet requested but booking has no customer_id — falling back to original-method path if payment exists', {
+        bookingId,
+      });
     }
 
     if (paymentId) {
@@ -146,8 +184,8 @@ export async function applyRefundAfterProviderCancellation(
         [
           paymentId,
           bookingId,
-          bookingRow.customer_id,
-          bookingRow.vendor_id || null,
+          row.customer_id,
+          row.vendor_id || null,
           refundAmount,
           `${refundReasonSummary} (${refundPercentage}% refund)`,
         ]

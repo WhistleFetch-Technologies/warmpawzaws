@@ -19,6 +19,10 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
+import {
+  applyWarmpawzCustomerToRazorpayOptions,
+  profileEmailAndName,
+} from '../../utils/razorpay-checkout-options';
 
 type ViewType = 
   | 'landing'
@@ -218,6 +222,7 @@ export function ResortServicesScreen({
       // Get customer ID
       const customer = await CustomerApi.getCustomerByPhone(phone);
       const customerId = customer?.id;
+      const { email: profileEmail, name: profileName } = profileEmailAndName(customer);
 
       if (!customerId) {
         Alert.alert('Error', 'Customer not found. Please try again.');
@@ -270,8 +275,7 @@ export function ResortServicesScreen({
             throw new Error('Failed to create payment order');
           }
 
-          // Open Razorpay checkout
-          const options = {
+          const baseOptions = {
             description: `Pet Resort Booking - ${nights} night${nights > 1 ? 's' : ''} stay`,
             image: 'https://your-logo-url.com/logo.png',
             currency: 'INR',
@@ -279,13 +283,16 @@ export function ResortServicesScreen({
             amount: totalPrice * 100, // Convert to paise
             name: 'Warmpawz',
             order_id: orderRes.order_id,
-            prefill: {
-              contact: phone,
-            },
             theme: {
               color: '#FF8C42',
             },
           };
+
+          const options = applyWarmpawzCustomerToRazorpayOptions(baseOptions, {
+            phone,
+            email: profileEmail,
+            name: profileName,
+          });
 
           const razorpayResponse = await RazorpayCheckout.open(options);
 

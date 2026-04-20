@@ -4,6 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { X, Camera, Upload, MapPin, Plus, ArrowLeft } from 'lucide-react';
@@ -796,14 +800,17 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         }
       }
 
-      // Open Razorpay checkout - use the extracted razorpayOrderId variable
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToPay * 100,
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amountToPay) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `Booking: ${service.name}`,
         order_id: razorpayOrderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             console.log('✅ [RAZORPAY] Payment response received:', {
@@ -837,9 +844,6 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             alert(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#F97316', // Orange primary color
         },
@@ -849,7 +853,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             setProcessing(false);
           },
         },
-      };
+      });
       
       // ✅ FIX: Double-check Razorpay is available before opening
       if (!window.Razorpay) {

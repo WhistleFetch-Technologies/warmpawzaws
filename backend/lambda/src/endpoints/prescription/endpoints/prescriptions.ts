@@ -15,6 +15,7 @@
  * ============================================================================
  */
 
+import { createHmac, timingSafeEqual } from 'crypto';
 import { Hono } from 'hono';
 import { select, insert, query, update } from '../../../database/rds-connection';
 import { checkVendorCapability } from '../../../middleware/capability-enforcement';
@@ -27,6 +28,56 @@ import {
   type PrescriptionData,
 } from '../../../lib/services/prescription-service';
 import { prescriptionOCRService } from '../../../lib/services/prescription-ocr-service';
+import { extractAndVerifyAuthToken } from '../../../utils/jwt-verification';
+
+function prescriptionShareSecret(): string {
+  return (
+    process.env.PRESCRIPTION_SHARE_SECRET ||
+    process.env.PROD_JWT_SECRET ||
+    process.env.JWT_SECRET ||
+    process.env.UAT_JWT_SECRET ||
+    'warmpawz-dev-prescription-share-secret'
+  );
+}
+
+function digitsOnly(p: string | undefined | null): string {
+  return String(p || '').replace(/\D/g, '');
+}
+
+function phoneVariants(phone: string | undefined | null): string[] {
+  const d = digitsOnly(phone);
+  const set = new Set<string>();
+  if (!d) return [];
+  set.add(d);
+  if (d.length === 10) set.add(`91${d}`);
+  if (d.length >= 12 && d.startsWith('91')) set.add(d.slice(-10));
+  if (d.length >= 10) set.add(d.slice(-10));
+  return [...set];
+}
+
+function phonesMatch(a: string | undefined, b: string | undefined): boolean {
+  const va = phoneVariants(a);
+  const vb = phoneVariants(b);
+  return va.some((x) => vb.includes(x));
+}
+
+function signPrescriptionShare(prescriptionId: string, expMs: number): string {
+  const payload = `${prescriptionId}|${expMs}`;
+  return createHmac('sha256', prescriptionShareSecret()).update(payload).digest('hex');
+}
+
+function verifyPrescriptionShare(prescriptionId: string, expMs: number, sig: string): boolean {
+  if (!sig || !Number.isFinite(expMs) || Date.now() > expMs) return false;
+  const expected = signPrescriptionShare(prescriptionId, expMs);
+  try {
+    const a = Buffer.from(expected, 'hex');
+    const b = Buffer.from(String(sig).trim(), 'hex');
+    if (a.length !== b.length || a.length === 0) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
 
 export function registerPrescriptionEndpoints(app: Hono) {
   /**
@@ -464,6 +515,144 @@ export function registerPrescriptionEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error deleting prescription:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /prescriptions/:prescriptionId/mint-share-token
+   * Authenticated vendor (phone matches prescribing vendor) gets exp + sig for public customer view URL.
+   */
+  app.post('/prescriptions/:prescriptionId/mint-share-token', async (c) => {
+    try {
+      const { prescriptionId } = c.req.param();
+      const auth = await extractAndVerifyAuthToken({
+        authorization: c.req.header('authorization') || c.req.header('Authorization'),
+      });
+      if (!auth.valid || !auth.payload) {
+        return c.json({ success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' }, 401);
+      }
+
+      const rows = await query(
+        `SELECT p.id, p.vendor_id, p.staff_id, p.status, v.phone as vendor_phone, st.phone as staff_phone
+         FROM prescriptions p
+         JOIN vendors v ON v.id = p.vendor_id
+         LEFT JOIN staff st ON st.id = p.staff_id
+         WHERE p.id = $1`,
+        [prescriptionId]
+      );
+      if (rows.rows.length === 0) {
+        return c.json({ success: false, error: 'Prescription not found' }, 404);
+      }
+      const row = rows.rows[0] as any;
+      const status = String(row.status || '').toLowerCase();
+      if (status === 'draft') {
+        return c.json({ success: false, error: 'Publish the prescription before sharing a public link.' }, 400);
+      }
+
+      const tokenPhone = auth.payload.phone_number || auth.payload['cognito:username'];
+      const vendorMatch = phonesMatch(tokenPhone, row.vendor_phone);
+      const staffMatch = row.staff_phone && phonesMatch(tokenPhone, row.staff_phone);
+      if (!vendorMatch && !staffMatch) {
+        return c.json({ success: false, error: 'Not authorized to share this prescription' }, 403);
+      }
+
+      const ttlMs = 90 * 24 * 60 * 60 * 1000;
+      const expMs = Date.now() + ttlMs;
+      const sig = signPrescriptionShare(prescriptionId, expMs);
+
+      return c.json({
+        success: true,
+        exp: expMs,
+        sig,
+      });
+    } catch (error: any) {
+      console.error('[prescriptions] mint-share-token:', error);
+      return c.json({ success: false, error: error.message || 'Failed to mint share token' }, 500);
+    }
+  });
+
+  /**
+   * GET /prescriptions/share/:prescriptionId?exp=&sig=
+   * Public read-only access for customer web "view prescription" (signed link).
+   */
+  app.get('/prescriptions/share/:prescriptionId', async (c) => {
+    try {
+      const { prescriptionId } = c.req.param();
+      const expRaw = c.req.query('exp');
+      const sig = c.req.query('sig') || '';
+      const expMs = expRaw ? parseInt(String(expRaw), 10) : NaN;
+
+      if (!verifyPrescriptionShare(prescriptionId, expMs, sig)) {
+        return c.json({ success: false, error: 'Invalid or expired link' }, 403);
+      }
+
+      const result = await query(
+        `SELECT p.*, 
+                pet.name as pet_name, 
+                pet.species as pet_species, 
+                pet.breed as pet_breed,
+                pet.age_years as pet_age_years,
+                pet.age_months as pet_age_months,
+                pet.gender as pet_gender,
+                pet.weight_kg as pet_weight_kg,
+                c.full_name as customer_name, 
+                c.phone as customer_phone,
+                v.business_name as vendor_name,
+                v.owner_name as vendor_owner_name,
+                v.phone as vendor_phone,
+                v.email as vendor_email,
+                v.address as vendor_address,
+                v.city as vendor_city,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.metadata as vendor_metadata,
+                s.name as staff_name,
+                b.booking_date, b.booking_time
+         FROM prescriptions p
+         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN customers c ON p.customer_id = c.id
+         LEFT JOIN vendors v ON p.vendor_id = v.id
+         LEFT JOIN staff s ON p.staff_id = s.id
+         LEFT JOIN bookings b ON p.booking_id = b.id
+         WHERE p.id = $1`,
+        [prescriptionId]
+      );
+
+      if (result.rows.length === 0) {
+        return c.json({ success: false, error: 'Prescription not found' }, 404);
+      }
+
+      let prescription = result.rows[0] as any;
+      const st = String(prescription.status || '').toLowerCase();
+      if (st === 'draft') {
+        return c.json({ success: false, error: 'Prescription not available' }, 403);
+      }
+
+      if (prescription.vendor_metadata) {
+        try {
+          const metadata =
+            typeof prescription.vendor_metadata === 'string'
+              ? JSON.parse(prescription.vendor_metadata)
+              : prescription.vendor_metadata;
+          prescription = {
+            ...prescription,
+            license_number: metadata.vetLicense || metadata.licenseNumber || metadata.vet_license,
+            vci_registration: metadata.vciRegistrationNumber || metadata.vci_registration,
+            qualification: metadata.qualification || metadata.degree,
+            specialization: metadata.specialization || metadata.specialty,
+          };
+        } catch {
+          /* ignore */
+        }
+      }
+
+      return c.json({
+        success: true,
+        prescription,
+      });
+    } catch (error: any) {
+      console.error('[prescriptions] public share view:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 

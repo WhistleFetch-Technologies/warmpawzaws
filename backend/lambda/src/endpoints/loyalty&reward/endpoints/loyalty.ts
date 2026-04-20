@@ -189,8 +189,11 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
            WHERE customer_id = $2::uuid RETURNING id, balance::text`,
         [cashValue, customerId]
       );
-      const walletRow = wup.rows[0] as { id: string; balance: string };
-      const newBal = parseFloat(String(walletRow?.balance ?? '0')) || 0;
+      const walletRow = wup.rows[0] as { id: string; balance: string } | undefined;
+      if (!walletRow?.id) {
+        throw new Error('customer_wallets balance update returned no row during loyalty redeem');
+      }
+      const newBal = parseFloat(String(walletRow.balance ?? '0')) || 0;
 
       const wtxnDesc = `Loyalty redeem: ${pts} points → ₹${cashValue.toFixed(2)} (${rr} pts = ₹1)`;
       const wtCols = await walletTransactionsColumnSet(client);
@@ -201,27 +204,73 @@ export async function executeLoyaltyRedeemPointsToWallet(params: {
         throw new Error('wallet_transactions has neither wallet_id nor customer_id');
       }
 
-      const insertCols: string[] = [];
-      const insertParams: unknown[] = [];
-      if (hasWtWalletId) {
-        insertCols.push('wallet_id');
-        insertParams.push(walletRow.id);
+      const buildWtInsert = (includeSource: boolean) => {
+        const insertCols: string[] = [];
+        const insertParams: unknown[] = [];
+        if (hasWtWalletId) {
+          insertCols.push('wallet_id');
+          insertParams.push(walletRow.id);
+        }
+        if (hasWtCustomerId) {
+          insertCols.push('customer_id');
+          insertParams.push(customerId);
+        }
+        insertCols.push('transaction_type', 'amount', 'balance_after', 'description');
+        insertParams.push('credit', cashValue, newBal, wtxnDesc);
+        if (includeSource && hasWtSource) {
+          insertCols.push('source');
+          insertParams.push('loyalty_redeem');
+        }
+        return { insertCols, insertParams };
+      };
+
+      await client.query('SAVEPOINT sp_loyalty_redeem_wt');
+      try {
+        let built = buildWtInsert(true);
+        let ph = built.insertCols.map((_, i) => `$${i + 1}`).join(', ');
+        try {
+          await client.query(
+            `INSERT INTO wallet_transactions (${built.insertCols.join(', ')}) VALUES (${ph})`,
+            built.insertParams as any[]
+          );
+        } catch (firstErr: any) {
+          const m = String(firstErr?.message || '');
+          if (hasWtSource && (m.includes('source') || m.includes('column'))) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
+            built = buildWtInsert(false);
+            ph = built.insertCols.map((_, i) => `$${i + 1}`).join(', ');
+            await client.query(
+              `INSERT INTO wallet_transactions (${built.insertCols.join(', ')}) VALUES (${ph})`,
+              built.insertParams as any[]
+            );
+          } else if (
+            hasWtWalletId &&
+            hasWtCustomerId &&
+            (m.includes('wallet_id') || m.includes('customer_id') || m.includes('null value'))
+          ) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
+            const fallbackCols: string[] = [];
+            const fallbackParams: unknown[] = [];
+            if (hasWtWalletId) {
+              fallbackCols.push('wallet_id');
+              fallbackParams.push(walletRow.id);
+            }
+            fallbackCols.push('transaction_type', 'amount', 'balance_after', 'description');
+            fallbackParams.push('credit', cashValue, newBal, wtxnDesc);
+            const fph = fallbackCols.map((_, i) => `$${i + 1}`).join(', ');
+            await client.query(
+              `INSERT INTO wallet_transactions (${fallbackCols.join(', ')}) VALUES (${fph})`,
+              fallbackParams as any[]
+            );
+          } else {
+            throw firstErr;
+          }
+        }
+        await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_wt');
+      } catch (wtErr: any) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
+        throw wtErr;
       }
-      if (hasWtCustomerId) {
-        insertCols.push('customer_id');
-        insertParams.push(customerId);
-      }
-      insertCols.push('transaction_type', 'amount', 'balance_after', 'description');
-      insertParams.push('credit', cashValue, newBal, wtxnDesc);
-      if (hasWtSource) {
-        insertCols.push('source');
-        insertParams.push('loyalty_redeem');
-      }
-      const ph = insertCols.map((_, i) => `$${i + 1}`).join(', ');
-      await client.query(
-        `INSERT INTO wallet_transactions (${insertCols.join(', ')}) VALUES (${ph})`,
-        insertParams as any[]
-      );
 
       // Denormalized mirror on `customers` — MUST use SAVEPOINT: a failed UPDATE still aborts the
       // whole txn in PostgreSQL even if Node swallows the promise; next SELECT would see

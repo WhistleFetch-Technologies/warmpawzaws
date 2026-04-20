@@ -15,7 +15,14 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, update, query, insert } from '../../../database/rds-connection';
+import { logBookingStatusChange } from '../../../utils/audit-log';
+import {
+  parseVendorCancellationReason,
+  vendorCancellationReasonLabel,
+  applyRefundAfterProviderCancellation,
+} from '../../../lib/services/provider-booking-cancel-refund';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
@@ -1631,8 +1638,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
   app.post("/vendor/bookings/:bookingId/reject", validateBody(rejectBookingRequestSchema), async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { vendorId, reason } = (c as any).get('validatedBody') as z.infer<typeof rejectBookingRequestSchema>;
+      const { vendorId, reason, vendorCancellationReason: tierRaw } = (c as any).get('validatedBody') as z.infer<
+        typeof rejectBookingRequestSchema
+      >;
 
+      const vendorCancellationReason = parseVendorCancellationReason(tierRaw) ?? 'operational';
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
@@ -1640,21 +1650,64 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       }
 
       const booking = bookings[0];
-      if (booking.status !== 'pending') {
+      const oldStatus = booking.status;
+      if (!['pending', 'confirmed'].includes(String(oldStatus))) {
         return c.json({ error: `Cannot reject booking with status: ${booking.status}` }, 400);
       }
 
+      const reasonLabel = vendorCancellationReasonLabel(vendorCancellationReason);
+      const extraNote = typeof reason === 'string' && reason.trim() ? reason.trim() : '';
+      const cancellation_reason = extraNote
+        ? `Provider declined (${reasonLabel}). ${extraNote}`
+        : `Provider declined: ${reasonLabel}.`;
+
       const updated = await update('bookings', { id: bookingId }, {
         status: BookingStatus.CANCELLED,
-        cancellation_reason: reason || 'Rejected by vendor',
+        cancellation_reason,
         cancelled_at: new Date().toISOString(),
-        cancelled_by: vendorId,
+        cancelled_by: 'provider',
       });
+
+      const refundInfo = await applyRefundAfterProviderCancellation(
+        booking,
+        vendorCancellationReason,
+        cancellation_reason,
+        { refundMethod: 'wallet' }
+      ).catch((e: any) => {
+        console.warn('[vendor/reject] refund apply failed:', e?.message);
+        return null;
+      });
+
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'cancelled',
+        vendorId || booking.vendor_id,
+        'vendor',
+        extraNote ? `Vendor rejected (${reasonLabel}): ${extraNote}` : `Vendor rejected (${reasonLabel})`
+      );
+
+      try {
+        const { publishBookingStatusUpdated } = await import('src/utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: booking.customer_id,
+          vendorId: booking.vendor_id || vendorId,
+          oldStatus,
+          newStatus: 'cancelled',
+          reason: cancellation_reason,
+          eventTimestamp: new Date().toISOString(),
+          eventId: randomUUID(),
+        });
+      } catch (pubErr) {
+        console.error('Failed to publish booking status updated event:', pubErr);
+      }
 
       return c.json({
         success: true,
         booking: updated[0],
-        message: 'Booking rejected successfully'
+        message: 'Booking rejected successfully',
+        refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
       console.error('Error rejecting booking:', error);

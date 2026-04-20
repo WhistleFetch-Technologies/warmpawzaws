@@ -54,6 +54,7 @@ import {
   isVendorWalkerProgramProgress,
 } from '@/lib/vendor-utils';
 import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
+import { DeclineBookingModal } from './DeclineBookingModal';
 
 interface VendorBookingManagementProps {
   vendorId: string;
@@ -354,6 +355,7 @@ export function VendorBookingManagement({
   const [cancelPolicyReason, setCancelPolicyReason] =
     useState<VendorCancellationReasonSlug>('operational');
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [declineModalBooking, setDeclineModalBooking] = useState<Booking | null>(null);
 
   // ✅ Chat Modal State
   const [showChatModal, setShowChatModal] = useState(false);
@@ -882,27 +884,6 @@ export function VendorBookingManagement({
     console.log('Edit booking:', bookingId);
   };
   
-  // Accept Booking (Cafe/Resort)
-  const handleAcceptBooking = async (booking: Booking) => {
-    try {
-      setCompletingBooking(true);
-      const data = await apiClient.post(`/vendor/bookings/${booking.id}/confirm`, { vendorId }) as any;
-
-      if (data && data.success) {
-        alert('✅ Booking accepted!');
-        loadBookings();
-      } else {
-        console.error('Failed to accept booking:', data);
-        alert(`❌ Failed to accept: ${data?.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error accepting booking:', error);
-      alert('❌ Error accepting booking');
-    } finally {
-      setCompletingBooking(false);
-    }
-  };
-
   // Complete Booking (with OTP for in-person services)
   const handleCompleteBooking = (booking: Booking) => {
     setSelectedBooking(booking);
@@ -1247,53 +1228,78 @@ export function VendorBookingManagement({
                       
                       {/* NEW: Smart buttons based on service type and status */}
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
-                        
-                        // PENDING STATE (Cafe/Resort)
-                        if (booking.status === 'pending') {
+                        const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
+
+                        if (booking.status === 'pending' || booking.status === 'confirmed') {
+                          const declineBtn = (
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeclineModalBooking({
+                                  ...booking,
+                                  scheduledDate: booking.date,
+                                  scheduledTime: booking.time,
+                                } as any);
+                              }}
+                              disabled={completingBooking}
+                            >
+                              Decline booking (refund per policy)
+                            </button>
+                          );
+
+                          if (showWalkTracker) {
+                            return <div className="mt-3">{declineBtn}</div>;
+                          }
+
                           return (
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button
-                                className="px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
-                                onClick={(e) => openCancelBookingDialog(e, booking.id)}
-                                disabled={completingBooking}
-                              >
-                                Reject
-                              </button>
-                              <button
-                                className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
-                                onClick={() => handleAcceptBooking(booking)}
-                                disabled={completingBooking}
-                              >
-                                Accept
-                              </button>
+                            <div className="mt-3 space-y-2">
+                              {declineBtn}
+                              {booking.status === 'confirmed' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCompleteBooking(booking)}
+                                    disabled={completingBooking}
+                                    className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                  >
+                                    <CheckCircle className="w-4 h-4" />
+                                    {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                                  </button>
+                                  <p className="text-xs text-gray-500 mt-1 text-center">
+                                    {booking.communicationType === 'video'
+                                      ? 'Tele consultation - No OTP required'
+                                      : 'Ask customer for 4-digit OTP to complete'}
+                                  </p>
+                                </>
+                              )}
                             </div>
                           );
                         }
 
-                        const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
-                        /* Walks use Live tracker in the action row (OTP + GPS); skip generic Complete here. */
                         if (showWalkTracker) {
                           return null;
                         }
 
-                        // REGULAR SERVICES: Complete with OTP (or without for tele)
                         return (
-                            <div className="mt-3">
-                              <button
-                                onClick={() => handleCompleteBooking(booking)}
-                                disabled={completingBooking}
-                                className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                                {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
-                              </button>
-                              <p className="text-xs text-gray-500 mt-1 text-center">
-                                {booking.communicationType === 'video' 
-                                  ? 'Tele consultation - No OTP required' 
-                                  : 'Ask customer for 4-digit OTP to complete'}
-                              </p>
-                            </div>
-                          );
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteBooking(booking)}
+                              disabled={completingBooking}
+                              className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-1 text-center">
+                              {booking.communicationType === 'video'
+                                ? 'Tele consultation - No OTP required'
+                                : 'Ask customer for 4-digit OTP to complete'}
+                            </p>
+                          </div>
+                        );
                       })()}
                       
                       {booking.status === 'completed' && (
@@ -1773,6 +1779,18 @@ export function VendorBookingManagement({
         <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white">
           <div className="min-h-0 flex-1 overflow-y-auto pb-20">{bookingMainBody}</div>
         </div>
+      )}
+
+      {declineModalBooking && (
+        <DeclineBookingModal
+          booking={declineModalBooking as any}
+          vendorId={vendorId}
+          onClose={() => setDeclineModalBooking(null)}
+          onSuccess={() => {
+            setDeclineModalBooking(null);
+            loadBookings();
+          }}
+        />
       )}
 
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>

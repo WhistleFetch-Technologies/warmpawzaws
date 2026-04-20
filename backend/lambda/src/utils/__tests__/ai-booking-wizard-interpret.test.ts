@@ -1,4 +1,4 @@
-import { interpretActionsToPatch, parseInterpretActionsFromModelJson } from '../ai-booking-wizard-interpret';
+import { interpretActionsToPatch, parseInterpretActionsFromModelJson } from '../ai/ai-booking-wizard-interpret';
 
 describe('ai-booking-wizard-interpret', () => {
   it('parses allowlisted actions and drops unknown types', () => {
