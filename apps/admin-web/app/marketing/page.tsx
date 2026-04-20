@@ -99,7 +99,7 @@ export default function MarketingPromotionsTab() {
 		content: "",
 		category: "tips",
 		read_time: "5 min",
-		is_published: false,
+		is_published: true,
 		featured: false,
 	});
 	
@@ -674,6 +674,11 @@ export default function MarketingPromotionsTab() {
 				});
 			}
 			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`);
+			if (!articleForm.is_published) {
+				toast.info("Draft saved", {
+					description: "Customers only see articles when Published is turned on.",
+				});
+			}
 			setShowArticleModal(false);
 			loadArticles();
 			resetArticleForm();
@@ -702,7 +707,7 @@ export default function MarketingPromotionsTab() {
 			content: "",
 			category: "tips",
 			read_time: "5 min",
-			is_published: false,
+			is_published: true,
 			featured: false,
 		});
 	};
@@ -2271,7 +2276,8 @@ export default function MarketingPromotionsTab() {
 							{editingArticle ? "Edit Article" : "Create New Article"}
 						</DialogTitle>
 						<DialogDescription>
-							Create educational content for pet owners
+							Create educational content for pet owners. New articles are visible on the customer app when{" "}
+							<strong>Published</strong> is on (drafts stay in admin only).
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2348,20 +2354,25 @@ export default function MarketingPromotionsTab() {
 							/>
 						</div>
 
-						<div className="flex gap-6 p-3 bg-gray-50 rounded-lg">
-							<div className="flex items-center gap-2">
-								<Switch
-									checked={articleForm.is_published}
-									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
-								/>
-								<Label>Published</Label>
-							</div>
-							<div className="flex items-center gap-2">
-								<Switch
-									checked={articleForm.featured}
-									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
-								/>
-								<Label>Featured on Home</Label>
+						<div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-lg">
+							<p className="text-xs text-gray-600">
+								Only <span className="font-medium">Published</span> articles appear under Pet care articles on the customer site.
+							</p>
+							<div className="flex gap-6 flex-wrap">
+								<div className="flex items-center gap-2">
+									<Switch
+										checked={articleForm.is_published}
+										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
+									/>
+									<Label>Published</Label>
+								</div>
+								<div className="flex items-center gap-2">
+									<Switch
+										checked={articleForm.featured}
+										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
+									/>
+									<Label>Featured on Home</Label>
+								</div>
 							</div>
 						</div>
 					</div>

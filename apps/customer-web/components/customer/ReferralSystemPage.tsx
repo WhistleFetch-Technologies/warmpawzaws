@@ -66,6 +66,38 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 /** Android intent URLs are length-sensitive; keep extras under a safe budget. */
 const ANDROID_INTENT_TEXT_MAX = 4000;
 
+type WebSharePayload = Pick<ShareData, 'title' | 'text' | 'url'>;
+
+function canUseWebSharePayload(data: WebSharePayload): boolean {
+  if (!data.text?.trim() && !data.url?.trim()) return false;
+  if (typeof navigator.canShare !== 'function') return true;
+  try {
+    return navigator.canShare(data);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Try Web Share with payloads that match iOS/Android system sheets.
+ * Chrome Android often rejects text-only long payloads; title + text + url works like iOS.
+ */
+async function invokeWebShare(
+  payloads: WebSharePayload[]
+): Promise<'shared' | 'aborted' | 'failed'> {
+  if (typeof navigator.share !== 'function') return 'failed';
+  for (const data of payloads) {
+    if (!canUseWebSharePayload(data)) continue;
+    try {
+      await navigator.share(data);
+      return 'shared';
+    } catch (e) {
+      if ((e as DOMException)?.name === 'AbortError') return 'aborted';
+    }
+  }
+  return 'failed';
+}
+
 export function ReferralSystemPage(props: ReferralSystemPageProps) {
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +154,10 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     if (!stats?.referral_code) return;
 
     const shareTitle = 'Join Warmpawz';
-    const combinedBody = `Join Warmpawz and get amazing pet care services! Use my referral code: ${stats.referral_code}\n${window.location.origin}/auth?ref=${encodeURIComponent(stats.referral_code)}`;
+    const code = stats.referral_code;
+    const referralLink = `${window.location.origin}/auth?ref=${encodeURIComponent(code)}`;
+    const shareLine = `Join Warmpawz and get amazing pet care services! Use my referral code: ${code}`;
+    const combinedBody = `${shareLine}\n${referralLink}`;
     const isAndroid = /Android/i.test(navigator.userAgent);
 
     const tryAndroidSendIntent = (): boolean => {
@@ -142,17 +177,15 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
       }
     };
 
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({
-          title: shareTitle,
-          text: combinedBody,
-        });
-        return;
-      } catch (err) {
-        if ((err as DOMException)?.name === 'AbortError') return;
-      }
-    }
+    const sharePayloads: WebSharePayload[] = [
+      { title: shareTitle, text: shareLine, url: referralLink },
+      { title: shareTitle, text: combinedBody },
+      { title: shareTitle, url: referralLink },
+      { text: `${shareLine} ${referralLink}` },
+    ];
+
+    const shareResult = await invokeWebShare(sharePayloads);
+    if (shareResult === 'shared' || shareResult === 'aborted') return;
 
     const copied = await copyTextToClipboard(combinedBody);
     if (copied) {

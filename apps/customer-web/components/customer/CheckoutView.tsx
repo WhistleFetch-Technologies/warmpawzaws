@@ -5,6 +5,10 @@ import { ArrowLeft, MapPin, CreditCard, Edit2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
@@ -123,13 +127,17 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
         return;
       }
 
-      // Online payment (Razorpay) flow
-      const paymentOptions = {
+      // Online payment (Razorpay) flow — Standard Checkout; desktop UPI may still default to QR per Razorpay
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+      const paymentOptions = buildSanitizedStandardRazorpayCheckoutOptions({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || 'rzp_test_key',
-        amount: total * 100, // Convert to paise
+        amountPaise: Math.max(1, Math.round(total * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `Order for ${cart.length} item(s)`,
+        customerPhone: phone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment and create order
@@ -161,9 +169,6 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: phone.replace(/[^0-9]/g, ''),
-        },
         theme: {
           color: '#FF8C42',
         },
@@ -173,7 +178,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
 
       // Load Razorpay script and open checkout
       if (typeof window !== 'undefined' && (window as any).Razorpay) {

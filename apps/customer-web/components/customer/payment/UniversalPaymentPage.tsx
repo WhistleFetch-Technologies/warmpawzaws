@@ -20,7 +20,7 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 
 // Razorpay type declaration
 declare global {
@@ -86,7 +86,10 @@ interface UniversalPaymentPageProps {
 
   // Customer
   customerPhone: string;
-  /** When set with contact, Razorpay can open UPI with collect/VPA entry (per checkout docs), not QR-only desktop defaults. */
+  /**
+   * Used for Razorpay `prefill.email` via {@link buildSanitizedStandardRazorpayCheckoutOptions}.
+   * Desktop checkout may still default to UPI QR per Razorpay/NPCI; email + E.164 contact is best-effort for collect/VPA where supported.
+   */
   customerEmail?: string;
   customerId?: string;
 
@@ -186,15 +189,6 @@ interface RazorpayOffer {
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** E.164 contact for Razorpay prefill (improves UPI flows vs raw digits-only strings). */
-function razorpayPrefillContactE164(digitsOnly: string): string | undefined {
-  const d = String(digitsOnly || '').replace(/\D/g, '');
-  if (d.length >= 12 && d.startsWith('91')) return `+${d}`;
-  if (d.length === 10) return `+91${d}`;
-  if (d.length >= 11 && d.length <= 15) return `+${d}`;
-  return undefined;
-}
 
 /** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
 function taxCalculateResponseHasPayload(res: any): boolean {
@@ -2265,12 +2259,6 @@ export function UniversalPaymentPage({
         }
       }
 
-      const prefillContact = razorpayPrefillContactE164(phoneDigits);
-      const razorpayPrefill: Record<string, string> = {};
-      if (prefillContact) razorpayPrefill.contact = prefillContact;
-      if (resolvedCheckoutEmail) razorpayPrefill.email = resolvedCheckoutEmail;
-      const canPreselectUpi = Boolean(prefillContact && resolvedCheckoutEmail);
-
       const rawOfferId = selectedRazorpayOffer?.id;
       const razorpayOfferIds =
         typeof rawOfferId === 'string' &&
@@ -2281,13 +2269,32 @@ export function UniversalPaymentPage({
           : [];
       const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
 
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountPaise,
+      if (!resolvedCheckoutEmail) {
+        toast.info(
+          'Add an email to your profile for UPI ID (VPA) entry where Razorpay allows it. On desktop, UPI may show as QR without email.',
+          { duration: 6000 }
+        );
+      }
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise,
         currency: 'INR',
         name: 'Warmpawz',
         description: paymentDescription,
         order_id: razorpayOrderId,
+        customerPhone: phoneDigits || customerPhone,
+        customerEmail: resolvedCheckoutEmail,
+        offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
+        includeInstrumentBlocks: true,
+        theme: { color: '#FF8C42' },
+        modal: {
+          ondismiss: () => {
+            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
+            setProcessing(false);
+            toast.info('Payment cancelled');
+          },
+        },
         handler: async (response: any) => {
           try {
             console.log('✅ [RAZORPAY] Payment response received:', {
@@ -2438,31 +2445,7 @@ export function UniversalPaymentPage({
             setProcessing(false);
           }
         },
-        ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-        ...(canPreselectUpi
-          ? {
-              method: 'upi',
-              config: {
-                display: {
-                  preferences: {
-                    show_default_blocks: true,
-                  },
-                },
-              },
-            }
-          : {}),
-        theme: {
-          color: '#FF8C42',
-        },
-        ...(razorpayOfferIds.length > 0 ? { offers: razorpayOfferIds } : {}),
-        modal: {
-          ondismiss: () => {
-            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
-            setProcessing(false);
-            toast.info('Payment cancelled');
-          },
-        },
-      };
+      });
 
       // ✅ FIX: Double-check Razorpay is available before opening
       if (!window.Razorpay) {
@@ -2477,7 +2460,7 @@ export function UniversalPaymentPage({
       });
 
       try {
-        const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
+        const razorpay = new window.Razorpay(options);
         // ✅ Listen for payment failures (these don't trigger the handler callback)
         razorpay.on('payment.failed', (resp: any) => {
           console.error('❌ [RAZORPAY] Payment failed event:', {

@@ -86,7 +86,7 @@ export function OrderSuccessScreen({
 
           <TouchableOpacity
             style={styles.continueShoppingButton}
-            onPress={() => onNavigate && onNavigate('ShopDashboard')}
+            onPress={() => onNavigate && onNavigate('MainTabs', { screen: 'Store' })}
           >
             <Text style={styles.continueShoppingButtonText}>Continue Shopping</Text>
           </TouchableOpacity>

@@ -121,24 +121,15 @@ class UniversalSearchHandler extends BaseHandler {
       size: limit,
     };
 
-    // Add search query
-    // Text + category: keyword is often the hub name ("Walker") which does not appear in business names —
-    // make text optional (ranking) and rely on category filter for inclusion.
+    // Text + category: require keyword match AND hub category (same as SQL AND semantics).
     if (searchQuery) {
-      const mm = {
+      searchBody.query.bool.must.push({
         multi_match: {
           query: searchQuery,
           fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
           fuzziness: 'AUTO' as const,
         },
-      };
-      if (category) {
-        searchBody.query.bool.should = searchBody.query.bool.should || [];
-        searchBody.query.bool.should.push(mm);
-        searchBody.query.bool.minimum_should_match = 0;
-      } else {
-        searchBody.query.bool.must.push(mm);
-      }
+      });
     }
 
     // Add category filter (UI slug → multiple DB role/category strings)
@@ -238,8 +229,8 @@ class UniversalSearchHandler extends BaseHandler {
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Without a category chip, narrow vendors by name/specialization. With a chip, list the hub (text is optional).
-    if (searchQuery && !category) {
+    // Keyword narrows vendors whenever q is present (with or without hub category).
+    if (searchQuery) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
         v.owner_name ILIKE $${paramIndex} OR
@@ -299,7 +290,7 @@ class UniversalSearchHandler extends BaseHandler {
     const serviceParams: any[] = [];
     let serviceParamIndex = 1;
 
-    if (searchQuery && !category) {
+    if (searchQuery) {
       servicesQuery += ` AND (
         vs.service_name ILIKE $${serviceParamIndex}
       )`;

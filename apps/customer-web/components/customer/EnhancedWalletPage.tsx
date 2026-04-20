@@ -16,7 +16,10 @@ import {
   formatWalletTopUpError,
   normalizeRazorpayCreateOrderResponse,
 } from '@/lib/wallet-razorpay-helpers';
-import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -252,15 +255,18 @@ export function EnhancedWalletPage({
       }
 
       const payAmountPaise = Math.round(order.amount * 100);
-      const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
 
-      const options = {
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
         key: order.keyId,
-        amount: payAmountPaise,
+        amountPaise: payAmountPaise,
         currency: order.currency || 'INR',
         name: 'Warmpawz',
         description: `Add ₹${amount} to Wallet`,
         order_id: order.orderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             const MAX_RETRIES = 3;
@@ -304,14 +310,13 @@ export function EnhancedWalletPage({
             setProcessingTopUp(false);
           }
         },
-        ...(phoneDigits.length > 0 ? { prefill: { contact: phoneDigits } } : {}),
         theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => setProcessingTopUp(false),
         },
-      };
+      });
 
-      const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
+      const razorpay = new window.Razorpay(options);
       razorpay.open();
     } catch (error) {
       console.error('Error initiating top-up:', error);

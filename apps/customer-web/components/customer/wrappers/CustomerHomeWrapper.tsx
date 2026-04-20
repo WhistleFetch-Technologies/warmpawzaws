@@ -516,7 +516,6 @@ export function CustomerHomeWrapper({
   
   // Navigation handlers (kept same mostly)
   const handleProfileClick = () => setUserSidebarOpen(true);
-  const handleViewCustomerProfile = () => { setUserSidebarOpen(false); setCurrentScreen('customer-profile'); };
   /** Blue chevron on home pet chip → view/edit pet (not booking sessions quick view). */
   const handlePetClick = (petId: string) => {
     setPreviousScreen(currentScreen);
@@ -893,7 +892,6 @@ export function CustomerHomeWrapper({
         onClose={() => setUserSidebarOpen(false)}
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
-        onViewCustomerProfile={handleViewCustomerProfile}
         onNavigate={handleAccountNavigate}
       />
     ) : null;

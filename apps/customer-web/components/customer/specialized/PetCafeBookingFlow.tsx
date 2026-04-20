@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { Coffee, Users, Calendar, Clock } from 'lucide-react';
 
 interface PetCafeBookingFlowProps {
@@ -155,14 +159,17 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
             });
           }
 
-          // Open Razorpay checkout
-          const options = {
-            key: orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-            amount: totalAmount * 100,
+          const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            key: (orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+            amountPaise: Math.max(1, Math.round(Number(totalAmount) * 100)),
             currency: 'INR',
             name: 'Warmpawz',
             description: `Pet Cafe Table Booking - Table ${table?.table_number}`,
             order_id: orderRes.order_id,
+            customerPhone,
+            customerEmail: checkoutEmail,
+            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 // Verify payment
@@ -181,9 +188,6 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
                 setError('Payment verification failed. Please contact support.');
               }
             },
-            prefill: {
-              contact: customerPhone,
-            },
             theme: {
               color: '#FF8C42',
             },
@@ -192,7 +196,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
                 setProcessing(false);
               },
             },
-          };
+          });
 
           const razorpay = new (window as any).Razorpay(options);
           razorpay.open();
