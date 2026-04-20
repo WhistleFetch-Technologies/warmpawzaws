@@ -1559,8 +1559,20 @@ export function CustomerHomeWrapper({
         } else if (screen === 'create-booking') {
           setPreviousScreen('grooming');
           setSelectedVendorId(data?.vendorId);
-          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
-          setCurrentScreen('create-booking');
+          setSelectedService(data?.serviceId ?? '');
+          setVetServiceData({
+            vendorId: data?.vendorId,
+            serviceType: 'grooming',
+            serviceStyle: data?.serviceStyle || 'at_center',
+            groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
+            service: data?.service ?? (data?.serviceName ? { name: data.serviceName } : undefined),
+            serviceId: data?.serviceId,
+            selectedServices: data?.selectedServices,
+            vendorName: data?.vendorName,
+            price: data?.price,
+            duration: data?.duration,
+          });
+          setCurrentScreen('grooming-booking');
         } else if (screen === 'problem_grid') {
           console.log('🟢 [CustomerHomeWrapper] Setting problem_grid screen');
           setCurrentServiceType('groomer');
@@ -2780,7 +2792,7 @@ export function CustomerHomeWrapper({
     return <SupportHelpCenter phone={phone} onBack={backToAccountMenu} />;
 
   // ✅ NEW: Create Booking
-  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService || vetServiceData?.serviceId} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 

@@ -26,22 +26,13 @@ import {
   parseSymptomsBedrockCompletion,
   parseBookingAssistBedrockCompletion,
 } from '../utils/ai-chatbot-response-parse';
+import { getCustomerCoordinates } from '../utils/customer-coordinates';
+import { lookupNearbyBookingVendors, type NearbyBookingVendorRow } from '../utils/ai-chatbot-nearby-vendors';
+import { roleFilterListForCategory } from '../utils/ai-chatbot-booking-roles';
+import { sqlAndVendorHasBookableV2Windows } from '../utils/ai-chatbot-vendor-has-schedule';
 
 const GUARDRAIL_CHAT_FALLBACK =
   "I'm not able to respond to that in a way that meets our safety guidelines. Try rephrasing, or use **Contact support** for help.";
-
-const SYMPTOM_STOPWORDS = new Set([
-  'the', 'and', 'for', 'pet', 'dog', 'cat', 'puppy', 'kitten', 'has', 'have', 'been', 'with', 'from', 'that', 'this',
-  'please', 'help', 'she', 'her', 'his', 'him', 'they', 'them', 'our', 'your', 'not', 'are', 'was', 'but',
-]);
-
-function symptomSearchTerms(text: string): string[] {
-  const raw = text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 3 && !SYMPTOM_STOPWORDS.has(w));
-  return [...new Set(raw)].slice(0, 6);
-}
 
 function inferBookingCategoryFromText(msg: string): string {
   const m = msg.toLowerCase();
@@ -291,261 +282,6 @@ function parseVendorAiChatFromOtherConfig(otherConfig: unknown): VendorAiChatCon
   return out;
 }
 
-/** Match problem-grid specializations + sample providers for symptom text (DB-backed). */
-async function lookupCareForSymptoms(symptomsText: string): Promise<{
-  specializations: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }>;
-  vendors: Array<{ id: string; businessName: string; city?: string; roleName?: string }>;
-}> {
-  const terms = symptomSearchTerms(symptomsText);
-  const fallback = symptomsText.trim();
-  const searchTerms = terms.length > 0 ? terms : fallback.length >= 2 ? [fallback.slice(0, 48)] : [];
-  if (searchTerms.length === 0) {
-    return { specializations: [], vendors: [] };
-  }
-
-  const conditions: string[] = [];
-  const params: string[] = [];
-  let p = 1;
-  for (const t of searchTerms) {
-    conditions.push(
-      `(ss.symptom_name ILIKE $${p} OR ss.symptom_display_name ILIKE $${p} OR $${p + 1} = ANY(ss.symptom_keywords))`
-    );
-    params.push(`%${t}%`, t.toLowerCase());
-    p += 2;
-  }
-
-  const specSql = `
-    SELECT DISTINCT 
-      sm.specialization_id,
-      sm.name,
-      sm.display_name,
-      sm.category_id,
-      sm.applicable_roles,
-      ss.symptom_name as matched_symptom
-    FROM specialization_master sm
-    JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id
-    WHERE sm.is_active = true 
-      AND sm.show_in_problem_grid = true
-      AND ss.is_active = true
-      AND (${conditions.join(' OR ')})
-    ORDER BY sm.display_order NULLS LAST, sm.name
-    LIMIT 10
-  `;
-
-  const specRes = await query(specSql, params).catch(() => ({ rows: [] as any[] }));
-  const rows = specRes.rows || [];
-
-  const specializations = rows.map((row: any) => ({
-    id: row.specialization_id,
-    name: row.display_name || row.name,
-    categoryId: String(row.category_id || '').toLowerCase(),
-    matchedSymptom: row.matched_symptom,
-  }));
-
-  const roleNames = new Set<string>();
-  for (const row of rows) {
-    const ar = row.applicable_roles;
-    if (Array.isArray(ar)) {
-      ar.forEach((r: string) => {
-        if (r) roleNames.add(String(r).toLowerCase());
-      });
-    } else if (typeof ar === 'string') {
-      try {
-        const parsed = JSON.parse(ar);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((r: string) => {
-            if (r) roleNames.add(String(r).toLowerCase());
-          });
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    const cat = String(row.category_id || '').toLowerCase();
-    if (cat === 'veterinary' || cat === 'vet') {
-      ['vet_solo', 'veterinarian', 'veterinary_clinic', 'vet_clinic'].forEach((r) => roleNames.add(r));
-    }
-    if (cat === 'grooming') roleNames.add('groomer_solo');
-    if (cat === 'training') roleNames.add('trainer_solo');
-    if (cat === 'walking' || cat === 'walker') roleNames.add('walker');
-  }
-  if (roleNames.size === 0) {
-    roleNames.add('vet_solo');
-  }
-
-  const vendorSql = `
-    SELECT v.id, v.business_name, v.city, r.name as role_name
-    FROM vendors v
-    INNER JOIN roles r ON v.role_id = r.id
-    WHERE v.status = 'approved' AND v.is_active = true
-      AND LOWER(r.name) = ANY($1::text[])
-    ORDER BY v.created_at DESC
-    LIMIT 8
-  `;
-  const roleList = [...roleNames];
-  let vendRes = await query(vendorSql, [roleList]).catch(() => ({ rows: [] as any[] }));
-  let vendors = (vendRes.rows || []).map((v: any) => ({
-    id: v.id,
-    businessName: v.business_name,
-    city: v.city,
-    roleName: v.role_name,
-  }));
-
-  if (vendors.length === 0) {
-    vendRes = await query(
-      `SELECT v.id, v.business_name, v.city, r.name as role_name
-       FROM vendors v
-       INNER JOIN roles r ON v.role_id = r.id
-       WHERE v.status = 'approved' AND v.is_active = true
-         AND LOWER(r.name) LIKE '%vet%'
-       ORDER BY v.created_at DESC
-       LIMIT 8`,
-      []
-    ).catch(() => ({ rows: [] as any[] }));
-    vendors = (vendRes.rows || []).map((v: any) => ({
-      id: v.id,
-      businessName: v.business_name,
-      city: v.city,
-      roleName: v.role_name,
-    }));
-  }
-
-  return { specializations, vendors };
-}
-
-function appendSymptomCareToResponse(
-  baseResponse: string,
-  specs: Array<{ name: string; matchedSymptom?: string }>,
-  vendors: Array<{ businessName: string; city?: string }>
-): string {
-  const lines: string[] = [baseResponse.trim()];
-  if (specs.length > 0) {
-    lines.push('\n\n**Related care areas on Warmpawz**');
-    specs.slice(0, 8).forEach((s) => {
-      const hint = s.matchedSymptom ? ` (matched: ${s.matchedSymptom})` : '';
-      lines.push(`• ${s.name}${hint}`);
-    });
-  }
-  if (vendors.length > 0) {
-    lines.push('\n**Providers you can book**');
-    vendors.slice(0, 8).forEach((v) => {
-      const loc = v.city ? ` — ${v.city}` : '';
-      lines.push(`• ${v.businessName}${loc}`);
-    });
-    lines.push('\nTap **Find Vet Clinic** or open Search to pick a provider and complete booking.');
-  } else if (specs.length > 0) {
-    lines.push('\nUse **Find Vet Clinic** or Search to see providers for these services.');
-  }
-  return lines.join('\n');
-}
-
-type NearbyVetProvider = {
-  id: string;
-  businessName: string;
-  city?: string;
-  distanceKm: number;
-};
-
-function parseBookingAssistLatLng(location: unknown): { lat: number; lng: number } | null {
-  if (!location || typeof location !== 'object' || Array.isArray(location)) return null;
-  const o = location as Record<string, unknown>;
-  const lat = Number(o.lat ?? o.latitude);
-  const lng = Number(o.lng ?? o.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { lat, lng };
-}
-
-/** User asked for proximity-based results (not just category). */
-function bookingMessageWantsNearbyVets(q: string): boolean {
-  const s = String(q || '').toLowerCase();
-  return (
-    /\b(nearby|near me|closest|nearest|around here|close to me|in my area|local)\b/.test(s) ||
-    /\b(doctors?|vets?|clinics?)\s+(near|around|close)\b/.test(s) ||
-    /\b(find|get|fetch|show)\b[\s\S]{0,40}\b(nearby|near me|closest|nearest)\b/.test(s)
-  );
-}
-
-function bookingMessageVetLike(q: string): boolean {
-  if (inferBookingCategoryFromText(q) === 'vet') return true;
-  const s = String(q || '').toLowerCase();
-  return /\b(doctor|dr\.|physician|gp|vet|veterinary|clinic)\b/.test(s);
-}
-
-/**
- * Approved vet-role vendors with coordinates, sorted by great-circle distance (km).
- * Bedrock does not query RDS — this runs in Lambda and results are merged into the booking response.
- */
-async function lookupNearbyVetVendors(
-  lat: number,
-  lng: number,
-  limit: number,
-  maxKm: number
-): Promise<NearbyVetProvider[]> {
-  const res = await query(
-    `SELECT v.id::text AS id,
-            v.business_name,
-            v.city,
-            ROUND((
-              6371 * acos(
-                LEAST(1::double precision, GREATEST(-1::double precision,
-                  cos(radians($1::double precision)) * cos(radians(CAST(v.latitude AS double precision))) *
-                  cos(radians(CAST(v.longitude AS double precision)) - radians($2::double precision)) +
-                  sin(radians($1::double precision)) * sin(radians(CAST(v.latitude AS double precision)))
-                ))
-              )
-            )::numeric, 1
-            )::float AS distance_km
-     FROM vendors v
-     INNER JOIN roles r ON r.id = v.role_id
-     WHERE v.status = 'approved'
-       AND v.is_active = true
-       AND COALESCE(v.is_deleted, false) = false
-       AND v.latitude IS NOT NULL
-       AND v.longitude IS NOT NULL
-       AND TRIM(v.latitude::text) <> ''
-       AND TRIM(v.longitude::text) <> ''
-       AND (
-         LOWER(COALESCE(r.name, '')) LIKE '%vet%'
-         OR LOWER(COALESCE(NULLIF(TRIM(r.display_name), ''), r.name, '')) LIKE '%vet%'
-       )
-       AND (
-         6371 * acos(
-           LEAST(1::double precision, GREATEST(-1::double precision,
-             cos(radians($1::double precision)) * cos(radians(CAST(v.latitude AS double precision))) *
-             cos(radians(CAST(v.longitude AS double precision)) - radians($2::double precision)) +
-             sin(radians($1::double precision)) * sin(radians(CAST(v.latitude AS double precision)))
-           ))
-         )
-       ) <= $3::double precision
-     ORDER BY distance_km ASC
-     LIMIT $4`,
-    [lat, lng, maxKm, limit]
-  ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
-
-  const rows = res.rows || [];
-  return rows.map((row: Record<string, unknown>) => ({
-    id: String(row.id || ''),
-    businessName: String(row.business_name || ''),
-    city: row.city ? String(row.city) : undefined,
-    distanceKm: typeof row.distance_km === 'number' ? row.distance_km : Number(row.distance_km) || 0,
-  }));
-}
-
-function appendNearbyVetsToResponse(
-  base: string,
-  rows: NearbyVetProvider[]
-): string {
-  if (rows.length === 0) return base;
-  const lines = [base.trim(), '', '**Veterinary providers closest to you**'];
-  rows.forEach((v, i) => {
-    const loc = v.city ? ` — ${v.city}` : '';
-    lines.push(`${i + 1}. ${v.businessName}${loc} (~${v.distanceKm} km)`);
-  });
-  lines.push('\nTap **Continue to booking** to open search and pick a slot.');
-  return lines.join('\n');
-}
-
 /** Services + offering vendors for booking assist. */
 async function lookupBookingContext(bookingQuery: string): Promise<{
   services: Array<{ id: string; name: string; serviceStyle?: string }>;
@@ -577,6 +313,7 @@ async function lookupBookingContext(bookingQuery: string): Promise<{
        WHERE v.status = 'approved' AND v.is_active = true
          AND vs.service_id = ANY($1::uuid[])
          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+         AND ${sqlAndVendorHasBookableV2Windows('v')}
        ORDER BY v.created_at DESC
        LIMIT 10`,
       [ids]
@@ -589,6 +326,80 @@ async function lookupBookingContext(bookingQuery: string): Promise<{
   }
 
   return { services, vendors };
+}
+
+/**
+ * When geo+VA2 nearby returns nobody, still return approved vendors for this discovery category (any role).
+ * Same idea as vet-only fallback, extended to grooming, walker, training, etc.
+ */
+async function lookupVendorsBookingFallbackByCategory(
+  category: string,
+  limit: number
+): Promise<Array<{ id: string; businessName: string; city?: string; roleName?: string }>> {
+  const roles = roleFilterListForCategory(category);
+  if (roles.length === 0) return [];
+  const vendRes = await query(
+    `SELECT v.id, v.business_name, v.city, r.name as role_name
+     FROM vendors v
+     INNER JOIN roles r ON v.role_id = r.id
+     WHERE v.status = 'approved' AND v.is_active = true
+       AND LOWER(TRIM(r.name)) = ANY($1::text[])
+     ORDER BY v.created_at DESC
+     LIMIT $2`,
+    [roles, limit]
+  ).catch(() => ({ rows: [] as any[] }));
+  return (vendRes.rows || []).map((v: any) => ({
+    id: String(v.id),
+    businessName: String(v.business_name ?? 'Provider'),
+    city: v.city != null ? String(v.city) : undefined,
+    roleName: v.role_name != null ? String(v.role_name) : undefined,
+  }));
+}
+
+function parseLocationFromBody(location: unknown): { lat: number; lng: number } | null {
+  if (!location || typeof location !== 'object' || Array.isArray(location)) return null;
+  const o = location as Record<string, unknown>;
+  const rawLat = o.lat ?? o.latitude;
+  const rawLng = o.lng ?? o.longitude;
+  const lat = typeof rawLat === 'number' ? rawLat : parseFloat(String(rawLat ?? ''));
+  const lng = typeof rawLng === 'number' ? rawLng : parseFloat(String(rawLng ?? ''));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function resolveNearbyBookingCategory(bookingQuery: string): string | null {
+  let cat = inferBookingCategoryFromText(bookingQuery);
+  if (cat && BOOKING_SEARCH_CATEGORY_SET.has(cat) && cat !== 'other') return cat;
+  if (/\b(doctor|dr\.?|vet|veterinar|veterinary|clinic|hospital)\b/i.test(bookingQuery)) return 'vet';
+  if (cat && BOOKING_SEARCH_CATEGORY_SET.has(cat) && cat === 'other') return null;
+  return null;
+}
+
+/** Combine user text, then model serviceType, so vague queries still get nearby + fallbacks for grooming, walker, etc. */
+function resolveEffectiveBookingCategory(
+  bookingQuery: string,
+  nearbyCategoryFromText: string | null,
+  serviceTypeFromModel: string
+): string | null {
+  const inferred = inferBookingCategoryFromText(bookingQuery);
+  const fromModel = normalizeServiceTypeToCategory(serviceTypeFromModel);
+  const seq = [nearbyCategoryFromText, inferred || null, fromModel || null];
+  for (const s of seq) {
+    if (!s) continue;
+    const x = String(s).toLowerCase();
+    if (BOOKING_SEARCH_CATEGORY_SET.has(x) && x !== 'other') return x;
+  }
+  return null;
+}
+
+function appendNearbyBookingProvidersToResponse(base: string, rows: NearbyBookingVendorRow[]): string {
+  if (!rows.length) return base.trim();
+  const lines = rows.slice(0, 8).map((v) => {
+    const loc = v.city ? ` — ${v.city}` : '';
+    return `• ${v.businessName}${loc} (~${v.distanceKm} km)`;
+  });
+  return `${base.trim()}\n\n**Providers near you**\n${lines.join('\n')}`;
 }
 
 function appendBookingContextToResponse(
@@ -1179,32 +990,37 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         }
       }
 
-      const systemPrompt = `You are a pet health assistant. Your role is to:
-1. Analyze pet symptoms provided by the owner
-2. Provide general guidance and possible causes
-3. ALWAYS recommend consulting a veterinarian for proper diagnosis
-4. NEVER provide a definitive diagnosis
-5. Suggest urgency level (immediate, soon, routine)
+      const systemPrompt = `You are a **symptom triage assistant** on the **Warmpawz** app. This tab is **information only**: you **do not** name, recommend, or suggest specific doctors, clinics, or providers.
+
+RULES:
+1. **Reason** with the pet parent: what the signs might mean in plain language (possibilities, not a definitive diagnosis), what to watch for, and **how serious** it may be.
+2. **Never** diagnose definitively, prescribe medication or doses, or replace an in-person exam.
+3. **Urgency**: "immediate" = emergency / do not delay; "soon" = vet often needed same day or next day; "routine" = lower concern but may still need a visit.
+4. **No provider suggestions in this tab.** Do not tell them to pick a named clinic here. If they need professional care, say they should use the app’s **Booking** tab to find and book a veterinarian (you may mention that path in text).
+5. When the situation is **serious** (urgency "immediate" or "soon", or clear red flags), set **vetBookingSuggested** to **true** and clearly tell them to **open the Booking section** of this assistant to book care — and for true emergencies, tell them to go to an ER or clinic now. When it is milder, **vetBookingSuggested** can be false.
+6. Tone: calm, empathetic, concise.
 
 CONTEXT:
 ${petContext ? `- ${petContext}\n` : ''}
 
 OUTPUT FORMAT (JSON only):
 {
-  "response": "Your analysis and guidance...",
-  "possibleCauses": ["cause1", "cause2"],
+  "response": "Your reasoning and guidance (markdown ok).",
+  "possibleCauses": ["non-definitive possibilities"],
   "urgency": "immediate" | "soon" | "routine",
-  "recommendations": ["rec1", "rec2"],
+  "recommendations": ["safe next steps"],
   "shouldSeeVet": true,
-  "vetBookingSuggested": true
+  "vetBookingSuggested": false
 }`;
+
+      const symptomsForModel = String(symptoms).trim();
 
       let analysis;
       try {
         const completion = await withRetry(
-          () => invokeBedrock(symptoms, systemPrompt, {
+          () => invokeBedrock(symptomsForModel, systemPrompt, {
             maxTokens: 1024,
-            temperature: 0.3, // Lower temperature for medical advice
+            temperature: 0.35,
             topP: 0.9,
           }),
           {
@@ -1223,18 +1039,12 @@ OUTPUT FORMAT (JSON only):
         analysis = parseSymptomsBedrockCompletion('');
       }
 
-      let matchedSpecs: Array<{ id: string; name: string; categoryId: string; matchedSymptom?: string }> = [];
-      let matchedVendors: Array<{ id: string; businessName: string; city?: string; roleName?: string }> = [];
-      try {
-        const care = await lookupCareForSymptoms(symptoms);
-        matchedSpecs = care.specializations;
-        matchedVendors = care.vendors;
-        if (matchedSpecs.length > 0 || matchedVendors.length > 0) {
-          analysis.response = appendSymptomCareToResponse(analysis.response || '', matchedSpecs, matchedVendors);
-        }
-      } catch (e) {
-        logErrorSafe('ai-chatbot-symptom-catalog', e);
-      }
+      analysis.vetBookingSuggested =
+        analysis.vetBookingSuggested === true ||
+        analysis.urgency === 'immediate' ||
+        analysis.urgency === 'soon';
+
+      const bookingUrl = normalizeCustomerBookingUrl('vet', String(symptoms).trim());
 
       // Save symptoms check
       try {
@@ -1255,8 +1065,7 @@ OUTPUT FORMAT (JSON only):
       return c.json({
         success: true,
         ...analysis,
-        matchedServices: matchedSpecs.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId })),
-        suggestedProviders: matchedVendors,
+        bookingUrl,
       });
     } catch (error: unknown) {
       logErrorSafe('ai-chatbot-symptoms-handler', error);
@@ -1277,15 +1086,42 @@ OUTPUT FORMAT (JSON only):
         return c.json({ error: 'query is required' }, 400);
       }
 
-      const coords = parseBookingAssistLatLng(location);
-      const wantsNearby = bookingMessageWantsNearbyVets(bookingQuery);
-      const vetLike = bookingMessageVetLike(bookingQuery);
-      const maxKmRaw = parseFloat(process.env.AI_BOOKING_NEARBY_MAX_KM || '80');
-      const maxKm = Number.isFinite(maxKmRaw) ? Math.min(200, Math.max(5, maxKmRaw)) : 80;
-      let nearbyVets: NearbyVetProvider[] = [];
-      if (coords && vetLike) {
-        nearbyVets = await lookupNearbyVetVendors(coords.lat, coords.lng, 10, maxKm);
+      let resolvedLat: number | null = null;
+      let resolvedLng: number | null = null;
+      const fromClient = parseLocationFromBody(location);
+      if (fromClient) {
+        resolvedLat = fromClient.lat;
+        resolvedLng = fromClient.lng;
+      } else {
+        const cc = await getCustomerCoordinates(customerPhone ?? null, customerId ?? null);
+        if (cc) {
+          resolvedLat = cc.latitude;
+          resolvedLng = cc.longitude;
+        }
       }
+
+      const nearbyCategory = resolveNearbyBookingCategory(String(bookingQuery));
+      let nearbyRows: NearbyBookingVendorRow[] = [];
+      if (resolvedLat != null && resolvedLng != null && nearbyCategory) {
+        try {
+          nearbyRows = await lookupNearbyBookingVendors(resolvedLat, resolvedLng, nearbyCategory);
+        } catch (e) {
+          logErrorSafe('ai-chatbot-booking-nearby', e);
+        }
+      }
+
+      const nearbyPromptBlock =
+        nearbyRows.length > 0
+          ? `NEARBY PROVIDERS (from live catalog; distances in km — reference only these names, do not invent others):\n${nearbyRows
+              .slice(0, 8)
+              .map((v) => `- ${v.businessName}${v.city ? `, ${v.city}` : ''} (~${v.distanceKm} km)`)
+              .join('\n')}\n`
+          : '';
+
+      const locationPromptLine =
+        resolvedLat != null && resolvedLng != null
+          ? `- Customer approximate coordinates (for context only): ${resolvedLat.toFixed(3)}, ${resolvedLng.toFixed(3)}\n`
+          : '';
 
       // Fetch available services
       let servicesContext = '';
@@ -1306,19 +1142,15 @@ OUTPUT FORMAT (JSON only):
         logErrorSafe('ai-chatbot-booking-services', e);
       }
 
-      const geoContextLine =
-        nearbyVets.length > 0
-          ? '- Server found geocoded vet clinics near the customer; a ranked list is appended after your JSON reply—briefly acknowledge that they can pick one in Search.\n'
-          : coords && vetLike
-            ? '- Customer coordinates were provided; the server searched for nearby vet clinics (results may append after your reply).\n'
-            : location && !coords
-              ? `- Location note: ${String(location).slice(0, 120)}\n`
-              : '';
-
       const systemPrompt = `You are a booking assistant for Warmpawz pet services platform.
 
 CONTEXT:
-${servicesContext ? `- ${servicesContext}\n` : ''}${geoContextLine}
+${servicesContext ? `- ${servicesContext}\n` : ''}${locationPromptLine}${nearbyPromptBlock}
+
+RULES:
+- Do **not** invent real clinic or business names. Only reference providers listed under NEARBY PROVIDERS above (if any).
+- If NEARBY PROVIDERS is empty, do **not** claim you found geocoded or numbered clinics; say the app can list **bookable partners** you can tap below or use Search / Booking.
+- Keep "response" concise; the app may append provider lists separately.
 
 TASK:
 1. Understand the user's booking request
@@ -1379,16 +1211,36 @@ OUTPUT FORMAT (JSON only):
         logErrorSafe('ai-chatbot-booking-catalog', e);
       }
 
-      if (nearbyVets.length > 0) {
-        assistance.response = appendNearbyVetsToResponse(assistance.response || '', nearbyVets);
-      } else if (coords && vetLike) {
-        assistance.response = `${(assistance.response || '').trim()}\n\nNo geocoded vet clinics were found within ~${Math.round(maxKm)} km yet. Try **Search** or a wider area.`.trim();
-      } else if (wantsNearby && vetLike && !coords) {
-        assistance.response = `${(assistance.response || '').trim()}\n\nTo list clinics by distance, enable location in your browser or app and try again.`.trim();
+      const effectiveCat = resolveEffectiveBookingCategory(
+        String(bookingQuery),
+        nearbyCategory,
+        String(assistance.serviceType || '')
+      );
+
+      let nearbyRowsFinal = nearbyRows;
+      if (resolvedLat != null && resolvedLng != null && effectiveCat) {
+        const needRefetch =
+          nearbyRowsFinal.length === 0 ||
+          nearbyCategory !== effectiveCat;
+        if (needRefetch) {
+          try {
+            const r2 = await lookupNearbyBookingVendors(resolvedLat, resolvedLng, effectiveCat);
+            nearbyRowsFinal = r2;
+          } catch (e) {
+            logErrorSafe('ai-chatbot-booking-nearby-refetch', e);
+          }
+        }
+      }
+
+      if (nearbyRowsFinal.length > 0) {
+        assistance.response = appendNearbyBookingProvidersToResponse(assistance.response || '', nearbyRowsFinal);
       }
 
       const st = String(assistance.serviceType || '').toLowerCase();
-      const normalizedUrl = normalizeCustomerBookingUrl(st, bookingQuery);
+      const normalizedUrl = normalizeCustomerBookingUrl(
+        effectiveCat || (BOOKING_SEARCH_CATEGORY_SET.has(st) ? st : '') || '',
+        bookingQuery
+      );
       if (!assistance.bookingUrl || assistance.bookingUrl === '/book' || !String(assistance.bookingUrl).startsWith('/')) {
         assistance.bookingUrl = normalizedUrl;
       }
@@ -1396,12 +1248,49 @@ OUTPUT FORMAT (JSON only):
         assistance.nextSteps = ['Continue to booking', 'Browse Services'];
       }
 
+      let suggestedProviders: Array<{
+        id: string;
+        businessName: string;
+        city?: string;
+        roleName?: string;
+        distanceKm?: number;
+      }> =
+        nearbyRowsFinal.length > 0
+          ? nearbyRowsFinal.map((v) => ({
+              id: v.id,
+              businessName: v.businessName,
+              city: v.city,
+              roleName: v.roleName,
+              distanceKm: v.distanceKm,
+            }))
+          : catalogVendors.map((v) => ({
+              id: v.id,
+              businessName: v.businessName,
+              city: v.city,
+            }));
+
+      if (suggestedProviders.length === 0 && effectiveCat) {
+        try {
+          const fb = await lookupVendorsBookingFallbackByCategory(effectiveCat, 8);
+          if (fb.length > 0) {
+            suggestedProviders = fb.map((v) => ({
+              id: v.id,
+              businessName: v.businessName,
+              city: v.city,
+              roleName: v.roleName,
+            }));
+            assistance.response = `${(assistance.response || '').trim()}\n\n**Book in chat** — tap a provider below to choose visit type, service, and time.`.trim();
+          }
+        } catch (e) {
+          logErrorSafe('ai-chatbot-booking-category-fallback', e);
+        }
+      }
+
       return c.json({
         success: true,
         ...assistance,
         catalogServices,
-        suggestedProviders: catalogVendors,
-        nearbyProviders: nearbyVets,
+        suggestedProviders,
       });
     } catch (error: unknown) {
       logErrorSafe('ai-chatbot-booking-handler', error);

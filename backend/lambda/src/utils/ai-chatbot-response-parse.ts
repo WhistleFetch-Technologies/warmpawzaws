@@ -148,7 +148,7 @@ export function parseSymptomsBedrockCompletion(completion: string): ParsedSympto
     urgency: 'routine',
     recommendations: ['Consult with a veterinarian'],
     shouldSeeVet: true,
-    vetBookingSuggested: true,
+    vetBookingSuggested: false,
   });
 
   const jsonStr = extractFirstJsonObjectString(raw);
@@ -169,7 +169,7 @@ export function parseSymptomsBedrockCompletion(completion: string): ParsedSympto
       urgency,
       recommendations: sanitizeStringArray(p.recommendations, 12, 200),
       shouldSeeVet: p.shouldSeeVet !== false,
-      vetBookingSuggested: p.vetBookingSuggested !== false,
+      vetBookingSuggested: p.vetBookingSuggested === true,
     };
   } catch {
     return fallback();

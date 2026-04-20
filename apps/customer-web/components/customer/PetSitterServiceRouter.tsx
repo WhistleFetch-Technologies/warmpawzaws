@@ -209,14 +209,6 @@ export function PetSitterServiceRouter({
     scrollToFeatured();
   };
 
-  if (vendorsLoading) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
-      </div>
-    );
-  }
-
   const headerStats = useMemo(() => {
     const n = vendors.length;
     const rating =
@@ -233,6 +225,14 @@ export function PetSitterServiceRouter({
       },
     ];
   }, [vendors]);
+
+  if (vendorsLoading) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">

@@ -609,6 +609,13 @@ export class ApiClient {
     }, retryConfig);
   }
 
+  async patch<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: requestJsonBody(data),
+    }, retryConfig);
+  }
+
   async delete<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
     return this.request<T>(endpoint, { 
       method: 'DELETE',
@@ -695,6 +702,27 @@ export const aiChatbotApi = {
   
   getConversation: (conversationId: string) => 
     apiClient.get(`/ai-chatbot/conversation/${conversationId}`),
+
+  createBookingSession: (data: {
+    customerId?: string;
+    customerPhone?: string;
+    category?: string;
+    serviceStyle?: string;
+  }) => apiClient.post('/ai-chatbot/booking-session', data),
+
+  getBookingSession: (sessionId: string) => apiClient.get(`/ai-chatbot/booking-session/${sessionId}`),
+
+  patchBookingSession: (sessionId: string, body: Record<string, unknown>) =>
+    apiClient.patch(`/ai-chatbot/booking-session/${sessionId}`, body),
+
+  commitBookingSlot: (sessionId: string, body: { slotTime: string; expectedVersion?: number }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/commit-slot`, body),
+
+  prepareBookingPayment: (sessionId: string, body?: { customerId?: string; customerPhone?: string }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/prepare-payment`, body || {}),
+
+  interpretBookingSession: (sessionId: string, body: { message: string }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/interpret`, body),
 };
 
 // ✅ NEW: Support & CRM API (Phase 3 - AI Chatbot Integration)
