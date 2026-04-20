@@ -38,6 +38,16 @@ const GROOMING_ROLE_IDS = ['groomer', 'groomer_solo', 'groomer_center', 'pet_gro
 
 const HUB_SLUG: BoardingServiceSlug = 'all';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function firstGroomingServiceUuid(services: any[]): string | undefined {
+  for (const s of services) {
+    const raw = s?.id ?? s?.service_id ?? s?.serviceId;
+    if (typeof raw === 'string' && UUID_RE.test(raw)) return raw;
+  }
+  return undefined;
+}
+
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const {
     loading: vendorsLoading,
@@ -116,40 +126,64 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const loadPreviousGroomer = async () => {
     try {
-      // Try to get previous groomer from booking history or packages
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=grooming`).catch(() => null);
-      
-      if (response?.provider) {
-        setPreviousGroomer({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo || null,
-          rating: response.provider.rating || 4.9,
-          lastVisit: response.provider.lastVisit,
-          sessionsCount: response.provider.sessionsCount || 5
-        });
-      } else {
-        // Try getting from active packages
-        const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=grooming`).catch(() => null);
-        if (packagesResponse?.packages && packagesResponse.packages.length > 0) {
-          const pkg = packagesResponse.packages[0];
-          if (pkg.vendorId && pkg.vendorName) {
-            setPreviousGroomer({
-              id: pkg.vendorId,
-              name: pkg.vendorName,
-              photo: null,
-              rating: 4.9,
-              lastVisit: pkg.lastUsed || '3 weeks ago',
-              sessionsCount: pkg.sessionsUsed || 5
-            });
-          }
+      const p = response?.providers?.[0] ?? response?.provider;
+
+      if (p) {
+        const vid = p.vendor_id ?? p.vendorId ?? p.id;
+        if (vid) {
+          setPreviousGroomer({
+            id: vid,
+            name: p.vendor_name || p.vendorName || p.business_name || p.businessName || p.name,
+            photo: p.profile_image_url || p.photo || null,
+            rating: Number(p.vendor_rating ?? p.rating) || 4.9,
+            lastVisit: p.last_booking_date || p.lastVisit,
+            sessionsCount: p.sessionsCount || 5,
+            lastServiceId: p.last_service_id || p.service_id || p.serviceId,
+          });
+          return;
+        }
+      }
+
+      const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=grooming`).catch(() => null);
+      if (packagesResponse?.packages && packagesResponse.packages.length > 0) {
+        const pkg = packagesResponse.packages[0];
+        if (pkg.vendorId && pkg.vendorName) {
+          setPreviousGroomer({
+            id: pkg.vendorId,
+            name: pkg.vendorName,
+            photo: null,
+            rating: 4.9,
+            lastVisit: pkg.lastUsed || '3 weeks ago',
+            sessionsCount: pkg.sessionsUsed || 5,
+            lastServiceId: pkg.serviceId || pkg.service_id || pkg.defaultServiceId,
+          });
         }
       }
     } catch (error) {
-      // Silently fail - not having a previous groomer is not an error
       console.log('No previous groomer found:', error);
     }
   };
+
+  const handleBookAgain = useCallback(async () => {
+    if (!previousGroomer?.id) return;
+    const vid = previousGroomer.id;
+    let serviceId: string | undefined = previousGroomer.lastServiceId;
+    if (!serviceId) {
+      try {
+        const res = await apiClient.get<any>(`/customer/vendor/${vid}/services?category=grooming`);
+        const list = Array.isArray(res?.services) ? res.services : [];
+        serviceId = firstGroomingServiceUuid(list);
+      } catch {
+        /* CreateBookingPage will resolve via vendor/available + catalog */
+      }
+    }
+    onNavigate?.('create-booking', {
+      vendorId: vid,
+      serviceType: 'grooming',
+      serviceId,
+    });
+  }, [previousGroomer, onNavigate]);
 
   const serviceTypes = [
     {
@@ -247,10 +281,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <Button 
                     size="sm"
                     className="bg-orange-600 text-white hover:bg-orange-700 whitespace-nowrap"
-                    onClick={() => onNavigate?.('create-booking', { 
-                      vendorId: previousGroomer.id,
-                      serviceType: 'grooming'
-                    })}
+                    onClick={() => void handleBookAgain()}
                   >
                     Book Again
                   </Button>

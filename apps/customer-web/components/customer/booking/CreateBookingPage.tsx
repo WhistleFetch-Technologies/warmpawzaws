@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LoadingState, ErrorState } from '@/components/ui/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +30,67 @@ interface CreateBookingPageProps {
   vendorId?: string;
   onBack: () => void;
   onSuccess: (bookingId: string) => void;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidString(s: string | undefined): boolean {
+  return typeof s === 'string' && UUID_RE.test(s);
+}
+
+/** Prefer catalog `id`; support snake_case `service_id` from API rows. */
+function serviceRowUuid(row: any): string | null {
+  const raw = row?.id ?? row?.service_id ?? row?.serviceId;
+  return typeof raw === 'string' && isUuidString(raw) ? raw : null;
+}
+
+/**
+ * Resolve a bookable service UUID: vendor /available, then grooming catalog (matches GroomingBookingRouter).
+ */
+async function fetchResolvedServiceId(vendorId: string, preferred?: string): Promise<string | null> {
+  if (preferred && isUuidString(preferred)) {
+    return preferred;
+  }
+
+  let available: any[] = [];
+  try {
+    const response = await apiClient.get<{ services?: any[] }>(`/vendor/${vendorId}/services/available`);
+    available = response.services || [];
+  } catch (err) {
+    console.error('Failed to get vendor services:', err);
+  }
+
+  if (preferred) {
+    const match = available.find(
+      (s) => String(s?.id ?? s?.service_id ?? s?.serviceId) === String(preferred)
+    );
+    const u = match ? serviceRowUuid(match) : null;
+    if (u) return u;
+  }
+  for (const s of available) {
+    const u = serviceRowUuid(s);
+    if (u) return u;
+  }
+
+  try {
+    const res = await apiClient.get<any>(`/customer/vendor/${vendorId}/services?category=grooming`);
+    const grooming = Array.isArray(res?.services) ? res.services : [];
+    if (preferred) {
+      const match = grooming.find(
+        (s: any) => String(s?.id ?? s?.service_id ?? s?.serviceId) === String(preferred)
+      );
+      const u = match ? serviceRowUuid(match) : null;
+      if (u) return u;
+    }
+    for (const s of grooming) {
+      const u = serviceRowUuid(s);
+      if (u) return u;
+    }
+  } catch (err) {
+    console.error('Failed to get grooming catalog services:', err);
+  }
+
+  return null;
 }
 
 export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSuccess }: CreateBookingPageProps) {
@@ -64,14 +124,12 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     fetchAddresses();
   }, [phone]);
 
-  const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-
   useEffect(() => {
-    if (vendorId && serviceId && isUuid(serviceId)) {
+    if (vendorId && serviceId && isUuidString(serviceId)) {
       setResolvedServiceId(serviceId);
-    } else if (vendorId && (!serviceId || !isUuid(serviceId))) {
+    } else if (vendorId && (!serviceId || !isUuidString(serviceId))) {
       resolveServiceId();
-    } else if (serviceId && isUuid(serviceId)) {
+    } else if (serviceId && isUuidString(serviceId)) {
       setResolvedServiceId(serviceId);
     }
   }, [serviceId, vendorId]);
@@ -111,18 +169,9 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
 
   const resolveServiceId = async () => {
     if (!vendorId) return;
-    
-    try {
-      const response = await apiClient.get<{ services?: any[] }>(
-        `/vendor/${vendorId}/services/available`
-      );
-      
-      const services = response.services || [];
-      if (services.length > 0 && services[0].id) {
-        setResolvedServiceId(services[0].id);
-      }
-    } catch (err) {
-      console.error('Failed to get vendor services:', err);
+    const id = await fetchResolvedServiceId(vendorId, serviceId);
+    if (id) {
+      setResolvedServiceId(id);
     }
   };
 
@@ -188,27 +237,21 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     }
 
     let finalServiceId = resolvedServiceId || serviceId;
-    
-    if (!finalServiceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalServiceId)) {
-      if (vendorId) {
-        try {
-          const response = await apiClient.get<{ services?: any[] }>(
-            `/vendor/${vendorId}/services/available`
-          );
-          const services = response.services || [];
-          if (services.length > 0 && services[0].id) {
-            finalServiceId = services[0].id;
-            setResolvedServiceId(services[0].id);
-          }
-        } catch (err) {
-          console.error('Failed to get service:', err);
-        }
+
+    if (!finalServiceId || !isUuidString(finalServiceId)) {
+      const resolved = await fetchResolvedServiceId(
+        vendorId,
+        typeof finalServiceId === 'string' ? finalServiceId : undefined
+      );
+      if (resolved) {
+        finalServiceId = resolved;
+        setResolvedServiceId(resolved);
       }
-      
-      if (!finalServiceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalServiceId)) {
-        toast.error('Unable to find service information. Please try selecting the service again.');
-        return;
-      }
+    }
+
+    if (!finalServiceId || !isUuidString(finalServiceId)) {
+      toast.error('Unable to find service information. Please try selecting the service again.');
+      return;
     }
     
     try {
