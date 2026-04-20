@@ -159,6 +159,7 @@ export class LoyaltyPointsService {
         if (!userId) {
           throw new Error('customerId or vendorId is required');
         }
+        const isVendor = !!(params.vendorId && !params.customerId);
 
         // 1. Upsert loyalty profile
         await client.query(
@@ -169,7 +170,6 @@ export class LoyaltyPointsService {
         );
 
         // 2. Create loyalty transaction (MUST use client, not pool insert)
-        const isVendor = !!(params.vendorId && !params.customerId);
         await client.query(
           `INSERT INTO loyalty_transactions
              (transaction_type, points, reference_type, reference_id, description, vendor_id, customer_id)
@@ -202,12 +202,20 @@ export class LoyaltyPointsService {
           return { points: finalPoints, walletCredited: 0 };
         }
 
+        // Customers redeem points to wallet explicitly in the app; do not auto-credit customer wallet on earn.
+        if (!isVendor) {
+          console.info(
+            `[LOYALTY] Customer award: wallet credit skipped (redeem to wallet in app). action=${params.actionName} points=${finalPoints}`
+          );
+          return { points: finalPoints, walletCredited: 0 };
+        }
+
         const ppr = walletPolicy.pointsPerRupee;
         const walletAmount = Math.round((finalPoints / ppr) * 100) / 100;
         const walletConvLabel = `${ppr} points = ₹1`;
 
-        // ---------- Vendor wallet flow ----------
-        if (isVendor) {
+        // ---------- Vendor wallet flow (auto_convert_to_wallet) ----------
+        {
           // Upsert vendor wallet — SAVEPOINT protects against column mismatch
           await client.query('SAVEPOINT vendor_wallet_upsert');
             try {
@@ -295,108 +303,6 @@ export class LoyaltyPointsService {
           console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to vendor wallet) for action: ${params.actionName}`);
           return { points: finalPoints, walletCredited: walletAmount };
         }
-
-        // ---------- Customer wallet flow ----------
-        await client.query('SAVEPOINT cust_wallet_upsert');
-        try {
-          await client.query(
-            `INSERT INTO customer_wallets (customer_id, balance, currency)
-             VALUES ($1, 0, 'INR')
-             ON CONFLICT (customer_id) DO NOTHING`,
-            [userId]
-          );
-          await client.query('RELEASE SAVEPOINT cust_wallet_upsert');
-        } catch (walletCreateErr: any) {
-          await client.query('ROLLBACK TO SAVEPOINT cust_wallet_upsert');
-          if (walletCreateErr.message?.includes('currency') || walletCreateErr.message?.includes('column')) {
-            await client.query(
-              `INSERT INTO customer_wallets (customer_id, balance)
-               VALUES ($1, 0)
-               ON CONFLICT (customer_id) DO NOTHING`,
-              [userId]
-            );
-            } else {
-            throw walletCreateErr;
-            }
-          }
-
-        const custWalletRes = await client.query(
-          `SELECT id, balance FROM customer_wallets WHERE customer_id = $1`,
-          [userId]
-        );
-        const wallet = custWalletRes.rows[0];
-        if (!wallet) throw new Error(`customer_wallets row not found for customer ${userId}`);
-
-        // Credit wallet
-        await client.query(
-          `UPDATE customer_wallets
-           SET balance = balance + $1, updated_at = NOW()
-           WHERE id = $2`,
-          [walletAmount, wallet.id]
-        );
-
-        const balAfterRes = await client.query(
-          `SELECT balance FROM customer_wallets WHERE id = $1`,
-          [wallet.id]
-        );
-        const newBalance = parseFloat(balAfterRes.rows[0]?.balance || '0');
-
-        const walletTxnDesc = `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`;
-        // Dev/prod schemas differ: some wallet_transactions use wallet_id (FK to customer_wallets.id), others customer_id.
-        await client.query('SAVEPOINT cwt_insert');
-        try {
-          const colMismatch = (e: any) =>
-            e?.code === '42703' ||
-            (typeof e?.message === 'string' &&
-              (e.message.includes('column') || e.message.includes('does not exist')));
-          const attempts: Array<{ sql: string; params: unknown[] }> = [
-            {
-              sql: `INSERT INTO wallet_transactions
-                     (wallet_id, transaction_type, amount, balance_after, description, source)
-                   VALUES ($1,$2,$3,$4,$5,$6)`,
-              params: [wallet.id, 'credit', walletAmount, newBalance, walletTxnDesc, 'loyalty_points'],
-            },
-            {
-              sql: `INSERT INTO wallet_transactions
-                     (wallet_id, transaction_type, amount, balance_after, description)
-                   VALUES ($1,$2,$3,$4,$5)`,
-              params: [wallet.id, 'credit', walletAmount, newBalance, walletTxnDesc],
-            },
-            {
-              sql: `INSERT INTO wallet_transactions
-                     (customer_id, transaction_type, amount, balance_after, description, source)
-                   VALUES ($1,$2,$3,$4,$5,$6)`,
-              params: [userId, 'credit', walletAmount, newBalance, walletTxnDesc, 'loyalty_points'],
-            },
-            {
-              sql: `INSERT INTO wallet_transactions
-                     (customer_id, transaction_type, amount, balance_after, description)
-                   VALUES ($1,$2,$3,$4,$5)`,
-              params: [userId, 'credit', walletAmount, newBalance, walletTxnDesc],
-            },
-          ];
-          let inserted = false;
-          let lastErr: any;
-          for (const a of attempts) {
-            try {
-              await client.query(a.sql, a.params);
-              inserted = true;
-              break;
-            } catch (err: any) {
-              await client.query('ROLLBACK TO SAVEPOINT cwt_insert');
-              if (!colMismatch(err)) throw err;
-              lastErr = err;
-            }
-          }
-          if (!inserted) throw lastErr ?? new Error('wallet_transactions insert failed');
-          await client.query('RELEASE SAVEPOINT cwt_insert');
-        } catch (cwtErr: any) {
-          await client.query('ROLLBACK TO SAVEPOINT cwt_insert');
-          throw cwtErr;
-        }
-
-        console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to wallet) for action: ${params.actionName}`);
-        return { points: finalPoints, walletCredited: walletAmount };
       });
 
       // Send in-app notification after successful award (non-blocking).

@@ -16,9 +16,207 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { select, insert, update, query, upsert, deleteRows, withTransaction } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { resolveMinRedemptionPointsFromRuleRow } from '../../../utils/loyalty-rule-fields';
+
+/** Active basic loyalty rule for point → wallet redeem (same rules as POST /loyalty/redeem). */
+async function loadActiveLoyaltyRedeemRule(): Promise<
+  | { ok: true; rule: Record<string, any> }
+  | { ok: false; error: string; status: number }
+> {
+  const rulesRes = await query(`SELECT * FROM loyalty_rules WHERE is_active = true`);
+  const rules = rulesRes.rows || [];
+  if (rules.length === 0) {
+    return { ok: false, error: 'Loyalty redemption is not configured (no active loyalty_rules row)', status: 400 };
+  }
+  if (rules.length > 1) {
+    return {
+      ok: false,
+      error: `Loyalty misconfigured: ${rules.length} active loyalty_rules rows; exactly one required`,
+      status: 400,
+    };
+  }
+  return { ok: true, rule: rules[0] as Record<string, any> };
+}
+
+/**
+ * Redeem loyalty points → INR wallet (customer). Shared by POST /loyalty/redeem and customer-scoped route.
+ */
+export async function executeLoyaltyRedeemPointsToWallet(params: {
+  customerId: string;
+  points: number;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  description?: string | null;
+}): Promise<
+  | {
+      ok: true;
+      pointsRedeemed: number;
+      cashValue: number;
+      walletCredited: number;
+      remainingPoints: number;
+    }
+  | { ok: false; error: string; status: number }
+> {
+  const { customerId, points } = params;
+  if (!customerId || points === undefined || points === null) {
+    return { ok: false, error: 'customerId and points are required', status: 400 };
+  }
+  const pts = parseInt(String(points), 10);
+  if (Number.isNaN(pts) || pts < 1) {
+    return { ok: false, error: 'points must be a positive integer', status: 400 };
+  }
+
+  const loaded = await loadActiveLoyaltyRedeemRule();
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error, status: loaded.status };
+  }
+  const rule = loaded.rule;
+  const rr = parseFloat(String(rule.redemption_rate ?? ''));
+  if (Number.isNaN(rr) || rr <= 0) {
+    return { ok: false, error: 'Active loyalty_rules row has invalid redemption_rate', status: 500 };
+  }
+  const minRedemption = resolveMinRedemptionPointsFromRuleRow(rule);
+  if (Number.isNaN(minRedemption) || minRedemption < 1) {
+    return { ok: false, error: 'Active loyalty_rules row has invalid min redemption points', status: 500 };
+  }
+  if (pts < minRedemption) {
+    return { ok: false, error: `Minimum ${minRedemption} points required for redemption`, status: 400 };
+  }
+
+  const cashValue = Math.round((pts / rr) * 100) / 100;
+  if (!Number.isFinite(cashValue) || cashValue <= 0) {
+    return { ok: false, error: 'Invalid redemption amount for given points', status: 400 };
+  }
+
+  const redeemDescription =
+    params.description || `Redeemed ${pts} points`;
+
+  try {
+    const { remainingPoints, walletCredited } = await withTransaction(async (client) => {
+      const prof = await client.query(
+        `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid FOR UPDATE`,
+        [customerId]
+      );
+      if (prof.rows.length === 0) {
+        throw new Error('Loyalty profile not found');
+      }
+      const bal = parseInt(String(prof.rows[0].total_points ?? '0'), 10);
+      if (bal < pts) {
+        throw new Error('INSUFFICIENT_POINTS');
+      }
+
+      await client.query(
+        `INSERT INTO loyalty_transactions
+             (customer_id, transaction_type, points, reference_type, reference_id, description)
+           VALUES ($1::uuid, 'redeemed', $2, $3, $4, $5)`,
+        [customerId, -pts, params.referenceType || null, params.referenceId || null, redeemDescription]
+      );
+
+      await client.query(
+        `UPDATE customer_loyalty_points
+           SET total_points = COALESCE(total_points, 0) - $1,
+               lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1,
+               updated_at = NOW()
+           WHERE customer_id = $2::uuid`,
+        [pts, customerId]
+      );
+
+      await client.query('SAVEPOINT sp_loyalty_redeem_cw');
+      try {
+        await client.query(
+          `INSERT INTO customer_wallets (customer_id, balance, currency)
+             VALUES ($1::uuid, 0, 'INR')
+             ON CONFLICT (customer_id) DO NOTHING`,
+          [customerId]
+        );
+        await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_cw');
+      } catch (cwInsErr: any) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_cw');
+        const msg = String(cwInsErr?.message || '');
+        if (msg.includes('currency') || msg.includes('column')) {
+          await client.query(
+            `INSERT INTO customer_wallets (customer_id, balance)
+               VALUES ($1::uuid, 0)
+               ON CONFLICT (customer_id) DO NOTHING`,
+            [customerId]
+          );
+        } else {
+          throw cwInsErr;
+        }
+      }
+      await client.query(`SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`, [customerId]);
+      const wup = await client.query(
+        `UPDATE customer_wallets SET balance = balance + $1::numeric, updated_at = NOW()
+           WHERE customer_id = $2::uuid RETURNING id, balance::text`,
+        [cashValue, customerId]
+      );
+      const walletRow = wup.rows[0] as { id: string; balance: string };
+      const newBal = parseFloat(String(walletRow?.balance ?? '0')) || 0;
+
+      const wtxnDesc = `Loyalty redeem: ${pts} points → ₹${cashValue.toFixed(2)} (${rr} pts = ₹1)`;
+      await client.query('SAVEPOINT sp_loyalty_redeem_wt');
+      try {
+        await client.query(
+          `INSERT INTO wallet_transactions (
+               customer_id, transaction_type, amount, balance_after, description, source
+             ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4, 'loyalty_redeem')`,
+          [customerId, cashValue, newBal, wtxnDesc]
+        );
+        await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_wt');
+      } catch (colErr: any) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
+        const msg = String(colErr?.message || '');
+        if (msg.includes('source') || msg.includes('column')) {
+          await client.query(
+            `INSERT INTO wallet_transactions (
+                 customer_id, transaction_type, amount, balance_after, description
+               ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4)`,
+            [customerId, cashValue, newBal, wtxnDesc]
+          );
+        } else {
+          throw colErr;
+        }
+      }
+
+      await client
+        .query(
+          `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
+          [cashValue, customerId]
+        )
+        .catch(() => null);
+
+      const after = await client.query(
+        `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid`,
+        [customerId]
+      );
+      return {
+        remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
+        walletCredited: cashValue,
+      };
+    });
+
+    return {
+      ok: true,
+      pointsRedeemed: pts,
+      cashValue,
+      walletCredited,
+      remainingPoints,
+    };
+  } catch (error: any) {
+    console.error('executeLoyaltyRedeemPointsToWallet:', error);
+    if (error?.message === 'INSUFFICIENT_POINTS') {
+      return { ok: false, error: 'Insufficient loyalty points', status: 400 };
+    }
+    if (error?.message === 'Loyalty profile not found') {
+      return { ok: false, error: 'Loyalty profile not found', status: 404 };
+    }
+    return { ok: false, error: error?.message || 'Redeem failed', status: 500 };
+  }
+}
 
 export function registerLoyaltyEndpoints(app: Hono) {
   /**
@@ -162,162 +360,107 @@ export function registerLoyaltyEndpoints(app: Hono) {
 
   /**
    * POST /loyalty/redeem
-   * Redeem loyalty points
+   * Redeem loyalty points → wallet (same rules as customer app “Redeem to Wallet”).
    */
   app.post("/loyalty/redeem", async (c) => {
     try {
       const { customerId, points, referenceType, referenceId, description } = await c.req.json();
-
-      if (!customerId || points === undefined) {
-        return c.json({ error: 'customerId and points are required' }, 400);
-      }
-
-      const rulesRes = await query(`SELECT * FROM loyalty_rules WHERE is_active = true`);
-      const rules = rulesRes.rows || [];
-      if (rules.length === 0) {
-        return c.json(
-          { error: 'Loyalty redemption is not configured (no active loyalty_rules row)' },
-          400
-        );
-      }
-      if (rules.length > 1) {
-        return c.json(
-          {
-            error: `Loyalty misconfigured: ${rules.length} active loyalty_rules rows; exactly one required`,
-          },
-          400
-        );
-      }
-
-      const rule = rules[0] as Record<string, any>;
-      if (rule.auto_convert_to_wallet === null || rule.auto_convert_to_wallet === undefined) {
-        return c.json({ error: 'Active loyalty_rules row must set auto_convert_to_wallet' }, 500);
-      }
-      const rr = parseFloat(String(rule.redemption_rate ?? ''));
-      if (Number.isNaN(rr) || rr <= 0) {
-        return c.json({ error: 'Active loyalty_rules row has invalid redemption_rate' }, 500);
-      }
-      const minRedemption = parseInt(String(rule.min_redemption_points ?? ''), 10);
-      if (Number.isNaN(minRedemption) || minRedemption < 1) {
-        return c.json({ error: 'Active loyalty_rules row has invalid min_redemption_points' }, 500);
-      }
-
-      if (points < minRedemption) {
-        return c.json({ error: `Minimum ${minRedemption} points required for redemption` }, 400);
-      }
-
-      const cashValue = Math.round((points / rr) * 100) / 100;
-      if (!Number.isFinite(cashValue) || cashValue <= 0) {
-        return c.json({ error: 'Invalid redemption amount for given points' }, 400);
-      }
-
-      const redeemDescription = description || `Redeemed ${points} points`;
-
-      const { remainingPoints, walletCredited } = await withTransaction(async (client) => {
-        const prof = await client.query(
-          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid FOR UPDATE`,
-          [customerId]
-        );
-        if (prof.rows.length === 0) {
-          throw new Error('Loyalty profile not found');
-        }
-        const bal = parseInt(String(prof.rows[0].total_points ?? '0'), 10);
-        if (bal < points) {
-          throw new Error('INSUFFICIENT_POINTS');
-        }
-
-        await client.query(
-          `INSERT INTO loyalty_transactions
-             (customer_id, transaction_type, points, reference_type, reference_id, description)
-           VALUES ($1::uuid, 'redeemed', $2, $3, $4, $5)`,
-          [customerId, -points, referenceType || null, referenceId || null, redeemDescription]
-        );
-
-        await client.query(
-          `UPDATE customer_loyalty_points
-           SET total_points = COALESCE(total_points, 0) - $1,
-               lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1,
-               updated_at = NOW()
-           WHERE customer_id = $2::uuid`,
-          [points, customerId]
-        );
-
-        await client.query(
-          `INSERT INTO customer_wallets (customer_id, balance, currency)
-           VALUES ($1::uuid, 0, 'INR')
-           ON CONFLICT (customer_id) DO NOTHING`,
-          [customerId]
-        );
-        await client.query(
-          `SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
-          [customerId]
-        );
-        const wup = await client.query(
-          `UPDATE customer_wallets SET balance = balance + $1::numeric, updated_at = NOW()
-           WHERE customer_id = $2::uuid RETURNING id, balance::text`,
-          [cashValue, customerId]
-        );
-        const walletRow = wup.rows[0] as { id: string; balance: string };
-        const newBal = parseFloat(String(walletRow?.balance ?? '0')) || 0;
-
-        const wtxnDesc = `Loyalty redeem: ${points} points → ₹${cashValue.toFixed(2)} (${rr} pts = ₹1)`;
-        await client.query('SAVEPOINT sp_loyalty_redeem_wt');
-        try {
-          await client.query(
-            `INSERT INTO wallet_transactions (
-               customer_id, transaction_type, amount, balance_after, description, source
-             ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4, 'loyalty_redeem')`,
-            [customerId, cashValue, newBal, wtxnDesc]
-          );
-          await client.query('RELEASE SAVEPOINT sp_loyalty_redeem_wt');
-        } catch (colErr: any) {
-          await client.query('ROLLBACK TO SAVEPOINT sp_loyalty_redeem_wt');
-          const msg = String(colErr?.message || '');
-          if (msg.includes('source') || msg.includes('column')) {
-            await client.query(
-              `INSERT INTO wallet_transactions (
-                 customer_id, transaction_type, amount, balance_after, description
-               ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4)`,
-              [customerId, cashValue, newBal, wtxnDesc]
-            );
-          } else {
-            throw colErr;
-          }
-        }
-
-        await client
-          .query(
-            `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
-            [cashValue, customerId]
-          )
-          .catch(() => null);
-
-        const after = await client.query(
-          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid`,
-          [customerId]
-        );
-        return {
-          remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
-          walletCredited: cashValue,
-        };
+      const result = await executeLoyaltyRedeemPointsToWallet({
+        customerId,
+        points,
+        referenceType,
+        referenceId,
+        description,
       });
-
+      if (!result.ok) {
+        return c.json({ error: result.error }, result.status as ContentfulStatusCode);
+      }
       return c.json({
         success: true,
-        pointsRedeemed: points,
-        cashValue,
-        walletCredited,
-        remainingPoints,
+        pointsRedeemed: result.pointsRedeemed,
+        cashValue: result.cashValue,
+        walletCredited: result.walletCredited,
+        remainingPoints: result.remainingPoints,
         message: 'Points redeemed and credited to wallet successfully',
       });
     } catch (error: any) {
       console.error('Error redeeming loyalty points:', error);
-      if (error?.message === 'INSUFFICIENT_POINTS') {
-        return c.json({ error: 'Insufficient loyalty points' }, 400);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:customerId/loyalty/wallet-redeem-policy
+   * Basic rules for “Redeem points to wallet” (redemption_rate, min from admin min_points_to_redeem or legacy min_redemption_points).
+   */
+  app.get("/customer/:customerId/loyalty/wallet-redeem-policy", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      if (!isValidUUID(customerId)) {
+        return c.json({ error: 'Invalid customerId' }, 400);
       }
-      if (error?.message === 'Loyalty profile not found') {
-        return c.json({ error: 'Loyalty profile not found' }, 404);
+      const loaded = await loadActiveLoyaltyRedeemRule();
+      if (!loaded.ok) {
+        return c.json({ success: false, error: loaded.error }, loaded.status as ContentfulStatusCode);
       }
+      const rule = loaded.rule;
+      const rr = parseFloat(String(rule.redemption_rate ?? ''));
+      if (Number.isNaN(rr) || rr <= 0) {
+        return c.json({ success: false, error: 'Active loyalty_rules row has invalid redemption_rate' }, 500);
+      }
+      const minRedemptionPoints = resolveMinRedemptionPointsFromRuleRow(rule);
+      if (Number.isNaN(minRedemptionPoints) || minRedemptionPoints < 1) {
+        return c.json({ success: false, error: 'Active loyalty_rules row has invalid min redemption points' }, 500);
+      }
+      const rupeesPerPoint = Math.round((1 / rr) * 10000) / 10000;
+      return c.json({
+        success: true,
+        customerId,
+        redemptionRatePointsPerRupee: rr,
+        minRedemptionPoints,
+        /** Human-readable: ₹ per 1 point (admin “redemption_rate” = points per ₹1). */
+        rupeesPerPoint,
+        labelPointsToRupee: `1 point = ₹${rupeesPerPoint.toFixed(2)}`,
+        labelMinPoints: `Min redemption points required: ${minRedemptionPoints}`,
+      });
+    } catch (error: any) {
+      console.error('wallet-redeem-policy:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/:customerId/loyalty/redeem-to-wallet
+   * Body: { points, description?, referenceType?, referenceId? }
+   */
+  app.post("/customer/:customerId/loyalty/redeem-to-wallet", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      if (!isValidUUID(customerId)) {
+        return c.json({ error: 'Invalid customerId' }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const points = body.points;
+      const result = await executeLoyaltyRedeemPointsToWallet({
+        customerId,
+        points,
+        referenceType: body.referenceType,
+        referenceId: body.referenceId,
+        description: body.description,
+      });
+      if (!result.ok) {
+        return c.json({ success: false, error: result.error }, result.status as ContentfulStatusCode);
+      }
+      return c.json({
+        success: true,
+        pointsRedeemed: result.pointsRedeemed,
+        cashValue: result.cashValue,
+        walletCredited: result.walletCredited,
+        remainingPoints: result.remainingPoints,
+        message: 'Points redeemed and credited to wallet successfully',
+      });
+    } catch (error: any) {
+      console.error('redeem-to-wallet:', error);
       return c.json({ error: error.message }, 500);
     }
   });

@@ -8,17 +8,16 @@ import {
   getEffectiveMinCustomerWalletBalanceForCheckout,
   MIN_CUSTOMER_WALLET_BALANCE_PLATFORM_KEY,
 } from 'src/lib/services/wallet-checkout-min-balance';
+import { resolveMinRedemptionPointsFromRuleRow } from 'src/utils/loyalty-rule-fields';
 
 function roundMoney2(n: number): number {
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.round(n * 100) / 100;
 }
 
-function loyaltyRedeemFloorInrFromRows(
-  rows: Array<{ min_redemption_points?: string | number | null; redemption_rate?: string | number | null }>
-): number {
+function loyaltyRedeemFloorInrFromRows(rows: Array<Record<string, any>>): number {
   if (rows.length !== 1) return 0;
-  const minRp = parseInt(String(rows[0].min_redemption_points ?? ''), 10);
+  const minRp = resolveMinRedemptionPointsFromRuleRow(rows[0]);
   const rr = parseFloat(String(rows[0].redemption_rate ?? ''));
   if (Number.isFinite(minRp) && minRp >= 1 && Number.isFinite(rr) && rr > 0) {
     return roundMoney2(minRp / rr);
@@ -34,9 +33,9 @@ export function registerWalletCheckoutRulesEndpoints(app: Hono) {
       );
       const rule = rulesRes.rows?.[0] || null;
 
-      const lr = await query(
-        `SELECT min_redemption_points, redemption_rate FROM loyalty_rules WHERE is_active = true`
-      ).catch(() => ({ rows: [] as any[] }));
+      const lr = await query(`SELECT * FROM loyalty_rules WHERE is_active = true`).catch(() => ({
+        rows: [] as any[],
+      }));
       const loyaltyFloor = loyaltyRedeemFloorInrFromRows(lr.rows || []);
 
       const ps = await query(

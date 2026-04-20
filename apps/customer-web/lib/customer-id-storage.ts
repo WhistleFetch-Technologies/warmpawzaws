@@ -76,7 +76,7 @@ export function ensureCustomerIdStorageReconciledOnce(): void {
 export function customerUuidSegmentInPath(path: string): string | null {
   const p = path.replace(/^\/+/, '/');
   const m = p.match(
-    /^\/customer\/([^/?#]+)\/(wishlist|pets|returns|rewards|profile|bookings|preferences|search-history)(?:\/|$|\?)/
+    /^\/customer\/([^/?#]+)\/(wishlist|pets|returns|rewards|loyalty|profile|bookings|preferences|search-history)(?:\/|$|\?)/
   );
   if (m) {
     try {
