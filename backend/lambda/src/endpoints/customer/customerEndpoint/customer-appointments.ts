@@ -19,6 +19,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query } from '../../../database/rds-connection';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
+import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 
 // ============================================================================
@@ -153,7 +154,7 @@ class GetAppointmentDetailsHandler extends BaseHandler {
       `,
         [appointmentId, customerId]
       ).catch((err) => {
-        console.warn('[appointments] detail main query failed:', err);
+        console.warn('[appointments] detail main query failed:', (err as Error)?.message || err);
         return { rows: [] as Record<string, unknown>[] };
       });
 
@@ -380,6 +381,18 @@ class CancelAppointmentHandler extends BaseHandler {
 
       const bookingId = bookingRow.booking_id ?? bookingRow.id;
 
+      // Same wall-clock semantics as booking cancel + refund preview (vendor_timezone + date + time).
+      const hoursUntilStart = computeHoursUntilBookingStart({
+        booking_date: bookingRow.booking_date,
+        booking_time: String(bookingRow.booking_time ?? ''),
+        vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
+        booking_datetime: (bookingRow as any).booking_datetime ?? null,
+        scheduled_at: (bookingRow as any).scheduled_at ?? null,
+      });
+      if (Number.isFinite(hoursUntilStart) && hoursUntilStart < 0) {
+        return this.error('Cannot cancel past appointments', 400);
+      }
+
       const updated = await query(
         `
         UPDATE bookings
@@ -585,6 +598,10 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments/:id', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('id'),
+    };
     const context = createLambdaContext();
     return runAppointmentHandler(
       c,
@@ -733,6 +750,24 @@ function createApiGatewayEvent(req: any): any {
     }
   } catch (e) {
     console.warn('[appointments] createApiGatewayEvent queryStringParameters failed:', e);
+  }
+
+  // Fallback: some runtimes / adapters leave req.query() empty but the URL still has ?customerId=…
+  try {
+    const urlStr = typeof req.url === 'string' ? req.url : '';
+    if (urlStr.includes('?')) {
+      const u = urlStr.startsWith('http://') || urlStr.startsWith('https://')
+        ? new URL(urlStr)
+        : new URL(urlStr, 'http://127.0.0.1');
+      u.searchParams.forEach((value, key) => {
+        if (value == null || key == null) return;
+        if (!queryStringParameters[key] || queryStringParameters[key] === '') {
+          queryStringParameters[key] = value;
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent URL query fallback failed:', e);
   }
 
   try {
