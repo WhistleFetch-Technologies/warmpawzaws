@@ -136,12 +136,22 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [onNavigate, router]
   );
 
-  const openVendorProfile = useCallback((e: MouseEvent, vendorId: string) => {
-    e.stopPropagation();
-    router.push(
-      `/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=${encodeURIComponent(HUB_SERVICE_SLUG)}`
-    );
-  }, [router]);
+  const openVendorProfile = useCallback(
+    (e: MouseEvent, vendorId: string) => {
+      e.stopPropagation();
+      if (onNavigate) {
+        onNavigate('pet-boarding-profile', {
+          vendorId,
+          serviceSlug: HUB_SERVICE_SLUG,
+        });
+        return;
+      }
+      router.push(
+        `/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=${encodeURIComponent(HUB_SERVICE_SLUG)}`
+      );
+    },
+    [onNavigate, router]
+  );
 
   const boardingStats = useMemo(() => {
     const n = vendors.length;

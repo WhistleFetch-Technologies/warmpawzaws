@@ -29,6 +29,14 @@ export interface BoardingVendorExpandableCardProps {
   fetchingPlansFor: string | null;
   minPrice: number | null;
   onToggleHeader: () => void;
+  /**
+   * When false, tapping the header does not expand the card — only "View Services" does.
+   * The header chevron then calls `onOpenCenterDetails` (same pattern as dog walker: chevron → profile).
+   * @default false
+   */
+  headerTapExpandsServices?: boolean;
+  /** Accessible label for the header chevron when `headerTapExpandsServices` is false. */
+  chevronProfileAriaLabel?: string;
   /** Expands the card and loads services (same as View All). */
   onViewServices: (e: MouseEvent) => void;
   onDetails: (e: MouseEvent, vendorId: string) => void;
@@ -44,26 +52,37 @@ export function BoardingVendorExpandableCard({
   fetchingPlansFor,
   minPrice: minPProp,
   onToggleHeader,
+  headerTapExpandsServices = false,
+  chevronProfileAriaLabel = 'View center profile',
   onViewServices,
   onDetails,
   onBookPlan,
   onOpenCenterDetails,
 }: BoardingVendorExpandableCardProps) {
   const minP = minPProp ?? minPriceForVendor(v);
+  /** When only "View Services" expands, header can still collapse an open card (parity with tapping header again in default mode). */
+  const headerActsAsCollapse = !headerTapExpandsServices && expanded;
+  const headerInteractive = headerTapExpandsServices || headerActsAsCollapse;
 
   return (
     <Card className="bg-white rounded-xl border border-gray-100 shadow-sm">
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggleHeader}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggleHeader();
-          }
-        }}
-        className="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 text-left w-full"
+        role={headerInteractive ? 'button' : undefined}
+        tabIndex={headerInteractive ? 0 : undefined}
+        onClick={headerInteractive ? onToggleHeader : undefined}
+        onKeyDown={
+          headerInteractive
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onToggleHeader();
+                }
+              }
+            : undefined
+        }
+        className={`p-4 border-b border-gray-100 text-left w-full ${
+          headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
+        }`}
       >
         <div className="flex gap-3">
           {v.photo ? (
@@ -85,11 +104,29 @@ export function BoardingVendorExpandableCard({
                   <Shield className="w-4 h-4 text-green-500 shrink-0" aria-hidden />
                 )}
               </div>
-              <ChevronRight
-                className={`w-5 h-5 text-gray-300 flex-shrink-0 transition-transform ${
-                  expanded ? 'rotate-90' : ''
-                }`}
-              />
+              {headerTapExpandsServices ? (
+                <ChevronRight
+                  className={`w-5 h-5 text-gray-300 flex-shrink-0 transition-transform pointer-events-none ${
+                    expanded ? 'rotate-90' : ''
+                  }`}
+                  aria-hidden
+                />
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`${chevronProfileAriaLabel}: ${v.name}`}
+                  className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenCenterDetails(e, v.id);
+                  }}
+                >
+                  <ChevronRight
+                    className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                    aria-hidden
+                  />
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />

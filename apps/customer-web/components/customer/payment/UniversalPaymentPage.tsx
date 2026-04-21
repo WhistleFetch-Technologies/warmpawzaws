@@ -2440,7 +2440,7 @@ export function UniversalPaymentPage({
         handler: async (response: any) => {
           await processRazorpaySuccess(response);
         },
-      });
+      };
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,

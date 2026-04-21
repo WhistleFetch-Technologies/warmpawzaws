@@ -129,7 +129,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const openTrainerDetails = useCallback(
     (e: MouseEvent, vendorId: string) => {
       e.stopPropagation();
-      onNavigate?.('training_center');
+      onNavigate?.('training_center', { embedVendorId: vendorId });
     },
     [onNavigate]
   );

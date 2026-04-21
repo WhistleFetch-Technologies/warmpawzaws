@@ -9,6 +9,7 @@ import {
   isCustomerDatabaseUuid,
   reconcileCustomerIdStorageOnLoad,
 } from './customer-id-storage';
+import { ApiError } from './error-handling';
 
 type RuntimeConfig = {
   apiBaseUrl?: string;
@@ -30,6 +31,20 @@ function getRuntimeConfig(): RuntimeConfig {
 /** Current dev API Gateway (replaces retired gateway IDs in stale runtime-config.js / env). */
 const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+/** One in-flight list request per endpoint (React Strict Mode double-mounts effects in dev → duplicate fetches). */
+const customerArticlesListInflight = new Map<string, Promise<unknown>>();
+
+/** On localhost, use same-origin `/api/customer/articles` so Next can map upstream 502/503 → 200 + empty list. */
+function customerArticlesListFetchPath(endpoint: string): string {
+  if (typeof window === 'undefined') return endpoint;
+  const host = window.location.hostname;
+  const isLocal =
+    host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+  if (!isLocal || !endpoint.startsWith('/customer/articles')) return endpoint;
+  const q = endpoint.includes('?') ? endpoint.slice(endpoint.indexOf('?')) : '';
+  return `/api/customer/articles${q}`;
+}
 
 function normalizeDevApiBaseUrl(url: string | undefined): string {
   if (!url || typeof url !== 'string') return '';
@@ -390,8 +405,13 @@ export class ApiClient {
         }
       }
     }
+
+    // Same-origin proxy (see app/api/customer/articles/route.ts) — after all `path` mutations
+    const url =
+      typeof window !== 'undefined' && path.startsWith('/api/customer/articles')
+        ? path
+        : `${base}${path}`;
     
-    const url = `${base}${path}`;
     let token = this.getAuthToken();
 
     // ✅ UAT fallback: if no auth token but we have customer phone (e.g. after refresh), build a UAT token so authorizer allows profile/address routes
@@ -592,6 +612,44 @@ export class ApiClient {
       }
       throw e;
     }
+  }
+
+  /**
+   * GET /customer/articles* list — returns `{ articles: [] }` on 502/503 so the UI can show an empty state
+   * instead of "HTTP 503" while the API is down or not yet deployed. Uses a single request (no 503 retry loop).
+   * Concurrent calls with the same endpoint share one fetch (dedupes React Strict Mode double effects in dev).
+   * Must not `await` before registering the in-flight entry — otherwise two callers can race and duplicate requests.
+   */
+  getCustomerArticlesList<T extends { articles?: unknown[] }>(endpoint: string): Promise<T> {
+    const key = endpoint;
+    const existing = customerArticlesListInflight.get(key);
+    if (existing) {
+      return existing as Promise<T>;
+    }
+
+    const fetchPath = customerArticlesListFetchPath(endpoint);
+
+    const noRetry: Partial<import('./error-handling').RetryConfig> = {
+      maxRetries: 0,
+      retryableStatusCodes: [],
+      retryableErrors: [],
+    };
+
+    const p = (async (): Promise<T> => {
+      try {
+        return await this.get<T>(fetchPath, noRetry);
+      } catch (e: unknown) {
+        if (e instanceof ApiError && e.statusCode != null && [502, 503].includes(e.statusCode)) {
+          return { articles: [] } as T;
+        }
+        throw e;
+      }
+    })().finally(() => {
+      customerArticlesListInflight.delete(key);
+    });
+
+    customerArticlesListInflight.set(key, p);
+    return p;
   }
 
   async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number): Promise<T> {

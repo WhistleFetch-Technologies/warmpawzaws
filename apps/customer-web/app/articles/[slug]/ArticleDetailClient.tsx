@@ -53,14 +53,20 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
         setLoading(true);
         setError(null);
         const res = await apiClient.get<{ article?: ArticleDetail }>(
-          `/customer/articles/${encodeURIComponent(slug)}`
+          `/customer/articles/${encodeURIComponent(slug)}`,
+          { maxRetries: 0, retryableStatusCodes: [], retryableErrors: [] }
         );
         if (cancelled) return;
         if (res?.article) setArticle(res.article);
         else setError('Article not found');
       } catch (e: any) {
         if (!cancelled) {
-          setError(e?.message || 'Could not load article');
+          const st = e?.statusCode ?? e?.status;
+          if (st === 502 || st === 503) {
+            setError('This article is temporarily unavailable. Please try again later.');
+          } else {
+            setError(e?.message || 'Could not load article');
+          }
           setArticle(null);
         }
       } finally {
@@ -78,7 +84,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
         <div className="max-w-customer mx-auto px-4 py-3 flex items-center gap-3">
           <button
             type="button"
-            onClick={() => router.push('/articles')}
+            onClick={() => router.replace('/articles')}
             className="p-2 rounded-full hover:bg-teal-50 text-slate-600"
             aria-label="Back to articles"
           >
@@ -105,7 +111,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
             <p className="text-slate-600 text-sm">{error || 'Not found'}</p>
             <button
               type="button"
-              onClick={() => router.push('/articles')}
+              onClick={() => router.replace('/articles')}
               className="mt-4 text-sm font-semibold text-teal-600"
             >
               All articles

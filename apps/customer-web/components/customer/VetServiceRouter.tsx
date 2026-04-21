@@ -202,7 +202,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Pill,
         color: '#FF6B9F',
         bgColor: 'bg-pink-50',
-        badge: 'Fast Delivery'
+        badge: 'Fast Delivery',
+        comingSoon: true,
       },
       {
         id: 'physiotherapy',
@@ -211,7 +212,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Activity,
         color: '#0D9488',
         bgColor: 'bg-teal-50',
-        badge: 'Follow-up care'
+        badge: 'Follow-up care',
+        comingSoon: true,
       }
     ];
 
@@ -238,8 +240,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const handleNavigate = (screen: string, navData?: any) => {
     console.log('🔵 [VetServiceRouter] handleNavigate called:', screen, navData);
     
-    // Check if navigation requires a pet (booking-related screens)
-    const requiresPet = ['vet-booking', 'vet-doctor-details', 'vet-clinic-booking', 'vet-services-by-style'].includes(screen);
+    // Booking flows only — browsing vet list / profiles / services-by-style must work without a pet.
+    const requiresPet = ['vet-booking', 'vet-clinic-booking'].includes(screen);
     
     if (requiresPet && (!hasPets || pets.length === 0)) {
       console.warn('⚠️ [VetServiceRouter] Pet required but not found');
@@ -264,18 +266,52 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    const raw = (v.raw || {}) as Record<string, unknown>;
+    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
+    const doctorId =
+      providerType === 'staff' || providerType === 'individual'
+        ? String(raw.providerId || raw.provider_id || v.id)
+        : String(v.id);
     handleNavigate('vet-doctor-details', {
-      doctorId: v.id,
+      doctorId,
       serviceId: plan.rowId,
       serviceName: plan.name,
       price: plan.price,
     });
   };
 
-  const openVetDetails = (e: MouseEvent, vendorId: string) => {
+  /**
+   * Chevron + "Details" should open the real provider profile: doctor screen for staff/individual,
+   * clinic/center screen for facility vendors. Uses `raw.vendorId` when the card key is not the clinic id.
+   */
+  const openVetProviderProfile = (e: MouseEvent, cardId: string) => {
     e.stopPropagation();
-    handleNavigate('vet-doctor-details', { doctorId: vendorId });
+    const v = vendors.find((x) => x.id === cardId);
+    const raw = (v?.raw || {}) as Record<string, unknown>;
+    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
+    const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
+    const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
+
+    if (providerType === 'staff' || providerType === 'individual') {
+      handleNavigate('vet-doctor-details', {
+        doctorId: rawProviderId || cardId,
+        doctorProfileBackScreen: 'vet',
+      });
+      return;
+    }
+
+    const clinicEntityId = rawVendorId || cardId;
+    handleNavigate('vet-services-by-style', {
+      vendorId: clinicEntityId,
+      serviceStyle: 'at_center',
+      serviceTypeName: 'Vet Clinic',
+      category: 'vet',
+    });
   };
+
+  const openVetDetails = openVetProviderProfile;
+
+  const openVetCenterProfile = openVetProviderProfile;
 
   const dashboardStats = useMemo(() => {
     const n = vendors.length;
@@ -453,6 +489,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           
           <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
             {serviceTypes.map((service) => {
+              const isComingSoon = !!(service as { comingSoon?: boolean }).comingSoon;
+
               const handleServiceClick = () => {
                 console.log('🔵 [VetServiceRouter] Service clicked:', service.id);
                 
@@ -503,10 +541,63 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 }
               };
 
+              const cardInner = (
+                <>
+                  {isComingSoon && (
+                    <span className="absolute top-2 right-2 z-[1] text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                      Coming soon
+                    </span>
+                  )}
+                  <div className="flex flex-col h-full">
+                    <div
+                      className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
+                    >
+                      <service.icon className="w-6 h-6" style={{ color: service.color }} />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">{service.name}</h3>
+                      {service.description?.trim() ? (
+                        <div onClick={(e) => !isComingSoon && e.stopPropagation()} className="mb-2">
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-xs leading-snug text-gray-500"
+                            linkClassName={
+                              isComingSoon
+                                ? 'inline align-baseline text-[10px] font-semibold text-gray-400 cursor-default'
+                                : 'inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline'
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    {service.badge && (
+                      <Badge variant="secondary" className="text-xs w-fit">
+                        {service.badge}
+                      </Badge>
+                    )}
+                  </div>
+                </>
+              );
+
+              if (isComingSoon) {
+                return (
+                  <div
+                    key={service.id}
+                    className="p-4 border border-gray-100 bg-white shadow-sm rounded-xl relative text-left w-full transition-all cursor-default opacity-80 saturate-75 pointer-events-none select-none"
+                    aria-label={`${service.name} — coming soon`}
+                    style={{ zIndex: 10, position: 'relative' }}
+                  >
+                    {cardInner}
+                  </div>
+                );
+              }
+
               return (
               <button
                 key={service.id}
                 type="button"
+                aria-label={service.name}
                 className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm rounded-xl relative active:scale-95 text-left w-full"
                 onClick={(e) => {
                   console.log('🔵 [VetServiceRouter] Card onClick triggered for:', service.id);
@@ -528,31 +619,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   position: 'relative'
                 }}
               >
-                <div className="flex flex-col h-full">
-                  <div 
-                    className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
-                  >
-                    <service.icon className="w-6 h-6" style={{ color: service.color }} />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-1">{service.name}</h3>
-                    {service.description?.trim() ? (
-                      <div onClick={(e) => e.stopPropagation()} className="mb-2">
-                        <ServiceDescriptionInline
-                          description={service.description}
-                          title={service.name}
-                          className="m-0 text-xs leading-snug text-gray-500"
-                          linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                  {service.badge && (
-                    <Badge variant="secondary" className="text-xs w-fit">
-                      {service.badge}
-                    </Badge>
-                  )}
-                </div>
+                {cardInner}
               </button>
               );
             })}
@@ -610,7 +677,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     }}
                     onDetails={openVetDetails}
                     onBookPlan={handleVetBookPlan}
-                    onOpenCenterDetails={openVetDetails}
+                    onOpenCenterDetails={openVetCenterProfile}
                   />
                 );
               })
