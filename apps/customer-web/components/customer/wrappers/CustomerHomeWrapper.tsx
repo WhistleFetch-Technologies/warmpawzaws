@@ -70,6 +70,7 @@ import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
@@ -1004,6 +1005,16 @@ export function CustomerHomeWrapper({
             }
             // Handle problem-based navigation
             else if (screen === 'services_by_problem' || screen === 'problem_selected') {
+              if (
+                isEmergencyProblemTileLocked({
+                  id: data?.problemId,
+                  name: data?.problemTitle,
+                  displayName: data?.problemTitle,
+                })
+              ) {
+                toast.info('Emergency care is coming soon on the app.');
+                return;
+              }
               // ✅ Route through ProblemGridFlowRouter; use allowedServiceStyles from specialization so only allowed styles show
               setSelectedProblem({
                 id: data?.problemId,
@@ -1251,6 +1262,16 @@ export function CustomerHomeWrapper({
             setCurrentServiceType('veterinarian');
             setCurrentScreen('problem_grid');
           } else if (screen === 'problem_selected') {
+            if (
+              isEmergencyProblemTileLocked({
+                id: data?.problemId,
+                name: data?.problemTitle,
+                displayName: data?.problemTitle,
+              })
+            ) {
+              toast.info('Emergency care is coming soon on the app.');
+              return;
+            }
             setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Vet Service', roleId: 'veterinarian' });
             setCurrentScreen('problem_grid_flow');
           } else {
@@ -2317,6 +2338,7 @@ export function CustomerHomeWrapper({
             setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
             setCurrentScreen('shop');
           }}
+          onNavigateHome={handleBack}
           onCheckout={() => setCurrentScreen('checkout')}
           onContinueShopping={() => {
             setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));

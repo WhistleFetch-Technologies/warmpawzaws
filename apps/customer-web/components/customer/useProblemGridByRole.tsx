@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 import { DynamicProblemIcon } from '@/lib/problem-grid-dynamic-icon';
 import { PROBLEM_GRID_ALIASES_BY_ROLE } from '@/lib/problem-grid-role-aliases';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 export interface ProblemGridItem {
   id: string;
@@ -13,6 +14,7 @@ export interface ProblemGridItem {
   icon: React.ReactNode;
   priority?: number;
   iconBg?: string;
+  comingSoon?: boolean;
 }
 
 const VIEW_ALL_ITEM: ProblemGridItem = {
@@ -62,14 +64,20 @@ export function useProblemGridByRole(roleKey: keyof typeof ROLE_ALIASES): Proble
               ...sorted.map((p: any) => {
                 const iconColor = p.iconColor ?? p.icon_color;
                 const iconBg = problemIconTextColorToBgClass(iconColor);
+                const id = String(p.id ?? p.problemId ?? p.name);
                 return {
-                  id: String(p.id ?? p.problemId ?? p.name),
+                  id,
                   name: (p.displayName || p.name) as string,
                   icon: (
                     <DynamicProblemIcon iconName={p.iconName ?? p.icon_name} iconColor={iconColor} />
                   ),
                   priority: p.displayOrder ?? p.display_order ?? 50,
                   iconBg,
+                  comingSoon: isEmergencyProblemTileLocked({
+                    id,
+                    name: p.name,
+                    displayName: p.displayName ?? p.display_name,
+                  }),
                 };
               }),
               VIEW_ALL_ITEM,

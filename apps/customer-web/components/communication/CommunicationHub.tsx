@@ -141,7 +141,7 @@ export function CommunicationHub({
   if (mode === 'video') {
     // Show loading state while navigating
     return (
-      <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
         <div className="bg-white rounded-2xl w-full max-w-2xl p-8 text-center">
           <Video className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-pulse" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Starting Video Call...</h2>
@@ -175,14 +175,30 @@ export function CommunicationHub({
         
         // Update booking info from response
         if (response.booking) {
-          setBooking(response.booking);
-          if (response.booking.status) {
-            setStatus(response.booking.status);
+          const b = response.booking as Record<string, any>;
+          const v = b.vendor as Record<string, any> | undefined;
+          const displayVendor = [
+            v?.business_name,
+            v?.businessName,
+            v?.display_name,
+            v?.displayName,
+            b.vendorName,
+            b.vendor_name,
+            v?.name,
+          ]
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .find((s) => s.length > 0);
+          setBooking({
+            ...b,
+            vendorName: displayVendor || b.vendorName || b.vendor_name || 'Vendor',
+          } as BookingInfo);
+          if (b.status) {
+            setStatus(b.status);
           }
           
           // Check if within 7 days of completion
-          if (response.booking.completed_at || response.booking.completedAt) {
-            const completedDate = new Date(response.booking.completed_at || response.booking.completedAt);
+          if (b.completed_at || b.completedAt) {
+            const completedDate = new Date(b.completed_at || b.completedAt);
             const now = new Date();
             const daysDiff = Math.floor((now.getTime() - completedDate.getTime()) / (1000 * 60 * 60 * 24));
             setIsWithin7Days(daysDiff <= 7);
@@ -417,8 +433,8 @@ export function CommunicationHub({
   // ============================================================================
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+      <div className="flex h-[92dvh] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl">
         
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-4 flex items-center justify-between">
@@ -670,7 +686,7 @@ export function CommunicationHub({
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-white border-t border-gray-200">
+        <div className="border-t border-gray-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
           {chatActive ? (
             <div className="flex items-end gap-3">
               {/* File Upload Button */}

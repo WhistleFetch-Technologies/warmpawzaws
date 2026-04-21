@@ -68,6 +68,11 @@
   --radius-full: 9999px;
 
   /**
+   * BottomNavigation + CustomerScreenWrapper tabbed shell: reserved height above fixed tab bar
+   * (py-3 row + home indicator + safe-area). Fixed UI (e.g. TeleTracker) must use the same value.
+   */
+  --customer-tabbed-nav-offset: calc(6rem + env(safe-area-inset-bottom, 0px));
+  /**
    * StandardizedFooter: tab row (py-3 + icon + label) + safe-area. Sticky CTAs use this as `bottom`
    * so they sit fully above the tab bar (must stay in sync with StandardizedFooter padding).
    */

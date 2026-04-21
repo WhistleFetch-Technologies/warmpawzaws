@@ -1197,15 +1197,15 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
 
   const menuItems = [
     { icon: User, label: 'My Profile', color: 'from-blue-100 to-blue-200 text-blue-600', view: 'profile' as const },
-    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true },
+    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: true },
     { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
     { icon: Award, label: 'Rewards & Loyalty', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
     { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
     { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
     { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', action: 'addresses', isExternal: true },
     { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
-    { icon: ShoppingCart, label: 'My Cart', color: 'from-pink-100 to-pink-200 text-pink-600', view: 'cart' as const, badge: cartItems.length },
-    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length },
+    { icon: ShoppingCart, label: 'My Cart', color: 'from-pink-100 to-pink-200 text-pink-600', view: 'cart' as const, badge: cartItems.length, comingSoon: true },
+    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: true },
     { icon: CreditCard, label: 'Payment Settings', color: 'from-yellow-100 to-yellow-200 text-yellow-600', view: 'payments' as const },
     { icon: Bell, label: 'Notifications', color: 'from-indigo-100 to-indigo-200 text-indigo-600', view: 'notifications' as const },
     { icon: HelpCircle, label: 'Help & Support', color: 'from-gray-100 to-gray-200 text-gray-600', view: 'help' as const },
@@ -1252,10 +1252,16 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
         >
           {activeView === 'menu' && (
             <div className="p-5 space-y-3">
-              {menuItems.map((item, index) => (
+              {menuItems.map((item, index) => {
+                const isComingSoon = 'comingSoon' in item && item.comingSoon;
+                return (
                 <button
                   key={index}
+                  type="button"
+                  disabled={isComingSoon}
+                  aria-disabled={isComingSoon || undefined}
                   onClick={() => {
+                    if (isComingSoon) return;
                     if (item.isExternal) {
                       if (item.action === 'appointments' && onViewAppointments) {
                         onViewAppointments();
@@ -1278,24 +1284,36 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
                       setActiveView(item.view);
                     }
                   }}
-                  className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                  className={`w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-2xl transition-all shadow-sm text-left ${
+                    isComingSoon
+                      ? 'opacity-60 cursor-not-allowed'
+                      : 'active:scale-[0.98] active:bg-gray-50'
+                  }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 bg-gradient-to-br ${item.color} rounded-2xl flex items-center justify-center`}>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-14 h-14 shrink-0 bg-gradient-to-br ${item.color} rounded-2xl flex items-center justify-center`}>
                       <item.icon className="w-7 h-7" />
                     </div>
-                    <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
+                      {isComingSoon && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200/80 shrink-0">
+                          Coming Soon
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {item.badge !== undefined && item.badge > 0 && (
+                  <div className="flex items-center gap-3 shrink-0">
+                    {item.badge !== undefined && item.badge > 0 && !isComingSoon && (
                       <span className="min-w-[26px] h-[26px] px-2 bg-[#FF8C42] text-white rounded-full flex items-center justify-center text-xs font-bold">
                         {item.badge}
                       </span>
                     )}
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <ChevronRight className={`w-5 h-5 ${isComingSoon ? 'text-gray-300' : 'text-gray-400'}`} />
                   </div>
                 </button>
-              ))}
+              );
+              })}
 
               {/* Logout Button */}
               <button 

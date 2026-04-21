@@ -32,11 +32,11 @@ import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
-import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
+import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { customerPathToScreen, resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import {
@@ -234,7 +234,7 @@ export function CustomerHomeComplete({
   const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
 
-  /** Featured providers, Adoption row, Premium Pet Food — shared spotlight navigation. */
+  /** Featured spotlight vendor CTA → internal route or external URL. */
   const navigateFromFeaturedVendorMeta = useCallback(
     (v: Record<string, unknown>, extraNavigateData?: Record<string, unknown>) => {
       const dest = resolveFeaturedVendorDestination(v);
@@ -996,9 +996,22 @@ export function CustomerHomeComplete({
       return defaultBanners;
     }
 
+    const premiumPetFoodSubtitleNorm = PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE.toLowerCase().trim();
+
     const fromApi = dynamicBanners.map((b: any) => {
       const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
       const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const ctaLink = screenFromSlash ?? rawCta;
+      const titleNorm = String(b.title || '').toLowerCase().trim();
+      const subtitleNorm = String(b.subtitle || '').toLowerCase().trim();
+      const normalizedTarget = normalizeBannerTarget(rawCta);
+      const duplicatesPremiumPetFoodHero =
+        titleNorm === 'premium pet food' ||
+        (normalizedTarget === 'shop' && subtitleNorm === premiumPetFoodSubtitleNorm);
+      const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
+      const comingSoon = explicitComingSoonFalse
+        ? false
+        : Boolean(b.comingSoon || b.coming_soon) || duplicatesPremiumPetFoodHero;
       return {
         id: b.id,
         title: b.title,
@@ -1007,7 +1020,8 @@ export function CustomerHomeComplete({
         gradientTo: b.gradientTo || '#FF6B35',
         Icon: iconForApiBanner(b),
         ctaText: b.ctaText || b.cta_text || 'Learn More',
-        ctaLink: screenFromSlash ?? rawCta,
+        ctaLink,
+        comingSoon,
       };
     });
 
@@ -1802,43 +1816,68 @@ export function CustomerHomeComplete({
         {/* Hero Banner Carousel */}
         <div className="px-4 mb-4">
           <div className="relative h-28 rounded-2xl overflow-hidden shadow-md">
-            {banners.map((banner, index) => (
-              <div
-                key={banner.id || index}
-                className={`absolute inset-0 transition-opacity duration-500 ${
-                  currentBanner === index
-                    ? 'z-[1] opacity-100'
-                    : 'z-0 opacity-0 pointer-events-none'
-                }`}
-                style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
-                aria-hidden={currentBanner !== index}
-              >
-                <div className="h-full flex items-center justify-between px-4">
-                  <div>
-                    <h2 className="text-white text-base font-bold mb-0.5">{banner.title}</h2>
-                    <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
-                    <button
-                      className="bg-white text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-medium"
-                      onClick={() => {
-                        // Track banner click
-                        if (banner.id) {
-                          apiClient.post(`/banners/${banner.id}/click`, {
-                            source: 'home_carousel'
-                          }).catch(() => { }); // Silent fail for tracking
-                        }
-                        // Navigate (screen id, path, or external URL)
-                        banner.ctaLink && handleNavigation(String(banner.ctaLink));
-                      }}
+            {banners.map((banner, index) => {
+              const heroComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+              return (
+                <div
+                  key={banner.id || index}
+                  className={`absolute inset-0 transition-opacity duration-500 ${
+                    currentBanner === index
+                      ? 'z-[1] opacity-100'
+                      : 'z-0 opacity-0 pointer-events-none'
+                  }`}
+                  style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
+                  aria-hidden={currentBanner !== index}
+                >
+                  {heroComingSoon && (
+                    <span
+                      className="absolute top-2 right-3 z-[1] text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5 shadow-sm"
+                      aria-label="Coming soon"
                     >
-                      {banner.ctaText || 'Claim Now'}
-                    </button>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                    <banner.Icon className="w-7 h-7 text-white" />
+                      SOON
+                    </span>
+                  )}
+                  <div
+                    className={`h-full flex items-center justify-between px-4 ${heroComingSoon ? 'opacity-90 pointer-events-none select-none' : ''}`}
+                  >
+                    <div>
+                      <h2 className="text-white text-base font-bold mb-0.5">{banner.title}</h2>
+                      <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
+                      {heroComingSoon ? (
+                        <span
+                          role="button"
+                          aria-disabled
+                          tabIndex={-1}
+                          className="inline-block bg-white/85 text-[#FF8C42]/70 px-3 py-1.5 rounded-full text-xs font-medium cursor-not-allowed"
+                        >
+                          {banner.ctaText || 'Claim Now'}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="bg-white text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-medium"
+                          onClick={() => {
+                            // Track banner click
+                            if (banner.id) {
+                              apiClient.post(`/banners/${banner.id}/click`, {
+                                source: 'home_carousel'
+                              }).catch(() => { }); // Silent fail for tracking
+                            }
+                            // Navigate (screen id, path, or external URL)
+                            banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                          }}
+                        >
+                          {banner.ctaText || 'Claim Now'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <banner.Icon className="w-7 h-7 text-white" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {/* Banner Indicators */}
             <div
               className="absolute bottom-3 left-0 right-0 z-[2] flex justify-center gap-2"
@@ -1862,20 +1901,14 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Shop Categories - Horizontal Slider */}
+        {/* Shop Categories - Horizontal Slider (shop catalog coming soon) */}
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-[#FF8C42]" />
               <h2 className="text-gray-900 text-sm font-semibold">Shop</h2>
             </div>
-            <div className="flex-1 h-px bg-gray-100"></div>
-            <button
-              onClick={() => handleNavigation('shop')}
-              className="text-xs text-[#FF8C42] font-medium"
-            >
-              View All
-            </button>
+            <div className="flex-1 h-px bg-gray-100" aria-hidden />
           </div>
           <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
             {[
@@ -1888,16 +1921,19 @@ export function CustomerHomeComplete({
               { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
               { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
             ].map((category) => (
-              <button
+              <div
                 key={category.id}
-                onClick={() => handleNavigation('shop', { category: category.id })}
-                className="flex-shrink-0 flex flex-col items-center gap-1 group"
+                className="flex-shrink-0 flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
+                aria-label={`${category.label} — coming soon`}
               >
-                <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
+                <div className="relative w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
                   {category.icon}
+                  <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
+                    Soon
+                  </span>
                 </div>
-                <span className="text-[10px] text-gray-700 font-medium">{category.label}</span>
-              </button>
+                <span className="text-[10px] text-gray-500 text-center font-medium leading-tight">{category.label}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -2377,33 +2413,34 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Pet Food Vendors Spotlight */}
-        <div className="mb-6">
+        {/* Premium Pet Food — full section coming soon (shop wiring deferred) */}
+        <div className="mb-6" aria-label="Premium Pet Food — coming soon">
           <div className="px-6 mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Wheat className="w-5 h-5 text-yellow-600" />
-              <h2 className="text-black font-semibold">Premium Pet Food</h2>
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Wheat className="w-5 h-5 text-yellow-600 shrink-0" />
+                <h2 className="text-black font-semibold">Premium Pet Food</h2>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full shrink-0">
+                Soon
+              </span>
             </div>
-            <p className="text-xs text-gray-600">Trusted brands & vendors</p>
+            <p className="text-xs text-gray-600">
+              Coming soon — trusted brands and vendor deals when we launch. Browse the shop for food then.
+            </p>
           </div>
-          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
+          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6 pointer-events-none select-none">
             {petFoodSpotlightBrands().map((vendor, index) => (
-              <button
+              <div
                 key={index}
-                type="button"
-                onClick={() =>
-                  navigateFromFeaturedVendorMeta(vendor.navMeta, { category: 'food' })
-                }
-                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center"
+                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center opacity-[0.92] grayscale-[0.08]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
                   <vendor.Icon className="w-6 h-6 text-yellow-600" />
                 </div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-1">{vendor.name}</h3>
-                <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-bold">
-                  {vendor.discount}
-                </div>
-              </button>
+                <span className="text-xs font-semibold text-amber-600 inline-block">Coming soon</span>
+              </div>
             ))}
           </div>
         </div>
@@ -2592,23 +2629,10 @@ export function CustomerHomeComplete({
             <p className="text-gray-700 text-sm mb-4">
               Our support team is available 24/7 for you
             </p>
-            <div className="flex gap-3">
+            <div className="flex justify-center">
               <button
                 type="button"
-                className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
-                onClick={() => {
-                  try {
-                    window.location.href = getSupportTelHref();
-                  } catch {
-                    toast.error('Could not start call. Try Help & Support from your profile.');
-                  }
-                }}
-              >
-                <Phone className="w-4 h-4" /> Call Us
-              </button>
-              <button
-                type="button"
-                className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 active:opacity-90"
+                className="bg-[#FF8C42] text-white py-3 px-10 rounded-full font-medium text-sm inline-flex items-center justify-center gap-2 active:opacity-90 shadow-sm"
                 onClick={() => {
                   try {
                     if (typeof window !== 'undefined') {

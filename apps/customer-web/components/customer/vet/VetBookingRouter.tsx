@@ -878,7 +878,13 @@ export function VetBookingRouter({
         />
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-gray-50">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-gray-50"
+        style={{
+          /* StandardizedFooter is position:fixed; reserve space so confirmation CTAs stay tappable (see globals.css). */
+          paddingBottom: 'max(1rem, var(--customer-tabbar-content-pad))',
+        }}
+      >
         <div className="mx-auto max-w-md px-4 py-4 sm:px-6 sm:py-6">
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (

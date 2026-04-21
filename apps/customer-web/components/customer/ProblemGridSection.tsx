@@ -9,6 +9,13 @@ import {
   Stethoscope, Heart, Activity, FileText, Eye, Siren, Package
 } from 'lucide-react';
 
+import {
+  isEmergencyProblemTileLocked,
+  isEmergencyGridItemLocked,
+} from '@/lib/problem-grid-emergency-lock';
+
+export { isEmergencyGridItemLocked, isEmergencyProblemTileLocked };
+
 /**
  * UNIVERSAL PROBLEM GRID SECTION COMPONENT
  * 
@@ -30,6 +37,8 @@ interface ProblemGridItem {
   /** When set (e.g. from specialization_master), tints the icon chip like admin catalog. */
   iconBg?: string;
   textColor?: string;
+  /** When true, tile shows Soon and does not navigate (e.g. Emergency). */
+  comingSoon?: boolean;
 }
 
 interface ProblemGridSectionProps {
@@ -70,10 +79,17 @@ export function ProblemGridSection({
         {problems.map((problem) => {
           const isViewAll = problem.id === 'view_all';
           const hasAdminTint = Boolean(problem.iconBg) && !isViewAll;
+          const locked =
+            !isViewAll &&
+            (problem.comingSoon === true ||
+              isEmergencyProblemTileLocked({ id: problem.id, name: problem.name }));
           return (
             <button
               key={problem.id}
+              type="button"
+              disabled={locked}
               onClick={() => {
+                if (locked) return;
                 console.log('🔵 [ProblemGridSection] Problem clicked:', problem.id, isViewAll);
                 if (isViewAll) {
                   console.log('🔵 [ProblemGridSection] Navigating to problem_grid');
@@ -83,24 +99,34 @@ export function ProblemGridSection({
                   onNavigate('problem_selected', { problemId: problem.id, problemTitle: problem.name });
                 }
               }}
-              className="group relative flex flex-col items-center"
+              className={`group relative flex flex-col items-center ${locked ? 'cursor-not-allowed' : ''}`}
             >
               <div className={`
-                w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
+                relative w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
                 ${isViewAll 
                   ? 'bg-orange-50 border-orange-100 text-orange-700 hover:bg-orange-100' 
-                  : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
+                  : locked
+                    ? 'bg-slate-50 border-slate-100 text-slate-400'
+                    : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                 }
               `}>
+                {locked && (
+                  <span className="absolute top-1 right-1 z-10 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded-md shadow-sm">
+                    Soon
+                  </span>
+                )}
                 <div
                   className={`
-                  w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
+                  w-10 h-10 rounded-xl flex items-center justify-center transition-transform
+                  ${locked ? '' : 'group-hover:scale-110'}
                   ${
                     isViewAll
                       ? 'bg-white/50'
                       : hasAdminTint
-                        ? `${problem.iconBg} group-hover:opacity-90`
-                        : 'bg-slate-50 group-hover:bg-orange-50'
+                        ? `${problem.iconBg} ${locked ? 'opacity-70' : 'group-hover:opacity-90'}`
+                        : locked
+                          ? 'bg-slate-100'
+                          : 'bg-slate-50 group-hover:bg-orange-50'
                   }
                 `}
                 >
@@ -109,7 +135,11 @@ export function ProblemGridSection({
                   ) : (
                     <div
                       className={
-                        hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-600'
+                        hasAdminTint
+                          ? locked ? 'opacity-80' : ''
+                          : locked
+                            ? 'text-slate-400'
+                            : 'text-slate-600 group-hover:text-orange-600'
                       }
                     >
                       {problem.icon}
@@ -118,7 +148,7 @@ export function ProblemGridSection({
                 </div>
                 <p className={`
                   text-[10px] font-medium text-center leading-tight line-clamp-2
-                  ${isViewAll ? 'text-orange-700' : 'text-slate-600 group-hover:text-orange-700'}
+                  ${isViewAll ? 'text-orange-700' : locked ? 'text-slate-500' : 'text-slate-600 group-hover:text-orange-700'}
                 `}>
                   {problem.name}
                 </p>
@@ -240,7 +270,7 @@ export const VET_PROBLEMS = [
   { id: 'cardiology', name: 'Heart Care', icon: <Heart className="w-6 h-6 text-red-500" />, priority: 41 },
   // Rare/Emergency (shown last - rarely needed)
   { id: 'surgery', name: 'Surgery', icon: <Stethoscope className="w-6 h-6 text-teal-500" />, priority: 61 },
-  { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" />, priority: 62 },
+  { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" />, priority: 62, comingSoon: true },
   { id: 'view_all', name: '20+ more', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 

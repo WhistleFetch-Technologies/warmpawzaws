@@ -22,6 +22,48 @@ interface BookingDetailModalProps {
   onNavigate?: (screen: string, data?: any) => void; // ✅ FIX: Add navigation handler for video calls
 }
 
+/** Prefer business/display fields over raw `name` (often a slug or internal label). */
+function pickDisplayName(...candidates: (string | undefined | null)[]): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
+
+function resolveVendorDisplayName(raw: Record<string, any>): string {
+  const v = raw.vendor;
+  return (
+    pickDisplayName(
+      v?.business_name,
+      v?.businessName,
+      v?.display_name,
+      v?.displayName,
+      v?.trade_name,
+      v?.tradeName,
+      raw.vendorDisplayName,
+      raw.vendor_display_name,
+      raw.vendorName,
+      raw.vendor_name,
+      v?.name
+    ) || 'Vendor'
+  );
+}
+
+function resolveDoctorDisplayName(raw: Record<string, any>): string {
+  const d = raw.doctor;
+  return pickDisplayName(
+    d?.display_name,
+    d?.displayName,
+    d?.full_name,
+    d?.fullName,
+    d?.business_name,
+    d?.businessName,
+    raw.doctorName,
+    raw.doctor_name,
+    d?.name
+  );
+}
+
 // ✅ FIX: Helper function to format service style labels
 function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
   if (!serviceStyle) return '';
@@ -242,8 +284,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
         duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
         price: parseFloat(rawBooking.amount || rawBooking.total_amount || rawBooking.base_price || 0),
-        // Vendor fields
-        vendorName: rawBooking.vendorName || rawBooking.vendor?.businessName || rawBooking.vendor_name || 'Vendor',
+        // Vendor / doctor — map display names (avoid internal slug in `name` / `vendorName`)
+        vendorName: resolveVendorDisplayName(rawBooking),
+        doctorName: resolveDoctorDisplayName(rawBooking) || undefined,
         vendorPhone: rawBooking.vendorPhone || rawBooking.vendor?.phone || rawBooking.vendor_phone,
         vendorEmail: rawBooking.vendorEmail || rawBooking.vendor?.email || rawBooking.vendor_email,
         vendorAddress: rawBooking.vendorAddress || rawBooking.vendor?.address || rawBooking.vendor_address,
@@ -448,13 +491,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div 
-        className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+    >
+      <div
+        className="max-h-[min(90dvh,90vh)] w-full max-w-customer overflow-y-auto rounded-t-[32px] bg-white sm:rounded-[32px]"
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10 shadow-md">
+        <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[32px] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-6 py-4 text-white shadow-md">
           <h2 className="font-bold text-white">Booking Details</h2>
           <button
             onClick={onClose}
@@ -474,7 +520,13 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             <p className="text-gray-600">Booking not found</p>
           </div>
         ) : (
-          <div className="p-6 space-y-6 pb-24">
+          <div
+            className="space-y-6 p-6"
+            style={{
+              /* Tab bar + safe area (see globals.css --customer-footer-offset) + small breathing room */
+              paddingBottom: 'max(1.5rem, var(--customer-tabbar-content-pad))',
+            }}
+          >
             {/* Status Badge */}
             <div className="flex items-center justify-between">
               <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
@@ -1187,9 +1239,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           </div>
         )}
 
-        {/* Home Indicator */}
-        <div className="sticky bottom-0 bg-white px-6 py-4 flex justify-center">
-          <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
+        {/* Home indicator — pad with safe area so it sits above gesture bar when sheet is short */}
+        <div className="sticky bottom-0 z-[1] flex justify-center border-t border-gray-100 bg-white px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+          <div className="h-1 w-32 rounded-full bg-gray-300" aria-hidden />
         </div>
       </div>
 

@@ -21,6 +21,22 @@ import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
 
+/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
+export const MEAL_PLAN_ORDERS_ENABLED = false;
+/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
+export const PHARMACY_ORDERS_ENABLED = false;
+
+const ORDERS_MEAL_PLANS_ROUTE = '/orders/meal-plans';
+const ORDERS_PHARMACY_ROUTE = '/orders/pharmacy';
+
+function mealPlanOrdersUrl(phone: string) {
+  return phone ? `${ORDERS_MEAL_PLANS_ROUTE}?phone=${encodeURIComponent(phone)}` : ORDERS_MEAL_PLANS_ROUTE;
+}
+
+function pharmacyOrdersUrl(phone: string) {
+  return phone ? `${ORDERS_PHARMACY_ROUTE}?phone=${encodeURIComponent(phone)}` : ORDERS_PHARMACY_ROUTE;
+}
+
 interface BookingOccurrence {
   occurrenceId: string;
   sessionNumber: number;
@@ -96,6 +112,17 @@ interface MyBookingsProps {
 
 export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
+
+  const navigateToMealPlanOrders = () => {
+    if (!MEAL_PLAN_ORDERS_ENABLED) return;
+    router.push(mealPlanOrdersUrl(phone));
+  };
+
+  const navigateToPharmacyOrders = () => {
+    if (!PHARMACY_ORDERS_ENABLED) return;
+    router.push(pharmacyOrdersUrl(phone));
+  };
+
   const effectivePhone =
     phone ||
     (typeof window !== 'undefined'
@@ -502,28 +529,80 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
       />
 
       <div className="max-w-customer mx-auto">
-        {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1) */}
+        {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1); navigation gated by MEAL_PLAN_ORDERS_ENABLED */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
-            onClick={() => router.push(phone ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}` : '/orders/meal-plans')}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-medium hover:bg-emerald-100 transition-colors"
+            type="button"
+            disabled={!MEAL_PLAN_ORDERS_ENABLED}
+            onClick={navigateToMealPlanOrders}
+            aria-label={
+              MEAL_PLAN_ORDERS_ENABLED
+                ? 'Open meal plan orders and tracking'
+                : 'Meal plan orders and tracking — coming soon'
+            }
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
+              MEAL_PLAN_ORDERS_ENABLED
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-emerald-50/55 border-emerald-200/50 text-emerald-700/65 cursor-not-allowed hover:bg-emerald-50/55'
+            }`}
           >
-            <UtensilsCrossed className="w-5 h-5" />
-            Meal Plan Orders & Tracking
+            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!MEAL_PLAN_ORDERS_ENABLED ? 'text-emerald-600/55' : ''}`} />
+            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
+              Meal Plan Orders & Tracking
+              {!MEAL_PLAN_ORDERS_ENABLED && (
+                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
+                  Soon
+                </span>
+              )}
+            </span>
           </button>
-          <p className="text-xs text-gray-500 mt-1.5 text-center">Track your meal plan deliveries and access order status</p>
+          <p
+            className={`text-xs mt-1.5 text-center ${
+              MEAL_PLAN_ORDERS_ENABLED ? 'text-gray-500' : 'text-emerald-800/55'
+            }`}
+          >
+            {MEAL_PLAN_ORDERS_ENABLED
+              ? 'Track your meal plan deliveries and access order status'
+              : 'Coming soon — track meal plan deliveries and order status here.'}
+          </p>
         </div>
 
-        {/* Pharmacy Orders - Access pharmacy order tracker */}
+        {/* Pharmacy Orders; navigation gated by PHARMACY_ORDERS_ENABLED */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
-            onClick={() => router.push(phone ? `/orders/pharmacy?phone=${encodeURIComponent(phone)}` : '/orders/pharmacy')}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-medium hover:bg-blue-100 transition-colors"
+            type="button"
+            disabled={!PHARMACY_ORDERS_ENABLED}
+            onClick={navigateToPharmacyOrders}
+            aria-label={
+              PHARMACY_ORDERS_ENABLED
+                ? 'Open pharmacy orders and tracking'
+                : 'Pharmacy orders and tracking — coming soon'
+            }
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
+              PHARMACY_ORDERS_ENABLED
+                ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                : 'bg-blue-50/55 border-blue-200/50 text-blue-700/65 cursor-not-allowed hover:bg-blue-50/55'
+            }`}
           >
-            <Package className="w-5 h-5" />
-            Pharmacy Orders & Tracking
+            <Package className={`w-5 h-5 shrink-0 ${!PHARMACY_ORDERS_ENABLED ? 'text-blue-600/55' : ''}`} />
+            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
+              Pharmacy Orders & Tracking
+              {!PHARMACY_ORDERS_ENABLED && (
+                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
+                  Soon
+                </span>
+              )}
+            </span>
           </button>
-          <p className="text-xs text-gray-500 mt-1.5 text-center">Track your pharmacy orders and access order status</p>
+          <p
+            className={`text-xs mt-1.5 text-center ${
+              PHARMACY_ORDERS_ENABLED ? 'text-gray-500' : 'text-blue-800/55'
+            }`}
+          >
+            {PHARMACY_ORDERS_ENABLED
+              ? 'Track your pharmacy orders and access order status'
+              : 'Coming soon — pharmacy order tracking will be available here.'}
+          </p>
         </div>
 
         {/* Filter Tabs */}
@@ -548,7 +627,10 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
       </div>
 
       {/* Bookings List */}
-      <div className="max-w-customer mx-auto p-4 space-y-3 pb-20">
+      <div
+        className="mx-auto max-w-customer space-y-3 p-4"
+        style={{ paddingBottom: 'max(1.25rem, var(--customer-tabbar-content-pad))' }}
+      >
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />

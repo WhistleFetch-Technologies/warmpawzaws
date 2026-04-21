@@ -142,7 +142,10 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
   }, [bookings, activeTab]);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-[max(5rem,env(safe-area-inset-bottom,0px))] w-full max-w-customer mx-auto">
+    <div
+      className="mx-auto min-h-screen w-full max-w-customer bg-gray-50"
+      style={{ paddingBottom: 'max(1rem, var(--customer-tabbar-content-pad))' }}
+    >
       {/* Header — safe top, mobile tap targets */}
       <div
         className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm

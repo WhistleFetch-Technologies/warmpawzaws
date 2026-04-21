@@ -16,6 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { useTabAwareBottomInset } from '../../navigation/useTabAwareBottomInset';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -85,6 +86,7 @@ export function VetServiceRouter({
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [bookingNotes, setBookingNotes] = useState('');
+  const vetConfirmationScrollBottom = useTabAwareBottomInset({ includeDeviceSafeBottom: false });
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceType: null,
@@ -504,32 +506,38 @@ export function VetServiceRouter({
   };
 
   const renderConfirmation = () => (
-    <View style={styles.container}>
-      <View style={styles.confirmationContainer}>
-        <Text style={styles.confirmationIcon}>✅</Text>
-        <Text style={styles.confirmationTitle}>Booking Confirmed!</Text>
-        <Text style={styles.confirmationMessage}>
-          Your booking has been confirmed. Booking ID: {bookingFlow.booking?.id}
-        </Text>
+    <ScrollView
+      style={styles.confirmationScroll}
+      contentContainerStyle={[
+        styles.confirmationScrollContent,
+        { paddingBottom: vetConfirmationScrollBottom },
+      ]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={styles.confirmationIcon}>✅</Text>
+      <Text style={styles.confirmationTitle}>Booking Confirmed!</Text>
+      <Text style={styles.confirmationMessage}>
+        Your booking has been confirmed. Booking ID: {bookingFlow.booking?.id}
+      </Text>
 
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => {
-            if (onViewBooking && bookingFlow.booking) {
-              onViewBooking(bookingFlow.booking.id, bookingFlow.pet?.id || '');
-            } else {
-              onBack();
-            }
-          }}
-        >
-          <Text style={styles.primaryButtonText}>View Booking</Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={() => {
+          if (onViewBooking && bookingFlow.booking) {
+            onViewBooking(bookingFlow.booking.id, bookingFlow.pet?.id || '');
+          } else {
+            onBack();
+          }
+        }}
+      >
+        <Text style={styles.primaryButtonText}>View Booking</Text>
+      </TouchableOpacity>
 
-        <TouchableOpacity style={styles.secondaryButton} onPress={onBack}>
-          <Text style={styles.secondaryButtonText}>Back to Home</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      <TouchableOpacity style={styles.secondaryButton} onPress={onBack}>
+        <Text style={styles.secondaryButtonText}>Back to Home</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 
   if (loading && currentView === 'landing') {
@@ -852,8 +860,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     textAlign: 'center',
   },
-  confirmationContainer: {
+  confirmationScroll: {
     flex: 1,
+  },
+  confirmationScrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,

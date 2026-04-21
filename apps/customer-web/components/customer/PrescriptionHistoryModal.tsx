@@ -437,15 +437,24 @@ export function PrescriptionHistoryModal({
         </div>
       </div>
 
-      {/* Upload Modal */}
+      {/* Upload Modal — scrollable sheet above bottom nav + home indicator (see CustomerScreenWrapper / search pb patterns) */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800">
+        <div
+          className="fixed inset-0 z-[65] flex items-end justify-center sm:items-center isolate pointer-events-none"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-prescription-title"
+        >
+          <div className="absolute inset-0 bg-black/50 pointer-events-auto" aria-hidden />
+          <div
+            className="pointer-events-auto relative z-10 flex w-full max-w-customer min-h-0 flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:rounded-[32px] max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-bottom,0px)-0.75rem))] sm:max-h-[min(90vh,92dvh)]"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 pb-4 pt-6 rounded-t-[32px] bg-white">
+              <h3 id="upload-prescription-title" className="font-bold text-gray-800 pr-2">
                 {selectedPrescription ? 'Upload Additional File' : 'Upload Handwritten Prescription'}
               </h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowUploadModal(false);
                   setUploadingFile(null);
@@ -453,96 +462,101 @@ export function PrescriptionHistoryModal({
                   setContext('');
                   setSelectedPrescription(null);
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
               >
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            
-            {selectedPrescription && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  <strong>Adding file to:</strong> {selectedPrescription.title}
-                </p>
-                <p className="text-xs text-blue-700 mt-1">
-                  Date: {formatDate(getPrescriptionDate(selectedPrescription))}
-                </p>
-              </div>
-            )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prescription Date <span className="text-red-500">*</span>
-                  {selectedPrescription && (
-                    <span className="text-xs text-gray-500 ml-2">
-                      (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="date"
-                  value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
-                  onChange={(e) => setRecordDate(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Context/Notes (Optional)
-                </label>
-                <textarea
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  placeholder="Add any notes or context about this prescription..."
-                  rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Photo or PDF <span className="text-red-500">*</span>
-                </label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
-                >
-                  {uploadingFile ? (
-                    <div>
-                      <File className="w-12 h-12 text-blue-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-700">{uploadingFile.name}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {(uploadingFile.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-700">Click to select file</p>
-                      <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
-                    </div>
-                  )}
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 pt-4 [-webkit-overflow-scrolling:touch] scroll-pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pb-[calc(1rem+5.5rem+env(safe-area-inset-bottom,0px))]"
+            >
+              {selectedPrescription && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-900">
+                    <strong>Adding file to:</strong> {selectedPrescription.title}
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Date: {formatDate(getPrescriptionDate(selectedPrescription))}
+                  </p>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
+              )}
 
-              <Button
-                onClick={handleUpload}
-                disabled={!uploadingFile || !recordDate || uploading}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl"
-              >
-                {uploading ? 'Uploading...' : 'Upload Prescription'}
-              </Button>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prescription Date <span className="text-red-500">*</span>
+                    {selectedPrescription && (
+                      <span className="text-xs text-gray-500 ml-2">
+                        (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
+                    onChange={(e) => setRecordDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Context/Notes (Optional)
+                  </label>
+                  <textarea
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    placeholder="Add any notes or context about this prescription..."
+                    rows={3}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Photo or PDF <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+                  >
+                    {uploadingFile ? (
+                      <div>
+                        <File className="w-12 h-12 text-blue-500 mx-auto mb-2" />
+                        <p className="text-sm text-gray-700">{uploadingFile.name}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {(uploadingFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <p className="text-sm text-gray-700">Click to select file</p>
+                        <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleUpload}
+                  disabled={!uploadingFile || !recordDate || uploading}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl scroll-mt-4"
+                >
+                  {uploading ? 'Uploading...' : 'Upload Prescription'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

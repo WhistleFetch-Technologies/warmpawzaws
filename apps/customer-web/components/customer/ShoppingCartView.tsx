@@ -41,6 +41,8 @@ import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDash
 
 interface ShoppingCartViewProps {
   onBack: () => void;
+  /** Empty-state header only: go to Home without browser back. Falls back to `onBack` if omitted. */
+  onNavigateHome?: () => void;
   onCheckout: () => void;
   onContinueShopping: () => void;
 }
@@ -111,7 +113,7 @@ const vendorData: Record<string, { name: string; rating: number; reviews: number
   'default': { name: 'Warmpawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
-export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
+export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
   const router = useRouter();
   const { cart, updateQuantity, removeFromCart, addToCart, itemCount } = useCart();
   const [isCheckoutPending, startCheckoutTransition] = useTransition();
@@ -290,7 +292,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
           serviceIcon={ShoppingBag}
           iconColor="text-white"
           stats={[]}
-          onBack={handleNavigateBack}
+          onBack={onNavigateHome ?? onBack}
           showBackButton
         />
 
@@ -298,16 +300,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
           <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
             <ShoppingBag className="w-16 h-16 text-[#FF8C42]" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
-          <p className="text-gray-500 mb-8 max-w-sm">
-            Discover amazing products for your pets and start shopping now!
-          </p>
-          <Button 
-            onClick={onContinueShopping}
-            className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A2A] hover:to-[#FF5A8D] text-white px-8 h-12 font-medium"
-          >
-            Explore Products
-          </Button>
+          <h2 className="text-2xl font-bold text-gray-900">coming soon</h2>
         </div>
       </div>
     );
