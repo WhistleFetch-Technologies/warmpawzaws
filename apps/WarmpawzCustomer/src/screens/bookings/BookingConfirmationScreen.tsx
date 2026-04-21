@@ -15,6 +15,7 @@ import {
   Alert,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { useTabAwareBottomInset } from '../../navigation/useTabAwareBottomInset';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -35,6 +36,7 @@ export function BookingConfirmationScreen({
 }: BookingConfirmationScreenProps) {
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const scrollBottomInset = useTabAwareBottomInset();
 
   useEffect(() => {
     loadBookingDetails();
@@ -77,8 +79,12 @@ export function BookingConfirmationScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+    <ScreenShell style={styles.container} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: scrollBottomInset }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Success Icon */}
         <View style={styles.successIconContainer}>
           <View style={styles.successIcon}>

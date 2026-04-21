@@ -33,6 +33,7 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 
 // Map config roleId to roleId used in specialization_master applicable_roles
@@ -336,20 +337,36 @@ export function HomeServiceLanding({
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-3">What do you need?</h2>
           <div className="grid grid-cols-3 gap-3">
-            {(problemsFromApi && problemsFromApi.length > 0 ? problemsFromApi : config.problems).slice(0, 6).map((problem) => (
+            {(problemsFromApi && problemsFromApi.length > 0 ? problemsFromApi : config.problems).slice(0, 6).map((problem) => {
+              const locked = isEmergencyProblemTileLocked({ id: problem.id, name: problem.name });
+              return (
               <Card
                 key={problem.id}
-                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm text-center"
-                onClick={() => onNavigate('problem_selected', { problemId: problem.id })}
+                className={`p-4 transition-all border border-gray-100 bg-white shadow-sm text-center relative ${
+                  locked
+                    ? 'cursor-not-allowed opacity-80'
+                    : 'cursor-pointer hover:shadow-md'
+                }`}
+                onClick={
+                  locked
+                    ? undefined
+                    : () => onNavigate('problem_selected', { problemId: problem.id })
+                }
               >
+                {locked && (
+                  <span className="absolute top-2 right-2 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                    Soon
+                  </span>
+                )}
                 <div className="flex justify-center mb-2 min-h-[2rem]">
                   {'iconName' in problem ? <ProblemIcon problem={problem} /> : <span className="text-2xl">{(problem as any).icon}</span>}
                 </div>
-                <p className="text-xs font-medium text-gray-700 leading-tight">
+                <p className={`text-xs font-medium leading-tight ${locked ? 'text-slate-500' : 'text-gray-700'}`}>
                   {problem.name}
                 </p>
               </Card>
-            ))}
+            );
+            })}
           </div>
         </div>
 

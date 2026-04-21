@@ -46,6 +46,8 @@ import {
   type ByProblemServiceRow,
   type VendorGroupFromProblem,
 } from '@/lib/group-by-problem-vendors';
+import { toast } from 'sonner';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 function serviceCardThumbUrl(row: ByProblemServiceRow): string | undefined {
   const fromService = sanitizeDisplayImageUrl((row as { serviceImageUrl?: string | null }).serviceImageUrl);
@@ -221,6 +223,17 @@ export function ProblemGridFlowRouter({
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
+
+  const emergencyBounceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialProblem?.id) return;
+    if (!isEmergencyProblemTileLocked({ id: initialProblem.id, name: initialProblem.name })) return;
+    const key = String(initialProblem.id);
+    if (emergencyBounceRef.current === key) return;
+    emergencyBounceRef.current = key;
+    toast.info('Emergency care is coming soon on the app.');
+    onClose?.();
+  }, [initialProblem?.id, initialProblem?.name, onClose]);
   /** Flat rows from by-problem (one per vendor_service) */
   const [flatRows, setFlatRows] = useState<ByProblemServiceRow[]>([]);
   const [isInstantMode, setIsInstantMode] = useState(false);

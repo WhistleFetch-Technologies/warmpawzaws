@@ -31,6 +31,7 @@ import { HomeServiceLanding } from './HomeServiceLanding';
 import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { toast } from 'sonner';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 // Service type definitions
 export type HomeServiceType = 
@@ -419,6 +420,17 @@ export function UniversalHomeServiceRouter({
     if (action === 'browse_providers') {
       setCurrentStep('provider_list');
     } else if (action === 'problem_selected') {
+      if (
+        isEmergencyProblemTileLocked({
+          id: data?.problemId,
+          problemId: data?.problemId,
+          name: data?.problemTitle ?? data?.name,
+          displayName: data?.displayName ?? data?.problemTitle,
+        })
+      ) {
+        toast.info('Emergency care is coming soon on the app.');
+        return;
+      }
       setBookingFlow(prev => ({ ...prev, selectedProblem: data?.problemId }));
       setCurrentStep('provider_list');
     } else if (action === 'quick_book') {

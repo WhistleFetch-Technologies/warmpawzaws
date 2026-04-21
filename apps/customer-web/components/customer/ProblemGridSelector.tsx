@@ -94,6 +94,7 @@ import {
   BEHAVIORAL_ISSUES,
   VET_PROBLEMS,
 } from './ProblemGridSection';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 function normalizeStyles(raw: unknown, roleIdForFallback?: string): string[] {
   if (Array.isArray(raw) && raw.length > 0) return raw as string[];
@@ -341,6 +342,11 @@ export function ProblemGridSelector({
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {filteredProblems.map((problem) => {
+              const locked = isEmergencyProblemTileLocked({
+                id: String(problem.id),
+                name: problem.name,
+                displayName: problem.displayName,
+              });
               const isSelected = selectedProblemId === problem.id;
               const isProcessing = isSelected && processingSelection;
               const isSuccess = isSelected && selectionSuccess;
@@ -357,7 +363,9 @@ export function ProblemGridSelector({
               return (
               <button
                 key={problem.id}
+                type="button"
                 onClick={() => {
+                  if (locked) return;
                   if (navigator.vibrate) navigator.vibrate(10);
                   setSelectedProblemId(problem.id);
                   setProcessingSelection(true);
@@ -371,16 +379,23 @@ export function ProblemGridSelector({
                     }, 300);
                   }, 500);
                 }}
-                disabled={processingSelection}
-                className="relative group text-left h-full"
+                disabled={processingSelection || locked}
+                className={`relative group text-left h-full ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`
                   relative overflow-hidden rounded-2xl p-4 h-full flex flex-col justify-between transition-all duration-200
-                  ${isSelected 
+                  ${locked
+                    ? 'bg-slate-50 border border-slate-100 text-slate-400 opacity-90'
+                    : isSelected 
                     ? 'bg-orange-50 border-2 border-orange-500 shadow-md scale-[0.98]' 
                     : 'bg-white border border-slate-100 shadow-sm hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                   }
                 `}>
+                  {locked && (
+                    <span className="absolute top-2 right-2 z-10 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-white/95 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                      Soon
+                    </span>
+                  )}
                   
                   {/* Success Overlay */}
                   {isSuccess && (

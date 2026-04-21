@@ -20,7 +20,7 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-import { sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
+import { digitsToRazorpayContactE164, sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
 import {
   isWarmpawzCustomerNativeWebView,
   waitForWarmpawzNativeRazorpayResult,
@@ -92,7 +92,7 @@ interface UniversalPaymentPageProps {
   // Customer
   customerPhone: string;
   /**
-   * Used for Razorpay `prefill.email` via {@link buildSanitizedStandardRazorpayCheckoutOptions}.
+   * Used for Razorpay `prefill.email` together with E.164 `prefill.contact` from {@link digitsToRazorpayContactE164}.
    * Desktop checkout may still default to UPI QR per Razorpay/NPCI; email + E.164 contact is best-effort for collect/VPA where supported.
    */
   customerEmail?: string;
@@ -2278,6 +2278,18 @@ export function UniversalPaymentPage({
           ? [rawOfferId.trim()]
           : [];
       const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
+
+      const e164Contact = digitsToRazorpayContactE164(phoneDigits);
+      const prefillEmail =
+        resolvedCheckoutEmail &&
+        resolvedCheckoutEmail.includes('@') &&
+        resolvedCheckoutEmail !== 'undefined' &&
+        resolvedCheckoutEmail !== 'null'
+          ? resolvedCheckoutEmail
+          : undefined;
+      const razorpayPrefill: Record<string, string> = {};
+      if (e164Contact) razorpayPrefill.contact = e164Contact;
+      if (prefillEmail) razorpayPrefill.email = prefillEmail;
 
       const processRazorpaySuccess = async (response: any) => {
         try {

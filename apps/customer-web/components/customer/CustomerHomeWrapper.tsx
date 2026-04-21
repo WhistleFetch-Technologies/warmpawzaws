@@ -821,7 +821,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (selectedProduct) return <ProductDetailPage product={selectedProduct} onBack={handleBack} onReviewsClick={() => toast.info('Reviews not available.')} onVendorClick={() => toast.info('Vendor profile not available.')} />;
     return <NotAvailable label="Product detail" onBack={handleBack} />;
   }
-  if (currentScreen === 'cart') return <ShoppingCartView onBack={handleBack} onCheckout={() => navigateToScreen('checkout')} onContinueShopping={handleBack} />;
+  if (currentScreen === 'cart') return <ShoppingCartView onBack={handleBack} onNavigateHome={goToHome} onCheckout={() => navigateToScreen('checkout')} onContinueShopping={handleBack} />;
   if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={handleBack} onSuccess={(orderId) => { setCurrentOrderId(orderId); navigateToScreen('order_success'); }} />;
   if (currentScreen === 'order_success') {
     if (currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); navigateToScreen('order_tracking'); }} onBackToHome={goToHome} onViewOrders={() => { setCurrentOrderId(null); navigateToScreen('order_history'); }} />;
