@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -190,6 +190,25 @@ export function VetServicesByStyle({
       return provider.vendorName ? `From ${provider.vendorName}` : 'Clinic Staff';
     }
     return provider.role || 'Provider';
+  };
+
+  const openVetProviderProfile = (e: MouseEvent, provider: Provider) => {
+    e.stopPropagation();
+    const pt = String(provider.providerType || '').toLowerCase();
+    if (pt === 'staff' || pt === 'individual') {
+      onNavigate('vet-doctor-details', {
+        doctorId: provider.providerId,
+        doctorProfileBackScreen: 'vet-services-by-style',
+      });
+      return;
+    }
+    const vid = String(provider.vendorId || provider.providerId);
+    onNavigate('vet-services-by-style', {
+      vendorId: vid,
+      serviceStyle: String(serviceStyle),
+      serviceTypeName: serviceTypeName || 'Veterinary Services',
+      category: category || 'vet',
+    });
   };
 
   const handleSelectService = (provider: Provider, service: any) => {
@@ -962,14 +981,36 @@ export function VetServicesByStyle({
           </Card>
         ) : (
           <div className="space-y-4">
-            {providers.map((provider) => (
+            {providers.map((provider) => {
+              const expanded = selectedProvider === provider.providerId;
+              const headerInteractive = expanded;
+              return (
               <Card key={provider.providerId} className="bg-white overflow-hidden">
-                {/* Provider Header */}
-                <div 
-                  className="p-4 border-b cursor-pointer hover:bg-gray-50"
-                  onClick={() => setSelectedProvider(
-                    selectedProvider === provider.providerId ? null : provider.providerId
-                  )}
+                {/* Provider Header — tap collapses when expanded; chevron → profile; View Services → expand */}
+                <div
+                  role={headerInteractive ? 'button' : undefined}
+                  tabIndex={headerInteractive ? 0 : undefined}
+                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                  onClick={
+                    headerInteractive
+                      ? () =>
+                          setSelectedProvider(
+                            selectedProvider === provider.providerId ? null : provider.providerId
+                          )
+                      : undefined
+                  }
+                  onKeyDown={
+                    headerInteractive
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedProvider(
+                              selectedProvider === provider.providerId ? null : provider.providerId
+                            );
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -1019,14 +1060,22 @@ export function VetServicesByStyle({
                         )}
                       </div>
                     </div>
-                    <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${
-                      selectedProvider === provider.providerId ? 'rotate-90' : ''
-                    }`} />
+                    <button
+                      type="button"
+                      aria-label={`View profile: ${provider.name}`}
+                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+                      onClick={(e) => openVetProviderProfile(e, provider)}
+                    >
+                      <ChevronRight
+                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        aria-hidden
+                      />
+                    </button>
                   </div>
                 </div>
 
                 {/* Services List - Expanded */}
-                {selectedProvider === provider.providerId && (
+                {expanded && (
                   <div className="bg-gray-50 p-4 space-y-3">
                     {/* Provider details for staff/individual */}
                     {provider.qualifications && (
@@ -1096,7 +1145,7 @@ export function VetServicesByStyle({
                 )}
 
                 {/* Quick Book - when not expanded */}
-                {selectedProvider !== provider.providerId && provider.services.length > 0 && (
+                {!expanded && provider.services.length > 0 && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
@@ -1117,14 +1166,18 @@ export function VetServicesByStyle({
                       size="sm"
                       variant="outline"
                       className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                      onClick={() => setSelectedProvider(provider.providerId)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProvider(provider.providerId);
+                      }}
                     >
                       View Services
                     </Button>
                   </div>
                 )}
               </Card>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

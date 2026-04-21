@@ -164,8 +164,17 @@ export function buildBoardingVendorListFromRows(
   const vendorMap = new Map<string, BoardingListVendor>();
 
   rows.forEach((service: any) => {
-    const vendorId = String(service.vendorId || service.id || '');
-    if (!vendorId) return;
+    const pt = String(service.providerType || service.provider_type || '').toLowerCase();
+    const explicitVendor = String(service.vendorId || service.vendor_id || '').trim();
+    const vendorAsProvider =
+      pt === 'vendor'
+        ? String(service.providerId || service.provider_id || service.id || '').trim()
+        : '';
+    const vendorId = (explicitVendor || vendorAsProvider || '').trim();
+    const groupKey =
+      vendorId ||
+      String(service.providerId || service.provider_id || service.id || '').trim();
+    if (!groupKey) return;
 
     const planLabels = collectPublishedPlanLabels(service);
     const fromNested = planRowsFromDiscoveryServices(service.services);
@@ -192,7 +201,7 @@ export function buildBoardingVendorListFromRows(
     const distanceStr =
       distKm != null && Number.isFinite(distKm) ? `${distKm.toFixed(1)} km` : null;
 
-    if (!vendorMap.has(vendorId)) {
+    if (!vendorMap.has(groupKey)) {
       const venueName =
         service.vendorName ||
         service.businessName ||
@@ -206,8 +215,8 @@ export function buildBoardingVendorListFromRows(
             ? [String(service.name)]
             : [];
 
-      vendorMap.set(vendorId, {
-        id: vendorId,
+      vendorMap.set(groupKey, {
+        id: vendorId || groupKey,
         name: venueName,
         address:
           service.vendorLocation?.address ||
@@ -234,7 +243,7 @@ export function buildBoardingVendorListFromRows(
         isVerified: !!service.isVerified,
       });
     } else {
-      const v = vendorMap.get(vendorId)!;
+      const v = vendorMap.get(groupKey)!;
       for (const lbl of planLabels) {
         if (!v.services.includes(lbl)) v.services.push(lbl);
       }

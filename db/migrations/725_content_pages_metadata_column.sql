@@ -1,26 +1,15 @@
 -- ============================================================================
 -- Migration 725: Add metadata JSONB to content_pages
--- Date: 2026-04-20
--- Purpose: Align Postgres schema with Lambda customer/admin routes that SELECT
---          content_pages.metadata and use (metadata->>'featured') for ordering
---          and filters. Without this column, GET /customer/articles can fail and
---          (previously) surfaced as an empty list.
 -- ============================================================================
--- Run against DEV/UAT/PROD RDS after deploy. Idempotent: skips if column exists.
--- Default '{}' keeps NOT NULL safe for existing rows.
+-- Purpose: Customer GET /customer/articles SELECTs metadata and uses
+--          (metadata->>'featured') in ORDER BY. Without this column the query
+--          fails and the API returns an empty list with degraded: true.
+-- Date: 2026-04-20 (revised 2026-04-21: single statement for RDS Data API)
+-- Idempotent: ADD COLUMN IF NOT EXISTS
 -- ============================================================================
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'content_pages'
-          AND column_name = 'metadata'
-    ) THEN
-        ALTER TABLE content_pages
-            ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
-        COMMENT ON COLUMN content_pages.metadata IS
-            'JSON metadata for CMS pages (e.g. read_time, featured, seo fields). Customer /customer/articles uses featured ordering.';
-    END IF;
-END $$;
+ALTER TABLE content_pages
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+COMMENT ON COLUMN content_pages.metadata IS
+  'JSON metadata for CMS pages (e.g. read_time, featured, seo). Customer /customer/articles uses featured ordering.';

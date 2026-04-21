@@ -187,12 +187,16 @@ export function registerCustomerContentEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      // Use string checks — casting metadata->>'featured' to boolean breaks the whole query
+      // when values are empty or non-boolean strings (PostgreSQL invalid input for type boolean).
+      const featuredSql = `(metadata->>'featured') IN ('true', 't', '1', 'yes')`;
+
       if (featured) {
-        articlesQuery += ` AND (metadata->>'featured')::boolean = true`;
+        articlesQuery += ` AND ${featuredSql}`;
       }
 
       articlesQuery += ` ORDER BY 
-        CASE WHEN (metadata->>'featured')::boolean = true THEN 0 ELSE 1 END,
+        CASE WHEN ${featuredSql} THEN 0 ELSE 1 END,
         updated_at DESC
         LIMIT $${paramIndex}`;
       params.push(limit);
@@ -213,16 +217,13 @@ export function registerCustomerContentEndpoints(app: Hono) {
         if (poolExhausted) {
           console.error('[articles] Connection pool exhausted');
         }
-        return c.json(
-          {
-            success: false,
-            articles: [],
-            total: 0,
-            error: 'Articles could not be loaded. Please try again shortly.',
-            code: 'ARTICLES_UNAVAILABLE',
-          },
-          503
-        );
+        // Degrade gracefully: empty list + 200 so the app shows "No articles" instead of HTTP 503.
+        return c.json({
+          success: true,
+          articles: [],
+          total: 0,
+          degraded: true,
+        });
       }
 
       // Map articles to frontend format
@@ -259,6 +260,70 @@ export function registerCustomerContentEndpoints(app: Hono) {
         },
         500
       );
+    }
+  });
+
+  /**
+   * GET /customer/articles/:slug
+   * Single published article for the customer article viewer (ArticleDetailClient).
+   * Delegates to the same lookup as GET /customer/content/pages/:slug but returns { article }.
+   */
+  app.get('/customer/articles/:slug', async (c) => {
+    try {
+      let slug = c.req.param('slug') || '';
+      try {
+        slug = slug ? decodeURIComponent(slug) : '';
+      } catch {
+        // keep raw slug if decode fails
+      }
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      const encoded = encodeURIComponent(slug);
+      const forwardUrl = c.req.url.replace(
+        /\/customer\/articles\/[^/?]+/,
+        `/customer/content/pages/${encoded}`
+      );
+
+      const resp = await app.fetch(
+        new Request(forwardUrl, {
+          method: 'GET',
+          headers: c.req.raw.headers,
+        })
+      );
+
+      const data: { success?: boolean; page?: Record<string, unknown>; error?: string } = await resp
+        .json()
+        .catch(() => ({}));
+
+      if (!resp.ok || !data?.success || !data?.page) {
+        const status = resp.status === 404 ? 404 : resp.status >= 400 ? resp.status : 404;
+        return c.json(
+          { success: false, error: (data as { error?: string })?.error || 'Article not found' },
+          status
+        );
+      }
+
+      const p = data.page;
+      return c.json({
+        success: true,
+        article: {
+          id: p.id,
+          title: p.title,
+          slug: p.slug,
+          content: p.content,
+          category: p.category,
+          readTime: p.readTime,
+          featured: p.featured,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        },
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch article';
+      console.error('[customer/articles/:slug]', message);
+      return c.json({ success: false, error: message }, 500);
     }
   });
 
@@ -716,7 +781,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
       }
 
       pagesQuery += ` ORDER BY 
-        CASE WHEN (metadata->>'featured')::boolean = true THEN 0 ELSE 1 END,
+        CASE WHEN (metadata->>'featured') IN ('true', 't', '1', 'yes') THEN 0 ELSE 1 END,
         updated_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);

@@ -433,16 +433,10 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
   const openClinicDetails = (e: MouseEvent, clinicId: string) => {
     e.stopPropagation();
-    onNavigate('clinic-profile', { clinicId });
-  };
-
-  /** Rich vendor/clinic profile (VetServicesByStyle profile mode) — not the lightweight ClinicProfileView. */
-  const openVendorFullProfile = (e: MouseEvent, clinic: ClinicProvider) => {
-    e.stopPropagation();
     onNavigate('vet-services-by-style', {
-      vendorId: clinic.id,
+      vendorId: clinicId,
       serviceStyle: 'at_center',
-      serviceTypeName: clinic.name,
+      serviceTypeName: 'Vet Clinic',
       category: 'vet',
       returnScreen: 'vet-clinic-list',
     });
@@ -554,19 +548,27 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
             {sortedClinics.map((clinic) => {
               const expanded = selectedClinicId === clinic.id;
               const minP = minPriceForClinic(clinic);
+              const headerActsAsCollapse = expanded;
+              const headerInteractive = headerActsAsCollapse;
               return (
                 <Card key={clinic.id} className="bg-white rounded-xl border border-gray-100 shadow-sm">
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleClinic(clinic.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleClinic(clinic.id);
-                      }
-                    }}
-                    className="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 text-left w-full"
+                    role={headerInteractive ? 'button' : undefined}
+                    tabIndex={headerInteractive ? 0 : undefined}
+                    onClick={headerInteractive ? () => toggleClinic(clinic.id) : undefined}
+                    onKeyDown={
+                      headerInteractive
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleClinic(clinic.id);
+                            }
+                          }
+                        : undefined
+                    }
+                    className={`p-4 border-b border-gray-100 text-left w-full ${
+                      headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
+                    }`}
                   >
                     <div className="flex gap-3">
                       {clinic.photo ? (
@@ -590,10 +592,10 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                           </div>
                           <button
                             type="button"
-                            onClick={(e) => openVendorFullProfile(e, clinic)}
+                            onClick={(e) => openClinicDetails(e, clinic.id)}
                             onKeyDown={(e) => e.stopPropagation()}
-                            aria-label="Open vendor profile"
-                            className="flex-shrink-0 p-1 -m-1 rounded-md text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
+                            aria-label="View clinic profile"
+                            className="flex-shrink-0 p-1 -m-1 rounded-md text-gray-400 hover:text-[#FF8C42] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
                           >
                             <ChevronRight className="w-5 h-5 pointer-events-none" aria-hidden />
                           </button>

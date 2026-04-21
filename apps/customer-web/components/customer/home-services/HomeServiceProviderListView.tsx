@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, type CSSProperties } from 'react';
+import { useState, useEffect, useCallback, type CSSProperties, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
@@ -108,7 +109,10 @@ interface HomeServiceProviderListViewProps {
   config: ServiceConfig;
   selectedProblem?: string | null;
   onBack: () => void;
+  /** Opens provider/center profile (header chevron). */
   onSelectProvider: (provider: Provider) => void;
+  /** Opens full service list for booking (same as profile → “services” step). Omit to hide View Services. */
+  onViewProviderServices?: (provider: Provider) => void;
   onNavigate?: (screen: string, data?: any) => void;
 }
 
@@ -121,6 +125,7 @@ export function HomeServiceProviderListView({
   selectedProblem,
   onBack,
   onSelectProvider,
+  onViewProviderServices,
   onNavigate
 }: HomeServiceProviderListViewProps) {
 
@@ -523,8 +528,7 @@ export function HomeServiceProviderListView({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              onClick={() => onSelectProvider(provider)}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden active:scale-[0.98] transition-transform cursor-pointer"
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
             >
               <div className="p-4">
                 <div className="flex gap-4">
@@ -555,11 +559,21 @@ export function HomeServiceProviderListView({
 
                   {/* Provider Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-start justify-between mb-1 gap-2">
                       <h3 className="font-semibold text-gray-800 truncate pr-2">
                         {provider.name}
                       </h3>
-                      <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <button
+                        type="button"
+                        aria-label={`View ${provider.name} profile`}
+                        className="flex-shrink-0 p-1 -m-1 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-300"
+                        onClick={(e: MouseEvent) => {
+                          e.stopPropagation();
+                          onSelectProvider(provider);
+                        }}
+                      >
+                        <ChevronRight className="w-5 h-5" aria-hidden />
+                      </button>
                     </div>
 
                     {/* Rating & Reviews */}
@@ -630,6 +644,23 @@ export function HomeServiceProviderListView({
                         {amenity}
                       </span>
                     ))}
+                  </div>
+                )}
+
+                {onViewProviderServices && provider.serviceCount > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        onViewProviderServices(provider);
+                      }}
+                    >
+                      View Services
+                    </Button>
                   </div>
                 )}
               </div>
