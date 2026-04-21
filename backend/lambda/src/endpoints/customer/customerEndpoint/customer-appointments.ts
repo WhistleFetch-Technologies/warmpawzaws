@@ -424,6 +424,7 @@ class CancelAppointmentHandler extends BaseHandler {
             scheduled_at: (bookingRow as any).scheduled_at ?? null,
             booking_date: String(bookingRow.booking_date),
             booking_time: String(bookingRow.booking_time),
+            vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
             total_amount: bookingRow.total_amount,
             discount_amount: (bookingRow as any).discount_amount ?? null,
           });
