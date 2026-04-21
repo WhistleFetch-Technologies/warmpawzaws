@@ -517,8 +517,13 @@ class CancelAppointmentHandler extends BaseHandler {
         refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
-      console.warn('[appointments] cancel handler error:', error);
-      return this.error('Appointment not found', 404);
+      console.warn('[appointments] cancel handler error:', error?.message || error);
+      return this.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to cancel appointment',
+        500
+      );
     }
   }
 }
@@ -586,6 +591,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
       c,
@@ -598,6 +604,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments/:id', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('id'),
@@ -613,6 +620,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/customer/appointments/:id/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
@@ -625,6 +633,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/customer/appointments/:id/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
@@ -639,6 +648,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
   // so the path segment "customer" is never bound to :appointmentId.
   app.get('/appointment/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       customerId: c.req.param('customerId'),
@@ -661,6 +671,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/appointment/:appointmentId', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -676,6 +687,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/appointment/:appointmentId/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -692,6 +704,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/appointment/:appointmentId/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -705,6 +718,38 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
       404
     );
   });
+}
+
+/**
+ * Copy query params from Hono into the synthetic API Gateway event.
+ * POST /appointment/:id/cancel?customerId=… must carry customerId — some adapters leave req.query() empty on POST.
+ */
+function mergeAllQueryFromHono(c: Context, event: Record<string, unknown>): void {
+  try {
+    const base =
+      event.queryStringParameters && typeof event.queryStringParameters === 'object'
+        ? { ...(event.queryStringParameters as Record<string, string>) }
+        : {};
+    const rq = c.req as { queries?: () => Record<string, string[]> };
+    if (typeof rq.queries === 'function') {
+      const qm = rq.queries();
+      if (qm && typeof qm === 'object' && !Array.isArray(qm)) {
+        for (const [k, arr] of Object.entries(qm)) {
+          const v = Array.isArray(arr) ? arr[0] : (arr as unknown as string);
+          if (v != null && String(v) !== '') base[k] = String(v);
+        }
+      }
+    }
+    const q = c.req.query();
+    if (q && typeof q === 'object' && !Array.isArray(q)) {
+      for (const [k, v] of Object.entries(q)) {
+        if (v != null && String(v) !== '') base[k] = String(v);
+      }
+    }
+    event.queryStringParameters = base;
+  } catch (e) {
+    console.warn('[appointments] mergeAllQueryFromHono failed:', e);
+  }
 }
 
 /** BaseHandler.parseBody expects `event.body` as JSON string; Hono only exposes payload via `c.req.json()`. */
