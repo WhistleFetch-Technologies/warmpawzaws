@@ -474,7 +474,7 @@ export function CustomerHomeComplete({
       // Fetch all content in parallel with better error handling
       const [bannersResp, articlesResp, announcementsResp, adoptionResp, featuredResp] = await Promise.allSettled([
         apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
-        apiClient.get<any>('/customer/articles?limit=3&featured=true'),
+        apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
         apiClient.get<any>('/customer/announcements?limit=3'),
         apiClient.get<any>('/customer/adoption-stats'),
         apiClient.get<any>('/customer/featured-vendors?limit=6'),
@@ -2468,7 +2468,7 @@ export function CustomerHomeComplete({
                   onClick={() => {
                     // ✅ FIX: Navigate to content page by slug
                     if (article.slug) {
-                      router.push(`/content/${article.slug}`);
+                      router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
                     } else if (article.url) {
                       window.open(article.url, '_blank');
                     } else {

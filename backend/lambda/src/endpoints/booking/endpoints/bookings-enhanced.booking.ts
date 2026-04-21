@@ -36,6 +36,7 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
@@ -2596,6 +2597,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         scheduled_at: booking.scheduled_at || null,
         booking_date: booking.booking_date,
         booking_time: booking.booking_time,
+        vendor_timezone: (booking as any).vendor_timezone ?? null,
         total_amount: booking.total_amount,
         discount_amount: booking.discount_amount,
       });
@@ -2612,6 +2614,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           platformFeeNonRefundable,
           platformFeeApplies: platformFeeNonRefundable > 0,
+          hoursUntilBooking: Math.round((preview.hoursUntilBooking ?? 0) * 100) / 100,
           message: preview.refundAmount > 0
             ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
             : 'No refund available for this booking',
@@ -2668,10 +2671,15 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
-    // Check if booking is in the past
-    const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-    const now = new Date();
-    if (bookingDateTime < now) {
+    // Check if booking is in the past (vendor-local wall clock, not Lambda UTC naive parse)
+    const hoursUntilStart = computeHoursUntilBookingStart({
+      booking_date: currentBooking.booking_date,
+      booking_time: currentBooking.booking_time,
+      vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
+      booking_datetime: currentBooking.booking_datetime ?? null,
+      scheduled_at: currentBooking.scheduled_at ?? null,
+    });
+    if (Number.isFinite(hoursUntilStart) && hoursUntilStart < 0) {
       return this.error(
         'Cannot cancel past bookings',
         400,
@@ -2746,6 +2754,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
             scheduled_at: currentBooking.scheduled_at || null,
             booking_date: currentBooking.booking_date,
             booking_time: currentBooking.booking_time,
+            vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
             total_amount: currentBooking.total_amount,
             discount_amount: currentBooking.discount_amount,
           });
@@ -3469,6 +3478,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         scheduled_at: booking.scheduled_at || null,
         booking_date: booking.booking_date,
         booking_time: booking.booking_time,
+        vendor_timezone: (booking as any).vendor_timezone ?? null,
         total_amount: booking.total_amount,
         discount_amount: booking.discount_amount ?? null,
       });

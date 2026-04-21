@@ -10,6 +10,7 @@
 
 import { query } from '../../database/rds-connection';
 import { sqlRefundTierVendorTypesMatch } from '../refund-tier-vendor-types-match';
+import { computeHoursUntilBookingStart } from '../utils/booking-start-wall-time';
 import { getRefundableCustomerPaidBreakdown, clampRefundToCustomerPaidBase } from './refundable-base';
 
 export type CancelledBy = 'pet_parent' | 'provider';
@@ -31,6 +32,8 @@ export interface BookingForPolicy {
   scheduled_at?: string | null;
   booking_date: string;
   booking_time: string;
+  /** Vendor IANA zone for wall-clock date+time (matches bookings.vendor_timezone / DB trigger). */
+  vendor_timezone?: string | null;
   total_amount: number | string;
   /** When set (or loaded from DB), used with total_amount if no completed payments sum exists. */
   discount_amount?: number | string | null;
@@ -116,16 +119,8 @@ export async function getRefundTierForCancellation(
   if (typeof options?.hoursUntilBooking === 'number' && Number.isFinite(options.hoursUntilBooking)) {
     computedHours = options.hoursUntilBooking;
   } else {
-    // booking_date from DB may be ISO format (e.g. "2026-03-26T00:00:00.000Z")
-    // Extract just YYYY-MM-DD to avoid malformed concatenation
-    const dateOnly = String(booking.booking_date || '').split('T')[0];
-    const rawDateTime =
-      (booking.booking_datetime ? new Date(booking.booking_datetime) : null) ||
-      (booking.scheduled_at ? new Date(booking.scheduled_at) : null) ||
-      new Date(`${dateOnly}T${booking.booking_time}`);
-    if (!isNaN(rawDateTime.getTime())) {
-      computedHours = (rawDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
-    }
+    const h = computeHoursUntilBookingStart(booking);
+    computedHours = Number.isFinite(h) ? h : null;
   }
 
   if (computedHours == null || !Number.isFinite(computedHours)) {
@@ -229,21 +224,10 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   const refundableBase = paidBreakdown.refundableBase;
   const platformFeeNonRefundable = paidBreakdown.platformFeeNonRefundable;
   const total = refundableBase;
-  // Compute hours until booking
-  let hoursUntilBooking = 0;
-  if (booking.booking_datetime) {
-    const dt = new Date(booking.booking_datetime);
-    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
-  } else if (booking.scheduled_at) {
-    const dt = new Date(booking.scheduled_at);
-    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
-  } else if (booking.booking_date && booking.booking_time) {
-    // booking_date from DB may be ISO format (e.g. "2026-03-26T00:00:00.000Z")
-    // Extract just the YYYY-MM-DD portion to avoid malformed concatenation
-    const dateOnly = String(booking.booking_date).split('T')[0];
-    const dt = new Date(`${dateOnly}T${booking.booking_time}`);
-    if (!isNaN(dt.getTime())) hoursUntilBooking = Math.max(0, (dt.getTime() - Date.now()) / (1000 * 60 * 60));
-  }
+  // Hours until start: vendor-local wall clock first (vendor_timezone + date + time), same as DB trigger.
+  // Avoid naive `new Date(YYYY-MM-DDTHH:mm)` on Lambda UTC — that mis-reads IST slots as UTC and can pick the wrong refund tier.
+  const hoursRaw = computeHoursUntilBookingStart(booking);
+  const hoursUntilBooking = Number.isFinite(hoursRaw) ? hoursRaw : 0;
 
   // 1) Preferred: vendor_refund_tiers
   const tier = await getRefundTierForCancellation(booking, 'pet_parent', { hoursUntilBooking });

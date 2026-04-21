@@ -590,7 +590,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setVetServiceData(data);
       navigateToScreen('vet-services-by-style');
     } else if (screen === 'clinic-details' || screen === 'clinic-profile') {
-      setVetServiceData({ id: data?.clinicId, ...data });
+      setVetServiceData({
+        ...data,
+        id: data?.id || data?.clinicId,
+        clinicProfileBackScreen: data?.clinicProfileBackScreen ?? 'vet-clinic-list',
+      });
       navigateToScreen('vet-clinic-profile');
     } else if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({

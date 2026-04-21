@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { 
   Plus, 
   Minus, 
@@ -123,8 +122,9 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
       onBack();
       return;
     }
+    // Embedded on `/` without extra history (WebViews): URL-only `goBackOrHome` does not change `currentScreen`.
     if (window.history.length <= 1) {
-      goBackOrHome(router);
+      onBack();
       return;
     }
     const before = window.location.href;
@@ -133,7 +133,7 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
       if (window.location.href === before) {
         onBack();
       }
-    }, 80);
+    }, 120);
   }, [router, onBack]);
   const [promoCode, setPromoCode] = useState('');
   const [appliedCoupons, setAppliedCoupons] = useState<Coupon[]>([]);

@@ -78,6 +78,20 @@ function normalizeContentPagesMetadataInput(raw: unknown): Record<string, unknow
   return {};
 }
 
+/**
+ * Matches customer `WHERE is_published = true`: only explicit published values count.
+ * Handles driver quirks: string 'true' / '1', numeric 1.
+ */
+function rowIsPublished(raw: unknown): boolean {
+  if (raw === true) return true;
+  if (raw === 1) return true;
+  if (typeof raw === 'string') {
+    const t = raw.trim().toLowerCase();
+    return t === 'true' || t === '1';
+  }
+  return false;
+}
+
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -8286,7 +8300,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         slug: String(p.slug || ''),
         content: String(p.content || ''),
         category: String(p.category || 'other'),
-        isPublished: p.is_published !== false && p.is_published !== 'false',
+        isPublished: rowIsPublished(p.is_published),
         updatedAt: String(p.updated_at || p.updatedAt || ''),
         metadata: normalizeContentPagesMetadataInput(p.metadata),
       }));
@@ -8314,7 +8328,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         slug,
         content: content || '',
         category: category || 'other',
-        is_published: isPublished !== false,
+        is_published: isPublished === true,
         metadata: metadataObj,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -8459,7 +8473,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
               createdAt: page.created_at,
               updatedAt: page.updated_at,
-              isPublished: page.is_published === true || page.is_published === 'true',
+              isPublished: rowIsPublished(page.is_published),
             },
           });
         }
@@ -8488,7 +8502,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
           createdAt: page.created_at,
           updatedAt: page.updated_at,
-          isPublished: page.is_published === true || page.is_published === 'true',
+          isPublished: rowIsPublished(page.is_published),
         },
       });
     } catch (error: any) {
@@ -8517,7 +8531,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.slug !== undefined) updateData.slug = body.slug;
       if (body.content !== undefined) updateData.content = body.content;
       if (body.category !== undefined) updateData.category = body.category;
-      if (body.isPublished !== undefined) updateData.is_published = body.isPublished !== false;
+      if (body.isPublished !== undefined) updateData.is_published = body.isPublished === true;
       if (body.metadata !== undefined) {
         updateData.metadata = normalizeContentPagesMetadataInput(body.metadata);
       }

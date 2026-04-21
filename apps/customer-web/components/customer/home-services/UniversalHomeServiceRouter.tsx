@@ -552,6 +552,10 @@ export function UniversalHomeServiceRouter({
         selectedProblem={bookingFlow.selectedProblem}
         onBack={handleBack}
         onSelectProvider={handleProviderSelect}
+        onViewProviderServices={(provider) => {
+          handleProviderSelect(provider);
+          setCurrentStep('select_service');
+        }}
         onNavigate={onNavigate}
       />
     );

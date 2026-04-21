@@ -57,11 +57,15 @@ export function BoardingVendorListView({
   const openVendorProfile = useCallback(
     (e: MouseEvent, vendorId: string) => {
       e.stopPropagation();
+      if (onNavigate) {
+        onNavigate('pet-boarding-profile', { vendorId, serviceSlug });
+        return;
+      }
       router.push(
         `/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=${encodeURIComponent(serviceSlug)}`
       );
     },
-    [router, serviceSlug]
+    [onNavigate, router, serviceSlug]
   );
 
   const [searchQuery, setSearchQuery] = useState('');

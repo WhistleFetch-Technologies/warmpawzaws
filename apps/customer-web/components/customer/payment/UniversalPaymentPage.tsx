@@ -2452,7 +2452,6 @@ export function UniversalPaymentPage({
         handler: async (response: any) => {
           await processRazorpaySuccess(response);
         },
-        ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
       };
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {

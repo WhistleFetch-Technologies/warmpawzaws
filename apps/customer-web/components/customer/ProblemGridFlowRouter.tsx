@@ -18,7 +18,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import {
   Home,
   Building2,
@@ -117,12 +117,22 @@ interface ServiceProvider {
   isInstantAvailable?: boolean;
 }
 
+export type VendorProfileFromProblemContext = {
+  vendorId: string;
+  vendorName: string;
+  serviceStyle: ServiceStyle;
+  problemCategory?: string;
+  roleIds?: string[];
+};
+
 interface ProblemGridFlowRouterProps {
   initialProblem?: ProblemGridItem;
   location?: { lat: number; lng: number };
   customerId?: string;
   onClose?: () => void;
   onBookingComplete?: (bookingId: string) => void;
+  /** Chevron opens vendor/center profile in the parent app (e.g. vet clinic profile). If omitted, chevron toggles expand. */
+  onVendorProfile?: (ctx: VendorProfileFromProblemContext) => void;
 }
 
 // ============================================================================
@@ -203,6 +213,7 @@ export function ProblemGridFlowRouter({
   customerId,
   onClose,
   onBookingComplete,
+  onVendorProfile,
 }: ProblemGridFlowRouterProps) {
   const [currentStep, setCurrentStep] = useState<FlowStep>('service-style');
   const [selectedProblem, setSelectedProblem] = useState<ProblemGridItem | null>(initialProblem || null);
@@ -670,22 +681,33 @@ export function ProblemGridFlowRouter({
         <div className="space-y-3">
           {visibleVendors.map((vendor) => {
             const expanded = expandedVendorId === vendor.vendorId;
+            const headerInteractive = Boolean(onVendorProfile) ? expanded : true;
             return (
               <Card
                 key={vendor.vendorId}
                 className={`overflow-hidden transition border-gray-200 ${expanded ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : ''}`}
               >
                 <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggleVendorExpanded(vendor)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleVendorExpanded(vendor);
-                    }
-                  }}
-                  className="p-4 cursor-pointer hover:bg-gray-50 text-left w-full"
+                  role={headerInteractive ? 'button' : undefined}
+                  tabIndex={headerInteractive ? 0 : undefined}
+                  onClick={
+                    headerInteractive
+                      ? () => toggleVendorExpanded(vendor)
+                      : undefined
+                  }
+                  onKeyDown={
+                    headerInteractive
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleVendorExpanded(vendor);
+                          }
+                        }
+                      : undefined
+                  }
+                  className={`p-4 text-left w-full ${
+                    headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
+                  }`}
                 >
                   <div className="flex gap-4">
                     <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
@@ -711,10 +733,33 @@ export function ProblemGridFlowRouter({
                           {vendor.isInstantAvailable && (
                             <Badge className="bg-green-100 text-green-700 flex-shrink-0">Available Now</Badge>
                           )}
-                          <ChevronRight
-                            className={`w-5 h-5 text-gray-400 transition-transform mt-0.5 ${expanded ? 'rotate-90' : ''}`}
-                            aria-hidden
-                          />
+                          {onVendorProfile && selectedServiceStyle ? (
+                            <button
+                              type="button"
+                              aria-label={`View ${vendor.vendorName} profile`}
+                              className="p-1 -m-1 rounded-md text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
+                              onClick={(e: MouseEvent) => {
+                                e.stopPropagation();
+                                onVendorProfile({
+                                  vendorId: vendor.vendorId,
+                                  vendorName: vendor.vendorName,
+                                  serviceStyle: selectedServiceStyle,
+                                  problemCategory: selectedProblem?.category,
+                                  roleIds: selectedProblem?.linkedServiceRoles,
+                                });
+                              }}
+                            >
+                              <ChevronRight
+                                className={`w-5 h-5 transition-transform mt-0.5 ${expanded ? 'rotate-90' : ''}`}
+                                aria-hidden
+                              />
+                            </button>
+                          ) : (
+                            <ChevronRight
+                              className={`w-5 h-5 text-gray-400 transition-transform mt-0.5 pointer-events-none ${expanded ? 'rotate-90' : ''}`}
+                              aria-hidden
+                            />
+                          )}
                         </div>
                       </div>
 

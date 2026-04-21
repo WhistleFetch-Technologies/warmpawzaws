@@ -11,6 +11,15 @@ import {
   persistCustomerDatabaseId,
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+
+type AppointmentRefundEstimate = {
+  percentage: number;
+  amount: number;
+  platformFeeApplies: boolean;
+  source?: string;
+  eligible?: boolean;
+};
 
 interface AppointmentDetailsViewProps {
   appointmentId: string;
@@ -97,6 +106,8 @@ export function AppointmentDetailsView({
   const [cancelReason, setCancelReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [cancelling, setCancelling] = useState(false);
+  const [estimatedRefund, setEstimatedRefund] = useState<AppointmentRefundEstimate | null>(null);
+  const [refundPreviewLoading, setRefundPreviewLoading] = useState(false);
 
   const loadAppointmentDetails = useCallback(async () => {
     if (!appointmentId || appointmentId === 'undefined') return;
@@ -137,6 +148,51 @@ export function AppointmentDetailsView({
     loadAppointmentDetails();
   }, [loadAppointmentDetails]);
 
+  const loadRefundPreview = useCallback(async () => {
+    const id = appointmentId.trim();
+    if (!id) return;
+    setRefundPreviewLoading(true);
+    setEstimatedRefund(null);
+    try {
+      const ps = String(
+        appointment?.payment_status ?? appointment?.paymentStatus ?? ''
+      ).toLowerCase();
+      if (ps && !['paid', 'completed', 'pending_payment'].includes(ps)) {
+        setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+        return;
+      }
+      const result = (await apiClient.post('/customer/bookings/refund-preview', {
+        bookingId: id,
+      })) as Record<string, unknown>;
+      const payload = (result as any)?.data ?? result;
+      const refund = (payload as any)?.refund ?? payload;
+      if (refund && typeof refund.refundPercentage === 'number') {
+        setEstimatedRefund({
+          percentage: refund.refundPercentage,
+          amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
+          source: typeof refund.source === 'string' ? refund.source : undefined,
+          eligible: typeof refund.eligible === 'boolean' ? refund.eligible : undefined,
+        });
+      } else {
+        setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+      }
+    } catch {
+      setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+    } finally {
+      setRefundPreviewLoading(false);
+    }
+  }, [appointmentId, appointment?.payment_status, appointment?.paymentStatus]);
+
+  const openCancelAppointmentModal = () => {
+    setCancelReason('');
+    setEstimatedRefund(null);
+    setShowCancelModal(true);
+    void loadRefundPreview();
+  };
+
   if (!appointmentId || appointmentId === 'undefined' || !appointmentId.trim()) {
     return null;
   }
@@ -175,9 +231,18 @@ export function AppointmentDetailsView({
       );
 
       if (data.success !== false) {
-        const refundAmount = (data as any).refund?.amount || 0;
-        alert(`Appointment cancelled successfully! Refund of ₹${refundAmount} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`);
+        const root = ((data as any)?.data ?? data) as Record<string, unknown>;
+        const refund = root?.refund as { amount?: number; message?: string } | undefined;
+        const refundAmount = typeof refund?.amount === 'number' ? refund.amount : 0;
+        const msg =
+          typeof refund?.message === 'string' && refund.message.trim()
+            ? refund.message.trim()
+            : refundAmount > 0
+              ? `Refund of ₹${refundAmount.toFixed(2)} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`
+              : 'Appointment cancelled successfully.';
+        alert(`Appointment cancelled successfully! ${msg}`);
         setShowCancelModal(false);
+        setEstimatedRefund(null);
         loadAppointmentDetails(); // Refresh
         if (onCancel) onCancel(appointmentId);
       } else {
@@ -466,7 +531,7 @@ export function AppointmentDetailsView({
             )}
             {canCancel() && (
               <Button
-                onClick={() => setShowCancelModal(true)}
+                onClick={openCancelAppointmentModal}
                 variant="outline"
                 className="w-full border-red-500 text-red-500 hover:bg-red-50"
               >
@@ -534,20 +599,56 @@ export function AppointmentDetailsView({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl text-gray-900">Cancel Appointment</h2>
-              <button onClick={() => setShowCancelModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setEstimatedRefund(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
             <div className="space-y-4">
-              {/* Warning */}
+              {refundPreviewLoading && !estimatedRefund && (
+                <p className="text-sm text-gray-600">Loading refund estimate…</p>
+              )}
+
+              {estimatedRefund && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
+                  <p className="text-sm text-blue-700">
+                    Refund as per policy{' '}
+                    <span className="font-semibold">{estimatedRefund.percentage}%</span>
+                    {estimatedRefund.source ? (
+                      <span className="block text-xs text-blue-600 mt-1">
+                        Source:{' '}
+                        {estimatedRefund.source === 'vendor_refund_tiers'
+                          ? 'vendor refund tiers'
+                          : estimatedRefund.source}
+                      </span>
+                    ) : null}
+                  </p>
+                  {estimatedRefund.platformFeeApplies && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                      Platform fee is not refundable.
+                    </p>
+                  )}
+                  <p className="text-lg font-bold text-blue-800 mt-1">
+                    Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
+                  </p>
+                </div>
+              )}
+
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-sm text-yellow-900">
-                  ⚠️ Cancellation policies will apply based on your appointment timing
+                  Cancellation and fees follow the policy above and your payment method choice.
                 </p>
               </div>
 
-              {/* Refund Method Selection */}
+              {/* Refund Method Selection — same behaviour as My Bookings (only when a monetary refund applies) */}
+              {estimatedRefund && estimatedRefund.amount > 0 && (
               <div>
                 <label className="block text-sm text-gray-700 mb-2">
                   Select Refund Method
@@ -568,7 +669,7 @@ export function AppointmentDetailsView({
                           Refund to Wallet
                         </p>
                         <p className="text-xs text-gray-600">
-                          ✅ Get 100% refund instantly (No cancellation fee)
+                          Instant credit to your wallet (per cancellation policy)
                         </p>
                       </div>
                     </div>
@@ -589,13 +690,14 @@ export function AppointmentDetailsView({
                           Refund to Original Payment
                         </p>
                         <p className="text-xs text-gray-600">
-                          ⚠️ Cancellation fees may apply (5-7 business days)
+                          Refund to original payment method (typically 5–7 business days; fees per policy)
                         </p>
                       </div>
                     </div>
                   </button>
                 </div>
               </div>
+              )}
 
               {/* Cancellation Reason */}
               <div>
@@ -614,7 +716,10 @@ export function AppointmentDetailsView({
               {/* Actions */}
               <div className="flex gap-3">
                 <Button
-                  onClick={() => setShowCancelModal(false)}
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setEstimatedRefund(null);
+                  }}
                   variant="outline"
                   className="flex-1"
                   disabled={cancelling}
