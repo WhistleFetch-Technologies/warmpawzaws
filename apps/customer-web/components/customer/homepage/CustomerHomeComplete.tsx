@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ComponentType } from 'react';
 import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
 import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
@@ -1296,13 +1296,16 @@ export function CustomerHomeComplete({
     } catch (e) {
       console.warn('Meals active orders check failed (non-fatal):', (e as Error)?.message);
     }
-    const activeOrders = [
-      ...pharmacyOrders,
-      ...mealOrders,
-    ].filter((order: any) =>
-      order && order.status !== 'delivered' && order.status !== 'cancelled' && order.status !== 'refunded' &&
-      (order.trackingStatus ?? order.tracking_status ?? ['confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(order.status))
-    );
+    const trackableStatuses = ['confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'];
+    const activeOrders = [...pharmacyOrders, ...mealOrders].filter((order: any) => {
+      if (!order) return false;
+      if (order.status === 'delivered' || order.status === 'cancelled' || order.status === 'refunded') {
+        return false;
+      }
+      const ts = order.trackingStatus ?? order.tracking_status;
+      if (ts != null && ts !== '') return true;
+      return trackableStatuses.includes(order.status);
+    });
     if (activeOrders.length > 0) {
       setActiveOrderTracking(activeOrders[0]);
     } else {
@@ -1567,7 +1570,10 @@ export function CustomerHomeComplete({
                   <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
-                    {userData.name.charAt(0).toUpperCase()}
+                    {(typeof userData.name === 'string' && userData.name.trim()
+                      ? userData.name.trim().charAt(0)
+                      : 'U'
+                    ).toUpperCase()}
                   </div>
                 )}
               </button>
@@ -1817,6 +1823,8 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-4">
           <div className="relative h-28 rounded-2xl overflow-hidden shadow-md">
             {banners.map((banner, index) => {
+              const BannerIcon =
+                (banner as { Icon?: ComponentType<{ className?: string }> }).Icon || Sparkles;
               const heroComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
               return (
                 <div
@@ -1872,7 +1880,7 @@ export function CustomerHomeComplete({
                       )}
                     </div>
                     <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                      <banner.Icon className="w-7 h-7 text-white" />
+                      <BannerIcon className="w-7 h-7 text-white" />
                     </div>
                   </div>
                 </div>
@@ -1954,6 +1962,8 @@ export function CustomerHomeComplete({
                 COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
                 COMING_SOON_HOME_SERVICE_SCREENS.has(key);
               if (serviceComingSoon) {
+                const SoonTileIcon =
+                  (service as { icon?: ComponentType<{ className?: string }> }).icon || PackageIcon;
                 return (
                   <div
                     key={service.screen || index}
@@ -1961,7 +1971,7 @@ export function CustomerHomeComplete({
                     aria-label={`${displayLabel} — coming soon`}
                   >
                     <div className={`relative w-11 h-11 ${service.color} rounded-xl flex items-center justify-center shadow-sm`}>
-                      <service.icon className="w-5 h-5" />
+                      <SoonTileIcon className="w-5 h-5" />
                       <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
                         Soon
                       </span>
@@ -1971,13 +1981,12 @@ export function CustomerHomeComplete({
                 );
               }
               const isComingSoonTile = !!(service as { isComingSoon?: boolean }).isComingSoon;
+              const ServiceTileIcon =
+                (service as { icon?: ComponentType<{ className?: string }> }).icon || PackageIcon;
               return (
                 <button
                   type="button"
                   key={service.screen || index}
-                  type="button"
-                  onClick={() => handleNavigation(service.screen)}
-                  className="flex flex-col items-center gap-1 group"
                   aria-label={
                     isComingSoonTile
                       ? `${displayLabel}, coming soon in your area`
@@ -2004,7 +2013,7 @@ export function CustomerHomeComplete({
                         Soon
                       </span>
                     )}
-                    <service.icon className="w-5 h-5" />
+                    <ServiceTileIcon className="w-5 h-5" />
                   </div>
                   <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{displayLabel}</span>
                 </button>
@@ -2391,25 +2400,29 @@ export function CustomerHomeComplete({
             </p>
           </div>
           <div className="px-6 space-y-3 pointer-events-none select-none">
-            {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, rehomingListings: adoptionStats.rehomingListings }).map((option, index) => (
+            {adoptionOptions({ adoptablePets: adoptionStats.adoptablePets, rehomingListings: adoptionStats.rehomingListings }).map((adoptionRow, index) => {
+              const AdoptionRowIcon =
+                (adoptionRow as { Icon?: ComponentType<{ className?: string }> }).Icon || Heart;
+              return (
               <div
                 key={index}
                 className="bg-gradient-to-r from-red-50/90 to-pink-50/90 rounded-2xl p-4 border border-red-100/90 flex items-center justify-between w-full text-left opacity-[0.92] grayscale-[0.08]"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-12 h-12 bg-white/90 rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                    <option.Icon className="w-6 h-6 text-red-500/90" />
+                    <AdoptionRowIcon className="w-6 h-6 text-red-500/90" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-gray-800">{option.title}</h3>
-                    <p className="text-xs text-gray-600">{option.description}</p>
+                    <h3 className="text-sm font-semibold text-gray-800">{adoptionRow.title}</h3>
+                    <p className="text-xs text-gray-600">{adoptionRow.description}</p>
                   </div>
                 </div>
                 <div className="text-right shrink-0 pl-2">
                   <span className="text-xs font-semibold text-amber-600">Coming soon</span>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
 
@@ -2430,18 +2443,22 @@ export function CustomerHomeComplete({
             </p>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6 pointer-events-none select-none">
-            {petFoodSpotlightBrands().map((vendor, index) => (
+            {petFoodSpotlightBrands().map((brandRow, index) => {
+              const BrandIcon =
+                (brandRow as { Icon?: ComponentType<{ className?: string }> }).Icon || Bone;
+              return (
               <div
                 key={index}
                 className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center opacity-[0.92] grayscale-[0.08]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
-                  <vendor.Icon className="w-6 h-6 text-yellow-600" />
+                  <BrandIcon className="w-6 h-6 text-yellow-600" />
                 </div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">{vendor.name}</h3>
+                <h3 className="text-sm font-semibold text-gray-800 mb-1">{brandRow.name}</h3>
                 <span className="text-xs font-semibold text-amber-600 inline-block">Coming soon</span>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
 
@@ -2462,38 +2479,42 @@ export function CustomerHomeComplete({
               </button>
             </div>
             <div className="px-6 space-y-3">
-              {articles.map((article, index) => (
+              {articles.map((articleRow, index) => {
+                const ArticleRowIcon =
+                  (articleRow as { Icon?: ComponentType<{ className?: string }> }).Icon || Dog;
+                return (
                 <button
-                  key={article.id || index}
+                  key={articleRow.id || index}
                   onClick={() => {
                     // ✅ FIX: Navigate to content page by slug
-                    if (article.slug) {
-                      router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
-                    } else if (article.url) {
-                      window.open(article.url, '_blank');
+                    if (articleRow.slug) {
+                      router.push(`/articles?slug=${encodeURIComponent(articleRow.slug)}`);
+                    } else if (articleRow.url) {
+                      window.open(articleRow.url, '_blank');
                     } else {
-                      handleNavigation('article-detail', { articleId: article.id, article: { id: article.id, slug: article.slug } });
+                      handleNavigation('article-detail', { articleId: articleRow.id, article: { id: articleRow.id, slug: articleRow.slug } });
                     }
                   }}
                   className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
                 >
                   <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <article.Icon className="w-8 h-8 text-teal-600" />
+                    <ArticleRowIcon className="w-8 h-8 text-teal-600" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
-                        {article.category}
+                        {articleRow.category}
                       </span>
                       <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> {article.readTime}
+                        <Clock className="w-3 h-3" /> {articleRow.readTime}
                       </span>
                     </div>
-                    <h3 className="text-sm font-semibold text-gray-800">{article.title}</h3>
+                    <h3 className="text-sm font-semibold text-gray-800">{articleRow.title}</h3>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </button>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}

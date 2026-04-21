@@ -71,7 +71,10 @@ export class ErrorBoundary extends Component<Props, State> {
       name === 'ChunkLoadError' ||
       msg.includes('loading chunk') ||
       msg.includes('chunkloaderror') ||
-      msg.includes('failed to fetch dynamically imported module')
+      msg.includes('failed to fetch dynamically imported module') ||
+      msg.includes('importing a module script failed') ||
+      msg.includes('error loading dynamically imported module') ||
+      (msg.includes('failed to fetch') && msg.includes('chunk'))
     );
   };
 
@@ -122,17 +125,20 @@ export class ErrorBoundary extends Component<Props, State> {
                 : "We're sorry, but something unexpected happened. Please try again or go back to the home page."}
             </p>
 
-            {process.env.NODE_ENV === 'development' && this.state.error && (
-              <div className="mb-6 p-4 bg-gray-100 rounded-lg text-left">
-                <p className="text-xs font-mono text-red-600 mb-2">
+            {this.state.error && (
+              <details className="mb-6 text-left">
+                <summary className="text-xs text-gray-500 cursor-pointer select-none">
+                  Technical details (copy for support)
+                </summary>
+                <p className="mt-2 text-xs font-mono text-red-600 break-words">
                   {this.state.error.toString()}
                 </p>
-                {this.state.errorInfo && (
-                  <pre className="text-xs text-gray-500 overflow-auto max-h-32">
+                {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+                  <pre className="mt-2 text-xs text-gray-500 overflow-auto max-h-32">
                     {this.state.errorInfo.componentStack}
                   </pre>
                 )}
-              </div>
+              </details>
             )}
 
             <div className="flex flex-col gap-3">
