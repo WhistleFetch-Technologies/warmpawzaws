@@ -31,6 +31,12 @@ interface EnhancedAddressAutocompleteProps {
   };
 }
 
+/** Stable defaults — avoid new [] / {} each render when callers omit these props. */
+const DEFAULT_AUTOCOMPLETE_TYPES: string[] = ['geocode', 'establishment'];
+const DEFAULT_COMPONENT_RESTRICTIONS: NonNullable<
+  EnhancedAddressAutocompleteProps['componentRestrictions']
+> = Object.freeze({ country: 'in' });
+
 export function EnhancedAddressAutocomplete({
   value,
   onChange,
@@ -38,9 +44,12 @@ export function EnhancedAddressAutocomplete({
   className = '',
   required = false,
   disabled = false,
-  types = ['geocode', 'establishment'],
-  componentRestrictions = { country: 'in' },
+  types: typesProp,
+  componentRestrictions: componentRestrictionsProp,
 }: EnhancedAddressAutocompleteProps) {
+  const types = typesProp ?? DEFAULT_AUTOCOMPLETE_TYPES;
+  const componentRestrictions =
+    componentRestrictionsProp ?? DEFAULT_COMPONENT_RESTRICTIONS;
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<any>(null);
   const onChangeRef = useRef(onChange);

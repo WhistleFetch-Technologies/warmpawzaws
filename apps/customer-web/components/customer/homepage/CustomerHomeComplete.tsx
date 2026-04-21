@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
 import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
@@ -114,6 +114,63 @@ const TeleTracker = dynamic(
 /** Quick service tiles shown as non-interactive until launch. */
 const COMING_SOON_HOME_SERVICE_SCREENS = new Set(['mating-dating-hub', 'cafes']);
 
+/**
+ * Horizontal policy — Option A while dragging: left edge ≥ parentWidth/2 - HORIZONTAL_MARGIN.
+ * On drag release (and when restoring from storage / viewport resize), X snaps to extreme right
+ * (`maxX` in translate space); Y follows the user within vertical clamps.
+ */
+const AI_FAB_HORIZONTAL_MARGIN = 12;
+
+function getAiFabClampViewportSize(): { width: number; height: number } {
+  if (typeof window === 'undefined') return { width: 400, height: 800 };
+  const vv = window.visualViewport;
+  return {
+    width: vv?.width ?? window.innerWidth,
+    height: vv?.height ?? window.innerHeight,
+  };
+}
+
+function getCustomerAiFabBounds() {
+  const { width: w, height: h } = getAiFabClampViewportSize();
+  const margin = AI_FAB_HORIZONTAL_MARGIN;
+  const fab = 64;
+  const rightInset = 24;
+  const bottomInset = 96;
+
+  const minXKeepOnScreen = margin - w + rightInset + fab;
+  const minXRightHalf = w / 2 - margin - w + rightInset + fab;
+  const minX = Math.max(minXKeepOnScreen, minXRightHalf);
+  const maxX = rightInset - margin;
+  const minY = margin - h + bottomInset + fab;
+  const maxY = bottomInset - margin;
+  return { minX, maxX, minY, maxY };
+}
+
+/** While dragging: Option A on X; Y clamped above bottom nav. */
+function clampCustomerAiFabOffset(nx: number, ny: number): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerAiFabBounds();
+  let x: number;
+  if (minX > maxX) {
+    x = minX;
+  } else {
+    x = Math.max(minX, Math.min(maxX, nx));
+  }
+  return {
+    x,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
+
+/** Dock X to the rightmost valid translateX; clamp Y only. */
+function snapCustomerAiFabToRight(ny: number): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerAiFabBounds();
+  const snapX = minX > maxX ? minX : maxX;
+  return {
+    x: snapX,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
+
 export function CustomerHomeComplete({
   phone,
   onNavigate,
@@ -184,6 +241,106 @@ export function CustomerHomeComplete({
     staffName?: string;
   } | null>(null);
   const [customerId, setCustomerId] = useState<string>('');
+  const [aiFabDragOffset, setAiFabDragOffset] = useState({ x: 0, y: 0 });
+  const aiFabOffsetRef = useRef(aiFabDragOffset);
+  const aiFabDragMovedRef = useRef(false);
+
+  useEffect(() => {
+    aiFabOffsetRef.current = aiFabDragOffset;
+  }, [aiFabDragOffset]);
+
+  const aiFabStorageKey = useMemo(
+    () =>
+      `warmpawz_customer_home_ai_fab_drag_${(customerId || phone || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    [customerId, phone]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(aiFabStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { x?: number; y?: number };
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          setAiFabDragOffset(snapCustomerAiFabToRight(parsed.y));
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [aiFabStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const reclamp = () => {
+      setAiFabDragOffset((prev) => snapCustomerAiFabToRight(prev.y));
+    };
+    window.addEventListener('resize', reclamp);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', reclamp);
+    vv?.addEventListener('scroll', reclamp);
+    return () => {
+      window.removeEventListener('resize', reclamp);
+      vv?.removeEventListener('resize', reclamp);
+      vv?.removeEventListener('scroll', reclamp);
+    };
+  }, []);
+
+  const persistAiFabOffset = useCallback(
+    (o: { x: number; y: number }) => {
+      try {
+        localStorage.setItem(aiFabStorageKey, JSON.stringify(o));
+      } catch {
+        /* ignore */
+      }
+    },
+    [aiFabStorageKey]
+  );
+
+  const startAiFabDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== undefined && e.button !== 0) {
+        return;
+      }
+      aiFabDragMovedRef.current = false;
+      const pointerId = e.pointerId;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const orig = aiFabOffsetRef.current;
+
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          aiFabDragMovedRef.current = true;
+          ev.preventDefault();
+        }
+        if (!aiFabDragMovedRef.current) return;
+        const next = clampCustomerAiFabOffset(orig.x + dx, orig.y + dy);
+        setAiFabDragOffset(next);
+      };
+
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        const wasDrag = aiFabDragMovedRef.current;
+        setAiFabDragOffset((current) => {
+          const next = wasDrag ? snapCustomerAiFabToRight(current.y) : clampCustomerAiFabOffset(current.x, current.y);
+          persistAiFabOffset(next);
+          return next;
+        });
+      };
+
+      window.addEventListener('pointermove', onMove, { passive: false });
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    },
+    [persistAiFabOffset]
+  );
+
   /** Unread inbox count for header bell; refreshed infrequently (same API as useNotificationService). */
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
@@ -2651,17 +2808,31 @@ export function CustomerHomeComplete({
         </div>
       </div>
 
-      {/* AI Assistant Floating Action Button */}
+      {/* AI Assistant Floating Action Button (draggable; tap opens chat) */}
       {!hideHeaderFooter && (
-        <button
-          onClick={() => setShowAIChat(true)}
-          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto animate-pulse"
+        <div
+          className="fixed bottom-24 right-6 z-40 pointer-events-none"
+          style={{ transform: `translate(${aiFabDragOffset.x}px, ${aiFabDragOffset.y}px)` }}
         >
-          <Bot className="w-8 h-8 text-white" />
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-            <Sparkles className="w-3 h-3 text-white" />
-          </div>
-        </button>
+          <button
+            type="button"
+            onPointerDown={startAiFabDrag}
+            onClick={() => {
+              if (aiFabDragMovedRef.current) {
+                aiFabDragMovedRef.current = false;
+                return;
+              }
+              setShowAIChat(true);
+            }}
+            className="pointer-events-auto touch-manipulation relative w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform mx-auto animate-pulse"
+            aria-label="Open AI assistant"
+          >
+            <Bot className="w-8 h-8 text-white" />
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+              <Sparkles className="w-3 h-3 text-white" />
+            </div>
+          </button>
+        </div>
       )}
 
       {/* ✅ NEW: Category Mapper Button (Development Tool) */}
