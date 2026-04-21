@@ -19,6 +19,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query } from '../../../database/rds-connection';
 import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
+import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 
 // ============================================================================
@@ -153,7 +154,7 @@ class GetAppointmentDetailsHandler extends BaseHandler {
       `,
         [appointmentId, customerId]
       ).catch((err) => {
-        console.warn('[appointments] detail main query failed:', err);
+        console.warn('[appointments] detail main query failed:', (err as Error)?.message || err);
         return { rows: [] as Record<string, unknown>[] };
       });
 
@@ -380,6 +381,18 @@ class CancelAppointmentHandler extends BaseHandler {
 
       const bookingId = bookingRow.booking_id ?? bookingRow.id;
 
+      // Same wall-clock semantics as booking cancel + refund preview (vendor_timezone + date + time).
+      const hoursUntilStart = computeHoursUntilBookingStart({
+        booking_date: bookingRow.booking_date,
+        booking_time: String(bookingRow.booking_time ?? ''),
+        vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
+        booking_datetime: (bookingRow as any).booking_datetime ?? null,
+        scheduled_at: (bookingRow as any).scheduled_at ?? null,
+      });
+      if (Number.isFinite(hoursUntilStart) && hoursUntilStart < 0) {
+        return this.error('Cannot cancel past appointments', 400);
+      }
+
       const updated = await query(
         `
         UPDATE bookings
@@ -504,8 +517,13 @@ class CancelAppointmentHandler extends BaseHandler {
         refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
-      console.warn('[appointments] cancel handler error:', error);
-      return this.error('Appointment not found', 404);
+      console.warn('[appointments] cancel handler error:', error?.message || error);
+      return this.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to cancel appointment',
+        500
+      );
     }
   }
 }
@@ -573,6 +591,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
       c,
@@ -585,6 +604,11 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments/:id', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('id'),
+    };
     const context = createLambdaContext();
     return runAppointmentHandler(
       c,
@@ -596,6 +620,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/customer/appointments/:id/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
@@ -608,6 +633,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/customer/appointments/:id/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
     return runAppointmentHandler(
@@ -622,6 +648,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
   // so the path segment "customer" is never bound to :appointmentId.
   app.get('/appointment/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       customerId: c.req.param('customerId'),
@@ -644,6 +671,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/appointment/:appointmentId', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -659,6 +687,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/appointment/:appointmentId/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -675,6 +704,7 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.post('/appointment/:appointmentId/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     event.pathParameters = {
       ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
       id: c.req.param('appointmentId'),
@@ -688,6 +718,38 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
       404
     );
   });
+}
+
+/**
+ * Copy query params from Hono into the synthetic API Gateway event.
+ * POST /appointment/:id/cancel?customerId=… must carry customerId — some adapters leave req.query() empty on POST.
+ */
+function mergeAllQueryFromHono(c: Context, event: Record<string, unknown>): void {
+  try {
+    const base =
+      event.queryStringParameters && typeof event.queryStringParameters === 'object'
+        ? { ...(event.queryStringParameters as Record<string, string>) }
+        : {};
+    const rq = c.req as { queries?: () => Record<string, string[]> };
+    if (typeof rq.queries === 'function') {
+      const qm = rq.queries();
+      if (qm && typeof qm === 'object' && !Array.isArray(qm)) {
+        for (const [k, arr] of Object.entries(qm)) {
+          const v = Array.isArray(arr) ? arr[0] : (arr as unknown as string);
+          if (v != null && String(v) !== '') base[k] = String(v);
+        }
+      }
+    }
+    const q = c.req.query();
+    if (q && typeof q === 'object' && !Array.isArray(q)) {
+      for (const [k, v] of Object.entries(q)) {
+        if (v != null && String(v) !== '') base[k] = String(v);
+      }
+    }
+    event.queryStringParameters = base;
+  } catch (e) {
+    console.warn('[appointments] mergeAllQueryFromHono failed:', e);
+  }
 }
 
 /** BaseHandler.parseBody expects `event.body` as JSON string; Hono only exposes payload via `c.req.json()`. */
@@ -733,6 +795,24 @@ function createApiGatewayEvent(req: any): any {
     }
   } catch (e) {
     console.warn('[appointments] createApiGatewayEvent queryStringParameters failed:', e);
+  }
+
+  // Fallback: some runtimes / adapters leave req.query() empty but the URL still has ?customerId=…
+  try {
+    const urlStr = typeof req.url === 'string' ? req.url : '';
+    if (urlStr.includes('?')) {
+      const u = urlStr.startsWith('http://') || urlStr.startsWith('https://')
+        ? new URL(urlStr)
+        : new URL(urlStr, 'http://127.0.0.1');
+      u.searchParams.forEach((value, key) => {
+        if (value == null || key == null) return;
+        if (!queryStringParameters[key] || queryStringParameters[key] === '') {
+          queryStringParameters[key] = value;
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent URL query fallback failed:', e);
   }
 
   try {
