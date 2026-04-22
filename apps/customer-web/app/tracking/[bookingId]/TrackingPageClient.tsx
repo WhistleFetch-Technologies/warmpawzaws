@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Key, Eye, EyeOff, Copy, Check } from 'lucide-react';
@@ -48,6 +48,18 @@ interface TrackingData {
   petName?: string;
   booking_time?: string;
   startedAt?: string;
+}
+
+/** Booking lifecycle beats GPS session row when vendor has already started the walk. */
+function deriveCustomerTrackingPhase(
+  tracking: TrackingData | null,
+  booking: { status?: string } | null | undefined
+): TrackingData['status'] | 'loading' {
+  if (!tracking) return 'loading';
+  const bookingStatus = String(booking?.status || '').toLowerCase();
+  if (bookingStatus === 'completed' || tracking.status === 'completed') return 'completed';
+  if (bookingStatus === 'in_progress') return 'in_progress';
+  return tracking.status;
 }
 
 interface TrackingPageClientProps {
@@ -105,6 +117,8 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   const [correctedDestination, setCorrectedDestination] = useState<{ latitude: number; longitude: number } | null>(null);
   const [bookingData, setBookingData] = useState<any>(null);
   const [showOTP, setShowOTP] = useState(false);
+  const [showCompletionOTP, setShowCompletionOTP] = useState(false);
+  const [copiedEndOTP, setCopiedEndOTP] = useState(false);
   const [copiedOTP, setCopiedOTP] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -182,6 +196,13 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
             otpVerified: !!otpVerified,
             serviceStyle: booking.service_style || booking.serviceStyle || booking.service_style_type,
             serviceType: booking.service_type || booking.serviceType,
+            status: booking.status || booking.bookingStatus,
+            serviceName: booking.service_name || booking.serviceName || booking.service?.name,
+            vendorName:
+              booking.vendor_name ||
+              booking.vendorName ||
+              booking.vendor?.business_name ||
+              booking.vendor?.businessName,
           };
           
           console.log('[TrackingPage] Extracted booking data:', bookingDataToSet);
@@ -216,6 +237,13 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
     setCopiedOTP(true);
     setTimeout(() => setCopiedOTP(false), 2000);
     toast.success('OTP copied to clipboard');
+  };
+
+  const copyCompletionOTP = (otp: string) => {
+    copyTextToClipboard(otp);
+    setCopiedEndOTP(true);
+    setTimeout(() => setCopiedEndOTP(false), 2000);
+    toast.success('End OTP copied to clipboard');
   };
 
   // ✅ Polling-based GPS tracking (SSE not supported on Lambda)
@@ -398,6 +426,35 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
           setTracking(normalized);
           setError(null);
           setLastUpdate(new Date());
+
+          try {
+            const bookingRes = await apiClient.get<any>(`/customer/bookings/${bookingId}`);
+            const b = bookingRes?.booking || bookingRes?.data?.booking || bookingRes;
+            if (b && mounted) {
+              const otpCode = b.otp_code || b.otpCode || b.otp || b.otp_code_value;
+              const completionOTP = b.completion_otp || b.completionOTP || b.completion_otp_code;
+              const startOTP = b.start_otp || b.startOTP || b.start_otp_code;
+              const otpVerified = b.otp_verified || b.otpVerified || b.otp_verified_at || false;
+              setBookingData((prev: any) => ({
+                ...(prev || {}),
+                otpCode,
+                completionOTP,
+                startOTP,
+                otpVerified: !!otpVerified,
+                serviceStyle: b.service_style || b.serviceStyle || b.service_style_type,
+                serviceType: b.service_type || b.serviceType,
+                status: b.status || b.bookingStatus,
+                serviceName: b.service_name || b.serviceName || b.service?.name,
+                vendorName:
+                  b.vendor_name ||
+                  b.vendorName ||
+                  b.vendor?.business_name ||
+                  b.vendor?.businessName,
+              }));
+            }
+          } catch {
+            /* booking poll is best-effort */
+          }
         } else if (response.success && !response.tracking) {
           setError(response.message || 'GPS tracking is not active for this booking');
           setTracking(null);
@@ -447,6 +504,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
       case 'arrived': return 'text-green-500';
       case 'in_progress': return 'text-orange-500';
       case 'completed': return 'text-gray-500';
+      case 'loading': return 'text-gray-500';
       default: return 'text-gray-500';
     }
   };
@@ -463,6 +521,46 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   // ✅ FIX: Properly handle null/undefined values for ETA and distance
   const etaMinutes = tracking?.eta ?? tracking?.eta_minutes ?? (tracking as any)?.estimatedEtaMinutes ?? null;
   const distanceKm = tracking?.distance ?? tracking?.distance_km ?? (tracking as any)?.distance_remaining_km ?? null;
+  const distanceTraveledKm =
+    tracking?.distance_traveled_km ?? (tracking as any)?.distanceTraveledKm ?? null;
+
+  const displayPhase = useMemo(
+    () => deriveCustomerTrackingPhase(tracking, bookingData),
+    [tracking, bookingData]
+  );
+
+  const isWalkStyleBooking = useMemo(() => {
+    const atHome =
+      bookingData?.serviceStyle === 'at_home' || bookingData?.serviceType === 'at_home';
+    const nm = `${bookingData?.serviceName || ''} ${tracking?.providerName || ''} ${tracking?.staff_name || ''} ${bookingData?.vendorName || ''}`.toLowerCase();
+    return atHome && (nm.includes('walk') || nm.includes('walker'));
+  }, [bookingData, tracking]);
+
+  const showJourneyMetrics = useMemo(() => {
+    if (!tracking || displayPhase === 'loading') return false;
+    return ['on_way', 'in_transit', 'arriving'].includes(displayPhase);
+  }, [tracking, displayPhase]);
+
+  const statusHeadline = useMemo(() => {
+    if (!tracking) return 'Tracking...';
+    const phase = displayPhase === 'loading' ? tracking.status : displayPhase;
+    if (phase === 'in_progress' && isWalkStyleBooking) return 'Walk in progress';
+    return getStatusMessage(phase);
+  }, [tracking, displayPhase, isWalkStyleBooking]);
+
+  const phaseStepIndex = useMemo(() => {
+    const p = displayPhase === 'loading' && tracking ? tracking.status : displayPhase;
+    if (p === 'completed') return 3;
+    if (p === 'in_progress') return 2;
+    if (p === 'arrived') return 1;
+    if (['on_way', 'in_transit', 'arriving'].includes(String(p))) return 0;
+    return 0;
+  }, [tracking, displayPhase]);
+
+  const stepperFillWidth = useMemo(() => {
+    const w = ['0%', 'calc(33.333% - 16px)', 'calc(66.666% - 20px)', 'calc(100% - 24px)'];
+    return w[Math.min(phaseStepIndex, 3)] ?? '0%';
+  }, [phaseStepIndex]);
 
   // ✅ CRITICAL FIX: Correct destination for map display (same logic as "Open in Google Maps" button)
   useEffect(() => {
@@ -977,37 +1075,77 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
               Open in Google Maps
             </button>
             
-            {/* ETA & Distance Cards */}
+            {/* ETA / journey vs at-location vs walk — avoids stale route numbers after arrival */}
             <div className="absolute top-3 left-3 right-3 flex justify-between gap-2">
-              <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">ETA</p>
-                <p className="text-xl font-bold text-blue-600">
-                  {etaMinutes != null && !isNaN(Number(etaMinutes)) ? (() => {
-                    const minutes = Math.round(Number(etaMinutes));
-                    if (minutes >= 60) {
-                      const hours = Math.floor(minutes / 60);
-                      const remainingMinutes = minutes % 60;
-                      if (remainingMinutes === 0) {
-                        return `${hours}`;
-                      } else {
-                        return `${hours}h ${remainingMinutes}m`;
-                      }
-                    } else {
-                      return `${minutes}`;
-                    }
-                  })() : '--'}
-                  <span className="text-sm font-normal ml-1">
-                    {etaMinutes != null && !isNaN(Number(etaMinutes)) && Math.round(Number(etaMinutes)) >= 60 ? 'hours' : 'min'}
-                  </span>
-                </p>
-              </div>
-              <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Distance</p>
-                <p className="text-xl font-bold text-gray-900">
-                  {distanceKm != null && !isNaN(Number(distanceKm)) && Number(distanceKm) > 0 ? Number(distanceKm).toFixed(1) : '--'}
-                  <span className="text-sm font-normal ml-1">km</span>
-                </p>
-              </div>
+              {showJourneyMetrics ? (
+                <>
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">ETA</p>
+                    <p className="text-xl font-bold text-blue-600">
+                      {etaMinutes != null && !isNaN(Number(etaMinutes)) ? (() => {
+                        const minutes = Math.round(Number(etaMinutes));
+                        if (minutes >= 60) {
+                          const hours = Math.floor(minutes / 60);
+                          const remainingMinutes = minutes % 60;
+                          if (remainingMinutes === 0) {
+                            return `${hours}`;
+                          } else {
+                            return `${hours}h ${remainingMinutes}m`;
+                          }
+                        } else {
+                          return `${minutes}`;
+                        }
+                      })() : '--'}
+                      <span className="text-sm font-normal ml-1">
+                        {etaMinutes != null && !isNaN(Number(etaMinutes)) && Math.round(Number(etaMinutes)) >= 60 ? 'hours' : 'min'}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">Distance</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      {distanceKm != null && !isNaN(Number(distanceKm)) && Number(distanceKm) > 0 ? Number(distanceKm).toFixed(1) : '--'}
+                      <span className="text-sm font-normal ml-1">km</span>
+                    </p>
+                  </div>
+                </>
+              ) : displayPhase === 'arrived' ? (
+                <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Status</p>
+                  <p className="text-sm font-bold text-green-700 leading-tight">At your location</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Waiting to start the visit</p>
+                </div>
+              ) : displayPhase === 'in_progress' ? (
+                <>
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+                      {isWalkStyleBooking ? 'Walk' : 'Service'}
+                    </p>
+                    <p className="text-sm font-bold text-orange-700 leading-tight">
+                      {isWalkStyleBooking ? 'Walk underway' : 'Underway'}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Live position on map</p>
+                  </div>
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+                      {isWalkStyleBooking ? 'Walked' : 'Moved'}
+                    </p>
+                    <p className="text-xl font-bold text-gray-900">
+                      {distanceTraveledKm != null &&
+                      !isNaN(Number(distanceTraveledKm)) &&
+                      Number(distanceTraveledKm) > 0
+                        ? Number(distanceTraveledKm).toFixed(2)
+                        : '—'}
+                      <span className="text-sm font-normal ml-1">km</span>
+                    </p>
+                  </div>
+                </>
+              ) : displayPhase === 'completed' ? (
+                <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Status</p>
+                  <p className="text-sm font-bold text-gray-700">Service completed</p>
+                </div>
+              ) : null}
             </div>
             
             {/* Live indicator */}
@@ -1047,9 +1185,9 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                 ) : '👤'}
               </div>
               <div className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 ${
-                tracking.status === 'on_way' || tracking.status === 'in_transit' || tracking.status === 'arriving' 
+                displayPhase === 'on_way' || displayPhase === 'in_transit' || displayPhase === 'arriving' 
                   ? 'bg-green-500 animate-pulse' 
-                  : tracking.status === 'arrived' || tracking.status === 'in_progress'
+                  : displayPhase === 'arrived' || displayPhase === 'in_progress'
                   ? 'bg-green-500'
                   : 'bg-gray-400'
               } rounded-full border-2 border-white flex items-center justify-center shadow`}>
@@ -1058,11 +1196,16 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-gray-900 truncate">{providerName}</h3>
-              <p className={`text-sm ${getStatusColor(tracking.status)} font-medium flex items-center gap-1`}>
-                {(tracking.status === 'on_way' || tracking.status === 'in_transit') && (
+              <p className={`text-sm ${getStatusColor(displayPhase)} font-medium flex items-center gap-1`}>
+                {(displayPhase === 'on_way' || displayPhase === 'in_transit' || displayPhase === 'arriving') && (
                   <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
                 )}
-                {getStatusMessage(tracking.status)}
+                {displayPhase === 'in_progress' && (
+                  <span className="text-base leading-none" aria-hidden>
+                    {isWalkStyleBooking ? '🚶' : '✨'}
+                  </span>
+                )}
+                {statusHeadline}
               </p>
               {tracking.petName && (
                 <p className="text-xs text-gray-500 mt-0.5">🐾 {tracking.petName}</p>
@@ -1089,28 +1232,19 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
             {/* Progress line fill */}
             <div 
               className="absolute top-3 left-6 h-1 bg-blue-500 rounded-full transition-all duration-700 ease-out"
-              style={{ 
-                width: tracking.status === 'on_way' || tracking.status === 'in_transit' ? '0%' : 
-                       tracking.status === 'arriving' ? 'calc(33% - 12px)' : 
-                       tracking.status === 'arrived' ? 'calc(66% - 12px)' : 
-                       tracking.status === 'in_progress' || tracking.status === 'completed' ? 'calc(100% - 24px)' : '0%' 
-              }}
+              style={{ width: stepperFillWidth }}
             ></div>
             
-            {/* Steps */}
+            {/* Steps: en route → arrived → walk/in service → done (booking in_progress overrides stale GPS arrived) */}
             {[
-              { id: 'on_way', icon: '🚗', label: 'On Way' },
-              { id: 'arriving', icon: '📍', label: 'Arriving' },
+              { id: 'en_route', icon: '🚗', label: 'En route' },
               { id: 'arrived', icon: '✅', label: 'Arrived' },
-              { id: 'completed', icon: '🎉', label: 'Done' },
-            ].map((step) => {
-              const steps = ['on_way', 'in_transit', 'arriving', 'arrived', 'in_progress', 'completed'];
-              const currentIdx = steps.indexOf(tracking.status);
-              const stepIdx = step.id === 'on_way' ? 0 : step.id === 'arriving' ? 2 : step.id === 'arrived' ? 3 : 5;
-              const isComplete = stepIdx <= currentIdx;
-              const isCurrent = (step.id === 'on_way' && (tracking.status === 'on_way' || tracking.status === 'in_transit')) ||
-                               step.id === tracking.status || 
-                               (tracking.status === 'in_progress' && step.id === 'completed');
+              { id: 'walk', icon: isWalkStyleBooking ? '🚶' : '✨', label: isWalkStyleBooking ? 'Walk' : 'In service' },
+              { id: 'done', icon: '🎉', label: 'Done' },
+            ].map((step, i) => {
+              const isComplete =
+                phaseStepIndex > i || (displayPhase === 'completed' && i === 3);
+              const isCurrent = phaseStepIndex === i && !isComplete;
               
               return (
                 <div key={step.id} className="flex flex-col items-center z-10 flex-1">
@@ -1132,7 +1266,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
 
         {/* Action Buttons */}
         <div className="px-4 pb-4 safe-area-bottom space-y-2">
-          {tracking.status === 'arrived' && (
+          {displayPhase === 'arrived' && (
             <div className="p-3 bg-green-50 rounded-xl border border-green-200">
               <p className="text-green-700 font-medium text-center flex items-center justify-center gap-2">
                 <span className="text-xl">🎉</span>
@@ -1141,25 +1275,12 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
             </div>
           )}
 
-          {/* ✅ OTP Display for arrived/in_progress bookings */}
+          {/* Start / check-in OTP — before vendor verifies start OTP */}
           {(() => {
             const hasOTP = !!(bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP);
-            const correctStatus = tracking.status === 'arrived' || tracking.status === 'in_progress';
+            const preWalkPhase = ['on_way', 'in_transit', 'arriving', 'arrived'].includes(displayPhase);
             const notVerified = !bookingData?.otpVerified;
-            
-            // Debug logging
-            if (tracking.status === 'arrived' || tracking.status === 'in_progress') {
-              console.log('[TrackingPage] OTP Display Check:', {
-                hasOTP,
-                correctStatus,
-                notVerified,
-                bookingData,
-                trackingStatus: tracking.status,
-                shouldShow: hasOTP && correctStatus && notVerified
-              });
-            }
-            
-            return hasOTP && correctStatus && notVerified;
+            return hasOTP && preWalkPhase && notVerified;
           })() && (
             <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
               <div className="flex items-center justify-between mb-2">
@@ -1176,7 +1297,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-lg font-bold text-orange-600 tracking-wider">
                     {showOTP
-                      ? (bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP)
+                      ? String(bookingData?.startOTP || bookingData?.otpCode || bookingData?.completionOTP || '')
                       : '****'}
                   </span>
                   <button
@@ -1190,7 +1311,11 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                     )}
                   </button>
                   <button
-                    onClick={() => copyOTP((bookingData?.otpCode || bookingData?.completionOTP || bookingData?.startOTP)!)}
+                    onClick={() =>
+                      copyOTP(
+                        String(bookingData?.startOTP || bookingData?.otpCode || bookingData?.completionOTP || '')
+                      )
+                    }
                     className="p-1.5 hover:bg-orange-100 rounded-lg transition"
                   >
                     {copiedOTP ? (
@@ -1218,19 +1343,72 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
               <span className="text-sm font-medium text-green-700">Check-in completed</span>
             </div>
           )}
+
+          {/* End-of-service OTP (same pattern as My Bookings) */}
+          {bookingData?.otpVerified &&
+            displayPhase === 'in_progress' &&
+            (bookingData?.serviceStyle === 'at_home' || bookingData?.serviceType === 'at_home') &&
+            (bookingData?.completionOTP || bookingData?.otpCode) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/90 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <Key className="h-4 w-4 text-amber-800" />
+                  <span className="text-sm font-semibold text-amber-900">End-of-service OTP</span>
+                </div>
+                <p className="mb-2 text-xs text-amber-900/90">
+                  When the walk or visit is finished, share this code with your provider so they can complete the booking.
+                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-lg font-bold tracking-wider text-amber-950">
+                    {showCompletionOTP
+                      ? String(bookingData.completionOTP || bookingData.otpCode)
+                      : '••••••'}
+                  </span>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowCompletionOTP(!showCompletionOTP)}
+                      className="rounded p-1.5 hover:bg-amber-100"
+                      aria-label={showCompletionOTP ? 'Hide end OTP' : 'Show end OTP'}
+                    >
+                      {showCompletionOTP ? (
+                        <EyeOff className="h-4 w-4 text-amber-800" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-amber-800" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyCompletionOTP(String(bookingData.completionOTP || bookingData.otpCode))
+                      }
+                      className="rounded p-1.5 hover:bg-amber-100"
+                      aria-label="Copy end OTP"
+                    >
+                      {copiedEndOTP ? (
+                        <Check className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <Copy className="h-4 w-4 text-amber-800" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           
-          {(tracking.status === 'in_progress') && (
+          {displayPhase === 'in_progress' && (
             <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
               <p className="text-blue-700 font-medium text-center flex items-center justify-center gap-2">
                 <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                Service in progress...
+                {isWalkStyleBooking ? 'Walk in progress…' : 'Service in progress…'}
               </p>
             </div>
           )}
           
-          {tracking.status === 'completed' && (
+          {displayPhase === 'completed' && (
             <button 
-              onClick={() => router.push(`/bookings/${bookingId}/review`)}
+              onClick={() =>
+                router.push(`/bookings?reviewBookingId=${encodeURIComponent(bookingId)}`)
+              }
               className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold rounded-xl hover:from-orange-600 hover:to-orange-700 transition shadow-lg shadow-orange-200"
             >
               ⭐ Rate & Review

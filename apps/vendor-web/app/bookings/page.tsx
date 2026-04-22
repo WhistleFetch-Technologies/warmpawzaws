@@ -40,6 +40,10 @@ function BookingsPageContent() {
   }, []);
 
   const handleBack = () => {
+    if (walkSessionsFocus) {
+      router.push('/');
+      return;
+    }
     router.back();
   };
 

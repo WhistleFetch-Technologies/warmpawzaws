@@ -117,7 +117,7 @@ export type VendorProgressRoleType = 'trainer' | 'behaviorist' | 'nutritionist' 
 
 /**
  * Maps vendor role to program progress UI (`ProgressTrackingDashboard` `roleType`).
- * Walkers use `/bookings?walkSessions=1` + `/bookings/home-service/[id]` for live sessions, not training progress.
+ * Walkers use `/bookings?walkSessions=1` + `/bookings/home-service?bookingId=` for live sessions, not training progress.
  */
 export function getVendorProgressRoleType(vendorData: any): VendorProgressRoleType {
   if (isVendorWalkerProgramProgress(vendorData)) {

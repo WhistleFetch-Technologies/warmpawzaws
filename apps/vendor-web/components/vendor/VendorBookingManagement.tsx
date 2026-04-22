@@ -26,6 +26,7 @@ import {
   type VendorCancellationReasonSlug,
 } from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
+import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -197,7 +198,7 @@ const NON_WALK_HOME_HINT =
   /groom|bath|haircut|nail|vet\s|vaccin|dental|spa|trim|board|daycare|training\s*class|consult|pet\s*sit|house\s*sit|sitting/i;
 
 /**
- * Bookings that should use `/bookings/home-service/[id]` (start/end OTP + GPS).
+ * Bookings that should use `/bookings/home-service?bookingId=` (start/end OTP + GPS).
  * Catalog names may omit the word "walk"; walker + at_home is a strong signal.
  */
 function bookingNeedsWalkLiveTracker(booking: Booking, vendorData?: any): boolean {
@@ -264,6 +265,7 @@ export function VendorBookingManagement({
       walkSessionsWalkFlowDone.current = false;
     }
     prevWalkSessionsFocus.current = walkSessionsFocus;
+    if (walkSessionsFocus) setActiveTab('bookings');
   }, [walkSessionsFocus]);
 
   useEffect(() => {
@@ -282,7 +284,8 @@ export function VendorBookingManagement({
       const id = chosen.bookingId || chosen.id;
       if (id) {
         toast.message('Opening live tracker…');
-        router.replace(`/bookings/home-service/${id}`);
+        setHomeServiceTrackingReturnHref('/bookings?walkSessions=1');
+        router.replace(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
       }
       return;
     }
@@ -893,7 +896,10 @@ export function VendorBookingManagement({
     if (bookingNeedsWalkLiveTracker(booking, vendorData) && booking.status === 'confirmed') {
       const id = booking.bookingId || booking.id;
       if (id) {
-        router.push(`/bookings/home-service/${id}`);
+        setHomeServiceTrackingReturnHref(
+          walkSessionsFocus ? '/bookings?walkSessions=1' : '/bookings'
+        );
+        router.push(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
       }
       return;
     } else if (booking.communicationType === 'video') {
@@ -947,7 +953,10 @@ export function VendorBookingManagement({
       toast.error('Missing booking id');
       return;
     }
-    router.push(`/bookings/home-service/${id}`);
+    setHomeServiceTrackingReturnHref(
+      walkSessionsFocus ? '/bookings?walkSessions=1' : '/bookings'
+    );
+    router.push(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
   };
   
   // Complete booking without OTP (for tele consultations)
@@ -1033,41 +1042,43 @@ export function VendorBookingManagement({
 
   const bookingMainBody = (
     <>
-        <div className="border-b border-gray-200 bg-white px-4 pb-4">
-          {/* Tab Navigation */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('bookings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'bookings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Bookings
-            </button>
-            <button
-              onClick={() => setActiveTab('earnings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'earnings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Earnings
-            </button>
-            <button
-              onClick={() => setActiveTab('payouts')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'payouts'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Payouts
-            </button>
+        {!walkSessionsFocus && (
+          <div className="border-b border-gray-200 bg-white px-4 pb-4">
+            {/* Tab Navigation — hidden on Walk sessions flow (bookings only) */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('bookings')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'bookings'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Bookings
+              </button>
+              <button
+                onClick={() => setActiveTab('earnings')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'earnings'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Earnings
+              </button>
+              <button
+                onClick={() => setActiveTab('payouts')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'payouts'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Payouts
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Schedule Section */}
         <div className="p-4 bg-white border-b border-gray-100">
