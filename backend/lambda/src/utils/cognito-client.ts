@@ -9,12 +9,13 @@
  * ============================================================================
  */
 
-import { 
-  CognitoIdentityProviderClient, 
+import {
+  CognitoIdentityProviderClient,
   AdminCreateUserCommand,
   AdminSetUserPasswordCommand,
   AdminInitiateAuthCommand,
   AdminGetUserCommand,
+  AdminUserGlobalSignOutCommand,
   AuthFlowType,
 } from '@aws-sdk/client-cognito-identity-provider';
 
@@ -167,6 +168,38 @@ export async function authenticateCognitoUser(
     refreshToken: authResponse.AuthenticationResult.RefreshToken || '',
     expiresIn: authResponse.AuthenticationResult.ExpiresIn || 3600,
   };
+}
+
+/**
+ * Revoke all refresh tokens for the internal Cognito user `phone_{dialable}`.
+ * Used after customer password reset/change so old sessions cannot refresh.
+ */
+export async function adminGlobalSignOutCognitoUserByDialablePhone(
+  dialablePhone: string
+): Promise<{ ok: boolean; error?: string }> {
+  const poolId =
+    process.env.COGNITO_USER_POOL_ID ||
+    process.env.COGNITO_VENDOR_POOL_ID ||
+    process.env.COGNITO_CUSTOMER_POOL_ID ||
+    '';
+  if (!poolId || !dialablePhone?.trim()) {
+    return { ok: true };
+  }
+  const username = `phone_${dialablePhone.trim()}`;
+  try {
+    await cognitoClient.send(
+      new AdminUserGlobalSignOutCommand({
+        UserPoolId: poolId,
+        Username: username,
+      })
+    );
+    return { ok: true };
+  } catch (error: any) {
+    if (error?.name === 'UserNotFoundException') {
+      return { ok: true };
+    }
+    return { ok: false, error: error?.message || String(error) };
+  }
 }
 
 /**

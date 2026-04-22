@@ -290,10 +290,11 @@ class ChangePasswordHandler extends BaseHandler {
 
       const newPasswordHash = await hashCustomerPasswordBcrypt(newPassword);
 
-      await query(`UPDATE customers SET password_hash = $1, password_set_at = NOW(), updated_at = NOW() WHERE id = $2::uuid`, [
-        newPasswordHash,
-        customer.id,
-      ]);
+      await query(
+        `UPDATE customers SET password_hash = $1, password_set_at = NOW(),
+         auth_version = COALESCE(auth_version, 0) + 1, updated_at = NOW() WHERE id = $2::uuid`,
+        [newPasswordHash, customer.id]
+      );
 
       return this.success({
         message: 'Password changed successfully',
@@ -388,7 +389,8 @@ export async function handleCustomerSetPassword(c: Context) {
 
   const hash = await hashCustomerPasswordBcrypt(password);
   await query(
-    `UPDATE customers SET password_hash = $1, password_set_at = NOW(), updated_at = NOW() WHERE id = $2::uuid`,
+    `UPDATE customers SET password_hash = $1, password_set_at = NOW(),
+     auth_version = COALESCE(auth_version, 0) + 1, updated_at = NOW() WHERE id = $2::uuid`,
     [hash, customerId]
   );
 

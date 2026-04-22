@@ -253,6 +253,57 @@ export async function extractAndVerifyAuthToken(
     return { valid: false, error: 'Invalid token signature' };
   }
 
+  const av = await enforceCustomerAuthVersionOnWarmpawzJwt(payload);
+  if (!av.ok) {
+    return { valid: false, error: av.error || 'Session invalidated' };
+  }
+
   return { valid: true, payload };
+}
+
+/**
+ * Invalidate fallback customer JWTs after password change when `customers.auth_version` bumps.
+ * Cognito-issued tokens are not checked here (pool issuer); use AdminUserGlobalSignOut on password change.
+ */
+async function enforceCustomerAuthVersionOnWarmpawzJwt(
+  payload: CognitoTokenPayload
+): Promise<{ ok: boolean; error?: string }> {
+  const iss = String((payload as any).iss || '');
+  if (iss !== 'warmpawz-api' && iss !== 'warmpawz-uat') {
+    return { ok: true };
+  }
+  const ut = payload['custom:user_type'];
+  const groups = (payload['cognito:groups'] as string[]) || [];
+  const isCustomer = ut === 'customer' || groups.includes('customer');
+  if (!isCustomer) return { ok: true };
+
+  const sub = String(payload.sub || '');
+  if (!sub || !/^[0-9a-fA-F-]{36}$/.test(sub)) {
+    return { ok: true };
+  }
+
+  try {
+    const { query } = await import('../database/rds-connection');
+    const res = await query(
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM customers WHERE id = $1::uuid LIMIT 1`,
+      [sub]
+    );
+    const row = (res as any).rows?.[0];
+    if (!row) return { ok: true };
+    const dbAv = Number(row.av ?? 0);
+    const raw = (payload as any).auth_version;
+    const tokenAv = raw === undefined || raw === null ? null : Number(raw);
+    if (tokenAv === null) {
+      if (dbAv > 0) return { ok: false, error: 'Session invalidated' };
+      return { ok: true };
+    }
+    if (Number.isNaN(tokenAv) || tokenAv !== dbAv) {
+      return { ok: false, error: 'Session invalidated' };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[JWT] auth_version enforcement skipped:', e?.message || e);
+    return { ok: true };
+  }
 }
 
