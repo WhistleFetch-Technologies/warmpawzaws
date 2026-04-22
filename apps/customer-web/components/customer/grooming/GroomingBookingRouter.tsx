@@ -11,6 +11,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
@@ -739,9 +740,6 @@ export function GroomingBookingRouter({
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
-    if (step === 'payment' && !showPaymentPage) {
-      return { title: 'Booking Summary', subtitle: 'Review before payment', icon: CreditCard };
-    }
     if (step === 'datetime') {
       return {
         title: 'Book Grooming',
@@ -782,10 +780,91 @@ export function GroomingBookingRouter({
     }));
   };
 
+  const reviewTotal =
+    (allSelectedServices && allSelectedServices.length > 0
+      ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
+      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
+
+  const groomingPrePaymentSummary = (
+    <>
+      {allSelectedServices && allSelectedServices.length > 0 ? (
+        <div className="space-y-3 pb-4 border-b">
+          {allSelectedServices.map((service, index) => {
+            const serviceIdValue = service.id || service.serviceId || '';
+            const serviceNameValue = service.name || service.serviceName || 'Service';
+            const servicePrice = service.price || 0;
+            const serviceDuration = service.duration || 0;
+            const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
+
+            return (
+              <div key={serviceIdValue || index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    serviceStyleValue === 'at_home' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                  }`}
+                >
+                  {serviceStyleValue === 'at_home' ? <Home className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900">{serviceNameValue}</h3>
+                  {serviceDuration > 0 && <p className="text-sm text-gray-500">{serviceDuration} mins</p>}
+                </div>
+                <p className="font-bold text-orange-600 flex-shrink-0">₹{servicePrice}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        (() => {
+          const svc = selectedServiceOption || allSelectedServices?.[0];
+          const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
+          const svcDuration = svc?.duration ?? duration ?? 0;
+          const svcPrice = svc?.price ?? price ?? 0;
+          return (
+            <div className="flex items-center gap-3 pb-4 border-b">
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                }`}
+              >
+                {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">{svcName}</h3>
+                {svcDuration > 0 && <p className="text-sm text-gray-500">{svcDuration} mins</p>}
+              </div>
+              <p className="font-bold">₹{Number(svcPrice).toLocaleString('en-IN')}</p>
+            </div>
+          );
+        })()
+      )}
+
+      <div className="flex items-center gap-3 py-4 border-b">
+        <Calendar className="w-5 h-5 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">Date & Time</p>
+          <p className="font-medium">
+            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
+            {selectedTime}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 py-4 border-b last:border-b-0">
+        <User className="w-5 h-5 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">Pet</p>
+          <p className="font-medium">
+            {selectedPet?.name} ({selectedPet?.breed})
+          </p>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
-      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
-      {!(step === 'payment' && showPaymentPage) && (
+      {step !== 'payment' && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
           serviceSubtitle={headerInfo.subtitle}
@@ -799,7 +878,27 @@ export function GroomingBookingRouter({
         />
       )}
 
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={CreditCard}
+          stats={dashboardStats}
+          onBack={handleBack}
+          summaryBody={groomingPrePaymentSummary}
+          total={{ label: 'Total', amountFormatted: `₹${reviewTotal.toLocaleString('en-IN')}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: 'Proceed to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
       {/* Main Content */}
+      {(step !== 'payment' || showPaymentPage || step === 'confirmation') && (
       <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
         {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
         {step === 'payment' && showPaymentPage ? (
@@ -1222,112 +1321,6 @@ export function GroomingBookingRouter({
         </>
         )}
 
-        {/* Payment Summary - Now using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* ✅ Updated: Show all selected services */}
-              {allSelectedServices && allSelectedServices.length > 0 ? (
-                <div className="space-y-3 pb-4 border-b">
-                  {allSelectedServices.map((service, index) => {
-                    const serviceIdValue = service.id || service.serviceId || '';
-                    const serviceNameValue = service.name || service.serviceName || 'Service';
-                    const servicePrice = service.price || 0;
-                    const serviceDuration = service.duration || 0;
-                    const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
-                    
-                    return (
-                      <div key={serviceIdValue || index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                          serviceStyleValue === 'at_home' ? 'bg-green-100 text-green-600' :
-                          'bg-purple-100 text-purple-600'
-                        }`}>
-                          {serviceStyleValue === 'at_home' ? <Home className="w-6 h-6" /> :
-                           <Building2 className="w-6 h-6" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900">{serviceNameValue}</h3>
-                          {serviceDuration > 0 && (
-                            <p className="text-sm text-gray-500">{serviceDuration} mins</p>
-                          )}
-                        </div>
-                        <p className="font-bold text-orange-600 flex-shrink-0">₹{servicePrice}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Fallback: Single service display - with fallbacks for missing data */
-                (() => {
-                  const svc = selectedServiceOption || allSelectedServices?.[0];
-                  const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
-                  const svcDuration = svc?.duration ?? duration ?? 0;
-                  const svcPrice = svc?.price ?? price ?? 0;
-                  return (
-                    <div className="flex items-center gap-3 pb-4 border-b">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                        'bg-purple-100 text-purple-600'
-                      }`}>
-                        {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                         <Building2 className="w-6 h-6" />}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{svcName}</h3>
-                        {svcDuration > 0 && (
-                          <p className="text-sm text-gray-500">{svcDuration} mins</p>
-                        )}
-                      </div>
-                      <p className="font-bold">₹{Number(svcPrice).toLocaleString('en-IN')}</p>
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">
-                  ₹{(allSelectedServices && allSelectedServices.length > 0 
-                    ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-                    : (selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0)).toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleProceedToPayment} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
-            >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
-            </Button>
-          </div>
-        )}
-
         {/* Confirmation */}
         {step === 'confirmation' && (
           <div className="text-center py-8">
@@ -1557,6 +1550,7 @@ export function GroomingBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }

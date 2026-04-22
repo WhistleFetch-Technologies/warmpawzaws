@@ -12,6 +12,7 @@ import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-c
 import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -608,13 +609,8 @@ export function TrainingBookingRouter({
     { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
-  // ✅ FIX: Prepare step indicators for header
-  const getHeaderTitle = () =>
-    step === 'payment' && !showPaymentPage ? 'Booking Summary' : 'Training Booking';
-  const getHeaderSubtitle = () => {
-    if (step === 'payment' && !showPaymentPage) return 'Review before payment';
-    return trainer?.name ? `Book with ${trainer.name}` : 'Book your training session';
-  };
+  const getHeaderSubtitle = () =>
+    trainer?.name ? `Book with ${trainer.name}` : 'Book your training session';
 
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
@@ -647,10 +643,9 @@ export function TrainingBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Orange header + back: hide only when UniversalPaymentPage overlay is open */}
-      {!(step === 'payment' && showPaymentPage) && (
+      {step !== 'payment' && (
         <ServiceDashboardHeader
-          serviceName={getHeaderTitle()}
+          serviceName="Training Booking"
           serviceSubtitle={getHeaderSubtitle()}
           serviceIcon={GraduationCap}
           iconColor="text-white"
@@ -661,6 +656,61 @@ export function TrainingBookingRouter({
           headerColor="bg-[#FF8C42]"
         />
       )}
+
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={GraduationCap}
+          stats={dashboardStats}
+          onBack={handleBack}
+          lead={{
+            icon:
+              selectedServiceType === 'tele' ? Video : selectedServiceType === 'at_home' ? Home : Building2,
+            iconContainerClassName:
+              selectedServiceType === 'tele'
+                ? 'bg-blue-100 text-blue-600'
+                : selectedServiceType === 'at_home'
+                  ? 'bg-green-100 text-green-600'
+                  : 'bg-purple-100 text-purple-600',
+            title: String(selectedServiceOption?.name ?? ''),
+            subtitle: selectedServiceOption?.duration
+              ? `${selectedServiceOption.duration} mins`
+              : undefined,
+            trailing: <span>₹{selectedServiceOption?.price}</span>,
+          }}
+          rows={[
+            {
+              id: 'datetime',
+              icon: Calendar,
+              label: 'Date & Time',
+              primary: `${parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at ${selectedTime}`,
+            },
+            {
+              id: 'pet',
+              icon: User,
+              label: 'Pet',
+              primary: `${selectedPet?.name} (${selectedPet?.breed})`,
+            },
+          ]}
+          notes={{
+            value: notes,
+            onChange: setNotes,
+            placeholder: 'Any symptoms or concerns...',
+            showNotes: true,
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${selectedServiceOption?.price}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: 'Proceed to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
+      {(step !== 'payment' || showPaymentPage) && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -990,81 +1040,6 @@ export function TrainingBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Now using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  selectedServiceType === 'tele' ? 'bg-blue-100 text-blue-600' :
-                  selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                  'bg-purple-100 text-purple-600'
-                }`}>
-                  {selectedServiceType === 'tele' ? <Video className="w-6 h-6" /> :
-                   selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                   <Building2 className="w-6 h-6" />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
-                </div>
-                <p className="font-bold">₹{selectedServiceOption?.price}</p>
-              </div>
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">₹{selectedServiceOption?.price}</span>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleProceedToPayment} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
-            >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
-            </Button>
-          </div>
-        )}
-
         {/* ✅ UniversalPaymentPage Integration */}
         {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
@@ -1291,6 +1266,7 @@ export function TrainingBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }

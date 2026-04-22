@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, Dog, Home, CheckCircle2, Tag, Sparkles, Bed, User } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, MapPin, Dog, Home, CheckCircle2, Tag, Sparkles, Bed, User, Star } from 'lucide-react';
+import { PrePaymentBookingReview } from './booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -243,123 +244,105 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
     : 0;
   const totalAmount = calculateTotal();
 
+  const resortReviewStats = [
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '5★', label: 'Stay' },
+    { value: '24/7', label: 'Care' },
+  ];
+
   if (showReview) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-        {/* ✅ FIX: Review Header with Orange Gradient Theme */}
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 pt-8 pb-6 relative">
-          <button 
-            onClick={() => setShowReview(false)}
-            className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-          
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-              <Home className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">Review Booking</h1>
-              <p className="text-white/80 text-sm">Confirm your reservation</p>
-            </div>
-          </div>
-          
-          {/* Curved bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-6 bg-white" 
-               style={{
-                 borderTopLeftRadius: '50% 100%',
-                 borderTopRightRadius: '50% 100%',
-               }}
-          />
-        </div>
-        
-        <div className="bg-white min-h-screen -mt-2">
-
-          <div className="p-4 space-y-4">
+      <PrePaymentBookingReview
+        title="Review Booking"
+        subtitle="Confirm your reservation"
+        headerIcon={Home}
+        stats={resortReviewStats}
+        headerColor="bg-gradient-to-r from-orange-500 to-orange-600"
+        onBack={() => setShowReview(false)}
+        lead={
+          selectedRoom
+            ? {
+                icon: Bed,
+                iconContainerClassName: 'bg-blue-100 text-blue-600',
+                title: String(selectedRoom.room_type || selectedRoom.roomType || 'Standard'),
+                subtitle:
+                  selectedRoom.amenities && selectedRoom.amenities.length > 0
+                    ? selectedRoom.amenities.slice(0, 3).join(' · ') +
+                      (selectedRoom.amenities.length > 3 ? '…' : '')
+                    : `${durationDays} ${durationDays === 1 ? 'night' : 'nights'}`,
+                trailing: <span>₹{totalAmount.toLocaleString()}</span>,
+              }
+            : {
+                icon: Bed,
+                iconContainerClassName: 'bg-blue-100 text-blue-600',
+                title: 'Room',
+                subtitle: `${durationDays} ${durationDays === 1 ? 'night' : 'nights'}`,
+                trailing: <span>₹{totalAmount.toLocaleString()}</span>,
+              }
+        }
+        rows={[
+          ...(checkIn && checkOut
+            ? [
+                {
+                  id: 'stay',
+                  icon: Calendar,
+                  label: 'Check-in / Check-out',
+                  primary: `${checkIn.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${checkOut.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+                  secondary: `${durationDays} ${durationDays === 1 ? 'night' : 'nights'}`,
+                },
+              ]
+            : []),
+          ...(selectedPet
+            ? [
+                {
+                  id: 'pet',
+                  icon: User,
+                  label: 'Pet',
+                  primary: `${selectedPet.name} (${selectedPet.breed || 'Pet'})`,
+                },
+              ]
+            : []),
+        ]}
+        children={
+          <>
             <Card className="p-4">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Booking Summary</h2>
-              
-              {selectedRoom && (
-                <div className="space-y-3 pb-4 border-b">
-                  <div className="flex items-center gap-3">
-                    <Bed className="w-5 h-5 text-blue-600" />
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-500">Room Type</p>
-                      <p className="font-medium capitalize">{selectedRoom.room_type || selectedRoom.roomType || 'Standard'}</p>
-                    </div>
-                  </div>
-                  {selectedRoom.amenities && selectedRoom.amenities.length > 0 && (
-                    <div className="ml-8">
-                      <p className="text-xs text-gray-500 mb-1">Amenities:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {selectedRoom.amenities.map((amenity: string, idx: number) => (
-                          <span key={idx} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{amenity}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {checkIn && checkOut && (
-                <div className="flex items-center gap-3 py-4 border-b">
-                  <Calendar className="w-5 h-5 text-gray-400" />
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-500">Check-in / Check-out</p>
-                    <p className="font-medium">
-                      {checkIn.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - {checkOut.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                    </p>
-                    <p className="text-xs text-gray-500">{durationDays} {durationDays === 1 ? 'night' : 'nights'}</p>
-                  </div>
-                </div>
-              )}
-
-              {selectedPet && (
-                <div className="flex items-center gap-3 py-4 border-b">
-                  <User className="w-5 h-5 text-gray-400" />
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-500">Pet</p>
-                    <p className="font-medium">{selectedPet.name} ({selectedPet.breed || 'Pet'})</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center gap-2 mb-3">
-                  <Tag className="w-5 h-5 text-orange-600" />
-                  <Label className="text-sm font-medium">Promotion Code</Label>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    placeholder="Enter code"
-                    value={promotionCode}
-                    onChange={(e) => setPromotionCode(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={applyPromotion}
-                    disabled={applyingPromo || !promotionCode.trim()}
-                    variant="outline"
-                  >
-                    {applyingPromo ? '...' : 'Apply'}
-                  </Button>
-                </div>
-                {appliedPromotion && (
-                  <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-800">
-                    ✓ {appliedPromotion.name} applied ({appliedPromotion.discount_type === 'percentage' ? `${appliedPromotion.discount_value}%` : `₹${appliedPromotion.discount_value}`} off)
-                  </div>
-                )}
+              <div className="flex items-center gap-2 mb-3">
+                <Tag className="w-5 h-5 text-orange-600" />
+                <Label className="text-sm font-medium">Promotion Code</Label>
               </div>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Enter code"
+                  value={promotionCode}
+                  onChange={(e) => setPromotionCode(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={applyPromotion}
+                  disabled={applyingPromo || !promotionCode.trim()}
+                  variant="outline"
+                >
+                  {applyingPromo ? '...' : 'Apply'}
+                </Button>
+              </div>
+              {appliedPromotion && (
+                <div className="p-2 mt-2 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+                  ✓ {appliedPromotion.name} applied (
+                  {appliedPromotion.discount_type === 'percentage'
+                    ? `${appliedPromotion.discount_value}%`
+                    : `₹${appliedPromotion.discount_value}`}{' '}
+                  off)
+                </div>
+              )}
             </Card>
-
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Price Breakdown</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Nightly Rate × {durationDays} {durationDays === 1 ? 'night' : 'nights'}</span>
+                  <span className="text-gray-600">
+                    Nightly Rate × {durationDays} {durationDays === 1 ? 'night' : 'nights'}
+                  </span>
                   <span>₹{baseAmount}</span>
                 </div>
                 {discount > 0 && (
@@ -368,23 +351,20 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
                     <span>-₹{discount}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                  <span>Total</span>
-                  <span className="text-orange-600">₹{totalAmount}</span>
-                </div>
               </div>
             </Card>
-
-            <Button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
-            >
-              {submitting ? 'Confirming Booking...' : `Confirm & Pay ₹${totalAmount}`}
-            </Button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        total={{ label: 'Total', amountFormatted: `₹${totalAmount.toLocaleString()}` }}
+        totalTextClassName="text-orange-600"
+        primaryButton={{
+          label: `Confirm & Pay ₹${totalAmount}`,
+          onClick: handleSubmit,
+          disabled: submitting,
+          loading: submitting,
+          className: 'w-full !bg-gradient-to-r !from-[#FF8C42] !to-[#FF6B9D] hover:!from-[#FF7A29] hover:!to-[#FF5A8D] text-white border-0',
+        }}
+      />
     );
   }
 

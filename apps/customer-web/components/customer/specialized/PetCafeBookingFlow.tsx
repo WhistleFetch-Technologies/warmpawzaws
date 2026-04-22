@@ -6,7 +6,8 @@ import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
 } from '@/lib/razorpay/build-standard-checkout-options';
-import { Coffee, Users, Calendar, Clock } from 'lucide-react';
+import { Coffee, Users, Calendar, Clock, Star } from 'lucide-react';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
 interface PetCafeBookingFlowProps {
   vendorId: string;
@@ -39,6 +40,13 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
   const [numberOfGuests, setNumberOfGuests] = useState(1);
   const [petCount, setPetCount] = useState(1);
   const [specialRequests, setSpecialRequests] = useState('');
+  const [showPreReview, setShowPreReview] = useState(false);
+
+  const cafePrePaymentStats = [
+    { value: '4.8', label: 'Café', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '1h+', label: 'Stays' },
+    { value: 'Pet', label: 'OK' },
+  ];
 
   useEffect(() => {
     loadTables();
@@ -76,23 +84,25 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
     return basePrice * duration;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const validate = (): boolean => {
     if (!selectedTable) {
       setError('Please select a table');
-      return;
+      return false;
     }
-
     if (!selectedDate || !selectedTime) {
       setError('Please select date and time');
-      return;
+      return false;
     }
-
     if (numberOfGuests < 1) {
       setError('Number of guests must be at least 1');
-      return;
+      return false;
     }
+    setError(null);
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
 
     setProcessing(true);
     setError(null);
@@ -227,6 +237,78 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
     );
   }
 
+  const activeTable = tables.find((t) => t.id === selectedTable);
+
+  if (showPreReview && activeTable) {
+    return (
+      <div className="min-h-0">
+        {error && (
+          <div className="px-4 pt-2 max-w-md mx-auto">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-2">{error}</div>
+          </div>
+        )}
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={Coffee}
+          stats={cafePrePaymentStats}
+          onBack={() => {
+            setShowPreReview(false);
+            setError(null);
+          }}
+          lead={{
+            icon: Coffee,
+            iconContainerClassName: 'bg-orange-100 text-[#FF8C42]',
+            title: `Table ${activeTable.table_number}`,
+            subtitle: `${activeTable.table_type} · up to ${activeTable.capacity} guests`,
+            trailing: <span>₹{calculatePrice()}</span>,
+          }}
+          rows={[
+            {
+              id: 'dt',
+              icon: Calendar,
+              label: 'Date & time',
+              primary: selectedDate
+                ? `${new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })} at ${selectedTime}`
+                : '—',
+            },
+            {
+              id: 'dur',
+              icon: Clock,
+              label: 'Duration',
+              primary: `${duration} hour${duration > 1 ? 's' : ''}`,
+            },
+            {
+              id: 'guests',
+              icon: Users,
+              label: 'Guests & pets',
+              primary: `${numberOfGuests} guest${numberOfGuests > 1 ? 's' : ''} · ${petCount} pet${petCount > 1 ? 's' : ''}`,
+            },
+          ]}
+          notes={{
+            value: specialRequests,
+            onChange: setSpecialRequests,
+            placeholder: 'Any special requirements or requests...',
+            showNotes: true,
+            label: 'Special requests (optional)',
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${calculatePrice()}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: `Book table – ₹${calculatePrice()}`,
+            onClick: handleSubmit,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto p-0">
       <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-3">
@@ -234,7 +316,13 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
         Book Pet Cafe Table
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validate()) setShowPreReview(true);
+        }}
+        className="space-y-6"
+      >
         {/* Date and Time */}
         <div className="bg-white rounded-xl p-0 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Select Date & Time</h3>
@@ -397,21 +485,6 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
           />
         </div>
 
-        {/* Price Summary */}
-        {selectedTable && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-gray-900">Booking Summary</p>
-                <p className="text-sm text-gray-600 mt-0">
-                  {duration} hour{duration > 1 ? 's' : ''} • {numberOfGuests} guest{numberOfGuests > 1 ? 's' : ''} • {petCount} pet{petCount > 1 ? 's' : ''}
-                </p>
-              </div>
-              <p className="text-2xl font-bold text-orange-600">₹{calculatePrice()}</p>
-            </div>
-          </div>
-        )}
-
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
@@ -434,7 +507,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
             disabled={processing || !selectedTable}
             className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
-            {processing ? 'Booking...' : `Book Table - ₹${calculatePrice()}`}
+            {processing ? 'Booking...' : `Review & book – ₹${calculatePrice()}`}
           </button>
         </div>
       </form>

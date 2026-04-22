@@ -2624,7 +2624,7 @@ export function UniversalPaymentPage({
   ];
 
   return (
-    <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col bg-orange-50">
+    <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
       {/* In-app payment summary (not Razorpay’s iframe). Safe top/inset: ServiceDashboardHeader + globals .cw-header-safe-*. */}
       <ServiceDashboardHeader
         className="sticky top-0 z-50 shrink-0"
@@ -2637,7 +2637,7 @@ export function UniversalPaymentPage({
         showBackButton
       />
 
-      <main className={`flex-1 space-y-4 overflow-y-auto px-4 py-4 ${mainBottomPadding}`}>
+      <main className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 ${mainBottomPadding}`}>
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
