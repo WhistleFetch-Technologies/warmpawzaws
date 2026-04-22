@@ -18,7 +18,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import {
   Home,
   Building2,
