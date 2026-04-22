@@ -205,6 +205,32 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
       const booking = bookingQuery.rows[0];
 
+      let resolvedCompletionOtp = booking.completion_otp ?? null;
+      if (booking.status === 'in_progress' && booking.otp_verified && !resolvedCompletionOtp) {
+        const endRes = await query(
+          `SELECT otp_code FROM otp_tokens
+           WHERE metadata->>'bookingId' = $1
+             AND metadata->>'action' = 'end'
+             AND is_used = false
+             AND (expires_at IS NULL OR expires_at > NOW())
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [bookingId]
+        ).catch(() => ({ rows: [] }));
+        resolvedCompletionOtp = (endRes as any).rows?.[0]?.otp_code ?? null;
+      }
+      const atHomeBooking =
+        booking.service_style === 'at_home' || booking.service_type === 'at_home';
+      if (
+        !resolvedCompletionOtp &&
+        booking.status === 'in_progress' &&
+        booking.otp_verified &&
+        atHomeBooking &&
+        booking.otp_code
+      ) {
+        resolvedCompletionOtp = booking.otp_code;
+      }
+
       // ✅ FIX: Extract pet_id from multiple sources
       let petIdToUse = booking.pet_id || booking.pet_id_from_table;
       if (!petIdToUse && booking.notes) {
@@ -300,8 +326,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           // ✅ OTP fields for service verification
           otpCode: booking.otp_code || null,
           otp_code: booking.otp_code || null,
-          completionOTP: booking.completion_otp || null,
-          completion_otp: booking.completion_otp || null,
+          completionOTP: resolvedCompletionOtp || null,
+          completion_otp: resolvedCompletionOtp || null,
           startOTP: booking.start_otp || null,
           start_otp: booking.start_otp || null,
           otpVerified: booking.otp_verified || false,

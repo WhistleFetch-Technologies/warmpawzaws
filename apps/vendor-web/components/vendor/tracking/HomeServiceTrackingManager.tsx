@@ -188,14 +188,23 @@ export function HomeServiceTrackingManager({
       const response = await apiClient.get<any>(`/vendor/bookings/${bookingId}/tracking-session`);
       
       if (response.success && response.session) {
+        // API maps in_transit → "is_traveling"; UI uses "traveling" for the stepper + resume logic
+        const rawStatus = response.session.status as string;
+        const normalizedStatus =
+          rawStatus === 'is_traveling' || rawStatus === 'in_transit' ? 'traveling' : rawStatus;
+
         setSessionState(prev => ({
           ...prev,
           ...response.session,
+          status: normalizedStatus as SessionState['status'],
           routePoints: response.session.routePoints || []
         }));
-        
-        // If session was in progress, resume tracking
-        if (response.session.status === 'traveling' || response.session.status === 'in_progress') {
+
+        // Resume device GPS when en route or when an in-person session is already running (walker = route)
+        if (
+          normalizedStatus === 'traveling' ||
+          normalizedStatus === 'in_progress'
+        ) {
           startLocationTracking();
         }
       }
@@ -211,6 +220,16 @@ export function HomeServiceTrackingManager({
     if (!navigator.geolocation) {
       toast.error('GPS not supported on this device');
       return;
+    }
+
+    // Avoid duplicate watchPosition / intervals if start is called again (e.g. walker after OTP)
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    if (trackingIntervalRef.current) {
+      clearInterval(trackingIntervalRef.current);
+      trackingIntervalRef.current = null;
     }
 
     setTrackingActive(true);
@@ -404,7 +423,11 @@ export function HomeServiceTrackingManager({
         status: 'arrived',
         arrivedAt: new Date().toISOString()
       }));
-      
+
+      // Journey live GPS ends here; backend only accepts location-update while in_transit/started/active.
+      // Walkers get watch restarted when they confirm start-session (OTP).
+      stopLocationTracking();
+
       toast.success('Marked as arrived! Please verify with customer.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to mark arrived');
@@ -413,25 +436,36 @@ export function HomeServiceTrackingManager({
     }
   };
 
-  // Start session (with OTP for walker/sitter)
+  // Start session — OTP required (4 or 6 digits) for API validation and customer verification
   const handleStartSession = () => {
-    if (bookingData?.isWalkerSession || bookingData?.isSitterSession) {
-      setOtpType('start');
-      setOtpInput('');
-      setShowOtpModal(true);
-    } else {
-      confirmStartSession();
-    }
+    setOtpType('start');
+    setOtpInput('');
+    setShowOtpModal(true);
   };
 
   const confirmStartSession = async (otp?: string) => {
     setProcessing(true);
     try {
+      const trimmed = String(otp ?? '').trim();
+      if (!/^\d{4}$|^\d{6}$/.test(trimmed)) {
+        toast.error('Enter the 4 or 6-digit OTP from the customer');
+        return;
+      }
+
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/start-session`, {
         vendorId,
-        otp,
+        otp: trimmed,
         startedAt: new Date().toISOString(),
-        location: currentLocation
+        ...(currentLocation
+          ? {
+              location: {
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                ...(currentLocation.accuracy != null ? { accuracy: currentLocation.accuracy } : {}),
+                ...(currentLocation.timestamp ? { timestamp: currentLocation.timestamp } : {}),
+              },
+            }
+          : {}),
       });
 
       if (response.success) {
@@ -459,25 +493,27 @@ export function HomeServiceTrackingManager({
     }
   };
 
-  // End session (with OTP)
+  // End session — OTP required for completion (same as start)
   const handleEndSession = () => {
-    if (bookingData?.isWalkerSession || bookingData?.isSitterSession) {
-      setOtpType('end');
-      setOtpInput('');
-      setShowOtpModal(true);
-    } else {
-      confirmEndSession();
-    }
+    setOtpType('end');
+    setOtpInput('');
+    setShowOtpModal(true);
   };
 
   const confirmEndSession = async (otp?: string) => {
     setProcessing(true);
     try {
+      const trimmed = String(otp ?? '').trim();
+      if (!/^\d{4}$|^\d{6}$/.test(trimmed)) {
+        toast.error('Enter the 4 or 6-digit OTP from the customer');
+        return;
+      }
+
       stopLocationTracking();
-      
+
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/complete`, {
         vendorId,
-        otp: otp || null,
+        otp: trimmed,
         notes: bookingData?.isWalkerSession
           ? `Route: ${sessionState.totalDistance}m, ${sessionDuration}min`
           : undefined,
@@ -646,7 +682,11 @@ export function HomeServiceTrackingManager({
               <p className="text-xs text-gray-600">
                 {trackingActive
                   ? 'GPS on — your position syncs for the pet parent.'
-                  : 'GPS off until you start the journey or the walk.'}
+                  : sessionState.status === 'in_progress' && !bookingData?.isWalkerSession
+                    ? 'Live map was for your trip here. During in-home service the customer map stays on your last journey position.'
+                    : sessionState.status === 'arrived'
+                      ? 'Journey GPS paused at arrival. For dog walks, start the session (OTP) to resume route tracking.'
+                      : 'GPS off until you start the journey or the walk.'}
               </p>
               {lastGpsSyncAt && (
                 <p className="mt-1 text-[11px] text-gray-500">

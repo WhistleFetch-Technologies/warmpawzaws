@@ -468,10 +468,37 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
       await reconcileBookingPayments(bookings.rows);
 
+      const rawRows = bookings.rows || [];
+      const enrichedBookings = await Promise.all(
+        rawRows.map(async (b: any) => {
+          let completion_otp = b.completion_otp ?? null;
+          if (b.status === 'in_progress' && b.otp_verified) {
+            if (!completion_otp) {
+              const endRes = await query(
+                `SELECT otp_code FROM otp_tokens
+                 WHERE metadata->>'bookingId' = $1
+                   AND metadata->>'action' = 'end'
+                   AND is_used = false
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 ORDER BY created_at DESC
+                 LIMIT 1`,
+                [b.id]
+              ).catch(() => ({ rows: [] }));
+              completion_otp = (endRes as any).rows?.[0]?.otp_code ?? null;
+            }
+            const atHome = b.service_style === 'at_home' || b.service_type === 'at_home';
+            if (!completion_otp && atHome && b.otp_code) {
+              completion_otp = b.otp_code;
+            }
+          }
+          return { ...b, completion_otp };
+        })
+      );
+
       return c.json({
         success: true,
-        bookings: bookings.rows,
-        count: bookings.rows.length,
+        bookings: enrichedBookings,
+        count: enrichedBookings.length,
       });
     } catch (error: any) {
       console.error('Error fetching bookings by phone:', error);

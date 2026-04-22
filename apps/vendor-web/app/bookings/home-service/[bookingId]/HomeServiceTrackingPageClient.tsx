@@ -44,11 +44,20 @@ export default function HomeServiceTrackingPageClient() {
           booking.service_name ||
           ''
         ).toLowerCase();
+        const vendorNameLower = String(
+          booking.vendorName ||
+            booking.vendor_name ||
+            booking.vendor?.business_name ||
+            booking.vendor?.businessName ||
+            ''
+        ).toLowerCase();
         const isWalkerSession =
           serviceTypeLower.includes('walk') ||
           serviceTypeLower === 'walking' ||
           serviceNameLower.includes('walk') ||
-          serviceNameLower.includes('walking');
+          serviceNameLower.includes('walking') ||
+          vendorNameLower.includes('walker') ||
+          vendorNameLower.includes('dog walk');
         const isSitterSession =
           serviceTypeLower.includes('sit') ||
           serviceTypeLower === 'sitting' ||

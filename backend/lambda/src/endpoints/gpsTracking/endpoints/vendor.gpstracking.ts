@@ -113,7 +113,7 @@ async function getExpectedOTPForBooking(
          WHERE metadata->>'bookingId' = $1
            AND metadata->>'action' = 'end'
            AND is_used = false
-           AND expires_at > NOW()
+           AND (expires_at IS NULL OR expires_at > NOW())
          ORDER BY created_at DESC
          LIMIT 1`,
         [bookingId]
@@ -137,6 +137,47 @@ async function getExpectedOTPForBooking(
   }
 
   return { expectedOTP, isWalkerService };
+}
+
+/** After start OTP is verified, create a dedicated end-session OTP for walker vendors (customer + complete flow). */
+async function ensureWalkerEndOtpToken(bookingId: string): Promise<void> {
+  const existing = await query(
+    `SELECT id FROM otp_tokens
+     WHERE metadata->>'bookingId' = $1
+       AND metadata->>'action' = 'end'
+       AND is_used = false
+       AND (expires_at IS NULL OR expires_at > NOW())
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] }));
+  if ((existing as any).rows?.length) return;
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  await insert('otp_tokens', {
+    phone: null,
+    otp_code: otp,
+    otp_type: 'booking_end',
+    expires_in_minutes: 1440,
+    max_attempts: 5,
+    metadata: { bookingId, action: 'end' },
+  });
+  await query(`UPDATE bookings SET completion_otp = $1, updated_at = NOW() WHERE id = $2`, [otp, bookingId]).catch((e: any) =>
+    console.warn('[START-SESSION] completion_otp update skipped:', e?.message)
+  );
+}
+
+async function bookingAllowsInServiceWalkTracking(booking: any): Promise<boolean> {
+  if (!booking || booking.status !== BookingStatus.IN_PROGRESS) return false;
+  const sn = String(booking.service_name || '').toLowerCase();
+  const st = String(booking.service_type || '').toLowerCase();
+  if (st.includes('walk') || sn.includes('walk') || sn.includes('walking')) return true;
+  const res = await query(
+    `SELECT LOWER(r.name) AS n FROM vendors v JOIN roles r ON r.id = v.role_id WHERE v.id = $1 LIMIT 1`,
+    [booking.vendor_id]
+  ).catch(() => ({ rows: [] }));
+  const n = String((res as any).rows?.[0]?.n || '');
+  return ['pet_walker', 'walker', 'dog_walker'].includes(n);
 }
 
 /**
@@ -710,11 +751,26 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           );
         }
 
-        // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
+        // Get destination: booking coords → address_id row → customer addresses → booking text / geocode
         let destinationLocation: { latitude: number; longitude: number } | null = null;
         let destinationSource = 'unknown';
 
-
+        const formatCustomerAddressRowForGeocode = (addr: Record<string, any>): string | null => {
+          const parts = [
+            addr.apartment_name,
+            addr.flat_no || addr.house_no
+              ? [addr.flat_no ? `Flat ${addr.flat_no}` : null, addr.house_no ? `House ${addr.house_no}` : null].filter(Boolean).join(', ')
+              : null,
+            addr.street_name,
+            addr.address_line1,
+            addr.address_line2,
+            addr.landmark ? `Near ${addr.landmark}` : null,
+            addr.city,
+            addr.state,
+            addr.pincode,
+          ].filter(Boolean);
+          return parts.length > 0 ? parts.join(', ') : null;
+        };
 
         // PRIORITY 1: Use booking.latitude/longitude (primary at_home location fields)
         if (booking.latitude != null && booking.longitude != null) {
@@ -736,14 +792,58 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
         }
 
-        // PRIORITY 3: Use customer_addresses from address_id (fallback if booking coords not available)
+        // PRIORITY 2.5: booking.address_id → exact customer_addresses row (align with vendor-booking-actions)
+        if (!destinationLocation && (booking as any).address_id) {
+          try {
+            const addresses = await select('customer_addresses', { id: (booking as any).address_id });
+            if (addresses.length > 0) {
+              const addr = addresses[0] as any;
+              let lat: number | null = null;
+              let lng: number | null = null;
+              if (addr.latitude != null && addr.longitude != null) {
+                lat = parseFloat(String(addr.latitude));
+                lng = parseFloat(String(addr.longitude));
+              }
+              if ((lat == null || lng == null) && addr.coordinates) {
+                try {
+                  const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+                  lat = coords?.lat ?? coords?.latitude ?? lat;
+                  lng = coords?.lng ?? coords?.longitude ?? lng;
+                  if (lat != null) lat = parseFloat(String(lat));
+                  if (lng != null) lng = parseFloat(String(lng));
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (lat != null && lng != null && !Number.isNaN(lat) && !Number.isNaN(lng) && lat !== 0 && lng !== 0) {
+                destinationLocation = { latitude: lat, longitude: lng };
+                destinationSource = 'customer_addresses (booking.address_id)';
+                console.log(`[START-TRAVEL] Using address_id ${(booking as any).address_id} coords: ${lat}, ${lng}`);
+              } else if (!uatMode) {
+                const geoText = formatCustomerAddressRowForGeocode(addr);
+                if (geoText) {
+                  const geocoded = await geocodeAddress(geoText);
+                  if (geocoded) {
+                    destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+                    destinationSource = 'customer_addresses (address_id, geocoded)';
+                    console.log(`[START-TRAVEL] Geocoded address_id row to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
+                  }
+                }
+              }
+            }
+          } catch (addrIdErr: any) {
+            console.warn('[START-TRAVEL] address_id lookup failed:', addrIdErr?.message);
+          }
+        }
+
         // PRIORITY 3: Use customer_addresses - query by customer_id from booking
         if (!destinationLocation && booking.customer_id) {
           try {
             // Query customer_addresses using booking.customer_id
             // Note: coordinates are stored in JSONB field, not separate latitude/longitude columns
             const custAddresses = await query(
-              `SELECT id, coordinates, address_line1, address_line2, city, state, pincode, is_default
+              `SELECT id, latitude, longitude, coordinates, address_line1, address_line2, city, state, pincode,
+                      landmark, flat_no, house_no, floor, street_name, apartment_name, is_default
                    FROM customer_addresses 
                    WHERE customer_id = $1 
                    ORDER BY is_default DESC NULLS LAST, created_at DESC 
@@ -757,8 +857,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               let lat: number | null = null;
               let lng: number | null = null;
 
+              if (addr.latitude != null && addr.longitude != null) {
+                lat = parseFloat(String(addr.latitude));
+                lng = parseFloat(String(addr.longitude));
+              }
+
               // Extract coordinates from JSONB field (e.g., {"lat": 12.9756425, "lng": 77.6032208})
-              if (addr.coordinates) {
+              if ((lat == null || lng == null) && addr.coordinates) {
                 try {
                   const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
                   lat = coords?.lat ?? coords?.latitude ?? null;
@@ -790,16 +895,17 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               }
             }
 
-            // If no coordinates found but we have address text, try geocoding
+            // If no coordinates yet, geocode any saved customer address row (try each until one succeeds)
             if (!destinationLocation && addrRows.length > 0 && !uatMode) {
-              const addr = addrRows[0]; // Use first address
-              if (addr.address_line1) {
-                const addressText = `${addr.address_line1}${addr.address_line2 ? ', ' + addr.address_line2 : ''}, ${addr.city}, ${addr.state} ${addr.pincode}`;
+              for (const addr of addrRows) {
+                const addressText = formatCustomerAddressRowForGeocode(addr);
+                if (!addressText) continue;
                 const geocoded = await geocodeAddress(addressText);
                 if (geocoded) {
                   destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-                  destinationSource = 'customer_addresses (geocoded)';
+                  destinationSource = `customer_addresses (geocoded, addr ${addr.id})`;
                   console.log(`[START-TRAVEL] Geocoded customer_addresses to destination: ${geocoded.latitude}, ${geocoded.longitude}`);
+                  break;
                 }
               }
             }
@@ -913,6 +1019,17 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             }
           }
 
+          // booking.address may be empty while city/state/pincode live on separate columns (RDS bookings)
+          if (!addressText && !destinationLocation) {
+            const b = booking as Record<string, unknown>;
+            const parts = [b.address, b.city, b.state, b.pincode].filter(
+              (x) => x != null && String(x).trim() !== ''
+            ) as string[];
+            if (parts.length > 0) {
+              addressText = parts.map((x) => String(x).trim()).join(', ');
+            }
+          }
+
           if (addressText && !destinationLocation && !uatMode) {
             const geocoded = await geocodeAddress(addressText);
             if (geocoded) {
@@ -923,11 +1040,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           }
         }
 
-        // if (!destinationLocation && uatMode) {
-        //   destinationLocation = { latitude: 19.0760, longitude: 72.8777 };
-        //   destinationSource = 'UAT mock';
-        //   console.log('[START-TRAVEL] UAT Mode: Using mock destination');
-        // }
+        if (!destinationLocation && uatMode) {
+          destinationLocation = { latitude: 19.076, longitude: 72.8777 };
+          destinationSource = 'UAT mock destination';
+          console.log('[START-TRAVEL] UAT Mode: Using mock destination (no coords on booking)');
+        }
 
         if (!destinationLocation) {
           return c.json({ error: 'No destination address configured for this booking' }, 400);
@@ -1136,14 +1253,25 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'latitude and longitude are required' }, 400);
       }
 
-      // Find active tracking session
+      // Find active tracking session (en route), or arrived session while in-service walk continues
       const sessions = await select('gps_tracking_sessions', {
         booking_id: bookingId,
       });
 
-      const activeSession = sessions.find(s =>
-        s.status === gps_tracking_sessions.IN_TRANSIT || s.status === gps_tracking_sessions.STARTED || s.status === gps_tracking_sessions.ACTIVE
+      const bookingsForLoc = await select('bookings', { id: bookingId });
+      const bookingForLoc = bookingsForLoc[0];
+      const allowArrivedWalk =
+        bookingForLoc && (await bookingAllowsInServiceWalkTracking(bookingForLoc));
+
+      let activeSession = sessions.find(
+        (s: any) =>
+          s.status === gps_tracking_sessions.IN_TRANSIT ||
+          s.status === gps_tracking_sessions.STARTED ||
+          s.status === gps_tracking_sessions.ACTIVE
       );
+      if (!activeSession && allowArrivedWalk) {
+        activeSession = sessions.find((s: any) => s.status === gps_tracking_sessions.ARRIVED);
+      }
 
       if (!activeSession) {
         return c.json({ success: true, message: 'No active session, location noted' });
@@ -1261,6 +1389,18 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       );
 
+      // Walker / walk-style home sessions: issue end OTP for customer to share at walk completion
+      try {
+        const { isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, OtpAction.COMPLETE);
+        if (
+          isWalkerService &&
+          (booking.service_style === ServiceStyle.AT_HOME || booking.service_type === ServiceStyle.AT_HOME)
+        ) {
+          await ensureWalkerEndOtpToken(bookingId);
+        }
+      } catch (otpErr: any) {
+        console.warn('[START-SESSION] End OTP issuance non-fatal:', otpErr?.message);
+      }
 
       //  AUTO-INITIATE GPS TRACKING for at_home services
       if (booking.service_style === ServiceStyle.AT_HOME || booking.service_type === ServiceStyle.AT_HOME) {

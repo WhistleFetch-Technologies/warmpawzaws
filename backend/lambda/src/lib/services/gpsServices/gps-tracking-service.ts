@@ -17,7 +17,22 @@
 
 import { query, insert, update, select } from '../../../database/rds-connection';
 import { sendVendorOnWay, sendEventNotification } from '../../../aws/aws-sns-notification-service';
-import { gps_tracking_sessions } from 'src/endpoints/constants';
+import { BookingStatus, gps_tracking_sessions } from 'src/endpoints/constants';
+
+async function bookingAllowsInServiceWalkGps(bookingId: string): Promise<boolean> {
+  const bookings = await select('bookings', { id: bookingId });
+  const b = bookings[0];
+  if (!b || b.status !== BookingStatus.IN_PROGRESS) return false;
+  const sn = String(b.service_name || '').toLowerCase();
+  const st = String(b.service_type || '').toLowerCase();
+  if (st.includes('walk') || sn.includes('walk') || sn.includes('walking')) return true;
+  const res = await query(
+    `SELECT LOWER(r.name) AS n FROM vendors v JOIN roles r ON r.id = v.role_id WHERE v.id = $1 LIMIT 1`,
+    [b.vendor_id]
+  ).catch(() => ({ rows: [] }));
+  const n = String((res as any).rows?.[0]?.n || '');
+  return ['pet_walker', 'walker', 'dog_walker'].includes(n);
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -243,7 +258,10 @@ class GPSTrackingServiceImpl {
       }
       const session = sessions[0];
 
-      if (session.status !== 'in_transit') {
+      const allowArrivedWalk =
+        session.status === 'arrived' && (await bookingAllowsInServiceWalkGps(session.booking_id));
+
+      if (session.status !== 'in_transit' && !allowArrivedWalk) {
         throw new Error('Tracking session is not active');
       }
 
@@ -254,7 +272,7 @@ class GPSTrackingServiceImpl {
       };
       const eta = await this.calculateETA(currentLocation, destination);
 
-      // Check if vendor has arrived (within 100 meters)
+      // Check if vendor has arrived (within 100 meters) — only while en route
       const distanceToDestination = this.calculateDistance(
         currentLocation.latitude,
         currentLocation.longitude,
@@ -263,20 +281,23 @@ class GPSTrackingServiceImpl {
       );
 
       let newStatus = session.status;
-      if (distanceToDestination < 0.1) { // 100 meters
-        newStatus = 'arrived';
+      if (session.status === 'in_transit') {
+        if (distanceToDestination < 0.1) {
+          // 100 meters
+          newStatus = 'arrived';
 
-        // Send arrival notification
-        await sendEventNotification({
-          eventType: 'vendor_arrived',
-          recipientId: session.customer_id,
-          recipientType: 'customer',
-          relatedId: session.booking_id,
-          data: {
-            bookingId: session.booking_id,
-            sessionId,
-          },
-        });
+          // Send arrival notification
+          await sendEventNotification({
+            eventType: 'vendor_arrived',
+            recipientId: session.customer_id,
+            recipientType: 'customer',
+            relatedId: session.booking_id,
+            data: {
+              bookingId: session.booking_id,
+              sessionId,
+            },
+          });
+        }
       }
 
       // Update session
@@ -290,14 +311,16 @@ class GPSTrackingServiceImpl {
         distance_remaining_km: eta.distanceKm,
         status: newStatus,
         last_update_at: new Date().toISOString(),
-        ...(newStatus === 'arrived' ? { arrived_at: new Date().toISOString() } : {}),
+        ...(newStatus === 'arrived' && session.status === 'in_transit' ? { arrived_at: new Date().toISOString() } : {}),
       });
 
-      // Update booking ETA
-      await update('bookings', { id: session.booking_id }, {
-        estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
-        ...(newStatus === 'arrived' ? { vendor_arrived_at: new Date().toISOString() } : {}),
-      });
+      // Update booking ETA while en route only (avoid churn after arrival / during walk)
+      if (session.status === 'in_transit') {
+        await update('bookings', { id: session.booking_id }, {
+          estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
+          ...(newStatus === 'arrived' ? { vendor_arrived_at: new Date().toISOString() } : {}),
+        });
+      }
 
       // Store location history
       await insert('gps_location_history', {
