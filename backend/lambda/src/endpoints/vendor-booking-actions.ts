@@ -472,6 +472,23 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           vendorStartLocation = { latitude: 19.0596, longitude: 72.8295 };
           console.log('[START-TRAVEL] UAT Mode: Using mock vendor location');
         }
+        if (
+          vendorStartLocation == null ||
+          vendorStartLocation.latitude == null ||
+          vendorStartLocation.longitude == null ||
+          Number.isNaN(Number(vendorStartLocation.latitude)) ||
+          Number.isNaN(Number(vendorStartLocation.longitude))
+        ) {
+          return c.json(
+            {
+              success: false,
+              error:
+                'startLocation with latitude and longitude is required (enable location, then try again).',
+              code: 'START_LOCATION_REQUIRED',
+            },
+            400
+          );
+        }
 
         // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
         let destinationLocation: { latitude: number; longitude: number } | null = null;
