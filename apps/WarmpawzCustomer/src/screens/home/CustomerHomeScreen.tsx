@@ -4,7 +4,7 @@
  * Updated with react-native-vector-icons for 100% design compliance
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import {
   View,
   Text,
@@ -14,13 +14,77 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  PanResponder,
+  useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { CustomerMessagesModal } from '../chat/CustomerMessagesModal';
 
 const { width } = Dimensions.get('window');
+
+const FAB_SIZE = 56;
+const FAB_MARGIN = 12;
+const DRAG_THRESHOLD = 4;
+
+/**
+ * Option A while dragging: left edge ≥ contentW/2 - FAB_MARGIN.
+ * On release (and storage restore / size change), X snaps to extreme right (`maxX`); Y is preserved (clamped).
+ */
+function getCustomerChatFabBounds(
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+) {
+  const minXKeepOnScreen = FAB_MARGIN - contentW + rightOffset + FAB_SIZE;
+  const minXRightHalf = contentW / 2 - FAB_MARGIN - contentW + rightOffset + FAB_SIZE;
+  const minX = Math.max(minXKeepOnScreen, minXRightHalf);
+  const maxX = rightOffset - FAB_MARGIN;
+  const minY = FAB_MARGIN - contentH + bottomOffset + FAB_SIZE;
+  const maxY = bottomOffset - FAB_MARGIN;
+  return { minX, maxX, minY, maxY };
+}
+
+function clampCustomerChatFabOffset(
+  nx: number,
+  ny: number,
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerChatFabBounds(contentW, contentH, rightOffset, bottomOffset);
+  let x: number;
+  if (minX > maxX) {
+    x = minX;
+  } else {
+    x = Math.max(minX, Math.min(maxX, nx));
+  }
+  return {
+    x,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
+
+function snapCustomerChatFabToRight(
+  ny: number,
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerChatFabBounds(contentW, contentH, rightOffset, bottomOffset);
+  const snapX = minX > maxX ? minX : maxX;
+  return {
+    x: snapX,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
 
 interface CustomerHomeScreenProps {
   phone: string;
@@ -64,6 +128,85 @@ export function CustomerHomeScreen({
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [currentBanner, setCurrentBanner] = useState(0);
   const [messagesModalOpen, setMessagesModalOpen] = useState(false);
+  const [chatFabOffset, setChatFabOffset] = useState({ x: 0, y: 0 });
+  const chatFabOffsetRef = useRef(chatFabOffset);
+  const dragMovedRef = useRef(false);
+  const grantFabRef = useRef({ x: 0, y: 0 });
+
+  const { width: winW, height: winH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 60;
+
+  const fabStorageKey = useMemo(
+    () =>
+      `warmpawz_customer_home_chat_fab_${(customerId || phone || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    [customerId, phone],
+  );
+
+  const rightFab = spacing.lg;
+  const bottomFab = spacing.xl + 8;
+
+  const getContentSize = useCallback(() => {
+    const contentH = winH - insets.top - tabBarHeight;
+    return { contentW: winW, contentH };
+  }, [winW, winH, insets.top, tabBarHeight]);
+
+  const clampFab = useCallback(
+    (nx: number, ny: number) => {
+      const { contentW, contentH } = getContentSize();
+      return clampCustomerChatFabOffset(nx, ny, contentW, contentH, rightFab, bottomFab);
+    },
+    [getContentSize, rightFab, bottomFab],
+  );
+
+  const snapFabToRight = useCallback(
+    (ny: number) => {
+      const { contentW, contentH } = getContentSize();
+      return snapCustomerChatFabToRight(ny, contentW, contentH, rightFab, bottomFab);
+    },
+    [getContentSize, rightFab, bottomFab],
+  );
+
+  useEffect(() => {
+    chatFabOffsetRef.current = chatFabOffset;
+  }, [chatFabOffset]);
+
+  useEffect(() => {
+    setChatFabOffset((prev) => snapFabToRight(prev.y));
+  }, [snapFabToRight]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(fabStorageKey);
+        if (cancelled || !raw) return;
+        const parsed = JSON.parse(raw) as { x?: number; y?: number };
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          const contentH = winH - insets.top - tabBarHeight;
+          setChatFabOffset(snapCustomerChatFabToRight(parsed.y, winW, contentH, rightFab, bottomFab));
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only re-load persisted position when the storage key (customer) changes; rotation is handled by snapFabToRight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- winW/winH/insets intentionally omitted
+  }, [fabStorageKey]);
+
+  const persistFabOffset = useCallback(
+    async (o: { x: number; y: number }) => {
+      try {
+        await AsyncStorage.setItem(fabStorageKey, JSON.stringify(o));
+      } catch {
+        /* ignore */
+      }
+    },
+    [fabStorageKey],
+  );
 
   // Cleanup
   useEffect(() => {
@@ -135,6 +278,45 @@ export function CustomerHomeScreen({
   }
 
   const openMessages = () => setMessagesModalOpen(true);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          dragMovedRef.current = false;
+          grantFabRef.current = { ...chatFabOffsetRef.current };
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (Math.abs(gestureState.dx) > DRAG_THRESHOLD || Math.abs(gestureState.dy) > DRAG_THRESHOLD) {
+            dragMovedRef.current = true;
+          }
+          const nx = grantFabRef.current.x + gestureState.dx;
+          const ny = grantFabRef.current.y + gestureState.dy;
+          if (dragMovedRef.current) {
+            setChatFabOffset(clampFab(nx, ny));
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (dragMovedRef.current) {
+            const dragged = clampFab(
+              grantFabRef.current.x + gestureState.dx,
+              grantFabRef.current.y + gestureState.dy,
+            );
+            const next = snapFabToRight(dragged.y);
+            setChatFabOffset(next);
+            void persistFabOffset(next);
+          } else {
+            openMessages();
+          }
+          dragMovedRef.current = false;
+        },
+        onPanResponderTerminate: () => {
+          dragMovedRef.current = false;
+        },
+      }),
+    [clampFab, snapFabToRight, persistFabOffset],
+  );
 
   return (
     <View style={styles.homeRoot}>
@@ -369,14 +551,19 @@ export function CustomerHomeScreen({
         </View>
       </View>
     </ScrollView>
-    <TouchableOpacity
-      style={styles.chatFab}
-      onPress={openMessages}
-      activeOpacity={0.85}
+    <View
+      style={[
+        styles.chatFab,
+        {
+          transform: [{ translateX: chatFabOffset.x }, { translateY: chatFabOffset.y }],
+        },
+      ]}
+      {...panResponder.panHandlers}
       accessibilityLabel="Open messages"
+      accessibilityRole="button"
     >
       <Icon name="message-text" size={26} color={colors.white} />
-    </TouchableOpacity>
+    </View>
     </View>
   );
 }

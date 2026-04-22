@@ -29,6 +29,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -204,7 +205,10 @@ export function PharmacyOrderFlow({
         async (position) => {
           try {
             // Reverse geocode to get address
-            const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+            const apiKey =
+              (await getGoogleMapsBrowserApiKey()) ||
+              process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+              '';
             if (apiKey) {
               const response = await fetch(
                 `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${apiKey}`

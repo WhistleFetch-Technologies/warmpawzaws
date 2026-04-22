@@ -80,8 +80,8 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50/80 via-white to-slate-50">
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-teal-100">
-        <div className="max-w-customer mx-auto px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-40 border-b border-teal-100 bg-white/90 backdrop-blur-md cw-header-safe-top cw-header-safe-x">
+        <div className="mx-auto flex max-w-customer items-center gap-3 py-3">
           <button
             type="button"
             onClick={() => router.replace('/articles')}

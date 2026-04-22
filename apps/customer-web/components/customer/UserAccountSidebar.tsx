@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
@@ -2487,8 +2488,12 @@ function AddressForm({ address, onSave, onCancel }: {
 
         // Reverse geocode using Google Maps
         try {
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
           );
           const data = await response.json();
 
