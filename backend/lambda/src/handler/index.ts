@@ -86,6 +86,7 @@ import { registerOrderManagementEndpoints } from '../endpoints/order-management'
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
 import { registerSmsNotificationEndpoints } from '../endpoints/sms-notifications';
 import { registerVendorProfileEndpoints } from '../endpoints/vendor/endpoints/vendorProfile.vendor';
+import { registerVendorProfilePasswordLiterals } from '../endpoints/vendor/vendor-auth-password';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor/endpoints/vendor-settings';
 import { registerVendorPoliciesEndpoints } from '../endpoints/vendor/endpoints/vendor-policies';
@@ -612,6 +613,7 @@ registerSmsNotificationEndpoints(app);
 // Must register BEFORE registerVendorProfileEndpoints — that module ends with GET /vendor/:vendorId,
 // which otherwise matches /vendor/policies (vendorId = "policies") and returns no policies[].
 app.route('/', platformPoliciesApp);
+registerVendorProfilePasswordLiterals(app);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);

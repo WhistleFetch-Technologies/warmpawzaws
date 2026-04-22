@@ -24,6 +24,7 @@ import {
   SendOtpRequestSchema,
   VerifyOtpRequestSchema,
   CustomerPasswordLoginRequestSchema,
+  VendorPasswordLoginRequestSchema,
 } from '@warmpawz/api-contracts/auth';
 import { verifyCustomerPassword } from '../../lib/services/auth/customer-password-crypto';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
@@ -44,12 +45,17 @@ import {
   handleCustomerSetPassword,
   hasMeaningfulStoredPassword,
 } from '../customer/customerEndpoint/customer-password';
+import { handleVendorPasswordStatus, handleVendorSetPassword } from '../vendor/vendor-auth-password';
 import {
   normalizePhoneForOtp,
   selectCustomersByLast10Digits,
   dialablePhoneForCustomerAuth,
   findCustomerForPasswordLogin,
 } from '../../lib/services/auth/customer-username-lookup';
+import {
+  findVendorForPasswordLogin,
+  mergeVendorIdentityOnboarding,
+} from '../../lib/services/auth/vendor-username-lookup';
 import {
   handleCustomerForgotPasswordRequest,
   handleCustomerForgotPasswordVerifyOtp,
@@ -1321,6 +1327,143 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
   }
 }
 
+class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event) || {};
+    const parsed = VendorPasswordLoginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return this.error(
+        'Validation failed',
+        400,
+        'VALIDATION_ERROR',
+        { errors: parsed.error.errors },
+        context.requestId
+      );
+    }
+
+    const { username, password } = parsed.data;
+    const role = parsed.data.role ?? 'vendor';
+    if (role !== 'vendor') {
+      return this.error('Only vendor login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
+    }
+
+    try {
+      const vendor = await findVendorForPasswordLogin(username);
+      if (!vendor) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+
+      const userData = await mergeVendorIdentityOnboarding(vendor);
+
+      if (userData.is_active === false && (userData.status === 'suspended' || userData.status === 'inactive')) {
+        return this.error(
+          'Your vendor account has been deactivated. Please contact support for assistance.',
+          403,
+          'VENDOR_DEACTIVATED',
+          undefined,
+          context.requestId
+        );
+      }
+
+      if (!hasMeaningfulStoredPassword(userData.password_hash)) {
+        return this.error(
+          'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
+          403,
+          'PASSWORD_NOT_SET',
+          undefined,
+          context.requestId
+        );
+      }
+
+      const valid = await verifyCustomerPassword(password, userData.password_hash);
+      if (!valid) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+
+      const userId = userData.id as string;
+      const phoneForTokens =
+        dialablePhoneForCustomerAuth(userData.phone) || String(userData.phone || username).trim();
+
+      let cognitoTokens: CognitoTokens;
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
+          userId,
+          phone: phoneForTokens,
+          role: 'vendor',
+        });
+      } catch (jwtError: any) {
+        console.error('[AUTH] Vendor login token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
+      }
+
+      try {
+        await update('vendors', { id: userId }, {
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } catch (loginUpdateErr: any) {
+        console.warn('[AUTH] Vendor login last_login_at update skipped:', loginUpdateErr?.message);
+      }
+
+      const isNewUser =
+        (userId && userId.startsWith('temp_vendor_')) ||
+        !userData?.id ||
+        !userData?.created_at ||
+        (userData?.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
+
+      return this.success(
+        {
+          success: true,
+          data: {
+            token: {
+              access_token: cognitoTokens.accessToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            user: {
+              id: userId,
+              phone: phoneForTokens,
+              role: 'vendor',
+              is_active: userData?.is_active !== false,
+              created_at: userData?.created_at || new Date().toISOString(),
+            },
+            state: isNewUser ? 'new' : 'existing',
+            profile: {
+              id: userId && userId.startsWith('temp_vendor_') ? null : userId,
+              phone: phoneForTokens,
+              business_name: userData?.business_name || null,
+              status: userData?.status || 'pending',
+              onboarding_status: userData?.onboarding_status || 'INIT',
+            },
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: context.requestId,
+            version: 'v1',
+          },
+        },
+        context.requestId
+      );
+    } catch (error: any) {
+      console.error('[AUTH] Vendor password login error:', error);
+      return this.error(
+        error?.message || 'Login failed',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        context.requestId
+      );
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -1329,11 +1472,15 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
   const sendOtpHandler = new SendOtpHandlerEnhanced();
   const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
   const customerPasswordLoginHandler = new CustomerPasswordLoginHandler();
+  const vendorPasswordLoginHandler = new VendorPasswordLoginHandler();
 
   // Customer first-time password + status: register early with other /auth routes.
   // (Also registered under /customer/profile/* in registerCustomerProfileEndpoints.)
   app.get('/auth/customer/password-status', handleCustomerAccountStatus);
   app.post('/auth/customer/set-password', handleCustomerSetPassword);
+
+  app.get('/auth/vendor/password-status', handleVendorPasswordStatus);
+  app.post('/auth/vendor/set-password', handleVendorSetPassword);
 
   app.post('/auth/customer/forgot-password/request', async (c) => {
     const requestId =
@@ -1407,6 +1554,57 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
 
       const body = JSON.parse(result.body);
       console.log(`[AUTH] login completed in ${Date.now() - startTime}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      const statusCode = error?.message?.includes('timeout') ? 503 : 500;
+      return c.json(
+        {
+          message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
+          error: error?.message || 'Internal Server Error',
+        },
+        statusCode
+      );
+    }
+  });
+
+  app.post('/auth/vendor/login', async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000;
+    try {
+      const parseBodyWithTimeout = async (): Promise<any> => {
+        return Promise.race([
+          c.req.json(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request body parsing timeout')), 5000)
+          ),
+        ]);
+      };
+
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError: any) {
+        console.error('[AUTH] Error parsing vendor login body:', parseError);
+        return c.json(
+          { message: 'Invalid request format', error: parseError.message || 'Request parsing failed' },
+          400
+        );
+      }
+
+      const context = createLambdaContext();
+      const result: any = await Promise.race([
+        vendorPasswordLoginHandler.execute(event, context),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Handler execution timeout')), TIMEOUT_MS)
+        ),
+      ]);
+
+      if (!result || !result.body) {
+        throw new Error('Handler returned invalid response');
+      }
+
+      const body = JSON.parse(result.body);
+      console.log(`[AUTH] vendor/login completed in ${Date.now() - startTime}ms`);
       return c.json(body, result.statusCode);
     } catch (error: any) {
       const statusCode = error?.message?.includes('timeout') ? 503 : 500;

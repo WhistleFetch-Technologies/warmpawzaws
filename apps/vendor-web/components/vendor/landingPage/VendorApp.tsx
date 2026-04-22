@@ -10,6 +10,11 @@ import { VendorApplicationRejected } from '../VendorApplicationRejected';
 import { VendorClarificationRequested } from '../VendorClarificationRequested';
 import { VendorLandingPage } from './VendorLandingPage';
 import { VendorApprovedSetup } from '../VendorApprovedSetup';
+import {
+  VendorSetPasswordGate,
+  fetchVendorNeedsPasswordSetup,
+  WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT,
+} from '../VendorSetPasswordGate';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
@@ -32,6 +37,9 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   const [isLoading, setIsLoading] = useState<boolean>(initial.isLoading);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [resubmitInitialData, setResubmitInitialData] = useState<any>(null);
+  const [passwordGateOpen, setPasswordGateOpen] = useState(false);
+  const [passwordGateVariant, setPasswordGateVariant] = useState<'after_profile_submit' | 'resume'>('resume');
+  const [postSubmitPasswordPayload, setPostSubmitPasswordPayload] = useState<any>(null);
 
   const hasCheckedStatus = useRef(false);
   const isCheckingStatus = useRef(false);
@@ -113,6 +121,45 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     }
     hasCheckedStatus.current = true;
     checkVendorStatus();
+  }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (!localStorage.getItem('authToken')) return;
+        const need = await fetchVendorNeedsPasswordSetup();
+        if (cancelled || !need) return;
+        setPasswordGateVariant('resume');
+        setPasswordGateOpen(true);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onProfileSubmitted = async () => {
+      try {
+        if (!localStorage.getItem('authToken')) return;
+        const need = await fetchVendorNeedsPasswordSetup();
+        if (need) {
+          setPostSubmitPasswordPayload(null);
+          setPasswordGateVariant('after_profile_submit');
+          setPasswordGateOpen(true);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT, onProfileSubmitted);
+    return () => window.removeEventListener(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT, onProfileSubmitted);
   }, []);
 
   /**
@@ -839,6 +886,22 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     setShowOnboarding(false);
   };
 
+  const handlePasswordGateSuccess = () => {
+    setPasswordGateOpen(false);
+    if (postSubmitPasswordPayload) {
+      handleOnboardingComplete(postSubmitPasswordPayload);
+      setPostSubmitPasswordPayload(null);
+    }
+  };
+
+  const vendorPasswordGateEl = (
+    <VendorSetPasswordGate
+      open={passwordGateOpen}
+      onSuccess={handlePasswordGateSuccess}
+      variant={passwordGateVariant}
+    />
+  );
+
   const handleApplicationContinue = () => {
     setStatus('pending');
     localStorage.setItem('vendorApplicationStatus', 'pending');
@@ -892,68 +955,83 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your profile...</p>
+      <>
+        <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading your profile...</p>
+          </div>
         </div>
-      </div>
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // Application Submitted
   if (status === 'submitted') {
     return (
-      <VendorApplicationSubmitted
-        applicationId={vendorData?.applicationId || 'PENDING'}
-        onContinue={handleApplicationContinue}
-      />
+      <>
+        <VendorApplicationSubmitted
+          applicationId={vendorData?.applicationId || 'PENDING'}
+          onContinue={handleApplicationContinue}
+        />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // Application Under Review
   if (status === 'pending') {
     return (
-      <VendorApplicationUnderReview
-        submittedAt={vendorData?.submittedAt || new Date().toISOString()}
-        isReapproval={vendorData?.wasApprovedBefore}
-        reapprovalReason={vendorData?.reapprovalReason}
-      />
+      <>
+        <VendorApplicationUnderReview
+          submittedAt={vendorData?.submittedAt || new Date().toISOString()}
+          isReapproval={vendorData?.wasApprovedBefore}
+          reapprovalReason={vendorData?.reapprovalReason}
+        />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // Application Rejected
   if (status === 'rejected') {
     return (
-      <VendorApplicationRejected
-        applicationId={vendorData?.applicationId || 'N/A'}
-        rejectionReason={applicationData?.rejectionReason || 'Your application was not approved.'}
-        allowResubmit={applicationData?.allowResubmit !== false}
-        onResubmit={handleStartFresh}
-        onCorrectAndResubmit={handleCorrectAndResubmit}
-        onGoBack={() => {
-          setStatus('new');
-          setSelectedRole(null);
-          setShowOnboarding(false);
-          setVendorData(null);
-          setApplicationData(null);
-          localStorage.removeItem('vendorData');
-          localStorage.removeItem('vendorApplicationStatus');
-          localStorage.removeItem('vendorRole');
-        }}
-      />
+      <>
+        <VendorApplicationRejected
+          applicationId={vendorData?.applicationId || 'N/A'}
+          rejectionReason={applicationData?.rejectionReason || 'Your application was not approved.'}
+          allowResubmit={applicationData?.allowResubmit !== false}
+          onResubmit={handleStartFresh}
+          onCorrectAndResubmit={handleCorrectAndResubmit}
+          onGoBack={() => {
+            setStatus('new');
+            setSelectedRole(null);
+            setShowOnboarding(false);
+            setVendorData(null);
+            setApplicationData(null);
+            localStorage.removeItem('vendorData');
+            localStorage.removeItem('vendorApplicationStatus');
+            localStorage.removeItem('vendorRole');
+          }}
+        />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // Clarification Requested
   if (status === 'clarification') {
     return (
-      <VendorClarificationRequested
-        applicationId={vendorData?.applicationId || 'N/A'}
-        clarificationNotes={applicationData?.clarificationNotes || 'Please provide additional information.'}
-        reviewerName={applicationData?.reviewerName}
-        onCorrectAndResubmit={handleCorrectAndResubmit}
-      />
+      <>
+        <VendorClarificationRequested
+          applicationId={vendorData?.applicationId || 'N/A'}
+          clarificationNotes={applicationData?.clarificationNotes || 'Please provide additional information.'}
+          reviewerName={applicationData?.reviewerName}
+          onCorrectAndResubmit={handleCorrectAndResubmit}
+        />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
@@ -976,31 +1054,35 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
     // Otherwise, show first-time approval screen
     return (
-      <VendorApprovedSetup
-        vendorId={vendorData?.id || session.vendorId || ''}
-        roleId={vendorData?.roleId || vendorData?.role_id}
-        onComplete={() => {
-          setStatus('active');
-          localStorage.setItem('vendorApplicationStatus', 'ACTIVATED');
-        }}
-      />
+      <>
+        <VendorApprovedSetup
+          vendorId={vendorData?.id || session.vendorId || ''}
+          roleId={vendorData?.roleId || vendorData?.role_id}
+          onComplete={() => {
+            setStatus('active');
+            localStorage.setItem('vendorApplicationStatus', 'ACTIVATED');
+          }}
+        />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // Active Vendor - Show VendorLandingPage (full portal), lazy-loaded to avoid TDZ in dashboard chunk
   if (status === 'active') {
     return (
-      <Suspense
-        fallback={
-          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
-              <p className="text-gray-600">Loading...</p>
+      <>
+        <Suspense
+          fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+                <p className="text-gray-600">Loading...</p>
+              </div>
             </div>
-          </div>
-        }
-      >
-        <VendorLandingPage
+          }
+        >
+          <VendorLandingPage
           vendorId={(() => {
             const finalVendorId = vendorData?.id || session.vendorId || '';
             // ✅ BIG LOGGING: Log vendorId being passed to VendorLandingPage
@@ -1025,7 +1107,9 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorType={vendorData?.vendorType}
           serviceStyle={vendorData?.serviceStyle}
         />
-      </Suspense>
+        </Suspense>
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
@@ -1048,6 +1132,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         : 'business';
 
     return (
+      <>
       <DynamicVendorOnboardingForm
         roleId={selectedRole}
         vendorId={vendorData?.id || session.vendorId}
@@ -1136,12 +1221,14 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
             if (response.success || response.applicationId) {
               setResubmitInitialData(null);
-              handleOnboardingComplete({
+              setPostSubmitPasswordPayload({
                 ...submissionData,
                 applicationId: response.applicationId,
                 vendorId: response.vendorId,
                 status: 'submitted',
               });
+              setPasswordGateVariant('after_profile_submit');
+              setPasswordGateOpen(true);
             } else {
               console.error('❌ [VendorApp] Failed to submit:', response);
               alert(response.error || 'Failed to submit application');
@@ -1175,22 +1262,32 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           setResubmitInitialData(null);
         }}
       />
+        {vendorPasswordGateEl}
+      </>
     );
   }
 
   // New Vendor - Role Selection (when loading done and status is 'new', or we have vendorData but unknown status – e.g. after 401 fallback)
   if (!isLoading && !selectedRole && (status === 'new' || vendorData)) {
-    return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
+    return (
+      <>
+        <VendorRoleSelection onRoleSelect={handleRoleSelect} />
+        {vendorPasswordGateEl}
+      </>
+    );
   }
 
   // Default: still determining status – show loading only when we truly have no data (avoid infinite "Loading your profile..." after 401)
   return (
-    <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading your profile...</p>
+    <>
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your profile...</p>
+        </div>
       </div>
-    </div>
+      {vendorPasswordGateEl}
+    </>
   );
 }
 

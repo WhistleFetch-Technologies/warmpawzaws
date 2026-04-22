@@ -15,6 +15,7 @@ import { VendorBusinessHub } from '../business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from '../clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from '../resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
 import { EnhancedVendorOnboarding } from '../onboarding/EnhancedVendorOnboarding';
+import { WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT } from '../VendorSetPasswordGate';
 import { VendorApplicationSubmitted } from '../VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from '../VendorApplicationUnderReview';
 import { VendorClarificationRequested } from '../VendorClarificationRequested';
@@ -613,6 +614,9 @@ export function VendorLandingPage({
         // Show submitted screen
         setStatus('submitted');
         toast.success('Application submitted successfully!');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT));
+        }
         return;
       }
 
@@ -769,6 +773,9 @@ export function VendorLandingPage({
         // Show submitted screen
         setStatus('submitted');
         toast.success('Application submitted successfully!');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT));
+        }
       } else {
         console.error('❌ Failed to submit application:', result);
         toast.error(result?.error || 'Failed to submit application. Please try again.');
