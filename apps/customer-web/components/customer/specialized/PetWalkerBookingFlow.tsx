@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { MapPin, Clock, Calendar, Route } from 'lucide-react';
+import { MapPin, Clock, Calendar, Route, Star } from 'lucide-react';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
 interface PetWalkerBookingFlowProps {
   vendorId: string;
@@ -23,6 +24,16 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [pickupAddress, setPickupAddress] = useState('');
   const [petCount, setPetCount] = useState(1);
   const [specialInstructions, setSpecialInstructions] = useState('');
+  const [showPreReview, setShowPreReview] = useState(false);
+
+  const walkTypeLabel =
+    walkType === 'long' ? 'Long walk' : walkType === 'exercise' ? 'Exercise walk' : 'Regular walk';
+
+  const walkerPrePaymentStats = [
+    { value: '5★', label: 'Walks', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '30+', label: 'Min' },
+    { value: '1+', label: 'Pets' },
+  ];
 
   const calculatePrice = (): number => {
     const basePrice = 200;
@@ -33,18 +44,21 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
     return Math.round(basePrice * durationMultiplier * typeMultiplier * petMultiplier);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const validate = (): boolean => {
     if (!selectedDate || !selectedTime) {
       setError('Please select date and time');
-      return;
+      return false;
     }
-
     if (!pickupAddress.trim()) {
       setError('Pickup address is required');
-      return;
+      return false;
     }
+    setError(null);
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
 
     setProcessing(true);
     setError(null);
@@ -105,6 +119,70 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
     }
   };
 
+  if (showPreReview) {
+    return (
+      <div className="min-h-0">
+        {error && (
+          <div className="px-4 pt-2 max-w-md mx-auto">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-2">{error}</div>
+          </div>
+        )}
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before confirming"
+          headerIcon={Route}
+          stats={walkerPrePaymentStats}
+          onBack={() => {
+            setShowPreReview(false);
+            setError(null);
+          }}
+          lead={{
+            icon: Route,
+            iconContainerClassName: 'bg-orange-100 text-[#FF8C42]',
+            title: 'Pet walk',
+            subtitle: `${walkTypeLabel} · ${duration} min · ${petCount} pet${petCount > 1 ? 's' : ''}`,
+            trailing: <span>₹{calculatePrice()}</span>,
+          }}
+          rows={[
+            {
+              id: 'dt',
+              icon: Calendar,
+              label: 'Date & time',
+              primary: selectedDate
+                ? `${new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })} at ${selectedTime}`
+                : '—',
+            },
+            {
+              id: 'addr',
+              icon: MapPin,
+              label: 'Pickup address',
+              primary: pickupAddress,
+            },
+          ]}
+          notes={{
+            value: specialInstructions,
+            onChange: setSpecialInstructions,
+            placeholder: 'Any special requirements, pet behavior notes, or route preferences...',
+            showNotes: true,
+            label: 'Special instructions (optional)',
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${calculatePrice()}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: `Book walk – ₹${calculatePrice()}`,
+            onClick: handleSubmit,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto p-0">
       <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-3">
@@ -112,7 +190,13 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         Book Pet Walker
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validate()) setShowPreReview(true);
+        }}
+        className="space-y-6"
+      >
         {/* Date and Time */}
         <div className="bg-white rounded-xl p-0 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Schedule Walk</h3>
@@ -235,19 +319,6 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           />
         </div>
 
-        {/* Price Summary */}
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-900">Booking Summary</p>
-              <p className="text-sm text-gray-600 mt-0">
-                {duration} min {walkType} walk • {petCount} pet{petCount > 1 ? 's' : ''}
-              </p>
-            </div>
-            <p className="text-2xl font-bold text-orange-600">₹{calculatePrice()}</p>
-          </div>
-        </div>
-
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
@@ -270,7 +341,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             disabled={processing || !pickupAddress}
             className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
-            {processing ? 'Booking...' : `Book Walk - ₹${calculatePrice()}`}
+            {processing ? 'Booking...' : `Review & book – ₹${calculatePrice()}`}
           </button>
         </div>
       </form>

@@ -8,6 +8,7 @@ import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
@@ -479,11 +480,6 @@ export function NutritionistBookingRouter({
     return 'Expert nutrition consultation';
   };
 
-  const getHeaderTitle = () =>
-    step === 'payment' && !showPaymentPage ? 'Booking Summary' : getServiceTitle();
-  const getHeaderSubtitle = () =>
-    step === 'payment' && !showPaymentPage ? 'Review before payment' : getServiceSubtitle();
-
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
@@ -503,13 +499,23 @@ export function NutritionistBookingRouter({
     }));
   };
 
+  const proceedToPaymentOrPackage = () => {
+    if (usePackageSession && activePackage) {
+      handleConfirmBooking();
+      return;
+    }
+    if (!selectedVendorService && selectedServiceOption) {
+      setSelectedVendorService(selectedServiceOption);
+    }
+    setShowPaymentPage(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
-      {!showPaymentPage && (
+      {step !== 'payment' && (
         <ServiceDashboardHeader
-          serviceName={getHeaderTitle()}
-          serviceSubtitle={getHeaderSubtitle()}
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Apple}
           iconColor="text-white"
           stats={dashboardStats}
@@ -520,7 +526,62 @@ export function NutritionistBookingRouter({
         />
       )}
 
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={Apple}
+          stats={dashboardStats}
+          onBack={handleBack}
+          headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+          lead={{
+            icon:
+              selectedServiceType === 'tele' ? Video : selectedServiceType === 'at_home' ? Home : Building2,
+            iconContainerClassName:
+              selectedServiceType === 'tele'
+                ? 'bg-blue-100 text-blue-600'
+                : selectedServiceType === 'at_home'
+                  ? 'bg-orange-100 text-[#FF8C42]'
+                  : 'bg-purple-100 text-purple-600',
+            title: String(selectedServiceOption?.name ?? ''),
+            subtitle: selectedServiceOption?.duration
+              ? `${selectedServiceOption.duration} mins`
+              : undefined,
+            trailing: <span>₹{selectedServiceOption?.price}</span>,
+          }}
+          rows={[
+            {
+              id: 'datetime',
+              icon: Calendar,
+              label: 'Date & Time',
+              primary: `${new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at ${selectedTime}`,
+            },
+            {
+              id: 'pet',
+              icon: User,
+              label: 'Pet',
+              primary: `${selectedPet?.name} (${selectedPet?.breed})`,
+            },
+          ]}
+          notes={{
+            value: notes,
+            onChange: (v) => setNotes(v),
+            placeholder: 'Any symptoms or concerns...',
+            showNotes: true,
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${selectedServiceOption?.price}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: usePackageSession ? 'Confirm Booking' : 'Continue to Payment',
+            onClick: proceedToPaymentOrPackage,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
       {/* Content */}
+      {(step !== 'payment' || showPaymentPage) && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -839,92 +900,6 @@ export function NutritionistBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Show summary first, then UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedServiceType === 'tele' ? 'bg-blue-100 text-blue-600' :
-                  selectedServiceType === 'at_home' ? 'bg-orange-100 text-[#FF8C42]' :
-                    'bg-purple-100 text-purple-600'
-                  }`}>
-                  {selectedServiceType === 'tele' ? <Video className="w-6 h-6" /> :
-                    selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                      <Building2 className="w-6 h-6" />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
-                </div>
-                <p className="font-bold">₹{selectedServiceOption?.price}</p>
-              </div>
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">₹{selectedServiceOption?.price}</span>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => {
-                // If using package session, use the old flow (no payment needed)
-                if (usePackageSession && activePackage) {
-                  handleConfirmBooking();
-                  return;
-                }
-                // For regular bookings, show UniversalPaymentPage
-                // Ensure we have selectedVendorService before showing payment
-                if (!selectedVendorService && selectedServiceOption) {
-                  setSelectedVendorService(selectedServiceOption);
-                }
-                setShowPaymentPage(true);
-              }}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
-            >
-              {usePackageSession ? 'Confirm Booking' : 'Continue to Payment'}
-            </Button>
-          </div>
-        )}
-
         {/* Universal Payment Page */}
         {step === 'payment' && showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
           const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1197,6 +1172,7 @@ export function NutritionistBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }

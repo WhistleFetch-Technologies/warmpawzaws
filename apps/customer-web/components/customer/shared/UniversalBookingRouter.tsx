@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
@@ -837,9 +838,6 @@ export function UniversalBookingRouter({
     if (step === 'summary') {
       return { title: 'Booking Summary', subtitle: 'Review & optionally switch to package', icon: Package };
     }
-    if (step === 'payment' && !showPaymentPage) {
-      return { title: 'Booking Summary', subtitle: 'Review before payment', icon: Package };
-    }
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
@@ -878,10 +876,148 @@ export function UniversalBookingRouter({
     }));
   };
 
+  const reviewUniversalPrePayment = step === 'payment' && !showPaymentPage;
+
+  const handleUniversalPrePaymentContinue = () => {
+    if (!selectedVendorService && selectedServiceOption) {
+      const actualVendorService = vendorServices.find((s) => {
+        const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+        return (
+          (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id
+        );
+      });
+
+      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+      setSelectedVendorService({
+        id: actualVendorService?.id,
+        serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        name: selectedServiceOption.name,
+        price: selectedServiceOption.price,
+        duration: selectedServiceOption.duration,
+        serviceStyle: selectedServiceType,
+      });
+    }
+    setShowPaymentPage(true);
+  };
+
+  const universalPrePaymentTotalDisplay = (() => {
+    const servicesToCalculate =
+      allSelectedServices && allSelectedServices.length > 0
+        ? allSelectedServices
+        : selectedServices && selectedServices.length > 0
+          ? selectedServices
+          : [];
+    if (servicesToCalculate.length > 0) {
+      const total = servicesToCalculate.reduce((sum, s) => sum + safeNumber(s.price, 0), 0);
+      return formatPriceWithSymbol(isNaN(total) ? 0 : total);
+    }
+    return formatPriceWithSymbol(safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0));
+  })();
+
+  const universalPrePaymentSummary = (
+    <>
+      {(() => {
+        const servicesToDisplay =
+          allSelectedServices && allSelectedServices.length > 0
+            ? allSelectedServices
+            : selectedServices && selectedServices.length > 0
+              ? selectedServices
+              : [];
+        if (servicesToDisplay.length > 0) {
+          return (
+            <div className="space-y-3 pb-3 sm:pb-4 border-b">
+              {servicesToDisplay.map((service, index) => {
+                const serviceIdValue = service.id || service.serviceId || '';
+                const serviceNameValue = service.name || service.serviceName || 'Service';
+                const servicePrice = safeNumber(service.price, 0);
+                const serviceDuration = service.duration || 0;
+                const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
+                return (
+                  <div key={serviceIdValue || index} className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-xl">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+                      {serviceStyleValue === 'tele' ? (
+                        <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+                      ) : serviceStyleValue === 'at_home' ? (
+                        <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+                      ) : (
+                        <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm sm:text-base text-gray-900">{serviceNameValue}</h3>
+                      {serviceDuration > 0 && <p className="text-xs sm:text-sm text-gray-500">{serviceDuration} mins</p>}
+                    </div>
+                    <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">
+                      {formatPriceWithSymbol(servicePrice)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+        const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
+        const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
+        const svcPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
+        return (
+          <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+              {selectedServiceType === 'tele' ? (
+                <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+              ) : selectedServiceType === 'at_home' ? (
+                <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+              ) : (
+                <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
+              {svcDuration > 0 && <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>}
+            </div>
+            <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
+          </div>
+        );
+      })()}
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
+          <p className="font-medium text-sm sm:text-base">
+            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
+            {selectedTime}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Pet</p>
+          <p className="font-medium text-sm sm:text-base">
+            {selectedPet?.name} ({selectedPet?.breed})
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Any symptoms or concerns..."
+          className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
+          rows={3}
+        />
+      </div>
+    </>
+  );
+
   return (
     <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
-      {!showPaymentPage && (
+      {!showPaymentPage && step !== 'payment' && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
           serviceSubtitle={headerInfo.subtitle}
@@ -999,6 +1135,26 @@ export function UniversalBookingRouter({
 
       {/* Main Content: flex-1 + min-h-0 so tall steps scroll; CTA stays in document flow */}
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {reviewUniversalPrePayment && (
+          <PrePaymentBookingReview
+            title="Booking Summary"
+            subtitle="Review before payment"
+            headerIcon={Package}
+            stats={dashboardStats}
+            onBack={handleBack}
+            headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+            summaryBody={universalPrePaymentSummary}
+            total={{ label: 'Total', amountFormatted: universalPrePaymentTotalDisplay }}
+            totalTextClassName="text-orange-600"
+            primaryButton={{
+              label: 'Continue to Payment',
+              onClick: handleUniversalPrePaymentContinue,
+              disabled: processing,
+              loading: processing,
+            }}
+          />
+        )}
+        {!reviewUniversalPrePayment && (
       <div className="relative z-10 mx-auto max-w-md bg-white px-4 pb-24 pt-6 sm:px-6">
 
         {/* Service Selection - Skip if service context exists */}
@@ -1336,165 +1492,6 @@ export function UniversalBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 cw-scroll-pad-tabbar -mx-4 cw-header-safe-x sm:-mx-6">
-            <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
-              {/* ✅ Updated: Show all selected services */}
-              {(() => {
-                // Debug: Log services to help identify issues
-                console.log('📋 Booking Summary - allSelectedServices:', allSelectedServices);
-                console.log('📋 Booking Summary - selectedServices prop:', selectedServices);
-                
-                // Use allSelectedServices if available, otherwise fallback to selectedServices prop
-                const servicesToDisplay = (allSelectedServices && allSelectedServices.length > 0) 
-                  ? allSelectedServices 
-                  : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
-                
-                if (servicesToDisplay.length > 0) {
-                  return (
-                    <div className="space-y-3 pb-3 sm:pb-4 border-b">
-                      {servicesToDisplay.map((service, index) => {
-                        const serviceIdValue = service.id || service.serviceId || '';
-                        const serviceNameValue = service.name || service.serviceName || 'Service';
-                        const servicePrice = safeNumber(service.price, 0);
-                        const serviceDuration = service.duration || 0;
-                        const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
-                        
-                        return (
-                          <div key={serviceIdValue || index} className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-xl">
-                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                              {serviceStyleValue === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                               serviceStyleValue === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                               <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-semibold text-sm sm:text-base text-gray-900">{serviceNameValue}</h3>
-                              {serviceDuration > 0 && (
-                                <p className="text-xs sm:text-sm text-gray-500">{serviceDuration} mins</p>
-                              )}
-                            </div>
-                            <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">{formatPriceWithSymbol(servicePrice)}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                }
-                // Fallback to single service display - with fallbacks for missing data
-                const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
-                const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
-                const svcPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
-                return (
-                  <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                      {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                       selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                       <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
-                      {svcDuration > 0 && (
-                        <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>
-                      )}
-                    </div>
-                    <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
-                  </div>
-                );
-              })()}
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium text-sm sm:text-base">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Pet</p>
-                  <p className="font-medium text-sm sm:text-base">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Address is part of vendor profile - not shown here */}
-
-              {/* Notes */}
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
-              <div className="flex justify-between items-center text-base sm:text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">
-                  {(() => {
-                    const servicesToCalculate = (allSelectedServices && allSelectedServices.length > 0) 
-                      ? allSelectedServices 
-                      : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
-                    
-                    if (servicesToCalculate.length > 0) {
-                      const total = servicesToCalculate.reduce((sum, s) => sum + safeNumber(s.price, 0), 0);
-                      return formatPriceWithSymbol(isNaN(total) ? 0 : total);
-                    }
-                    const fallbackPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
-                    return formatPriceWithSymbol(fallbackPrice);
-                  })()}
-                </span>
-              </div>
-            </div>
-
-            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
-              <Button
-                onClick={() => {
-                  if (!selectedVendorService && selectedServiceOption) {
-                    const actualVendorService = vendorServices.find((s) => {
-                      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                      return (
-                        (s.serviceId || s.service_id) === optionServiceId ||
-                        (s.serviceId || s.service_id) === selectedServiceOption.id
-                      );
-                    });
-
-                    const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                    setSelectedVendorService({
-                      id: actualVendorService?.id,
-                      serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
-                      service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
-                      name: selectedServiceOption.name,
-                      price: selectedServiceOption.price,
-                      duration: selectedServiceOption.duration,
-                      serviceStyle: selectedServiceType,
-                    });
-                  }
-                  setShowPaymentPage(true);
-                }}
-                className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:text-base sm:py-0"
-                disabled={processing}
-              >
-                Continue to Payment
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* ✅ FIX: Payment page is now rendered as full-screen overlay above, not here */}
 
         {/* Confirmation */}
@@ -1707,6 +1704,7 @@ export function UniversalBookingRouter({
           />
         )}
       </div>
+        )}
       </div>
     </div>
   );

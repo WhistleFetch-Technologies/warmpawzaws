@@ -10,6 +10,7 @@ import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -502,11 +503,7 @@ export function WalkerBookingRouter({
     return 'Professional pet walking services';
   };
 
-  // ✅ FIX: Prepare step indicators for header
-  const getHeaderTitle = () =>
-    step === 'payment' && !showPaymentPage ? 'Booking Summary' : getServiceTitle();
-  const getHeaderSubtitle = () =>
-    step === 'payment' && !showPaymentPage ? 'Review before payment' : getServiceSubtitle();
+  // ✅ FIX: Header copy for booking steps (pre-payment review uses PrePaymentBookingReview)
 
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
@@ -528,11 +525,10 @@ export function WalkerBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Orange header + back: hide only when UniversalPaymentPage full-screen overlay is open */}
-      {!(step === 'payment' && showPaymentPage) && (
+      {step !== 'payment' && (
         <ServiceDashboardHeader
-          serviceName={getHeaderTitle()}
-          serviceSubtitle={getHeaderSubtitle()}
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Bike}
           iconColor="text-white"
           stats={dashboardStats}
@@ -543,7 +539,62 @@ export function WalkerBookingRouter({
         />
       )}
 
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={Bike}
+          stats={dashboardStats}
+          onBack={handleBack}
+          lead={{
+            icon: Home,
+            iconContainerClassName: 'bg-orange-100 text-[#FF8C42]',
+            title: selectedServiceOption?.name || serviceName || 'Pet Walking',
+            subtitle: (() => {
+              const d = selectedServiceOption?.duration ?? duration ?? 0;
+              return d > 0 ? `${d} mins` : undefined;
+            })(),
+            trailing: (
+              <span>
+                ₹{(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}
+              </span>
+            ),
+          }}
+          rows={[
+            {
+              id: 'datetime',
+              icon: Calendar,
+              label: 'Date & Time',
+              primary: `${new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at ${selectedTime}`,
+            },
+            {
+              id: 'pet',
+              icon: User,
+              label: 'Pet',
+              primary: `${selectedPet?.name} (${selectedPet?.breed})`,
+            },
+          ]}
+          notes={{
+            value: notes,
+            onChange: setNotes,
+            placeholder: 'Walking route preferences, behavior notes...',
+            showNotes: true,
+          }}
+          total={{
+            label: 'Total',
+            amountFormatted: `₹${(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}`,
+          }}
+          primaryButton={{
+            label: 'Proceed to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
       {/* Main Content */}
+      {(step !== 'payment' || showPaymentPage) && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -885,77 +936,6 @@ export function WalkerBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Now using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service - with fallbacks for missing data */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-orange-100 text-[#FF8C42]">
-                  <Home className="w-6 h-6" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name || serviceName || 'Pet Walking'}</h3>
-                  {(selectedServiceOption?.duration ?? duration) > 0 && (
-                    <p className="text-sm text-gray-500">{selectedServiceOption?.duration ?? duration} mins</p>
-                  )}
-                </div>
-                <p className="font-bold">₹{(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}</p>
-              </div>
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Walking route preferences, behavior notes..."
-                  className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-[#FF8C42]">₹{(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleProceedToPayment} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
-            >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
-            </Button>
-          </div>
-        )}
-
         {/* ✅ UniversalPaymentPage Integration - Full screen overlay */}
         {step === 'payment' && showPaymentPage && (
           <div className="fixed inset-0 z-50 bg-white">
@@ -1184,6 +1164,7 @@ export function WalkerBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }
