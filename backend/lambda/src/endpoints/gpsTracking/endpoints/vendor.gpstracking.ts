@@ -33,6 +33,7 @@ import { acceptBookingRequestSchema, checkInRequestSchema, completeBookingReques
 import { validateBody } from 'src/middleware/validation-middleware';
 import z from 'zod';
 import { BookingStatus, gps_tracking_sessions, ServiceStyle, OtpAction } from 'src/endpoints/constants';
+import { resolvePlannedServiceDurationMinutesFromBookingId } from 'src/lib/booking-service-duration';
 
 /**
  * Get commission rate for a vendor from their tier configuration
@@ -1321,6 +1322,60 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ success: true, session: null });
       }
 
+      const plannedWalkDurationMinutes = await resolvePlannedServiceDurationMinutesFromBookingId(bookingId);
+      let sessionStartedAt = activeSession.session_started_at as string | undefined;
+
+      /** Legacy rows: session_started_at was never set — derive from history / arrived_at so refresh shows a real countdown. */
+      if (!sessionStartedAt && activeSession.id) {
+        try {
+          const bookingRows = await select('bookings', { id: bookingId });
+          const bst = String((bookingRows[0] as any)?.status || '').toLowerCase();
+          if (bst === 'in_progress') {
+            const arrivedAt = (activeSession as any).arrived_at as string | undefined;
+            let derived: string | undefined;
+            try {
+              const hist = arrivedAt
+                ? await query(
+                    `SELECT MIN(recorded_at)::text AS t FROM gps_location_history
+                     WHERE session_id = $1::uuid AND recorded_at >= $2::timestamptz`,
+                    [activeSession.id, arrivedAt]
+                  )
+                : await query(
+                    `SELECT MIN(recorded_at)::text AS t FROM gps_location_history WHERE session_id = $1::uuid`,
+                    [activeSession.id]
+                  );
+              derived = hist.rows?.[0]?.t || undefined;
+            } catch {
+              /* ignore */
+            }
+            sessionStartedAt = derived || arrivedAt || sessionStartedAt;
+            if (sessionStartedAt) {
+              try {
+                await update(
+                  'gps_tracking_sessions',
+                  { id: activeSession.id },
+                  { session_started_at: sessionStartedAt }
+                );
+              } catch (persistErr: any) {
+                console.warn('[TRACKING-SESSION] persist session_started_at:', persistErr?.message || persistErr);
+              }
+            }
+          }
+        } catch (fillErr: any) {
+          console.warn('[TRACKING-SESSION] fill session_started_at:', fillErr?.message || fillErr);
+        }
+      }
+
+      let elapsedWalkSeconds: number | null = null;
+      let remainingWalkSeconds: number | null = null;
+      if (sessionStartedAt) {
+        const elapsed = Math.floor(
+          (Date.now() - new Date(sessionStartedAt).getTime()) / 1000
+        );
+        elapsedWalkSeconds = Math.max(0, elapsed);
+        remainingWalkSeconds = Math.max(0, plannedWalkDurationMinutes * 60 - elapsedWalkSeconds);
+      }
+
       // Map to frontend format
       return c.json({
         success: true,
@@ -1328,12 +1383,15 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           status: activeSession.status === gps_tracking_sessions.IN_TRANSIT ? gps_tracking_sessions.IS_TRAVELING : activeSession.status,
           startedAt: activeSession.started_at,
           arrivedAt: activeSession.arrived_at,
-          sessionStartedAt: activeSession.session_started_at,
+          sessionStartedAt: sessionStartedAt,
           completedAt: activeSession.completed_at,
           routePoints: activeSession.route_points || [],
           totalDistance: activeSession.total_distance || 0,
           currentEta: activeSession.estimated_eta_minutes,
           distanceToDestination: activeSession.distance_remaining_km,
+          plannedWalkDurationMinutes,
+          elapsedWalkSeconds,
+          remainingWalkSeconds,
         },
       });
 
@@ -1366,9 +1424,36 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
 
-      // Check if session already started
+      // Already in progress (e.g. page refresh) — idempotent success, no OTP re-entry
       if (booking.status === BookingStatus.IN_PROGRESS) {
-        return c.json({ error: 'Session already started' }, 400);
+        try {
+          const gpsRows = await select('gps_tracking_sessions', { booking_id: bookingId });
+          const activeGps = gpsRows
+            .slice()
+            .sort(
+              (a: any, b: any) =>
+                new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            )
+            .find(
+              (s: any) =>
+                s.status !== gps_tracking_sessions.COMPLETED && s.status !== gps_tracking_sessions.CANCELLED
+            );
+          if (activeGps?.id && !activeGps.session_started_at) {
+            await update(
+              'gps_tracking_sessions',
+              { id: activeGps.id },
+              { session_started_at: new Date().toISOString() }
+            );
+          }
+        } catch (e: any) {
+          console.warn('[START-SESSION] idempotent GPS row sync:', e?.message || e);
+        }
+        return c.json({
+          success: true,
+          alreadyStarted: true,
+          booking,
+          message: 'Session is already in progress.',
+        });
       }
 
       // Verify OTP
@@ -1400,6 +1485,32 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       } catch (otpErr: any) {
         console.warn('[START-SESSION] End OTP issuance non-fatal:', otpErr?.message);
+      }
+
+      // Sync walk start time on existing GPS row (vendor journey already created the session)
+      try {
+        const gpsAfterStart = await select('gps_tracking_sessions', { booking_id: bookingId });
+        const activeAfter = gpsAfterStart
+          .slice()
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          )
+          .find(
+            (s: any) =>
+              s.status !== gps_tracking_sessions.COMPLETED && s.status !== gps_tracking_sessions.CANCELLED
+          );
+        if (activeAfter?.id) {
+          await update(
+            'gps_tracking_sessions',
+            { id: activeAfter.id },
+            {
+              session_started_at: activeAfter.session_started_at || new Date().toISOString(),
+            }
+          );
+        }
+      } catch (e: any) {
+        console.warn('[START-SESSION] session_started_at sync:', e?.message || e);
       }
 
       //  AUTO-INITIATE GPS TRACKING for at_home services

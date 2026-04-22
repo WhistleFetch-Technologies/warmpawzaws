@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -26,10 +26,7 @@ import {
   type VendorCancellationReasonSlug,
 } from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
-import {
-  setHomeServiceTrackingReturnHref,
-  consumeSkipWalkAutoLiveTracker,
-} from '@/lib/vendor-live-tracker-nav';
+import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -259,53 +256,10 @@ export function VendorBookingManagement({
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
-  /** Walk-sessions effects must run AFTER bookings/loading exist (TDZ if placed above useState). */
-  const walkSessionsWalkFlowDone = useRef(false);
-  const prevWalkSessionsFocus = useRef(false);
-
+  /** Walk sessions tile: land on bookings-only UI; do not auto-open live tracker (vendor taps Live tracker). */
   useEffect(() => {
-    if (walkSessionsFocus && !prevWalkSessionsFocus.current) {
-      walkSessionsWalkFlowDone.current = false;
-    }
-    prevWalkSessionsFocus.current = walkSessionsFocus;
     if (walkSessionsFocus) setActiveTab('bookings');
   }, [walkSessionsFocus]);
-
-  useEffect(() => {
-    if (!walkSessionsFocus || loading) return;
-
-    if (consumeSkipWalkAutoLiveTracker()) {
-      walkSessionsWalkFlowDone.current = true;
-      return;
-    }
-
-    if (walkSessionsWalkFlowDone.current) return;
-
-    const eligible = bookings.filter(
-      (b) =>
-        bookingNeedsWalkLiveTracker(b, vendorData) &&
-        (b.status === 'in_progress' || b.status === 'confirmed')
-    );
-
-    if (eligible.length > 0) {
-      walkSessionsWalkFlowDone.current = true;
-      const chosen =
-        eligible.find((b) => b.status === 'in_progress') || eligible[0];
-      const id = chosen.bookingId || chosen.id;
-      if (id) {
-        toast.message('Opening live tracker…');
-        setHomeServiceTrackingReturnHref('/bookings?walkSessions=1');
-        router.replace(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
-      }
-      return;
-    }
-
-    walkSessionsWalkFlowDone.current = true;
-    toast.message('Walk sessions', {
-      description:
-        'No confirmed or in-progress walk in this date view. Pick a walk booking and tap Live tracker, or switch Today / Week / Month.',
-    });
-  }, [walkSessionsFocus, loading, bookings, vendorData, router]);
 
   const [stats, setStats] = useState({
     calls: 0,

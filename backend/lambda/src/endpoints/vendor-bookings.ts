@@ -718,18 +718,30 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           }
         }
 
-const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
+const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
         // Customer info
         booking.customer_id
           ? select('customers', { id: booking.customer_id }).catch(() => [])
           : Promise.resolve([]),
-        // Service info (legacy services table)
-        booking.service_id
-          ? select('services', { id: booking.service_id }).catch(() => [])
-          : Promise.resolve([]),
-        // Service catalog (when booking.service_id is catalog id) for name + specialization_ids + service_style
-        booking.service_id
-          ? query('SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1', [booking.service_id]).then((r: any) => r.rows).catch(() => [])
+        // Vendor Manage Service row (bookings usually reference vendor_services.id; same duration as customer booking)
+        booking.service_id && booking.vendor_id
+          ? query(
+              `SELECT id, service_id, service_name, duration_minutes, custom_duration, service_style, category, sub_category
+               FROM vendor_services
+               WHERE vendor_id = $1::uuid
+                 AND (id = $2::uuid OR service_id = $2::uuid)
+               ORDER BY
+                 CASE WHEN id = $2::uuid THEN 0 ELSE 1 END,
+                 CASE
+                   WHEN $3::text IS NOT NULL AND trim($3::text) <> '' AND service_style::text = trim($3::text)
+                   THEN 0 ELSE 1
+                 END,
+                 (COALESCE(NULLIF(custom_duration, 0), duration_minutes)) DESC
+               LIMIT 1`,
+              [booking.vendor_id, booking.service_id, (booking as any).service_type ?? null]
+            )
+              .then((r: any) => r.rows || [])
+              .catch(() => [])
           : Promise.resolve([]),
         // Pet info - use extracted petIdToUse
         petIdToUse
@@ -756,6 +768,55 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         packagePurchasePromise,
       ]);
 
+      const vendorSvc = vendorServiceRows.length > 0 ? vendorServiceRows[0] : null;
+      const serviceCatalogLookupId = (vendorSvc?.service_id as string | undefined) || booking.service_id;
+
+      const [service, catalogService] = await Promise.all([
+        serviceCatalogLookupId
+          ? select('services', { id: serviceCatalogLookupId }).catch(() => [])
+          : Promise.resolve([]),
+        serviceCatalogLookupId
+          ? query(
+              'SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1',
+              [serviceCatalogLookupId]
+            )
+              .then((r: any) => r.rows)
+              .catch(() => [])
+          : Promise.resolve([]),
+      ]);
+
+      const manageDurationMinutes = vendorSvc
+        ? Number(
+            vendorSvc.custom_duration != null &&
+              vendorSvc.custom_duration !== '' &&
+              Number(vendorSvc.custom_duration) > 0
+              ? vendorSvc.custom_duration
+              : vendorSvc.duration_minutes
+          )
+        : NaN;
+      const pickDuration = (...candidates: unknown[]) => {
+        for (const c of candidates) {
+          const n = Number(c);
+          if (Number.isFinite(n) && n > 0) return n;
+        }
+        return 30;
+      };
+      const serviceDurationMinutes = Math.min(
+        1440,
+        Math.max(
+          5,
+          Math.round(
+            pickDuration(
+              Number.isFinite(manageDurationMinutes) && manageDurationMinutes > 0 ? manageDurationMinutes : null,
+              catalogService[0]?.duration_minutes,
+              service[0]?.duration_minutes,
+              (booking as any).duration,
+              (booking as any).total_duration_minutes
+            )
+          )
+        )
+      );
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -770,7 +831,7 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         scheduledTime: booking.booking_time, // Alias for frontend compatibility
         schedule: booking.booking_time, // Alias for frontend compatibility
         startDate: booking.booking_date, // Alias for frontend compatibility
-        duration: booking.duration || 30,
+        duration: serviceDurationMinutes,
         totalAmount: parseFloat(booking.total_amount || '0'),
         serviceStyle: booking.service_style || booking.service_type || 'at_clinic',
         notes: booking.notes,
@@ -839,22 +900,26 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
           photo_url: null,
         } : null),
         
-        // Service details (prefer catalog for name + specialization; fallback to legacy services)
-        serviceName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : (service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service'),
+        // Service details (catalog display name; else vendor_services / legacy / booking name)
+        serviceName: catalogService.length > 0
+          ? (catalogService[0].display_name || catalogService[0].service_name)
+          : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
         serviceCategory: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : null),
         serviceDescription: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
-        // Service object for structured access (include specializationIds and service_style from catalog when available)
-        service: (catalogService.length > 0 || service.length > 0) ? {
-          id: (catalogService[0] || service[0])?.id || booking.service_id,
-          name: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
-          category: catalogService.length > 0 ? catalogService[0].category_id : service[0].category,
-          description: catalogService.length > 0 ? catalogService[0].description : service[0].description,
-          duration: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
+        // Service object (duration from vendor_services Manage Service when present — same as customer booking)
+        service: (catalogService.length > 0 || service.length > 0 || vendorSvc) ? {
+          id: (catalogService[0] || service[0])?.id || vendorSvc?.service_id || booking.service_id,
+          name: catalogService.length > 0
+            ? (catalogService[0].display_name || catalogService[0].service_name)
+            : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
+          category: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : vendorSvc?.category),
+          description: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
+          duration: serviceDurationMinutes,
+          duration_minutes: serviceDurationMinutes,
           specializationIds: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
           specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
-          // ✅ FIX: Include service_style for tele consultation detection (handles center-based tele consultations)
-          service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
-          serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
+          service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || vendorSvc?.service_style || null),
+          serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || vendorSvc?.service_style || null),
         } : null,
         
         // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)

@@ -300,6 +300,36 @@ class GPSTrackingServiceImpl {
         }
       }
 
+      /** During in-service walk (arrived + booking in progress), persist cumulative route meters on the session row. */
+      let totalDistancePatch: Record<string, number> = {};
+      if (allowArrivedWalk) {
+        const prevLatRaw = session.current_latitude;
+        const prevLngRaw = session.current_longitude;
+        const prevLat =
+          prevLatRaw != null && String(prevLatRaw).trim() !== ''
+            ? parseFloat(String(prevLatRaw))
+            : NaN;
+        const prevLng =
+          prevLngRaw != null && String(prevLngRaw).trim() !== ''
+            ? parseFloat(String(prevLngRaw))
+            : NaN;
+        if (Number.isFinite(prevLat) && Number.isFinite(prevLng)) {
+          const deltaKm = this.calculateDistance(
+            prevLat,
+            prevLng,
+            currentLocation.latitude,
+            currentLocation.longitude
+          );
+          const deltaMeters = deltaKm * 1000;
+          if (deltaMeters > 0.75) {
+            const prevTotalM = Number(session.total_distance ?? 0) || 0;
+            totalDistancePatch = {
+              total_distance: Math.round((prevTotalM + deltaMeters) * 100) / 100,
+            };
+          }
+        }
+      }
+
       // Update session
       await update('gps_tracking_sessions', { id: sessionId }, {
         current_latitude: currentLocation.latitude,
@@ -312,6 +342,7 @@ class GPSTrackingServiceImpl {
         status: newStatus,
         last_update_at: new Date().toISOString(),
         ...(newStatus === 'arrived' && session.status === 'in_transit' ? { arrived_at: new Date().toISOString() } : {}),
+        ...totalDistancePatch,
       });
 
       // Update booking ETA while en route only (avoid churn after arrival / during walk)
@@ -667,6 +698,22 @@ class GPSTrackingServiceImpl {
     if (ratio < 1.5) return 'moderate';
     return 'heavy';
   }
+
+  /** Sum of segment distances between consecutive GPS pings (km). */
+  async getRouteDistanceTraveledKm(sessionId: string): Promise<number> {
+    const hist = await this.getLocationHistory(sessionId);
+    if (hist.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < hist.length; i++) {
+      total += this.calculateDistance(
+        hist[i - 1].latitude,
+        hist[i - 1].longitude,
+        hist[i].latitude,
+        hist[i].longitude
+      );
+    }
+    return Math.round(total * 100) / 100;
+  }
 }
 
 // Export singleton instance
@@ -695,3 +742,6 @@ export const completeTracking = (sessionId: string) =>
 
 export const calculateETA = (origin: Location, destination: Location) =>
   gpsTrackingService.calculateETA(origin, destination);
+
+export const getRouteDistanceTraveledKm = (sessionId: string) =>
+  gpsTrackingService.getRouteDistanceTraveledKm(sessionId);

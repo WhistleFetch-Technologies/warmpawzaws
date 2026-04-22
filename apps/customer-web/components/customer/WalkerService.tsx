@@ -704,12 +704,12 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 variant="secondary" 
                 size="sm" 
                 className="bg-white text-orange-500 hover:bg-white/90"
-                onClick={() =>
-                  onNavigate?.('walk-live-tracking', {
-                    bookingId: activeWalks[0].bookingId || activeWalks[0].id,
-                    sessionId: activeWalks[0].bookingId || activeWalks[0].id,
-                  })
-                }
+                onClick={() => {
+                  const bid = activeWalks[0].bookingId || activeWalks[0].id;
+                  if (bid) {
+                    onNavigate?.('my-bookings', { bookingId: bid });
+                  }
+                }}
               >
                 <Eye className="w-4 h-4 mr-1" />
                 Track

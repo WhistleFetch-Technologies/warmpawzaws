@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { query, select, update } from 'src/database/rds-connection';
 import { sendEventNotification } from 'src/aws/aws-sns-notification-service';
 import { calculateETA, completeTracking, getLocationHistory, getTrackingStatus, gpsTrackingService, Location, startTracking, updateLocation } from 'src/lib/services/gpsServices/gps-tracking-service';
+import { resolvePlannedServiceDurationMinutesFromBookingId } from 'src/lib/booking-service-duration';
 import { geocodeAddress } from 'src/lib/utils/geocode';
 import { publishNotification } from 'src/utils/sns-client';
 
@@ -100,6 +101,16 @@ function mapGpsRowToActiveSession(session: any) {
     arrivedAt: session.arrived_at,
     lastUpdateAt: session.last_update_at,
   };
+}
+
+function bookingLooksLikeWalkAtHome(booking: any): boolean {
+  if (!booking) return false;
+  const style = String(booking.service_style ?? booking.serviceStyle ?? '').toLowerCase();
+  const type = String(booking.service_type ?? booking.serviceType ?? '').toLowerCase();
+  const name = String(booking.service_name ?? booking.serviceName ?? '').toLowerCase();
+  const atHome = style === 'at_home' || type === 'at_home';
+  if (!atHome) return false;
+  return type.includes('walk') || name.includes('walk') || name.includes('walking');
 }
 
 export function registerGpsTrackingEndpoints(app: Hono) {
@@ -907,6 +918,80 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         }
       }
 
+      let distanceTraveledKm: number | null = null;
+      let plannedWalkDurationMinutes: number | null = null;
+      let elapsedWalkSeconds: number | null = null;
+      let remainingWalkSeconds: number | null = null;
+
+      const bookingWalkish = bookingLooksLikeWalkAtHome(booking);
+      const bookingSt = String(booking?.status ?? (booking as any)?.booking_status ?? '').toLowerCase();
+
+      if (bookingWalkish && booking) {
+        plannedWalkDurationMinutes = await resolvePlannedServiceDurationMinutesFromBookingId(bookingId);
+      }
+
+      let sessionRow: any = null;
+      if (status?.id) {
+        try {
+          const rows = await select('gps_tracking_sessions', { id: status.id });
+          sessionRow = rows[0];
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (status?.id && bookingWalkish && bookingSt === 'in_progress') {
+        try {
+          const fromHist = await gpsTrackingService.getRouteDistanceTraveledKm(status.id);
+          const fromTotalM = Number(sessionRow?.total_distance ?? 0) || 0;
+          const fromTotalKm = fromTotalM / 1000;
+          distanceTraveledKm = Math.round(Math.max(fromHist, fromTotalKm) * 100) / 100;
+        } catch (e: any) {
+          console.warn('[TRACKING] distance traveled compute failed:', e?.message || e);
+        }
+      }
+
+      let walkStart = sessionRow?.session_started_at as string | undefined;
+      if (!walkStart && sessionRow?.id && bookingSt === 'in_progress') {
+        try {
+          const arrivedAt = (sessionRow as any).arrived_at as string | undefined;
+          let derived: string | undefined;
+          try {
+            const hist = arrivedAt
+              ? await query(
+                  `SELECT MIN(recorded_at)::text AS t FROM gps_location_history
+                   WHERE session_id = $1::uuid AND recorded_at >= $2::timestamptz`,
+                  [sessionRow.id, arrivedAt]
+                )
+              : await query(
+                  `SELECT MIN(recorded_at)::text AS t FROM gps_location_history WHERE session_id = $1::uuid`,
+                  [sessionRow.id]
+                );
+            derived = hist.rows?.[0]?.t || undefined;
+          } catch {
+            /* ignore */
+          }
+          walkStart = derived || arrivedAt || walkStart;
+          if (walkStart && sessionRow.id) {
+            try {
+              await update('gps_tracking_sessions', { id: sessionRow.id }, { session_started_at: walkStart });
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (bookingWalkish && plannedWalkDurationMinutes && walkStart && bookingSt === 'in_progress') {
+        elapsedWalkSeconds = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(walkStart).getTime()) / 1000)
+        );
+        remainingWalkSeconds = Math.max(0, plannedWalkDurationMinutes * 60 - elapsedWalkSeconds);
+      }
+
       return c.json({
         success: true,
         tracking: {
@@ -916,6 +1001,14 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           distanceKm: finalDistance, // ✅ Use recalculated distance
           eta: finalEta, // ✅ Also set eta for frontend compatibility
           distance: finalDistance, // ✅ Also set distance for frontend compatibility
+          distance_traveled_km: distanceTraveledKm,
+          distanceTraveledKm,
+          planned_walk_duration_minutes: plannedWalkDurationMinutes,
+          plannedWalkDurationMinutes,
+          elapsed_walk_seconds: elapsedWalkSeconds,
+          elapsedWalkSeconds,
+          remaining_walk_seconds: remainingWalkSeconds,
+          remainingWalkSeconds,
           providerName,
           destinationAddress: destinationAddressText, // ✅ Full address text for display
           destinationAddressDetails, // ✅ Structured address details
