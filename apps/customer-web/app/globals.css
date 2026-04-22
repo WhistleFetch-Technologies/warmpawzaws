@@ -164,12 +164,12 @@ body {
 /* Customer-specific utility classes — safe-area helpers live in @layer utilities so Tailwind build order cannot drop their precedence. */
 
 /**
- * Mobile headers: env(safe-area-inset-top) is often 0 on Android Chrome / WebViews.
- * Use a generous minimum (~52px) so back/title clear the status bar; add inset when available.
+ * Mobile headers: env(safe-area-inset-top) is often 0 in embedded WebViews / some browsers.
+ * Use a generous minimum (~64px) so back/title clear the system status bar; add inset when available.
  */
 @layer utilities {
   .cw-header-safe-top {
-    padding-top: max(3.25rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    padding-top: max(4rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
   }
 
   @media (min-width: 768px) {

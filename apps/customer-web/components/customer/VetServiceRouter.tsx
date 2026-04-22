@@ -306,6 +306,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       serviceStyle: 'at_center',
       serviceTypeName: 'Vet Clinic',
       category: 'vet',
+      returnScreen: 'vet',
     });
   };
 

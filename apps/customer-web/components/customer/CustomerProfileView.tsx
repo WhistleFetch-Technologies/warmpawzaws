@@ -229,29 +229,8 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
-      {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
-      </div>
-
-      {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-200">
+      {/* Header — real device status bar is system-drawn; use safe-area padding only */}
+      <div className="cw-header-safe-top cw-header-safe-x pb-4 flex items-center justify-between border-b border-gray-200">
         <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
           <ChevronLeft className="w-6 h-6 text-gray-700" />
         </button>

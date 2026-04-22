@@ -281,9 +281,9 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col">
-      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10 flex-shrink-0">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      {/* Header — cw-header-safe-top clears notch / status bar in PWA and in-app WebViews */}
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10 flex-shrink-0 cw-header-safe-top">
+        <div className="max-w-7xl mx-auto pl-[max(1.5rem,env(safe-area-inset-left,0px))] pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-4">
           <div className="flex items-start gap-3">
             <button
               type="button"

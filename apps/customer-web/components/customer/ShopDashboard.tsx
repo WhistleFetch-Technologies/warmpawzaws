@@ -235,7 +235,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto relative">
       {/* Header with Search — safe-area-top (viewportFit: cover in root layout) */}
-      <div className="bg-white sticky top-0 z-50 isolate shadow-sm pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+      <div className="bg-white sticky top-0 z-50 isolate shadow-sm pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         <div className="px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3 mb-3">
             <button
