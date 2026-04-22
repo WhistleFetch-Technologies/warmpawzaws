@@ -31,6 +31,39 @@ export const CustomerPasswordLoginRequestSchema = z.object({
   role: z.enum(['customer']).optional(),
 });
 
+/** Vendor phone-as-username + password login (no OTP). Username uses same normalization as customer phone login. */
+export const VendorPasswordLoginRequestSchema = z.object({
+  username: z.string().min(3).max(64),
+  password: z.string().min(1),
+  role: z.enum(['vendor']).optional(),
+});
+
+/** Authenticated first-time vendor password setup (parity with customer set-password body). */
+export const VendorSetPasswordRequestSchema = z
+  .object({
+    password: z.string().optional(),
+    newPassword: z.string().optional(),
+    new_password: z.string().optional(),
+    confirmPassword: z.string().optional(),
+    confirm_password: z.string().optional(),
+  })
+  .transform((o) => {
+    const password = (o.password || o.newPassword || o.new_password || '').trim();
+    const confirmPassword = (o.confirmPassword || o.confirm_password || '').trim();
+    return { password, confirmPassword };
+  })
+  .pipe(
+    z
+      .object({
+        password: z.string().min(8, 'Password must be at least 8 characters'),
+        confirmPassword: z.string().min(8, 'Confirm password must be at least 8 characters'),
+      })
+      .refine((d) => d.password === d.confirmPassword, {
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      })
+  );
+
 /** Customer forgot password — request OTP to registered phone only (server-side). */
 export const CustomerForgotPasswordRequestSchema = z.object({
   username: z.string().min(1).max(256),
@@ -92,6 +125,8 @@ export const AuthResponseSchema = z.object({
 export type SendOtpRequest = z.infer<typeof SendOtpRequestSchema>;
 export type VerifyOtpRequest = z.infer<typeof VerifyOtpRequestSchema>;
 export type CustomerPasswordLoginRequest = z.infer<typeof CustomerPasswordLoginRequestSchema>;
+export type VendorPasswordLoginRequest = z.infer<typeof VendorPasswordLoginRequestSchema>;
+export type VendorSetPasswordRequest = z.infer<typeof VendorSetPasswordRequestSchema>;
 export type CustomerForgotPasswordRequest = z.infer<typeof CustomerForgotPasswordRequestSchema>;
 export type CustomerForgotPasswordVerifyOtp = z.infer<typeof CustomerForgotPasswordVerifyOtpSchema>;
 export type CustomerForgotPasswordReset = z.infer<typeof CustomerForgotPasswordResetSchema>;

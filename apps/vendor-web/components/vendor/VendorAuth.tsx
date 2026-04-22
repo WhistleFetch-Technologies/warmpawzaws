@@ -43,6 +43,9 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [showChatBot, setShowChatBot] = useState(false);
+  /** Phone + password sign-in (backend: username = dialable phone). */
+  const [loginPhoneDigits, setLoginPhoneDigits] = useState('');
+  const [loginCountryCode, setLoginCountryCode] = useState('+91');
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -141,45 +144,94 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     setError('');
 
     try {
-      // Use API Gateway for email/password login
-      const loginData = await apiClient.post<any>('/auth/login', {
-        email: formData.email,
-        password: formData.password,
-        portal: 'vendor'
-      });
-
-      if (loginData.error) {
-        throw new Error(loginData.error);
+      const digits = loginPhoneDigits.replace(/\D/g, '');
+      if (digits.length < 10) {
+        setError('Please enter a valid 10-digit mobile number');
+        setLoading(false);
+        return;
       }
 
-      const vendorData = await apiClient.get('/vendor/profile') as any;
-      
+      const usernamePhone = `${loginCountryCode}${digits.slice(-10)}`;
+
+      const loginRaw = await apiClient.post<any>('/auth/vendor/login', {
+        username: usernamePhone,
+        password: formData.password,
+        role: 'vendor',
+      });
+
+      let payload = loginRaw as Record<string, unknown>;
+      const inner = payload?.data as Record<string, unknown> | undefined;
+      if (inner?.data && typeof inner.data === 'object') {
+        payload = inner.data as Record<string, unknown>;
+      } else if (inner && 'token' in inner) {
+        payload = inner as Record<string, unknown>;
+      }
+
+      const tokens = (payload.token || {}) as Record<string, string>;
+      const accessToken =
+        tokens.access_token ||
+        (payload.access_token as string | undefined);
+      const user = (payload.user || {}) as Record<string, unknown>;
+      const profile = (payload.profile || {}) as Record<string, unknown>;
+
+      if (!accessToken) {
+        throw new Error('Authentication failed: No access token received');
+      }
+
+      const dialablePhone =
+        typeof user.phone === 'string' && user.phone
+          ? user.phone
+          : usernamePhone;
+
+      storeSession({
+        phone: dialablePhone,
+        accessToken,
+        user,
+        profile,
+        vendorId: (profile.id as string) || (user.id as string),
+      });
+
+      localStorage.setItem(
+        'vendorApplicationStatus',
+        String(profile.onboarding_status || 'INIT')
+      );
+      localStorage.setItem('vendorCountryCode', loginCountryCode);
+
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
+
+      const vendorData = (await apiClient.get('/vendor/profile')) as any;
+
       if (vendorData && vendorData.vendor) {
         if (vendorData.vendor.status === 'pending') {
           setPendingApproval(true);
           setLoading(false);
           return;
-        } else if (vendorData.vendor.status === 'rejected') {
+        }
+        if (vendorData.vendor.status === 'rejected') {
           setError('Your vendor account has been rejected. Please contact support.');
           setLoading(false);
           return;
         }
       }
 
-      // Store session
-      if (loginData.session) {
-        storeSession({
-          phone: loginData.user?.phone || formData.email,
-          accessToken: loginData.session.accessToken || loginData.session.token,
-          user: loginData.user,
-          profile: loginData.profile,
-          vendorId: loginData.profile?.id || loginData.profile?.vendorId
-        });
-      }
-
-      onAuthSuccess(loginData.session || loginData);
+      onAuthSuccess({
+        phone: dialablePhone,
+        accessToken,
+        user,
+        profile,
+        vendorId: (profile.id as string) || (user.id as string),
+        onboardingStatus: profile.onboarding_status || 'INIT',
+        state: payload.state || 'existing',
+      });
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
+      const errCode = err?.originalError?.error?.code;
+      const hint =
+        errCode === 'PASSWORD_NOT_SET'
+          ? ' No password on file yet. Use “New vendor? Register here” and sign in with OTP once, complete onboarding, then set your password when prompted.'
+          : '';
+      setError((err.message || 'Failed to sign in') + hint);
       console.error('Sign in error:', err);
     } finally {
       setLoading(false);
@@ -899,16 +951,32 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
 
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  className="mt-1"
-                />
+                <Label htmlFor="login-phone">Phone number</Label>
+                <div className="mt-1 flex items-stretch border-2 border-gray-200 rounded-lg focus-within:border-[#FF8C42] bg-white">
+                  <CountryCodeSelector
+                    selectedCode={loginCountryCode}
+                    onSelect={setLoginCountryCode}
+                    disabled={loading}
+                    className="rounded-l-lg"
+                  />
+                  <Input
+                    id="login-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="10-digit mobile"
+                    value={loginPhoneDigits}
+                    onChange={(e) =>
+                      setLoginPhoneDigits(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))
+                    }
+                    required
+                    maxLength={10}
+                    className="border-0 rounded-r-lg focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Use the mobile number registered on your vendor account. After your first onboarding, you can use this
+                  number with your password here; until then, use OTP from the registration flow.
+                </p>
               </div>
 
               <div>
