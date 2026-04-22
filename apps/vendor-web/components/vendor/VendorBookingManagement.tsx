@@ -26,7 +26,10 @@ import {
   type VendorCancellationReasonSlug,
 } from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
-import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import {
+  setHomeServiceTrackingReturnHref,
+  consumeSkipWalkAutoLiveTracker,
+} from '@/lib/vendor-live-tracker-nav';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -269,7 +272,14 @@ export function VendorBookingManagement({
   }, [walkSessionsFocus]);
 
   useEffect(() => {
-    if (!walkSessionsFocus || loading || walkSessionsWalkFlowDone.current) return;
+    if (!walkSessionsFocus || loading) return;
+
+    if (consumeSkipWalkAutoLiveTracker()) {
+      walkSessionsWalkFlowDone.current = true;
+      return;
+    }
+
+    if (walkSessionsWalkFlowDone.current) return;
 
     const eligible = bookings.filter(
       (b) =>

@@ -4,7 +4,10 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { HomeServiceTrackingManager } from '@/components/vendor/tracking/HomeServiceTrackingManager';
-import { consumeHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import {
+  consumeHomeServiceTrackingReturnHref,
+  setSkipWalkAutoLiveTrackerOnce,
+} from '@/lib/vendor-live-tracker-nav';
 
 function resolveHomeServiceBookingId(
   pathSegment: string | undefined,
@@ -115,10 +118,12 @@ export default function HomeServiceTrackingPageClient() {
   };
 
   const handleBack = () => {
+    setSkipWalkAutoLiveTrackerOnce();
     router.push(consumeHomeServiceTrackingReturnHref());
   };
 
   const handleComplete = (_result: any) => {
+    setSkipWalkAutoLiveTrackerOnce();
     const base = consumeHomeServiceTrackingReturnHref();
     const qIdx = base.indexOf('?');
     const pathPart = qIdx === -1 ? base : base.slice(0, qIdx);

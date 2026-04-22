@@ -21,3 +21,32 @@ export function consumeHomeServiceTrackingReturnHref(): string {
   }
   return '/bookings';
 }
+
+/**
+ * When returning from live tracker to `/bookings?walkSessions=1`, the walk auto-open effect
+ * would otherwise immediately replace back to home-service — set this once before navigating away.
+ */
+const SKIP_WALK_AUTO_KEY = 'warmpawz_vendor_skip_walk_live_redirect';
+
+export function setSkipWalkAutoLiveTrackerOnce() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(SKIP_WALK_AUTO_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+/** If set, clears the flag and returns true (skip one auto-open to live tracker). */
+export function consumeSkipWalkAutoLiveTracker(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (sessionStorage.getItem(SKIP_WALK_AUTO_KEY) === '1') {
+      sessionStorage.removeItem(SKIP_WALK_AUTO_KEY);
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
