@@ -13,6 +13,8 @@ import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -88,7 +90,6 @@ export function UniversalServicesByStyle({
   const [facility, setFacility] = useState<any>(null);
   const [rating, setRating] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('services');
   const [searchQuery, setSearchQuery] = useState('');
@@ -605,7 +606,7 @@ export function UniversalServicesByStyle({
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
-    const photos = facility?.photos || vendor?.photos || (profileProvider.photo ? [profileProvider.photo] : []);
+    const photos = getVendorHeroPhotoUrls({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
     const amenities = facility?.amenities || vendor?.amenities || [];
     const address = vendor?.address || facility?.address || profileProvider.address || '';
@@ -624,6 +625,7 @@ export function UniversalServicesByStyle({
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
         <ServiceDashboardHeader
+          className="!z-0 isolation-auto"
           serviceName={providerName}
           serviceSubtitle={specializationText}
           serviceIcon={RoleIcon}
@@ -632,70 +634,24 @@ export function UniversalServicesByStyle({
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
+          bottomEdge="flat"
         />
 
-        {/* Main Content - White Card */}
-        <div className="max-w-md mx-auto bg-white relative z-10">
-
-        {/* Large Hero Photo Gallery - Vet Provider Style */}
+        <div className="relative z-0 mx-auto max-w-md">
         {hasPhotos ? (
-          <div className="relative w-full bg-gray-200">
-            <div className="relative h-[280px] sm:h-[320px] overflow-hidden">
-              <img 
-                src={photos[selectedPhotoIndex]} 
-                alt={providerName} 
-                className="w-full h-full object-cover" 
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
+              <VendorHeroPhotoCarousel
+                photos={photos}
+                name={providerName}
+                frameClassName="relative h-[280px] overflow-hidden sm:h-[320px]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-              
-              {photos.length > 1 && (
-                <>
-                  <button
-                    onClick={() => setSelectedPhotoIndex(Math.max(0, selectedPhotoIndex - 1))}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={selectedPhotoIndex === 0}
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setSelectedPhotoIndex(Math.min(photos.length - 1, selectedPhotoIndex + 1))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={selectedPhotoIndex === photos.length - 1}
-                  >
-                    <ArrowLeft className="w-5 h-5 rotate-180" />
-                  </button>
-                  <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-sm font-medium">
-                    {selectedPhotoIndex + 1} / {photos.length}
-                  </div>
-                </>
-              )}
             </div>
-            
-            {/* Photo thumbnails strip */}
-            {photos.length > 1 && photos.length <= 5 && (
-              <div className="flex gap-2 p-3 bg-white overflow-x-auto scrollbar-hide">
-                {photos.map((photo: string, idx: number) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedPhotoIndex(idx)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                      selectedPhotoIndex === idx 
-                        ? 'border-[#FF8C42] ring-2 ring-[#FF8C42]/30' 
-                        : 'border-gray-200 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <img 
-                      src={photo} 
-                      alt={`${providerName} photo ${idx + 1}`} 
-                      className="w-full h-full object-cover" 
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         ) : (
-          <div className="relative w-full h-[280px] bg-gradient-to-br from-[#FF8C42] to-[#FF7029] flex items-center justify-center">
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] sm:rounded-t-[28px]">
+          <div className="relative flex h-[280px] w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029]">
             <div className="text-center text-white">
               {serviceStyle === 'tele' ? (
                 <Video className="w-20 h-20 mx-auto mb-3 opacity-50" />
@@ -705,6 +661,8 @@ export function UniversalServicesByStyle({
                 <Building2 className="w-20 h-20 mx-auto mb-3 opacity-50" />
               )}
               <p className="text-sm opacity-75">No photos available</p>
+            </div>
+          </div>
             </div>
           </div>
         )}

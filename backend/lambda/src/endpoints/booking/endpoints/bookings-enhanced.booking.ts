@@ -1820,11 +1820,20 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // ✅ SECURITY FIX: Get enriched booking data with service, vendor, customer, and pet info
     const bookingResult = await query(
       `SELECT b.*,
-              COALESCE(s.name, sc.service_name) as service_name,
-              COALESCE(s.category, sc.category_id::text) as service_category,
-              COALESCE(s.description, sc.description) as service_description,
-              COALESCE(s.duration_minutes, sc.duration_minutes) as service_duration,
+              COALESCE(s.name, sc.service_name, vs_row.vs_service_name) as service_name,
+              COALESCE(vs_row.vs_category, sc.category_name, sc.category_id::text, s.category::text) as service_category,
+              COALESCE(s.description, sc.description, vs_row.vs_custom_description) as service_description,
+              COALESCE(s.duration_minutes, sc.duration_minutes, vs_row.vs_custom_duration, vs_row.vs_duration_minutes, b.duration_minutes) as service_duration,
               sc.specialization_ids as service_specialization_ids,
+              sc.display_name as catalog_display_name,
+              sc.base_price as catalog_base_price,
+              sc.category_name as catalog_category_name,
+              sc.sub_category_name as catalog_sub_category_name,
+              sc.service_style as catalog_service_style,
+              vs_row.vs_service_style as vs_service_style,
+              vs_row.vs_price as vs_price,
+              vs_row.vs_custom_price as vs_custom_price,
+              vs_row.vs_sub_category as vs_sub_category,
               v.business_name as vendor_name,
               v.owner_name as vendor_owner_name,
               v.phone as vendor_phone,
@@ -1849,6 +1858,25 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
        FROM bookings b
        LEFT JOIN services s ON b.service_id = s.id
        LEFT JOIN service_catalog sc ON b.service_id = sc.id
+       LEFT JOIN LATERAL (
+         SELECT
+           vs.service_name as vs_service_name,
+           vs.service_style as vs_service_style,
+           vs.custom_description as vs_custom_description,
+           vs.price as vs_price,
+           vs.custom_price as vs_custom_price,
+           vs.duration_minutes as vs_duration_minutes,
+           vs.custom_duration as vs_custom_duration,
+           vs.category as vs_category,
+           vs.sub_category as vs_sub_category
+         FROM vendor_services vs
+         WHERE vs.vendor_id = b.vendor_id
+           AND (vs.service_id = b.service_id OR vs.id = b.service_id)
+         ORDER BY
+           CASE WHEN vs.service_id = b.service_id THEN 0 WHEN vs.id = b.service_id THEN 1 ELSE 2 END,
+           vs.updated_at DESC NULLS LAST
+         LIMIT 1
+       ) vs_row ON true
        LEFT JOIN vendors v ON b.vendor_id = v.id
        LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN LATERAL (
@@ -1979,16 +2007,63 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       scheduledTime: booking.booking_time, // Alias for frontend compatibility
       schedule: booking.booking_time, // Alias for frontend compatibility
       startDate: booking.booking_date, // Alias for frontend compatibility
-      // Service info (specialization from catalog when available)
-      service: booking.service_name ? {
-        id: booking.service_id,
-        name: booking.service_name,
-        category: booking.service_category,
-        description: booking.service_description,
-        duration: booking.service_duration || booking.duration_minutes,
-        specializationIds: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
-        specialization_ids: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
-      } : null,
+      serviceType: booking.service_type,
+      // Service info (vendor_services + catalog + legacy services — matches customer catalog shape)
+      service: booking.service_name
+        ? (() => {
+            const durationNum =
+              Number(booking.service_duration ?? booking.duration_minutes ?? 30) || 30;
+            const style =
+              booking.vs_service_style ||
+              booking.catalog_service_style ||
+              booking.service_type ||
+              null;
+            const displayName =
+              (booking.catalog_display_name && String(booking.catalog_display_name).trim()) ||
+              booking.service_name;
+            const basePrice =
+              parseFloat(String(booking.catalog_base_price ?? booking.vs_price ?? 0)) || 0;
+            const price =
+              parseFloat(
+                String(
+                  booking.vs_custom_price ??
+                    booking.vs_price ??
+                    booking.catalog_base_price ??
+                    booking.total_amount ??
+                    0
+                )
+              ) || basePrice;
+            const spec = booking.service_specialization_ids;
+            const specArr: any[] = Array.isArray(spec)
+              ? spec
+              : spec != null
+                ? [spec as any]
+                : [];
+            return {
+              serviceId: booking.service_id,
+              id: booking.service_id,
+              serviceName: booking.service_name,
+              name: booking.service_name,
+              displayName: displayName || booking.service_name,
+              description: booking.service_description ?? null,
+              service_style: style,
+              serviceStyle: style,
+              basePrice,
+              price,
+              duration: durationNum,
+              durationMinutes: durationNum,
+              category: booking.service_category ?? null,
+              sub_category:
+                booking.catalog_sub_category_name != null
+                  ? String(booking.catalog_sub_category_name)
+                  : booking.vs_sub_category != null
+                    ? String(booking.vs_sub_category)
+                    : null,
+              specializationIds: specArr,
+              specialization_ids: specArr,
+            };
+          })()
+        : null,
       // Vendor info
       vendor: booking.vendor_name ? {
         id: booking.vendor_id,
