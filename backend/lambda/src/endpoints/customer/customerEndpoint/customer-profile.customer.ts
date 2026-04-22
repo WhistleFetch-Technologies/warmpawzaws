@@ -16,13 +16,17 @@
  */
 
 import { Hono } from 'hono';
+import {
+  handleCustomerAccountStatus,
+  handleCustomerSetPassword,
+  hasMeaningfulStoredPassword,
+} from './customer-password';
 import { select, update, query, insert } from '../../../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
 import { regeneratePresignedUrl } from '../../constants/helper';
-
 /**
  * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
  * presignS3GetUrlIfApplicable returns any string that already contains X-Amz-* unchanged,
@@ -323,6 +327,13 @@ async function resolveCustomerId(identifier: string): Promise<string | null> {
 }
 
 export function registerCustomerProfileEndpoints(app: Hono) {
+  // Literal password routes MUST be registered before GET /customer/profile/:identifier or "password-status"
+  // is treated as a profile identifier and returns 404 "Customer not found".
+  app.get('/customer/profile/password-status', handleCustomerAccountStatus);
+  app.post('/customer/profile/set-password', handleCustomerSetPassword);
+  app.get('/customer/account/status', handleCustomerAccountStatus);
+  app.post('/customer/account/password', handleCustomerSetPassword);
+
   /**
    * GET /customer/profile/unified/:identifier
    * Get unified customer profile with wallet, addresses, bookings, orders
@@ -454,6 +465,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       console.log('[profile/unified] Successfully fetched profile for customer:', customerId);
+      const hasPassword = hasMeaningfulStoredPassword(customer.password_hash);
       return c.json({
         success: true,
         profile: {
@@ -461,6 +473,9 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           name: customer.full_name,
           email: customer.email,
           phone: customer.phone,
+          username: customer.username || null,
+          has_password: hasPassword,
+          needs_password_setup: !hasPassword,
           status: customerStatus,
           onboarding_status: onboardingStatus,
           profile_completed: profileCompleted,
@@ -652,10 +667,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   /**
    * GET /customer/profile/:identifier
    * Get customer profile (basic)
+   *
+   * NOTE: Hono may match this param route before the literal GET /customer/profile/password-status
+   * registered in registerCustomerPasswordEndpoints. Treat reserved segments here so password-status
+   * never returns a spurious "Customer not found" 404.
    */
   app.get("/customer/profile/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
+      if (identifier === 'password-status') {
+        return handleCustomerAccountStatus(c);
+      }
 
       const customerId = await resolveCustomerId(identifier);
       if (!customerId) {
@@ -1001,6 +1023,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }, 500);
       }
 
+      if (error.message && /column "latitude"|column "longitude"/i.test(error.message)) {
+        console.error('[PROFILE] customers.latitude/longitude missing. Run migration 1005_customers_latitude_longitude.sql');
+        return c.json(
+          {
+            error: 'Database schema mismatch. Run migration 1005_customers_latitude_longitude.sql on the API database.',
+            details: error.message,
+          },
+          500
+        );
+      }
+
       return c.json({ error: error.message }, 500);
     }
   });
@@ -1178,6 +1211,15 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);
+      if (error.message && /column "latitude"|column "longitude"/i.test(error.message)) {
+        return c.json(
+          {
+            error: 'Database schema mismatch. Run migration 1005_customers_latitude_longitude.sql on the API database.',
+            details: error.message,
+          },
+          500
+        );
+      }
       return c.json({ error: error.message }, 500);
     }
   });

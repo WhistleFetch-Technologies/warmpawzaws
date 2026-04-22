@@ -10,6 +10,12 @@ import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
 } from '@/components/legal/PlatformLegalPolicyDialog';
+import {
+  getStoredCustomerJwtForSession,
+  setNeedsPasswordSetupAfterOtp,
+  clearNeedsPasswordSetup,
+} from '@/lib/session-utils';
+import { Eye, EyeOff } from 'lucide-react';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -74,6 +80,11 @@ function AuthPageContent() {
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
+  /** First-time users: OTP (signup). Returning users: username + password. */
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -118,7 +129,7 @@ function AuthPageContent() {
 
     // Check if already logged in (after session init)
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+    const storedToken = getStoredCustomerJwtForSession();
 
     if (storedPhone && storedToken) {
       // Verify token is not expired
@@ -190,7 +201,101 @@ function AuthPageContent() {
     }
   };
 
-  // Verifying Otp & UAT mode otp
+  const passwordLogin = async () => {
+    const user = loginUsername.trim();
+    const pass = loginPassword.trim();
+    if (!user || !pass) {
+      setError('Enter username and password');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const body = await apiClient.post<any>('/auth/login', {
+        username: user,
+        password: pass,
+        role: 'customer',
+      });
+      const responseData = (body as any).data?.data || (body as any).data || body;
+      const isOk = (body as any).success ?? responseData?.success;
+      const inner = responseData?.data && responseData.data.token ? responseData.data : responseData;
+      if (!isOk || !inner?.token) {
+        setError('Login failed');
+        return;
+      }
+
+      const tokenData = inner.token;
+      const accessToken = tokenData.access_token || tokenData.accessToken;
+      const refreshToken = tokenData.refresh_token || tokenData.refreshToken;
+      const idToken = tokenData.id_token || tokenData.idToken;
+      const expiresIn = tokenData.expires_in || tokenData.expiresIn || 86400;
+      const userData = inner.user;
+      const profile = inner.profile;
+
+      const digits = String(userData?.phone || user)
+        .replace(/\D/g, '')
+        .slice(-10);
+      if (digits.length >= 10) {
+        localStorage.setItem('customerPhone', digits);
+        localStorage.setItem('customer_phone', digits);
+        localStorage.setItem('phone', digits);
+      }
+
+      if (idToken && accessToken) {
+        const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+        storeCognitoTokens({
+          accessToken,
+          idToken,
+          refreshToken: refreshToken || '',
+          expiresIn,
+        });
+        if (userData?.id) {
+          storeUserInfo({
+            userId: userData.id,
+            phone: digits || user,
+            username: profile?.username || user,
+          });
+        }
+      } else if (accessToken) {
+        localStorage.setItem('authToken', accessToken);
+        if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+      }
+
+      sessionStorage.setItem('_warmpawz_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
+      clearNeedsPasswordSetup();
+
+      try {
+        const phoneKey = localStorage.getItem('customerPhone') || digits;
+        if (phoneKey && phoneKey.length >= 10) {
+          const profileResponse = await apiClient.get<any>(
+            `/customer/profile/unified/${encodeURIComponent(phoneKey)}`
+          );
+          if (profileResponse?.profile) {
+            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            persistCustomerDatabaseId(profileResponse.profile);
+          }
+        }
+      } catch {
+        /* optional */
+      }
+
+      const redirectPath =
+        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+      router.push(redirectPath);
+    } catch (err: any) {
+      const code = err?.responseData?.error?.code || err?.code;
+      if (code === 'PASSWORD_NOT_SET') {
+        setError('Use Sign up with OTP once to verify your phone, then create a password.');
+      } else {
+        setError(err.message || 'Login failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const verifyOtp = async () => {
     if (!otp || otp.length !== 6) {
       setError('Please enter the 6-digit OTP');
@@ -222,8 +327,11 @@ function AuthPageContent() {
       sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
       console.log('✅ [Auth] UAT Mode (no referral) - sessionStorage flags set before navigation');
 
+      let profileResponse: any = undefined;
       try {
-        const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+        profileResponse = await apiClient.get<any>(
+          `/customer/profile/unified/${encodeURIComponent(cleanPhone)}`
+        );
         if (profileResponse?.profile) {
           localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
           localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
@@ -265,7 +373,33 @@ function AuthPageContent() {
       }
 
       setLoading(false);
-      router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
+
+      const innerProfileUat = profileResponse?.profile as { has_password?: boolean } | undefined;
+      const hasPasswordUat = Boolean(innerProfileUat?.has_password);
+      const redirectPathUat =
+        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+      if (!hasPasswordUat) {
+        setNeedsPasswordSetupAfterOtp();
+        const profileCompleted =
+          localStorage.getItem('profile_completed') === 'true' ||
+          localStorage.getItem('onboarding_completed') === 'true';
+        const onboardingDone =
+          localStorage.getItem('customerOnboardingComplete') === 'true';
+        const goProfileFirst = !profileCompleted && !onboardingDone;
+        if (goProfileFirst) {
+          router.push('/profile');
+        } else {
+          const afterPwd =
+            localStorage.getItem('onboarding_completed') === 'true' ||
+            localStorage.getItem('customerOnboardingComplete') === 'true'
+              ? '/'
+              : '/onboarding';
+          router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
+        }
+      } else {
+        clearNeedsPasswordSetup();
+        router.push(redirectPathUat);
+      }
       return;
     }
 
@@ -326,8 +460,13 @@ function AuthPageContent() {
             expiresIn: expiresIn,
           });
           const userData = responseData?.user || response.user;
+          const prof = responseData?.profile;
           if (userData?.id) {
-            storeUserInfo({ userId: userData.id, phone, username: userData.phone || phone });
+            storeUserInfo({
+              userId: userData.id,
+              phone: shortPhone,
+              username: prof?.username || userData.phone || shortPhone,
+            });
           }
         } else if (accessToken) {
           // Fallback to legacy token storage
@@ -348,12 +487,16 @@ function AuthPageContent() {
         }
 
         // Get customer profile; cache pets for app use without using pet count for routing
+        let unifiedProfileForAuth: Record<string, unknown> | undefined = undefined;
         try {
-          const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          const profileResponse = await apiClient.get<any>(
+            `/customer/profile/unified/${encodeURIComponent(shortPhone)}`
+          );
           console.log('✅ [Auth] Profile response:', profileResponse);
 
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
+            unifiedProfileForAuth = profile as Record<string, unknown>;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
             const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
             const nameVal = profile.name || profile.full_name || '';
@@ -424,10 +567,41 @@ function AuthPageContent() {
           }
         }
 
-        // ✅ FIX: Always navigate after successful verification (same as UAT mode)
-        const redirectPath = redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
-        console.log('🚀 [Auth] Navigating to:', redirectPath);
-        router.push(redirectPath);
+        const otpPayloadProfile =
+          (responseData?.profile as { has_password?: boolean } | undefined) ??
+          ((responseData as any)?.data?.profile as { has_password?: boolean } | undefined);
+        const hasPassword = Boolean(
+          (unifiedProfileForAuth as { has_password?: boolean } | undefined)?.has_password ??
+            otpPayloadProfile?.has_password
+        );
+        const redirectPath =
+          redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+
+        if (!hasPassword) {
+          setNeedsPasswordSetupAfterOtp();
+          const profileCompleted =
+            localStorage.getItem('profile_completed') === 'true' ||
+            localStorage.getItem('onboarding_completed') === 'true';
+          const onboardingDone =
+            localStorage.getItem('customerOnboardingComplete') === 'true';
+          const goProfileFirst = !profileCompleted && !onboardingDone;
+          if (goProfileFirst) {
+            console.log('🚀 [Auth] Password required — profile first, then set-password');
+            router.push('/profile');
+          } else {
+            const afterPwd =
+              localStorage.getItem('onboarding_completed') === 'true' ||
+              localStorage.getItem('customerOnboardingComplete') === 'true'
+                ? '/'
+                : '/onboarding';
+            console.log('🚀 [Auth] Password required — set-password then', afterPwd);
+            router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
+          }
+        } else {
+          clearNeedsPasswordSetup();
+          console.log('🚀 [Auth] Navigating to:', redirectPath);
+          router.push(redirectPath);
+        }
       } else {
         console.error('❌ [Auth] OTP verification failed - response:', response);
         setError('Invalid OTP. Please try again.');
@@ -620,11 +794,20 @@ function AuthPageContent() {
           <div className="bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
             {/* Subtitle */}
             <p className="text-center text-gray-600 mb-8 text-base leading-relaxed">
-              Join our community of pet lovers and access<br />the best care for your furry friends
+              {authMode === 'login' ? (
+                <>
+                  Log in with your username (usually your 10-digit mobile number)<br />
+                  and the password you created after signup.
+                </>
+              ) : (
+                <>
+                  Join our community of pet lovers and access<br />the best care for your furry friends
+                </>
+              )}
             </p>
 
             {/* UAT Mode Message */}
-            {UAT_MODE && (
+            {UAT_MODE && authMode === 'signup' && (
               <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-400 rounded-xl text-center">
                 <p className="text-yellow-800 text-sm font-semibold mb-1">
                   🧪 UAT MODE ACTIVE
@@ -643,8 +826,64 @@ function AuthPageContent() {
               </div>
             )}
 
-            {/* Phone Input Section */}
+            {/* Login (username + password) or Sign up (phone OTP) */}
             <div className="space-y-4">
+              {authMode === 'login' ? (
+                <>
+                  <label className="block text-gray-700 font-medium mb-2">Username</label>
+                  <input
+                    type="text"
+                    autoComplete="username"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                  />
+                  <label className="block text-gray-700 font-medium mb-2">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Your password"
+                      className="w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((v) => !v)}
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 active:scale-95 transition-colors"
+                    >
+                      {showLoginPassword ? (
+                        <EyeOff className="h-5 w-5" aria-hidden />
+                      ) : (
+                        <Eye className="h-5 w-5" aria-hidden />
+                      )}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={passwordLogin}
+                    disabled={loading || !loginUsername.trim() || !loginPassword.trim()}
+                    className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                  >
+                    {loading ? 'Signing in…' : 'Log in'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setShowLoginPassword(false);
+                      setError(null);
+                    }}
+                    className="w-full text-center text-sm text-[#FF8C42] font-medium hover:underline pt-2"
+                  >
+                    New user? Sign up with phone (OTP)
+                  </button>
+                </>
+              ) : (
+                <>
               <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
 
               {/* Phone Input with Country Code Selector */}
@@ -747,6 +986,18 @@ function AuthPageContent() {
                   'Send Verification Code'
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setError(null);
+                }}
+                className="w-full text-center text-sm text-gray-600 hover:text-[#FF8C42] pt-2"
+              >
+                Already have a password? Log in
+              </button>
+                </>
+              )}
             </div>
 
             {/* Terms Footer */}
