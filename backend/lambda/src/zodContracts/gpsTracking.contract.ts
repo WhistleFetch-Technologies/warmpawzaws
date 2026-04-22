@@ -6,14 +6,29 @@ export const bookingServiceOtpSchema = z
   .string()
   .regex(/^\d{4}$|^\d{6}$/, "OTP must be 4 or 6 digits");
 
+/** Client may send extra metadata; only vendorId + otp are used by the handler. */
 export const startSessionRequestSchema = z.object({
-    otp: bookingServiceOtpSchema,
     vendorId: uuidSchema,
+    otp: bookingServiceOtpSchema,
+    startedAt: z.string().optional(),
+    location: z.preprocess(
+        (val) => (val === null ? undefined : val),
+        z
+            .object({
+                latitude: z.union([z.number(), z.string()]).transform((v) => (typeof v === 'string' ? parseFloat(v) : v)),
+                longitude: z.union([z.number(), z.string()]).transform((v) => (typeof v === 'string' ? parseFloat(v) : v)),
+                accuracy: z.union([z.number(), z.string()]).transform((v) => (typeof v === 'string' ? parseFloat(v) : v)).optional(),
+                timestamp: z.string().optional(),
+            })
+            .optional()
+    ),
 }).strict();
 
 export const completeBookingRequestSchema = z.object({
-    otp: bookingServiceOtpSchema.optional(),
     vendorId: uuidSchema,
+    /** Required for in-person / at-home completion; tele flows omit and handler skips OTP. */
+    otp: z.preprocess((val) => (val === null || val === '' ? undefined : val), bookingServiceOtpSchema.optional()),
+    notes: safeStringSchema(5000).optional(),
 }).strict();
 
 
