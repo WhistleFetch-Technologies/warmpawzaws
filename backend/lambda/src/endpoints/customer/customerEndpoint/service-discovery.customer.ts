@@ -133,30 +133,45 @@ function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v', styleParam: string):
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
 
 /**
- * Unified vendor photo URL: profile_photo_url (vendor profile upload) takes precedence,
- * then profile_image, logo_url, then first facility photo from metadata.
+ * Center / business listings: gallery (metadata.facility_photos) is the source of truth for the public avatar.
+ * Solo providers keep profile_photo_url as the primary headshot; gallery is supplementary.
+ */
+function vendorGalleryDrivesListingPhoto(v: any): boolean {
+  const vt = String(v?.vendor_type ?? '').toLowerCase().trim();
+  return vt !== 'solo';
+}
+
+/**
+ * Unified vendor photo URL: for business/center vendors, first facility gallery photo wins (same as former "center photo" in profile),
+ * then profile_photo_url / profile_image / logo_url, then first facility photo as fallback for solo.
  * ✅ FIX: Regenerates pre-signed URLs on-demand to avoid 403 errors from expired URLs.
  * Use in all discovery endpoints so clinic/solo cards show photos consistently.
  */
 async function getVendorPhotoUrl(v: any): Promise<string | null> {
   if (!v) return null;
-  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
-  if (url && String(url).trim()) {
-    // ✅ FIX: Regenerate pre-signed URL if it's an S3 key or expired URL
-    return await regeneratePresignedUrl(url);
-  }
+  let firstFacility: string | null = null;
   try {
     const meta = v.metadata;
     const m = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : meta || {};
     const photos = m?.facility_photos || m?.photos;
-    const first = Array.isArray(photos) ? photos[0] : null;
-    if (first && String(first).trim()) {
-      return await regeneratePresignedUrl(first);
-    }
-    return null;
+    const first = Array.isArray(photos) && photos[0] ? String(photos[0]).trim() : '';
+    if (first) firstFacility = first;
   } catch {
-    return null;
+    firstFacility = null;
   }
+
+  if (firstFacility && vendorGalleryDrivesListingPhoto(v)) {
+    return await regeneratePresignedUrl(firstFacility);
+  }
+
+  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
+  if (url && String(url).trim()) {
+    return await regeneratePresignedUrl(url);
+  }
+  if (firstFacility) {
+    return await regeneratePresignedUrl(firstFacility);
+  }
+  return null;
 }
 
 const columnExistsCache = new Map<string, boolean>();
@@ -4183,6 +4198,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[FACILITY-SAVE] Normalized ${normalizedPhotos.length} photos from ${photosInput.length} input photos`);
         updatedMetadata.facility_photos = normalizedPhotos;
         metadataChanged = true;
+        // Business/center: listing avatar follows first gallery image (customer discovery + profile_photo_url consumers).
+        if (vendorGalleryDrivesListingPhoto(vendor)) {
+          updateData.profile_photo_url = normalizedPhotos.length > 0 ? normalizedPhotos[0] : null;
+        }
       }
 
       // ✅ FIX: Store description in metadata (column doesn't exist in vendors table)
@@ -4353,10 +4372,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const allPhotos = [...existingPhotos, ...photoUrls];
 
       const { update } = await import('../../../database/rds-connection');
-      await update('vendors', { id: actualVendorId }, {
+      const vendorPatch: Record<string, unknown> = {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: new Date().toISOString(),
-      });
+      };
+      if (vendorGalleryDrivesListingPhoto(vendor)) {
+        vendorPatch.profile_photo_url = allPhotos.length > 0 ? allPhotos[0] : null;
+      }
+      await update('vendors', { id: actualVendorId }, vendorPatch);
 
       console.log(`✅ [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${actualVendorId}`);
 

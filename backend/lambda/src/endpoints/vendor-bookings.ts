@@ -23,6 +23,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedService
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { loadBookingServiceSnapshot, snapshotToNestedService } from '../utils/booking-service-snapshot';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -136,12 +137,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       // Enrich bookings with customer, service, vendor, and related data (prescriptions, medical records, chat)
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service, vendor, prescriptions, medicalRecords, chatMessages] = await Promise.all([
+          const [customer, vendor, prescriptions, medicalRecords, chatMessages] = await Promise.all([
             booking.customer_id
               ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
               : Promise.resolve([]),
             // ✅ FIX: Add vendor lookup for chat enabled logic
             booking.vendor_id
@@ -171,18 +169,41 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           const medicalRecordCount = parseInt(medicalRecords.rows[0]?.count || '0', 10);
           const unreadMessageCount = parseInt(chatMessages.rows[0]?.count || '0', 10);
 
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          let serviceNested: Record<string, unknown> | null = serviceSnap ? snapshotToNestedService(serviceSnap) : null;
+          if (!serviceNested && booking.service_id) {
+            const legacy = await select('services', { id: booking.service_id }).catch(() => []);
+            if (legacy.length > 0) {
+              serviceNested = {
+                id: legacy[0].id,
+                serviceId: legacy[0].id,
+                name: legacy[0].name,
+                serviceName: legacy[0].name,
+                displayName: legacy[0].name,
+                description: legacy[0].description ?? null,
+                category: legacy[0].category ?? null,
+                sub_category: null,
+                service_style: booking.service_type ?? null,
+                serviceStyle: booking.service_type ?? null,
+                basePrice: Number(legacy[0].price ?? 0),
+                price: Number(legacy[0].price ?? 0),
+                duration: Number(legacy[0].duration_minutes ?? 30),
+                durationMinutes: Number(legacy[0].duration_minutes ?? 30),
+              };
+            }
+          }
+
           return {
             ...booking,
+            serviceType: booking.service_type,
+            serviceStyle: booking.service_type,
+            serviceName: serviceSnap?.serviceName || booking.service_name,
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name,
               phone: customer[0].phone,
             } : null,
-            service: service.length > 0 ? {
-              id: service[0].id,
-              name: service[0].name,
-              category: service[0].category,
-            } : null,
+            service: serviceNested,
             // Rule engine: Chat available for chat_available_days_post_appointment days after completion
             chatEnabled: (() => {
               if (booking.status === 'cancelled') return false;
@@ -729,7 +750,12 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
           : Promise.resolve([]),
         // Service catalog (when booking.service_id is catalog id) for name + specialization_ids + service_style
         booking.service_id
-          ? query('SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1', [booking.service_id]).then((r: any) => r.rows).catch(() => [])
+          ? query(
+              'SELECT service_name, display_name, description, category_id, category_name, base_price, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1',
+              [booking.service_id]
+            )
+              .then((r: any) => r.rows)
+              .catch(() => [])
           : Promise.resolve([]),
         // Pet info - use extracted petIdToUse
         petIdToUse
@@ -756,6 +782,8 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         packagePurchasePromise,
       ]);
 
+      const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -772,7 +800,8 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         startDate: booking.booking_date, // Alias for frontend compatibility
         duration: booking.duration || 30,
         totalAmount: parseFloat(booking.total_amount || '0'),
-        serviceStyle: booking.service_style || booking.service_type || 'at_clinic',
+        serviceStyle: serviceSnap?.serviceStyle || booking.service_style || booking.service_type || 'at_clinic',
+        serviceType: booking.service_type,
         notes: booking.notes,
         specialInstructions: booking.special_instructions,
         paymentStatus: booking.payment_status || 'pending',
@@ -839,23 +868,60 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
           photo_url: null,
         } : null),
         
-        // Service details (prefer catalog for name + specialization; fallback to legacy services)
-        serviceName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : (service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service'),
-        serviceCategory: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : null),
-        serviceDescription: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
+        // Service details (vendor_services + catalog; fixes catalog UUID not in legacy `services` table)
+        serviceName:
+          serviceSnap?.serviceName ||
+          (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
+          (service.length > 0 ? service[0].name : null) ||
+          booking.service_name ||
+          'Unknown Service',
+        serviceCategory:
+          serviceSnap?.category ||
+          (catalogService.length > 0 ? catalogService[0].category_id : null) ||
+          (service.length > 0 ? service[0].category : null),
+        serviceDescription:
+          serviceSnap?.description ||
+          (catalogService.length > 0 ? catalogService[0].description : null) ||
+          (service.length > 0 ? service[0].description : null),
         // Service object for structured access (include specializationIds and service_style from catalog when available)
-        service: (catalogService.length > 0 || service.length > 0) ? {
-          id: (catalogService[0] || service[0])?.id || booking.service_id,
-          name: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
-          category: catalogService.length > 0 ? catalogService[0].category_id : service[0].category,
-          description: catalogService.length > 0 ? catalogService[0].description : service[0].description,
-          duration: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
-          specializationIds: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
-          specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
-          // ✅ FIX: Include service_style for tele consultation detection (handles center-based tele consultations)
-          service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
-          serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
-        } : null,
+        service: (() => {
+          const cat = catalogService[0];
+          const specRaw = cat?.specialization_ids;
+          const specArr: any[] = Array.isArray(specRaw)
+            ? specRaw
+            : specRaw != null
+              ? [specRaw as any]
+              : [];
+          if (serviceSnap) {
+            const base = snapshotToNestedService(serviceSnap);
+            return {
+              ...base,
+              specializationIds: specArr,
+              specialization_ids: specArr,
+            };
+          }
+          if (catalogService.length > 0 || service.length > 0) {
+            return {
+              id: booking.service_id,
+              serviceId: booking.service_id,
+              name: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
+              serviceName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
+              displayName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
+              category: catalogService.length > 0 ? catalogService[0].category_id : service[0].category,
+              sub_category: null,
+              description: catalogService.length > 0 ? catalogService[0].description : service[0].description,
+              duration: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
+              durationMinutes: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
+              basePrice: catalogService.length > 0 ? Number(cat?.base_price ?? 0) : Number(service[0]?.price ?? 0),
+              price: catalogService.length > 0 ? Number(cat?.base_price ?? 0) : Number(service[0]?.price ?? 0),
+              specializationIds: specArr,
+              specialization_ids: specArr,
+              service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
+              serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
+            };
+          }
+          return null;
+        })(),
         
         // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)
         address_id: (booking as any).address_id || null,
@@ -998,27 +1064,45 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
       // Enrich bookings with customer and service data
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service] = await Promise.all([
-            booking.customer_id
-              ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
-              : Promise.resolve([]),
-          ]);
+          const customer = booking.customer_id
+            ? await select('customers', { id: booking.customer_id }).catch(() => [])
+            : [];
+
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          let serviceNested: Record<string, unknown> | null = serviceSnap ? snapshotToNestedService(serviceSnap) : null;
+          if (!serviceNested && booking.service_id) {
+            const legacy = await select('services', { id: booking.service_id }).catch(() => []);
+            if (legacy.length > 0) {
+              serviceNested = {
+                id: legacy[0].id,
+                serviceId: legacy[0].id,
+                name: legacy[0].name,
+                serviceName: legacy[0].name,
+                displayName: legacy[0].name,
+                description: legacy[0].description ?? null,
+                category: legacy[0].category ?? null,
+                sub_category: null,
+                service_style: booking.service_type ?? null,
+                serviceStyle: booking.service_type ?? null,
+                basePrice: Number(legacy[0].price ?? 0),
+                price: Number(legacy[0].price ?? 0),
+                duration: Number(legacy[0].duration_minutes ?? 30),
+                durationMinutes: Number(legacy[0].duration_minutes ?? 30),
+              };
+            }
+          }
 
           return {
             ...booking,
+            serviceType: booking.service_type,
+            serviceStyle: booking.service_type,
+            serviceName: serviceSnap?.serviceName || booking.service_name,
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name || customer[0].name,
               phone: customer[0].phone,
             } : null,
-            service: service.length > 0 ? {
-              id: service[0].id,
-              name: service[0].name,
-              category: service[0].category,
-            } : null,
+            service: serviceNested,
             chatEnabled: true,
             hasUnreadMessages: false,
             unreadMessageCount: 0,
@@ -1074,24 +1158,29 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
       // Enrich bookings with customer and service data
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service] = await Promise.all([
-            booking.customer_id
-              ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
-              : Promise.resolve([]),
-          ]);
-
+          const customer = booking.customer_id
+            ? await select('customers', { id: booking.customer_id }).catch(() => [])
+            : [];
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          const legacy =
+            !serviceSnap && booking.service_id
+              ? await select('services', { id: booking.service_id }).catch(() => [])
+              : [];
+          const serviceLabel =
+            serviceSnap?.serviceName ||
+            (legacy.length > 0 ? legacy[0].name : null) ||
+            'Unknown Service';
+          const styleFromSnap = serviceSnap?.serviceStyle || serviceSnap?.service_style;
           return {
             id: booking.id,
             customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
-            service_name: service.length > 0 ? service[0].name : 'Unknown Service',
+            service_name: serviceLabel,
             booking_date: booking.booking_date,
             booking_time: booking.booking_time,
             status: booking.status,
             total_amount: parseFloat(booking.total_amount || '0'),
-            service_style: booking.service_style || 'at_clinic',
+            service_style: styleFromSnap || booking.service_type || booking.service_style || 'at_clinic',
+            service: serviceSnap ? snapshotToNestedService(serviceSnap) : null,
           };
         })
       );

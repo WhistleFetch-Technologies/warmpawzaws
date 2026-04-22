@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Camera, Upload, ChevronRight, ChevronLeft, Check, AlertCircle,
   Calendar, Syringe, Heart, Shield, Dog, Cat, Sparkles, Image as ImageIcon,
@@ -136,7 +136,6 @@ export function EnhancedAddPetModal({
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Pet data state
   const [petData, setPetData] = useState<PetData>({
@@ -501,10 +500,11 @@ export function EnhancedAddPetModal({
               </div>
               
               <div className="flex flex-col items-center">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingPhoto}
-                  className={`relative w-48 h-48 rounded-3xl overflow-hidden border-4 transition-all ${
+                <label
+                  htmlFor="enhanced-add-pet-photo-input"
+                  className={`relative flex w-48 h-48 rounded-3xl overflow-hidden border-4 transition-all ${
+                    uploadingPhoto ? 'pointer-events-none cursor-default' : 'cursor-pointer'
+                  } ${
                     validationErrors.photo 
                       ? 'border-red-400 bg-red-50' 
                       : photoPreview 
@@ -521,7 +521,7 @@ export function EnhancedAddPetModal({
                       </div>
                     </>
                   ) : uploadingPhoto ? (
-                    <div className="flex flex-col items-center justify-center h-full">
+                    <div className="flex flex-col items-center justify-center h-full w-full">
                       <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
                       <p className="mt-3 text-sm text-gray-600">Uploading... {uploadProgress}%</p>
                       <div className="mt-2 w-40 bg-gray-200 rounded-full h-1.5">
@@ -532,7 +532,7 @@ export function EnhancedAddPetModal({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-full">
+                    <div className="flex flex-col items-center justify-center h-full w-full">
                       <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
                         <Camera className="w-8 h-8 text-orange-500" />
                       </div>
@@ -540,15 +540,15 @@ export function EnhancedAddPetModal({
                       <p className="text-xs text-gray-500 mt-1">JPG, PNG up to 5MB</p>
                     </div>
                   )}
-                </button>
+                </label>
                 
                 <input
-                  ref={fileInputRef}
+                  id="enhanced-add-pet-photo-input"
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={handlePhotoUpload}
-                  className="hidden"
+                  disabled={uploadingPhoto}
+                  className="sr-only"
                 />
                 
                 {validationErrors.photo && (
