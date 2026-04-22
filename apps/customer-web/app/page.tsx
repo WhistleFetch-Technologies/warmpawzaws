@@ -6,6 +6,7 @@ import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -117,6 +118,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isLoading || !session) return;
+    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
+      router.replace('/auth/set-password?next=/');
+      return;
+    }
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
       // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects

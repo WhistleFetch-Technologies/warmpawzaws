@@ -288,7 +288,7 @@ function requestJsonBody(data: unknown): string | undefined {
 }
 
 /** Prefer server JSON message over generic `HTTP 400` when error is a string or nested object. */
-function extractHttpErrorMessage(errorData: any, status: number): string {
+export function extractHttpErrorMessage(errorData: any, status: number): string {
   if (!errorData || typeof errorData !== 'object') {
     return `HTTP ${status}`;
   }
