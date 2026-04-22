@@ -13,6 +13,7 @@ import {
   hashCustomerPasswordBcrypt,
   verifyCustomerPassword,
 } from '../../../lib/services/auth/customer-password-crypto';
+import { updateCustomerPasswordHashWithAuthVersionBump } from '../../../lib/services/auth/customer-auth-version-support';
 
 async function selectCustomerIdByPhoneLast10(last10: string): Promise<string | null> {
   const key = last10.replace(/\D/g, '').slice(-10);
@@ -290,11 +291,7 @@ class ChangePasswordHandler extends BaseHandler {
 
       const newPasswordHash = await hashCustomerPasswordBcrypt(newPassword);
 
-      await query(
-        `UPDATE customers SET password_hash = $1, password_set_at = NOW(),
-         auth_version = COALESCE(auth_version, 0) + 1, updated_at = NOW() WHERE id = $2::uuid`,
-        [newPasswordHash, customer.id]
-      );
+      await updateCustomerPasswordHashWithAuthVersionBump(newPasswordHash, customer.id);
 
       return this.success({
         message: 'Password changed successfully',
@@ -388,11 +385,7 @@ export async function handleCustomerSetPassword(c: Context) {
   }
 
   const hash = await hashCustomerPasswordBcrypt(password);
-  await query(
-    `UPDATE customers SET password_hash = $1, password_set_at = NOW(),
-     auth_version = COALESCE(auth_version, 0) + 1, updated_at = NOW() WHERE id = $2::uuid`,
-    [hash, customerId]
-  );
+  await updateCustomerPasswordHashWithAuthVersionBump(hash, customerId);
 
   return c.json({
     success: true,

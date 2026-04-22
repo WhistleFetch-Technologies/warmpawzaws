@@ -1,8 +1,8 @@
 /**
  * Customer-only forgot password: dedicated OTP purpose, rate limits, reset JWT.
- * Does not use generic /auth/send-otp or verify-otp bypass paths.
- * - UAT_MODE (SSM) or **non-prod** NODE_ENV + `x-uat-mode: true`: fixed OTP 123456 + no SMS (customer-web against dev API).
- * - Production: random SMS OTP; `x-uat-mode` is ignored in prod so fixed OTP cannot be enabled by a client header.
+ * Does not use generic /auth/send-otp paths for storage semantics.
+ * - **Non-production** deployments (see `isCustomerAuthProductionDeployment`): fixed OTP 123456, no SMS, verify accepts 123456 without `otp_tokens` (same UX as signup UAT).
+ * - **Production**: real SMS OTP only; fixed OTP is off unless `UAT_MODE=true` on the server (never enable that on prod). Client headers cannot turn on magic OTP on prod.
  */
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
@@ -20,6 +20,10 @@ import {
   CustomerForgotPasswordResetSchema,
 } from '@warmpawz/api-contracts/auth';
 import { hashCustomerPasswordBcrypt } from './customer-password-crypto';
+import {
+  selectCustomerIdAndAuthVersion,
+  updateCustomerPasswordHashWithAuthVersionBump,
+} from './customer-auth-version-support';
 import {
   dialablePhoneForCustomerAuth,
   findCustomerForPasswordLogin,
@@ -60,30 +64,36 @@ function clientIp(headers: Record<string, string | undefined>): string {
   return 'unknown';
 }
 
-function readUatHeaderFlag(headers?: Record<string, string | undefined>): boolean {
-  if (!headers) return false;
-  for (const [k, v] of Object.entries(headers)) {
-    if (k.toLowerCase() === 'x-uat-mode' && String(v).toLowerCase() === 'true') return true;
-  }
-  return false;
-}
-
 /**
- * `NODE_ENV` is set to Serverless `stage` (e.g. `dev` vs `prod`); not Node's typical development flag.
- * Fixed OTP + optional x-uat-mode: only in true UAT **or** non-prod stage + header (never in prod with header only).
+ * Customer-facing **production** API — used to keep fixed OTP off unless the server explicitly sets UAT_MODE.
+ * Do not treat `NODE_ENV=production` alone as ambiguous: CDK sets `development` for non-prod; Serverless sets
+ * `NODE_ENV` to the **stage name** (e.g. `dev`, `prod`). Prefer STAGE / Lambda name when present.
  */
-function isNodeEnvProduction(): boolean {
+export function isCustomerAuthProductionDeployment(): boolean {
+  const stage = (process.env.STAGE || process.env.SLS_STAGE || '').toLowerCase();
+  if (['prod', 'production', 'prd', 'main'].includes(stage)) return true;
+
+  const env = (process.env.ENVIRONMENT || '').toLowerCase();
+  if (['prod', 'production'].includes(env)) return true;
+
   const n = (process.env.NODE_ENV || '').toLowerCase();
-  return n === 'prod' || n === 'production' || n === 'main' || n === 'prd';
+  if (['prod', 'production', 'prd', 'main'].includes(n)) return true;
+
+  const fn = (process.env.AWS_LAMBDA_FUNCTION_NAME || '').toLowerCase();
+  if (fn && /prod/.test(fn) && !/(dev|uat|staging|stage|test)/.test(fn)) return true;
+
+  return false;
 }
 
 /**
- * When true, use 123456 + skip SMS (or accept 123456 in verify) — mirrors /auth/send-otp behavior.
+ * When true: fixed OTP 123456, skip SMS on request, accept 123456 on verify without DB row.
+ * - Non-prod deployment: always true (dev/stage bypass).
+ * - Prod deployment: only when `UAT_MODE=true` (should never be set on real prod).
  */
-export function isUatOtpModeForForgotPassword(headers?: Record<string, string | undefined>): boolean {
+export function isUatOtpModeForForgotPassword(_headers?: Record<string, string | undefined>): boolean {
   if (process.env.UAT_MODE === 'true') return true;
-  if (!isNodeEnvProduction() && readUatHeaderFlag(headers)) return true;
-  return false;
+  if (isCustomerAuthProductionDeployment()) return false;
+  return true;
 }
 
 function isMissingAuthRateTableError(e: unknown): boolean {
@@ -94,10 +104,11 @@ function isMissingAuthRateTableError(e: unknown): boolean {
 }
 
 async function countRateEvents(rateKey: string, scope: string, sinceSqlInterval: string): Promise<number> {
+  // Bind interval as a parameter — `NOW() - 1 hour::interval` is invalid SQL (parsed as `1` minus `hour`).
   const res = await query(
     `SELECT COUNT(*)::int AS c FROM auth_operation_rate_events
-     WHERE rate_key = $1 AND operation_scope = $2 AND created_at > NOW() - ${sinceSqlInterval}::interval`,
-    [rateKey, scope]
+     WHERE rate_key = $1 AND operation_scope = $2 AND created_at > NOW() - $3::interval`,
+    [rateKey, scope, sinceSqlInterval]
   );
   return Number((res as any).rows?.[0]?.c ?? 0);
 }
@@ -220,7 +231,9 @@ async function insertPasswordResetOtp(canonicalPhone: string, code: string): Pro
 
 /**
  * Strict OTP verify: purpose must match. Never allow 000000 (forgot path must not mirror prod login bypass).
- * `allowUat123456`: when true, 123456 is allowed to match a DB row (UAT or non-prod + x-uat-mode).
+ * `allowUat123456` (UAT_MODE env, or non-prod stage + `x-uat-mode: true`): accept fixed **123456** without an
+ * `otp_tokens` row — same UX as POST /auth/verify-otp in UAT (avoids SMS/DB drift and UPDATE errors on dev DBs).
+ * Production: `allowUat123456` is false unless `UAT_MODE=true`; magic OTP never works from header alone on prod.
  */
 export async function verifyPasswordResetOtp(
   phone: string,
@@ -228,6 +241,7 @@ export async function verifyPasswordResetOtp(
   allowUat123456 = false
 ): Promise<boolean> {
   if (code === '000000') return false;
+  if (code === '123456' && allowUat123456) return true;
   if (code === '123456' && !allowUat123456) return false;
   const canonicalPhone = normalizePhoneForOtp(phone);
   const phonesToTry = [canonicalPhone];
@@ -522,11 +536,7 @@ export async function handleCustomerForgotPasswordReset(params: {
     };
   }
 
-  const res = await query(
-    `SELECT id, COALESCE(auth_version, 0)::int AS auth_version FROM customers WHERE id = $1::uuid LIMIT 1`,
-    [tok.customerId]
-  );
-  const row = (res as any).rows?.[0];
+  const row = await selectCustomerIdAndAuthVersion(tok.customerId);
   if (!row) {
     return {
       status: 401,
@@ -541,15 +551,7 @@ export async function handleCustomerForgotPasswordReset(params: {
   }
 
   const hash = await hashCustomerPasswordBcrypt(newPassword);
-  await query(
-    `UPDATE customers
-     SET password_hash = $1,
-         password_set_at = NOW(),
-         auth_version = COALESCE(auth_version, 0) + 1,
-         updated_at = NOW()
-     WHERE id = $2::uuid`,
-    [hash, tok.customerId]
-  );
+  await updateCustomerPasswordHashWithAuthVersionBump(hash, tok.customerId);
 
   const phoneRow = await query(`SELECT phone FROM customers WHERE id = $1::uuid LIMIT 1`, [tok.customerId]);
   const dbPhone = (phoneRow as any).rows?.[0]?.phone;
