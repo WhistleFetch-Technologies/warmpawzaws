@@ -91,6 +91,13 @@ export default function HomeServiceTrackingPageClient() {
           serviceTypeLower === 'sitting' ||
           serviceNameLower.includes('sit') ||
           serviceNameLower.includes('sitting');
+
+        // Same minutes as vendor Manage Service + customer booking: details API sets service.duration from vendor_services (then catalog / booking).
+        const rawPlan =
+          Number(booking.service?.duration ?? booking.service?.duration_minutes) ||
+          Number(booking.duration ?? booking.totalDurationMinutes ?? booking.total_duration_minutes) ||
+          30;
+        const plannedWalkDurationMinutes = Math.min(1440, Math.max(5, Math.round(rawPlan) || 30));
         
         setBookingData({
           customerName: booking.customerName || booking.customer_name || 'Customer',
@@ -104,7 +111,10 @@ export default function HomeServiceTrackingPageClient() {
           scheduledTime: booking.scheduledTime || booking.booking_time || '',
           isWalkerSession,
           isSitterSession,
-          packageSessionId: booking.packageSessionId || booking.package_session_id
+          packageSessionId: booking.packageSessionId || booking.package_session_id,
+          bookingStatus: booking.status || booking.bookingStatus,
+          plannedWalkDurationMinutes,
+          sessionStartedAt: booking.sessionStartedAt || booking.session_started_at || null,
         });
       } else {
         setError('Booking not found');

@@ -57,6 +57,12 @@ interface HomeServiceTrackingManagerProps {
     isWalkerSession: boolean; // Requires route tracking
     isSitterSession: boolean; // Requires start/end OTP
     packageSessionId?: string;
+    /** Booking row status — used after refresh when GPS row is still `arrived` but OTP already verified */
+    bookingStatus?: string;
+    /** Walk package duration (e.g. 30 / 60) — countdown timer starts here and counts down to 00:00 */
+    plannedWalkDurationMinutes?: number;
+    /** Booking-level walk clock anchor when GPS row has not persisted session_started_at yet */
+    sessionStartedAt?: string | null;
   };
   onBack: () => void;
   onComplete: (result: any) => void;
@@ -163,23 +169,48 @@ export function HomeServiceTrackingManager({
     isWalkerSessionRef.current = !!bookingData?.isWalkerSession;
   }, [bookingData?.isWalkerSession]);
 
-  // Duration timer
+  // Walk: countdown (planned minutes → 00:00). Other in-service: elapsed time up.
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (sessionState.sessionStartedAt && sessionState.status === 'in_progress') {
-      timer = setInterval(() => {
-        const start = new Date(sessionState.sessionStartedAt!).getTime();
-        const now = Date.now();
-        setSessionDuration(Math.floor((now - start) / 1000));
-      }, 1000);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (!sessionState.sessionStartedAt || sessionState.status !== 'in_progress') {
+      return () => {
+        if (timer) clearInterval(timer);
+      };
     }
-    return () => clearInterval(timer);
-  }, [sessionState.sessionStartedAt, sessionState.status]);
+    const startedMs = new Date(sessionState.sessionStartedAt).getTime();
+    const plannedSec = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
+    const walker = !!bookingData?.isWalkerSession;
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - startedMs) / 1000);
+      if (walker) {
+        setSessionDuration(Math.max(0, plannedSec - elapsed));
+      } else {
+        setSessionDuration(elapsed);
+      }
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [
+    sessionState.sessionStartedAt,
+    sessionState.status,
+    bookingData?.isWalkerSession,
+    bookingData?.plannedWalkDurationMinutes,
+  ]);
 
-  // Load existing session data
+  // Load existing session data (re-run when booking lifecycle catches up after refresh)
   useEffect(() => {
     loadSessionData();
-  }, [bookingId]);
+  }, [
+    bookingId,
+    bookingData?.bookingStatus,
+    bookingData?.isWalkerSession,
+    bookingData?.isSitterSession,
+    bookingData?.plannedWalkDurationMinutes,
+    bookingData?.sessionStartedAt,
+  ]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -197,25 +228,100 @@ export function HomeServiceTrackingManager({
     try {
       setLoading(true);
       const response = await apiClient.get<any>(`/vendor/bookings/${bookingId}/tracking-session`);
-      
+
       if (response.success && response.session) {
-        // API maps in_transit → "is_traveling"; UI uses "traveling" for the stepper + resume logic
         const rawStatus = response.session.status as string;
-        const normalizedStatus =
+        let normalizedStatus =
           rawStatus === 'is_traveling' || rawStatus === 'in_transit' ? 'traveling' : rawStatus;
+
+        const bookingSt = String(bookingData?.bookingStatus || '').toLowerCase();
+        const bookingWalkClock =
+          (bookingData as { sessionStartedAt?: string | null; session_started_at?: string | null } | undefined)
+            ?.sessionStartedAt ||
+          (bookingData as { session_started_at?: string | null } | undefined)?.session_started_at ||
+          null;
+
+        let sessionStartedAt =
+          response.session.sessionStartedAt || response.session.session_started_at || bookingWalkClock || null;
+
+        if (
+          bookingSt === 'in_progress' &&
+          (bookingData?.isWalkerSession || bookingData?.isSitterSession) &&
+          (normalizedStatus === 'arrived' || normalizedStatus === 'traveling')
+        ) {
+          normalizedStatus = 'in_progress';
+          // Never use "now" here — it resets the countdown on every refresh. Use GPS or booking anchor only.
+          sessionStartedAt = sessionStartedAt || bookingWalkClock || null;
+        }
+
+        const serverTotalM = Number(response.session.totalDistance ?? response.session.total_distance ?? 0) || 0;
+        const routePts = (response.session.routePoints || []) as LocationPoint[];
 
         setSessionState(prev => ({
           ...prev,
           ...response.session,
           status: normalizedStatus as SessionState['status'],
-          routePoints: response.session.routePoints || []
+          sessionStartedAt: sessionStartedAt ?? prev.sessionStartedAt,
+          routePoints: routePts,
+          totalDistance: serverTotalM,
         }));
 
-        // Resume device GPS when en route or when an in-person session is already running (walker = route)
-        if (
-          normalizedStatus === 'traveling' ||
-          normalizedStatus === 'in_progress'
-        ) {
+        sessionStatusRef.current = normalizedStatus as SessionState['status'];
+
+        const sessStarted =
+          sessionStartedAt ||
+          (response.session.sessionStartedAt as string | undefined) ||
+          (response.session.session_started_at as string | undefined);
+        const plannedMin =
+          bookingData?.plannedWalkDurationMinutes ??
+          (typeof response.session?.plannedWalkDurationMinutes === 'number'
+            ? response.session.plannedWalkDurationMinutes
+            : undefined) ??
+          30;
+        const plannedSec = plannedMin * 60;
+        if (normalizedStatus === 'in_progress' && bookingData?.isWalkerSession) {
+          if (typeof response.session.remainingWalkSeconds === 'number') {
+            setSessionDuration(Math.max(0, response.session.remainingWalkSeconds));
+          } else if (sessStarted) {
+            const startedMs = new Date(sessStarted).getTime();
+            const elapsed = Math.floor((Date.now() - startedMs) / 1000);
+            setSessionDuration(Math.max(0, plannedSec - elapsed));
+          } else {
+            setSessionDuration(plannedSec);
+          }
+        } else if (normalizedStatus === 'in_progress' && sessStarted && !bookingData?.isWalkerSession) {
+          const startedMs = new Date(sessStarted).getTime();
+          setSessionDuration(Math.floor((Date.now() - startedMs) / 1000));
+        }
+
+        if (normalizedStatus === 'traveling' || normalizedStatus === 'in_progress') {
+          startLocationTracking();
+        }
+      } else if (
+        String(bookingData?.bookingStatus || '').toLowerCase() === 'in_progress' &&
+        (bookingData?.isWalkerSession || bookingData?.isSitterSession)
+      ) {
+        sessionStatusRef.current = 'in_progress';
+        const anchor =
+          (bookingData as { sessionStartedAt?: string | null; session_started_at?: string | null } | undefined)
+            ?.sessionStartedAt ||
+          (bookingData as { session_started_at?: string | null } | undefined)?.session_started_at ||
+          null;
+        setSessionState(prev => ({
+          ...prev,
+          status: 'in_progress',
+          sessionStartedAt: prev.sessionStartedAt || anchor,
+        }));
+        const plannedSec = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
+        if (bookingData?.isWalkerSession && anchor) {
+          const elapsed = Math.floor((Date.now() - new Date(anchor).getTime()) / 1000);
+          setSessionDuration(Math.max(0, plannedSec - elapsed));
+        } else if (bookingData?.isWalkerSession) {
+          setSessionDuration(plannedSec);
+        } else {
+          setSessionDuration(0);
+        }
+        if (bookingData?.isWalkerSession) {
           startLocationTracking();
         }
       }
@@ -484,12 +590,15 @@ export function HomeServiceTrackingManager({
       if (response.success) {
         sessionStatusRef.current = 'in_progress';
         isWalkerSessionRef.current = !!bookingData?.isWalkerSession;
+        const plannedSec = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
+        const startedAt = new Date().toISOString();
         setSessionState(prev => ({
           ...prev,
           status: 'in_progress',
-          sessionStartedAt: new Date().toISOString(),
+          sessionStartedAt: startedAt,
           routePoints: bookingData?.isWalkerSession ? [currentLocation!] : []
         }));
+        setSessionDuration(bookingData?.isWalkerSession ? plannedSec : 0);
         
         setShowOtpModal(false);
         toast.success('Session started!');
@@ -526,11 +635,16 @@ export function HomeServiceTrackingManager({
 
       stopLocationTracking();
 
+      const plannedSecWalker = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
+      const durationSecondsForReport = bookingData?.isWalkerSession
+        ? Math.max(0, plannedSecWalker - sessionDuration)
+        : sessionDuration;
+
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/complete`, {
         vendorId,
         otp: trimmed,
         notes: bookingData?.isWalkerSession
-          ? `Route: ${sessionState.totalDistance}m, ${sessionDuration}min`
+          ? `Route: ${sessionState.totalDistance}m, walked ~${Math.round(durationSecondsForReport / 60)} min of ${bookingData?.plannedWalkDurationMinutes ?? 30} min booked`
           : undefined,
       });
 
@@ -548,7 +662,7 @@ export function HomeServiceTrackingManager({
         onComplete({
           bookingId,
           status: 'completed',
-          duration: sessionDuration,
+          duration: durationSecondsForReport,
           distance: sessionState.totalDistance,
           routePoints: sessionState.routePoints
         });
@@ -566,7 +680,7 @@ export function HomeServiceTrackingManager({
     }
   };
 
-  // Format duration
+  // Format duration (elapsed)
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -578,6 +692,13 @@ export function HomeServiceTrackingManager({
       return `${minutes}m ${secs}s`;
     }
     return `${secs}s`;
+  };
+
+  /** Walk countdown display: MM:SS from remaining seconds */
+  const formatWalkCountdown = (remainingSeconds: number): string => {
+    const m = Math.floor(Math.max(0, remainingSeconds) / 60);
+    const s = Math.max(0, remainingSeconds) % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   // Format distance
@@ -779,14 +900,22 @@ export function HomeServiceTrackingManager({
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-orange-50/80 p-3 text-center">
                 <Clock className="mx-auto mb-1 h-6 w-6 text-[#FF8C42]" />
-                <p className="text-xl font-bold text-gray-900">{formatDuration(sessionDuration)}</p>
-                <p className="text-xs font-medium text-gray-600">Duration</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {bookingData?.isWalkerSession
+                    ? formatWalkCountdown(sessionDuration)
+                    : formatDuration(sessionDuration)}
+                </p>
+                <p className="text-xs font-medium text-gray-600">
+                  {bookingData?.isWalkerSession
+                    ? `Time left (${bookingData.plannedWalkDurationMinutes ?? 30} min walk)`
+                    : 'Duration'}
+                </p>
               </div>
               {bookingData?.isWalkerSession && (
                 <div className="rounded-xl bg-sky-50 p-3 text-center">
                   <Route className="mx-auto mb-1 h-6 w-6 text-sky-600" />
                   <p className="text-xl font-bold text-gray-900">{formatDistance(sessionState.totalDistance)}</p>
-                  <p className="text-xs font-medium text-sky-800">Distance (device)</p>
+                  <p className="text-xs font-medium text-sky-800">Distance walked</p>
                 </div>
               )}
             </div>
@@ -829,8 +958,19 @@ export function HomeServiceTrackingManager({
             <h3 className="text-lg font-bold text-emerald-900">Completed</h3>
             <div className="mt-4 grid grid-cols-2 gap-3 text-left">
               <div className="rounded-xl bg-white p-3 shadow-sm">
-                <p className="text-xs text-gray-500">Duration</p>
-                <p className="font-semibold text-gray-900">{formatDuration(sessionDuration)}</p>
+                <p className="text-xs text-gray-500">
+                  {bookingData?.isWalkerSession ? 'Walk time used' : 'Duration'}
+                </p>
+                <p className="font-semibold text-gray-900">
+                  {bookingData?.isWalkerSession
+                    ? formatDuration(
+                        Math.max(
+                          0,
+                          (bookingData.plannedWalkDurationMinutes ?? 30) * 60 - sessionDuration
+                        )
+                      )
+                    : formatDuration(sessionDuration)}
+                </p>
               </div>
               {bookingData?.isWalkerSession && (
                 <div className="rounded-xl bg-white p-3 shadow-sm">
@@ -887,7 +1027,12 @@ export function HomeServiceTrackingManager({
                 onComplete({
                   bookingId,
                   status: 'completed',
-                  duration: sessionDuration,
+                  duration: bookingData?.isWalkerSession
+                    ? Math.max(
+                        0,
+                        (bookingData.plannedWalkDurationMinutes ?? 30) * 60 - sessionDuration
+                      )
+                    : sessionDuration,
                   distance: sessionState.totalDistance,
                 })
               }

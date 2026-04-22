@@ -41,6 +41,9 @@ interface TrackingData {
   distance?: number | null;
   distance_km?: number;
   distance_traveled_km?: number;
+  planned_walk_duration_minutes?: number;
+  remaining_walk_seconds?: number;
+  elapsed_walk_seconds?: number;
   status: 'in_transit' | 'on_way' | 'arriving' | 'arrived' | 'in_progress' | 'completed';
   eta_calculation_method?: 'google_maps' | 'estimated';
   serviceName?: string;
@@ -153,6 +156,16 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
       // ✅ FIX: Handle both camelCase (from API) and snake_case formats
       distance: data.distance ?? data.distanceKm ?? data.distance_km ?? data.distance_remaining_km ?? data.distanceRemainingKm ?? null,
       distance_km: data.distance ?? data.distanceKm ?? data.distance_km ?? data.distance_remaining_km ?? data.distanceRemainingKm ?? null,
+      distance_traveled_km:
+        data.distance_traveled_km ??
+        data.distanceTraveledKm ??
+        (data as any).total_walk_km ??
+        null,
+      planned_walk_duration_minutes:
+        data.planned_walk_duration_minutes ?? data.plannedWalkDurationMinutes ?? null,
+      remaining_walk_seconds:
+        data.remaining_walk_seconds ?? data.remainingWalkSeconds ?? null,
+      elapsed_walk_seconds: data.elapsed_walk_seconds ?? data.elapsedWalkSeconds ?? null,
       status: data.status === 'in_transit' ? 'on_way' : data.status,
       serviceName: data.serviceName || data.service_name || 'Service',
       service_name: data.serviceName || data.service_name || 'Service',
@@ -523,6 +536,17 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   const distanceKm = tracking?.distance ?? tracking?.distance_km ?? (tracking as any)?.distance_remaining_km ?? null;
   const distanceTraveledKm =
     tracking?.distance_traveled_km ?? (tracking as any)?.distanceTraveledKm ?? null;
+  const remainingWalkSeconds =
+    tracking?.remaining_walk_seconds ?? (tracking as any)?.remainingWalkSeconds ?? null;
+  const plannedWalkMinutes =
+    tracking?.planned_walk_duration_minutes ?? (tracking as any)?.plannedWalkDurationMinutes ?? null;
+
+  const formatWalkCountdown = (sec: number) => {
+    const r = Math.max(0, Math.floor(sec));
+    const m = Math.floor(r / 60);
+    const s = r % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   const displayPhase = useMemo(
     () => deriveCustomerTrackingPhase(tracking, bookingData),
@@ -1116,8 +1140,14 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                   <p className="text-[10px] text-gray-500 mt-0.5">Waiting to start the visit</p>
                 </div>
               ) : displayPhase === 'in_progress' ? (
-                <>
-                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                <div
+                  className={
+                    isWalkStyleBooking && remainingWalkSeconds != null && !Number.isNaN(Number(remainingWalkSeconds))
+                      ? 'grid grid-cols-3 gap-2 w-full'
+                      : 'flex justify-between gap-2 w-full'
+                  }
+                >
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10 min-w-0">
                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">
                       {isWalkStyleBooking ? 'Walk' : 'Service'}
                     </p>
@@ -1126,20 +1156,33 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                     </p>
                     <p className="text-[10px] text-gray-500 mt-0.5">Live position on map</p>
                   </div>
-                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
+                  {isWalkStyleBooking &&
+                    remainingWalkSeconds != null &&
+                    !Number.isNaN(Number(remainingWalkSeconds)) && (
+                      <div className="bg-white/95 backdrop-blur rounded-xl px-2 py-2 shadow-lg z-10 min-w-0 text-center">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Time left</p>
+                        <p className="text-lg font-bold text-amber-700 leading-tight tabular-nums">
+                          {formatWalkCountdown(Number(remainingWalkSeconds))}
+                        </p>
+                        {plannedWalkMinutes != null && (
+                          <p className="text-[9px] text-gray-500 mt-0.5">of {plannedWalkMinutes} min</p>
+                        )}
+                      </div>
+                    )}
+                  <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10 min-w-0">
                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">
                       {isWalkStyleBooking ? 'Walked' : 'Moved'}
                     </p>
                     <p className="text-xl font-bold text-gray-900">
                       {distanceTraveledKm != null &&
                       !isNaN(Number(distanceTraveledKm)) &&
-                      Number(distanceTraveledKm) > 0
+                      Number(distanceTraveledKm) >= 0
                         ? Number(distanceTraveledKm).toFixed(2)
                         : '—'}
                       <span className="text-sm font-normal ml-1">km</span>
                     </p>
                   </div>
-                </>
+                </div>
               ) : displayPhase === 'completed' ? (
                 <div className="bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-lg flex-1 z-10">
                   <p className="text-[10px] text-gray-500 uppercase tracking-wider">Status</p>
