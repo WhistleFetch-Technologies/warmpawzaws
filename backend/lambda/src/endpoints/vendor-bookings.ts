@@ -49,6 +49,25 @@ function formatDetailedAddress(addr: any): string {
   return parts.filter(Boolean).join(', ');
 }
 
+/** Walk / home-service countdown anchor: active GPS row, then booking columns (see GET /details). */
+function resolveActiveGpsSessionAnchor(sessions: unknown): string | null {
+  const rows = Array.isArray(sessions) ? (sessions as any[]) : [];
+  if (!rows.length) return null;
+  const active = rows
+    .slice()
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .find((s) => {
+      const st = String(s?.status ?? '').toLowerCase().replace(/\s+/g, '_');
+      return st !== 'completed' && st !== 'cancelled';
+    });
+  if (!active) return null;
+  const anchor =
+    active.session_started_at ||
+    active.arrived_at ||
+    active.started_at;
+  return anchor != null && String(anchor).trim() !== '' ? String(anchor) : null;
+}
+
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
    * GET /vendor/bookings/:vendorId
@@ -842,6 +861,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         )
       );
 
+      const gpsSessionsForAnchor = await select('gps_tracking_sessions', { booking_id: bookingId }).catch(() => []);
+      const gpsWalkAnchor = resolveActiveGpsSessionAnchor(gpsSessionsForAnchor);
+      const sessionClockAnchor =
+        gpsWalkAnchor ||
+        ((booking as any).session_started_at as string | undefined) ||
+        ((booking as any).started_at as string | undefined) ||
+        null;
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -1021,10 +1048,13 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           pincode: vendor[0].pincode,
         } : null,
 
-        // OTP and session tracking
+        // OTP and session tracking (sessionClockAnchor: GPS session_started_at so refresh restores walk timer)
         otpCode: booking.otp_code,
         otpVerifiedAt: booking.otp_verified_at,
-        sessionStartedAt: booking.session_started_at,
+        sessionStartedAt: sessionClockAnchor,
+        session_started_at: sessionClockAnchor,
+        startedAt: (booking as any).started_at,
+        started_at: (booking as any).started_at,
         sessionEndedAt: booking.session_ended_at,
         completedAt: booking.completed_at,
         cancelledAt: booking.cancelled_at,
