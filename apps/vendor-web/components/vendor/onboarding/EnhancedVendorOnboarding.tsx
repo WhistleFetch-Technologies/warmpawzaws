@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { BusinessTypeSelector } from './BusinessTypeSelector';
-import { SoloProviderOnboarding } from './SoloProviderOnboarding';
 import { DynamicVendorOnboardingForm } from '../orders/DynamicVendorOnboardingForm';
 import { apiClient } from '@/lib/api-client';
 
@@ -134,10 +133,8 @@ export function EnhancedVendorOnboarding({
     setStep(solo ? 'solo_onboarding' : 'multi_staff_onboarding');
   };
 
-  // ✅ REMOVED: handleSoloOnboardingSubmit - Not used, SoloProviderOnboarding handles submission directly
-
-  // ✅ FIX: handleMultiStaffOnboardingSubmit - Use correct endpoint
-  const handleMultiStaffOnboardingSubmit = async (submissionData: any) => {
+  /** Shared submit for dynamic form (solo + center); `isSolo` drives payload and onComplete. */
+  const submitDynamicOnboardingApplication = async (submissionData: any, isSolo: boolean) => {
     setSubmitting(true);
     try {
       // ✅ FIX: Get phone from localStorage or props
@@ -241,6 +238,7 @@ export function EnhancedVendorOnboarding({
         phone: vendorPhone,
         application_payload: {
           ...sanitizedFormData,
+          vendor_type: isSolo ? 'solo' : (sanitizedFormData.vendor_type || 'business'),
           roleId: submissionData.roleId || roleId,
           location: submissionData.location || submissionData.coordinates,
           coordinates: submissionData.coordinates || submissionData.location,
@@ -261,7 +259,7 @@ export function EnhancedVendorOnboarding({
           success: true,
           applicationId: response.applicationId,
           vendorId: response.vendorId,
-          isSoloProvider: false,
+          isSoloProvider: isSolo,
           status: 'submitted',
           roleId: roleId,
         });
@@ -338,7 +336,7 @@ export function EnhancedVendorOnboarding({
     );
   }
 
-  if (step === 'solo_onboarding' && roleId) {
+    if (step === 'solo_onboarding' && roleId) {
     // Determine if we can go back to business type selection
     // Only allow back if role supports solo option (not always solo roles like walker)
     const currentRoleName = roleName || fetchedRoleName;
@@ -346,17 +344,12 @@ export function EnhancedVendorOnboarding({
     const canGoBack = normalizedRoleName && ROLES_WITH_SOLO_OPTION.includes(normalizedRoleName);
     
     return (
-      <SoloProviderOnboarding
+      <DynamicVendorOnboardingForm
         roleId={roleId}
+        vendorType="solo"
+        onSubmit={(data) => submitDynamicOnboardingApplication(data, true)}
         onBack={canGoBack ? () => setStep('business_type') : onBack}
-        onSuccess={() => {
-          // SoloProviderOnboarding already handles submission internally
-          // Just notify parent that onboarding is complete
-          onComplete({
-            success: true,
-            isSoloProvider: true,
-          });
-        }}
+        initialData={initialData}
       />
     );
   }
@@ -371,7 +364,8 @@ export function EnhancedVendorOnboarding({
     return (
       <DynamicVendorOnboardingForm
         roleId={roleId}
-        onSubmit={handleMultiStaffOnboardingSubmit}
+        vendorType="business"
+        onSubmit={(data) => submitDynamicOnboardingApplication(data, false)}
         onBack={canGoBack ? () => setStep('business_type') : onBack}
         initialData={initialData}
       />

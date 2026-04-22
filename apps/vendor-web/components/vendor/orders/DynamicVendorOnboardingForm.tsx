@@ -77,6 +77,8 @@ interface DynamicVendorOnboardingFormProps {
   initialData?: any; // ✅ NEW: Support for re-editing
   vendorId?: string; // ✅ NEW: For edit mode
   isEditMode?: boolean; // ✅ NEW: Flag for edit vs create
+  /** Drives GET form-schema `vendorType` and submit `vendor_type` (solo vs business/center). */
+  vendorType?: 'solo' | 'business';
 }
 
 // ✅ FIX: Extract default policies as a constant to avoid TDZ (Temporal Dead Zone) issues
@@ -130,6 +132,22 @@ This policy describes how we collect, use, and protect your information when you
   },
 };
 
+/** Prefer top-level schema; avoid using unrelated `response.data` blobs that omit `sections`. */
+function unwrapFormSchemaPayload(response: any): any {
+  if (!response || typeof response !== 'object') return response;
+  const hasSchemaShape = (o: any) =>
+    !!(
+      o &&
+      typeof o === 'object' &&
+      (Array.isArray(o.sections) || Array.isArray(o.fields) || o.schema)
+    );
+  if (hasSchemaShape(response)) return response;
+  const d1 = response.data;
+  if (hasSchemaShape(d1)) return d1;
+  if (d1 && typeof d1 === 'object' && hasSchemaShape(d1.data)) return d1.data;
+  return response;
+}
+
 export function DynamicVendorOnboardingForm({ 
   roleId, 
   onSubmit, 
@@ -137,7 +155,8 @@ export function DynamicVendorOnboardingForm({
   serviceStyles = [],
   initialData,
   vendorId,
-  isEditMode
+  isEditMode,
+  vendorType = 'business',
 }: DynamicVendorOnboardingFormProps) {
   const [form, setForm] = useState<OnboardingForm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,6 +167,11 @@ export function DynamicVendorOnboardingForm({
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  /** KYC/upload APIs need an id during onboarding; prop is often unset — mirror upload resolver. */
+  const [effectiveVendorId, setEffectiveVendorId] = useState<string>(() =>
+    typeof window !== 'undefined' ? (vendorId || localStorage.getItem('vendorId') || '') : (vendorId || '')
+  );
   
   // Dynamic policies from backend - use DEFAULT_POLICIES constant to avoid TDZ issues
   const [policies, setPolicies] = useState<{
@@ -281,6 +305,44 @@ export function DynamicVendorOnboardingForm({
   }, [formData, coordinates, agreedToTerms, roleId, isEditMode]);
 
   useEffect(() => {
+    if (vendorId) {
+      setEffectiveVendorId(vendorId);
+      return;
+    }
+    let cancelled = false;
+    const fromLs = typeof window !== 'undefined' ? localStorage.getItem('vendorId') : null;
+    if (fromLs) {
+      setEffectiveVendorId(fromLs);
+      return;
+    }
+    const phone = typeof window !== 'undefined' ? localStorage.getItem('vendorPhone') : null;
+    if (!phone) {
+      setEffectiveVendorId('');
+      return;
+    }
+    (async () => {
+      try {
+        const identityResponse = await apiClient.get<any>(
+          `/vendor/onboarding/status?phone=${encodeURIComponent(phone)}`
+        );
+        const identityData = identityResponse?.data?.identity || identityResponse?.identity;
+        if (!cancelled && identityData?.id) {
+          setEffectiveVendorId(identityData.id);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) {
+        setEffectiveVendorId(`onboarding-${phone}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId, roleId]);
+
+  useEffect(() => {
     console.log('🚀 [INIT] Component mounted, starting initialization...');
     console.log('🚀 [INIT] roleId:', roleId);
     checkServerHealth();
@@ -311,7 +373,7 @@ export function DynamicVendorOnboardingForm({
     }
     
     fetchForm();
-  }, [roleId]);
+  }, [roleId, vendorType]);
 
   const fetchGoogleMapsKey = async () => {
     console.log('🔑 [API KEY] Fetching Google Maps API key from backend...');
@@ -399,11 +461,15 @@ export function DynamicVendorOnboardingForm({
       let endpoint = '';
       
       try {
-        // Try new fixed endpoint
+        // Try new fixed endpoint (always pass roleId when we have it so schema matches admin catalogue for that role)
         const params = new URLSearchParams();
         if (phone) {
           params.append('phone', phone);
         }
+        if (roleId) {
+          params.append('roleId', roleId);
+        }
+        params.append('vendorType', vendorType === 'solo' ? 'solo' : 'business');
         endpoint = `/vendor/onboarding/form-schema-fixed?${params.toString()}`;
         console.log('[DYNAMIC FORM] 🔗 Trying FIXED endpoint:', endpoint);
         response = await apiClient.get(endpoint);
@@ -418,6 +484,7 @@ export function DynamicVendorOnboardingForm({
         if (roleId) {
           params.append('roleId', roleId);
         }
+        params.append('vendorType', vendorType === 'solo' ? 'solo' : 'business');
         endpoint = `/vendor/onboarding/form-schema?${params.toString()}`;
         console.log('[DYNAMIC FORM] 🔗 Trying ORIGINAL endpoint:', endpoint);
         response = await apiClient.get(endpoint);
@@ -426,9 +493,7 @@ export function DynamicVendorOnboardingForm({
 
       console.log('[DYNAMIC FORM] ✅ Raw response:', response);
       
-      // ✅ FIX: Unwrap double-wrapped response from BaseHandlerEnhanced
-      // Backend returns: { success: true, data: { success: true, fields: [...], sections: [...] } }
-      const data = response.data || response;
+      const data: any = unwrapFormSchemaPayload(response);
       
       console.log('[DYNAMIC FORM] ✅ Unwrapped data:', data);
       console.log('[DYNAMIC FORM] 📋 Version:', data.version, 'Status:', data.status);
@@ -437,6 +502,16 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
+        const normalizeFieldType = (raw: unknown): string => {
+          const t = String(raw || 'text').trim().toLowerCase().replace(/_/g, '-');
+          if (t === 'phone') return 'tel';
+          if (t === 'aadhaarotp' || t === 'aadhar-otp') return 'aadhaar-otp';
+          if (t === 'panverify') return 'pan-verify';
+          if (t === 'gstverify') return 'gst-verify';
+          if (t === 'multi-select') return 'multiselect';
+          return t || 'text';
+        };
+
         const transformField = (f: any) => {
           // Normalize options - convert string arrays to {value, label} objects for multiselect/select fields
           let normalizedOptions = f.options;
@@ -458,20 +533,65 @@ export function DynamicVendorOnboardingForm({
             // Use id as the field name for generic fieldName values to ensure uniqueness
             fieldName = f.id || `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           }
+
+          const required =
+            Boolean(f.isMandatory) ||
+            Boolean(f.required) ||
+            Boolean(f.validation?.required);
           
           return {
             ...f,
+            type: normalizeFieldType(f.type),
             name: fieldName,
             isActive: f.isActive !== false && f.is_active !== false,
             options: normalizedOptions, // Add normalized options
+            // Spread first so isMandatory/required win over validation.required: false from DB
             validation: {
-              required: f.isMandatory || f.validation?.required,
-              ...f.validation
+              ...f.validation,
+              required,
             }
           };
         };
+
+        let sectionsInput: any[] = Array.isArray(data.sections) ? data.sections : [];
+        if (sectionsInput.length === 0) {
+          const flat: any[] = Array.isArray(data.fields)
+            ? data.fields
+            : Array.isArray(data.schema?.fields)
+              ? data.schema.fields
+              : [];
+          if (flat.length > 0) {
+            const bySection: Record<string, any[]> = {};
+            for (const f of flat) {
+              const sk = f.section || 'business_information';
+              if (!bySection[sk]) bySection[sk] = [];
+              bySection[sk].push(f);
+            }
+            const meta: Record<string, { title: string; order: number }> = {
+              business_information: { title: 'Business Information', order: 1 },
+              location_information: { title: 'Location', order: 2 },
+              banking_information: { title: 'Banking Details', order: 3 },
+              documents: { title: 'Documents', order: 4 },
+              identity_verification: { title: 'Identity Verification', order: 5 },
+              business_registration: { title: 'Business Registration', order: 6 },
+            };
+            sectionsInput = Object.keys(bySection).map((id) => ({
+              id,
+              name: id,
+              title: meta[id]?.title || id.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              order: meta[id]?.order ?? 99,
+              isActive: true,
+              fields: [...bySection[id]].sort(
+                (a: any, b: any) =>
+                  (a.displayOrder ?? a.order ?? 0) - (b.displayOrder ?? b.order ?? 0)
+              ),
+            }));
+            sectionsInput.sort((a: any, b: any) => (a.order ?? 99) - (b.order ?? 99));
+          }
+        }
+
         // Transform sections to have properly named fields
-        const transformedSections = (data.sections || []).map((section: any) => ({
+        const transformedSections = sectionsInput.map((section: any) => ({
           ...section,
           isActive: section.isActive !== false,
           fields: (section.fields || []).map(transformField)
@@ -1190,6 +1310,7 @@ export function DynamicVendorOnboardingForm({
         roleId,
         formData: {
           ...formData,
+          vendor_type: vendorType === 'solo' ? 'solo' : 'business',
           coordinates,
           location: coordinates, // ✅ Ensure backend receives location in formData
         },
@@ -1198,7 +1319,7 @@ export function DynamicVendorOnboardingForm({
         location: coordinates,
         agreedToTerms,
         formVersion: form?.version,
-        vendorId: vendorId, // ✅ NEW: Include vendorId for edit mode
+        vendorId: effectiveVendorId || vendorId, // identity id during onboarding, or prop in edit mode
         isEditMode: isEditMode, // ✅ NEW: Flag for edit vs create
       };
 
@@ -1543,7 +1664,7 @@ export function DynamicVendorOnboardingForm({
       case 'aadhaar-otp':
         return (
           <AadhaarOTPVerification
-            vendorId={vendorId || ''}
+            vendorId={effectiveVendorId || ''}
             value={value}
             onChange={(val) => handleFieldChange(field.name, val)}
             onVerified={(data) => {
@@ -1551,17 +1672,17 @@ export function DynamicVendorOnboardingForm({
               handleFieldChange(`${field.name}_verified`, true);
               handleFieldChange(`${field.name}_name`, data.name);
             }}
-            disabled={!vendorId}
+            disabled={!effectiveVendorId}
             label=""
             helpText={field.helpText}
-            required={field.validation?.required}
+            required={field.validation?.required || (field as any).isMandatory}
           />
         );
 
       case 'pan-verify':
         return (
           <PANVerification
-            vendorId={vendorId || ''}
+            vendorId={effectiveVendorId || ''}
             value={value}
             name={formData['fullName'] || formData['ownerName'] || formData['businessName']}
             onChange={(val) => handleFieldChange(field.name, val)}
@@ -1571,10 +1692,10 @@ export function DynamicVendorOnboardingForm({
               handleFieldChange(`${field.name}_name`, data.name);
               handleFieldChange(`${field.name}_status`, data.status);
             }}
-            disabled={!vendorId}
+            disabled={!effectiveVendorId}
             label=""
             helpText={field.helpText}
-            required={field.validation?.required}
+            required={field.validation?.required || (field as any).isMandatory}
             autoVerify={true}
           />
         );
@@ -1582,7 +1703,7 @@ export function DynamicVendorOnboardingForm({
       case 'gst-verify':
         return (
           <GSTVerification
-            vendorId={vendorId || ''}
+            vendorId={effectiveVendorId || ''}
             value={value}
             onChange={(val) => handleFieldChange(field.name, val)}
             onVerified={(data) => {
@@ -1592,11 +1713,11 @@ export function DynamicVendorOnboardingForm({
               handleFieldChange(`${field.name}_tradeName`, data.tradeName);
               handleFieldChange(`${field.name}_status`, data.status);
             }}
-            disabled={!vendorId}
+            disabled={!effectiveVendorId}
             label=""
             helpText={field.helpText}
-            required={field.validation?.required}
-            conditional={!field.validation?.required}
+            required={field.validation?.required || (field as any).isMandatory}
+            conditional={!field.validation?.required && !(field as any).isMandatory}
             autoVerify={true}
           />
         );
@@ -1604,7 +1725,7 @@ export function DynamicVendorOnboardingForm({
       case 'declaration':
         return (
           <DeclarationField
-            vendorId={vendorId || ''}
+            vendorId={effectiveVendorId || ''}
             declarationType={field.declarationType || field.name}
             declarationText={field.declarationText || field.label}
             value={!!value}
@@ -1613,8 +1734,8 @@ export function DynamicVendorOnboardingForm({
               handleFieldChange(`${field.name}_accepted`, true);
               handleFieldChange(`${field.name}_acceptedAt`, data.acceptedAt);
             }}
-            disabled={!vendorId}
-            required={field.validation?.required}
+            disabled={!effectiveVendorId}
+            required={field.validation?.required || (field as any).isMandatory}
           />
         );
 
@@ -1769,18 +1890,18 @@ export function DynamicVendorOnboardingForm({
                 .map(field => ({ ...field, sectionOrder: section.order || 0 })) // Preserve section order
             )
             .sort((a, b) => {
-              // ✅ Sort by section order first, then field order
-              if (a.sectionOrder !== b.sectionOrder) {
-                return a.sectionOrder - b.sectionOrder;
-              }
-              return (a.displayOrder || a.order || 0) - (b.displayOrder || b.order || 0);
+              // Match admin catalogue: global displayOrder across sections, then section order as tiebreaker
+              const da = a.displayOrder ?? a.order ?? 0;
+              const db = b.displayOrder ?? b.order ?? 0;
+              if (da !== db) return da - db;
+              return (a.sectionOrder || 0) - (b.sectionOrder || 0);
             })
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`${field.sectionOrder ?? 0}-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 {field.type !== 'checkbox' && (
                   <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                     {field.label}
-                    {field.validation?.required && (
+                    {(field.validation?.required || (field as any).isMandatory) && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </Label>
@@ -1804,11 +1925,11 @@ export function DynamicVendorOnboardingForm({
           {form.documentSections?.flatMap(section => section.fields)
             .filter(f => f.isActive !== false)
             .sort((a, b) => a.order - b.order)
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`doc-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                   {field.label}
-                  {field.validation?.required && (
+                  {(field.validation?.required || (field as any).isMandatory) && (
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </Label>
