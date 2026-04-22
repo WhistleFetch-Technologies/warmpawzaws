@@ -60,6 +60,7 @@ const nextConfig = {
   webpack: (config, { isServer }) => {
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');
     config.resolve.modules = [
+      path.resolve(__dirname),
       path.resolve(__dirname, 'node_modules'),
       uiNodeModulesPath,
       ...(config.resolve.modules || []),

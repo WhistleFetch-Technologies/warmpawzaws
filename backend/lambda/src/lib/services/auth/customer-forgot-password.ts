@@ -1,6 +1,8 @@
 /**
  * Customer-only forgot password: dedicated OTP purpose, rate limits, reset JWT.
  * Does not use generic /auth/send-otp or verify-otp bypass paths.
+ * - UAT_MODE (SSM) or **non-prod** NODE_ENV + `x-uat-mode: true`: fixed OTP 123456 + no SMS (customer-web against dev API).
+ * - Production: random SMS OTP; `x-uat-mode` is ignored in prod so fixed OTP cannot be enabled by a client header.
  */
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
@@ -58,6 +60,39 @@ function clientIp(headers: Record<string, string | undefined>): string {
   return 'unknown';
 }
 
+function readUatHeaderFlag(headers?: Record<string, string | undefined>): boolean {
+  if (!headers) return false;
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'x-uat-mode' && String(v).toLowerCase() === 'true') return true;
+  }
+  return false;
+}
+
+/**
+ * `NODE_ENV` is set to Serverless `stage` (e.g. `dev` vs `prod`); not Node's typical development flag.
+ * Fixed OTP + optional x-uat-mode: only in true UAT **or** non-prod stage + header (never in prod with header only).
+ */
+function isNodeEnvProduction(): boolean {
+  const n = (process.env.NODE_ENV || '').toLowerCase();
+  return n === 'prod' || n === 'production' || n === 'main' || n === 'prd';
+}
+
+/**
+ * When true, use 123456 + skip SMS (or accept 123456 in verify) — mirrors /auth/send-otp behavior.
+ */
+export function isUatOtpModeForForgotPassword(headers?: Record<string, string | undefined>): boolean {
+  if (process.env.UAT_MODE === 'true') return true;
+  if (!isNodeEnvProduction() && readUatHeaderFlag(headers)) return true;
+  return false;
+}
+
+function isMissingAuthRateTableError(e: unknown): boolean {
+  const m = String((e as any)?.message ?? e ?? '');
+  const c = (e as any)?.code;
+  if (c === '42P01' || c === 42) return true;
+  return m.includes('auth_operation_rate_events') && /does not exist|not exist|undefined table/i.test(m);
+}
+
 async function countRateEvents(rateKey: string, scope: string, sinceSqlInterval: string): Promise<number> {
   const res = await query(
     `SELECT COUNT(*)::int AS c FROM auth_operation_rate_events
@@ -86,6 +121,19 @@ async function recordRateEvent(rateKey: string, scope: string): Promise<void> {
   });
 }
 
+/** Avoid 500s if `auth_operation_rate_events` migration was not applied yet. */
+async function recordRateEventSafe(rateKey: string, scope: string): Promise<void> {
+  try {
+    await recordRateEvent(rateKey, scope);
+  } catch (e) {
+    if (isMissingAuthRateTableError(e)) {
+      console.warn('[forgot-password] recordRateEvent skipped (table missing). Run db/migrations/727_*.sql');
+      return;
+    }
+    throw e;
+  }
+}
+
 function rateErr(): Error {
   const err = new Error('RATE_LIMIT');
   (err as any).code = 'RATE_LIMIT';
@@ -98,31 +146,51 @@ async function assertForgotPasswordSendRate(params: {
   usernameHash: string;
   ipKey: string;
 }): Promise<void> {
-  const { customerId, usernameHash, ipKey } = params;
-  if (customerId) {
-    const key = `cust:${customerId}`;
-    const h1 = await countRateEvents(key, SCOPE_SEND, '1 hour');
-    if (h1 >= 3) throw rateErr();
-    const d1 = await countRateEvents(key, SCOPE_SEND, '24 hours');
-    if (d1 >= 5) throw rateErr();
-    const last = await lastEventTime(key, SCOPE_SEND);
-    if (last && Date.now() - last.getTime() < 60_000) throw rateErr();
-    return;
+  try {
+    const { customerId, usernameHash, ipKey } = params;
+    if (customerId) {
+      const key = `cust:${customerId}`;
+      const h1 = await countRateEvents(key, SCOPE_SEND, '1 hour');
+      if (h1 >= 3) throw rateErr();
+      const d1 = await countRateEvents(key, SCOPE_SEND, '24 hours');
+      if (d1 >= 5) throw rateErr();
+      const last = await lastEventTime(key, SCOPE_SEND);
+      if (last && Date.now() - last.getTime() < 60_000) throw rateErr();
+      return;
+    }
+    const h10 = await countRateEvents(usernameHash, SCOPE_SEND_UNRESOLVED, '1 hour');
+    if (h10 >= 10) throw rateErr();
+    const iph = await countRateEvents(ipKey, SCOPE_SEND_UNRESOLVED, '1 hour');
+    if (iph >= 40) throw rateErr();
+  } catch (e) {
+    if (isMissingAuthRateTableError(e)) {
+      console.warn(
+        '[forgot-password] assertForgotPasswordSendRate skipped (table missing). Run db/migrations/727_*.sql'
+      );
+      return;
+    }
+    throw e;
   }
-  const h10 = await countRateEvents(usernameHash, SCOPE_SEND_UNRESOLVED, '1 hour');
-  if (h10 >= 10) throw rateErr();
-  const iph = await countRateEvents(ipKey, SCOPE_SEND_UNRESOLVED, '1 hour');
-  if (iph >= 40) throw rateErr();
 }
 
 async function assertVerifyRateAllowed(customerId: string | null, usernameHash: string): Promise<void> {
-  if (customerId) {
-    const key = `cust:${customerId}:v`;
-    const n = await countRateEvents(key, SCOPE_VERIFY, '1 hour');
-    if (n >= 20) throw rateErr();
+  try {
+    if (customerId) {
+      const key = `cust:${customerId}:v`;
+      const n = await countRateEvents(key, SCOPE_VERIFY, '1 hour');
+      if (n >= 20) throw rateErr();
+    }
+    const u = await countRateEvents(`${usernameHash}:verify`, SCOPE_VERIFY, '1 hour');
+    if (u >= 30) throw rateErr();
+  } catch (e) {
+    if (isMissingAuthRateTableError(e)) {
+      console.warn(
+        '[forgot-password] assertVerifyRateAllowed skipped (table missing). Run db/migrations/727_*.sql'
+      );
+      return;
+    }
+    throw e;
   }
-  const u = await countRateEvents(`${usernameHash}:verify`, SCOPE_VERIFY, '1 hour');
-  if (u >= 30) throw rateErr();
 }
 
 async function sendSmsForResetOtp(dialable: string, otpCode: string): Promise<boolean> {
@@ -151,10 +219,16 @@ async function insertPasswordResetOtp(canonicalPhone: string, code: string): Pro
 }
 
 /**
- * Strict OTP verify: purpose must match; no UAT/production static bypass.
+ * Strict OTP verify: purpose must match. Never allow 000000 (forgot path must not mirror prod login bypass).
+ * `allowUat123456`: when true, 123456 is allowed to match a DB row (UAT or non-prod + x-uat-mode).
  */
-export async function verifyPasswordResetOtp(phone: string, code: string): Promise<boolean> {
-  if (code === '123456' || code === '000000') return false;
+export async function verifyPasswordResetOtp(
+  phone: string,
+  code: string,
+  allowUat123456 = false
+): Promise<boolean> {
+  if (code === '000000') return false;
+  if (code === '123456' && !allowUat123456) return false;
   const canonicalPhone = normalizePhoneForOtp(phone);
   const phonesToTry = [canonicalPhone];
   const alt = phone.replace(/\D/g, '').slice(-10);
@@ -292,20 +366,30 @@ export async function handleCustomerForgotPasswordRequest(params: {
       if (!dialable || dialable.replace(/\D/g, '').length < 10) {
         console.warn('[forgot-password] customer has no dialable phone; skipping SMS', customer.id);
       } else {
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const isUatMode = isUatOtpModeForForgotPassword(headers);
+        // Dev/UAT: fixed OTP (same as /auth/send-otp), no SMS. Prod: random 6-digit + real SMS.
+        const otpCode = isUatMode
+          ? '123456'
+          : Math.floor(100000 + Math.random() * 900000).toString();
         const canon = normalizePhoneForOtp(dialable);
         await insertPasswordResetOtp(canon, otpCode);
-        const smsOk = await sendSmsForResetOtp(dialable, otpCode);
-        if (!smsOk) {
-          console.error('[forgot-password] SMS send failed for customer', customer.id);
+        if (isUatMode) {
+          console.log(
+            `[forgot-password] UAT_MODE: fixed OTP ${otpCode} stored, SMS skipped for customer ${customer.id}`
+          );
+        } else {
+          const smsOk = await sendSmsForResetOtp(dialable, otpCode);
+          if (!smsOk) {
+            console.error('[forgot-password] SMS send failed for customer', customer.id);
+          }
         }
       }
     }
 
-    await recordRateEvent(uhash, SCOPE_SEND_UNRESOLVED);
-    await recordRateEvent(ipKey, SCOPE_SEND_UNRESOLVED);
+    await recordRateEventSafe(uhash, SCOPE_SEND_UNRESOLVED);
+    await recordRateEventSafe(ipKey, SCOPE_SEND_UNRESOLVED);
     if (customer?.id) {
-      await recordRateEvent(`cust:${customer.id}`, SCOPE_SEND);
+      await recordRateEventSafe(`cust:${customer.id}`, SCOPE_SEND);
     }
   } catch (e: any) {
     if (e?.code === 'RATE_LIMIT' || e?.message === 'RATE_LIMIT') {
@@ -330,8 +414,9 @@ async function sleepUntilMinDuration(startMs: number, minMs = 400): Promise<void
 export async function handleCustomerForgotPasswordVerifyOtp(params: {
   body: unknown;
   requestId: string;
+  headers?: Record<string, string | undefined>;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { body, requestId } = params;
+  const { body, requestId, headers } = params;
   const t0 = Date.now();
   const parsed = CustomerForgotPasswordVerifyOtpSchema.safeParse(body);
   if (!parsed.success) {
@@ -340,13 +425,14 @@ export async function handleCustomerForgotPasswordVerifyOtp(params: {
   }
   const { username, otp } = parsed.data;
   const uhash = usernameHashKey(username);
+  const allowUat123456 = isUatOtpModeForForgotPassword(headers);
 
   try {
     const customer = await findCustomerForPasswordLogin(username);
     await assertVerifyRateAllowed(customer?.id ? String(customer.id) : null, uhash);
-    await recordRateEvent(`${uhash}:verify`, SCOPE_VERIFY);
+    await recordRateEventSafe(`${uhash}:verify`, SCOPE_VERIFY);
     if (customer?.id) {
-      await recordRateEvent(`cust:${customer.id}:v`, SCOPE_VERIFY);
+      await recordRateEventSafe(`cust:${customer.id}:v`, SCOPE_VERIFY);
     }
 
     if (!customer?.id) {
@@ -359,7 +445,7 @@ export async function handleCustomerForgotPasswordVerifyOtp(params: {
 
     const dialable = dialablePhoneForCustomerAuth(customer.phone);
     const phoneForOtp = dialable || String(customer.phone || '').trim();
-    const ok = await verifyPasswordResetOtp(phoneForOtp, otp);
+    const ok = await verifyPasswordResetOtp(phoneForOtp, otp, allowUat123456);
 
     if (!ok) {
       await sleepUntilMinDuration(t0);
@@ -391,7 +477,12 @@ export async function handleCustomerForgotPasswordVerifyOtp(params: {
         body: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
       };
     }
-    console.error('[forgot-password] verify error:', e);
+    console.error(
+      '[forgot-password] verify error:',
+      (e as any)?.message || e,
+      (e as any)?.code,
+      (e as any)?.stack
+    );
     await sleepUntilMinDuration(t0);
     return {
       status: 500,
