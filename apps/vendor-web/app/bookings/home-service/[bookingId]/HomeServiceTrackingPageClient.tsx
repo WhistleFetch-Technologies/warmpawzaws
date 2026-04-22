@@ -114,7 +114,12 @@ export default function HomeServiceTrackingPageClient() {
           packageSessionId: booking.packageSessionId || booking.package_session_id,
           bookingStatus: booking.status || booking.bookingStatus,
           plannedWalkDurationMinutes,
-          sessionStartedAt: booking.sessionStartedAt || booking.session_started_at || null,
+          sessionStartedAt:
+            booking.sessionStartedAt ||
+            booking.session_started_at ||
+            booking.startedAt ||
+            booking.started_at ||
+            null,
         });
       } else {
         setError('Booking not found');

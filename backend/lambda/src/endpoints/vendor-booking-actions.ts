@@ -1172,12 +1172,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 
-      // Start session
+      // Start session — started_at anchors vendor walk timer after refresh (GET /details)
+      const nowIso = new Date().toISOString();
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'in_progress',
           otp_verified: true,
+          started_at: (booking as any).started_at || nowIso,
         }
       );
 

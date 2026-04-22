@@ -172,12 +172,14 @@ export function HomeServiceTrackingManager({
   // Walk: countdown (planned minutes → 00:00). Other in-service: elapsed time up.
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
-    if (!sessionState.sessionStartedAt || sessionState.status !== 'in_progress') {
+    const clockAnchor =
+      sessionState.sessionStartedAt || (bookingData?.sessionStartedAt ?? null) || null;
+    if (!clockAnchor || sessionState.status !== 'in_progress') {
       return () => {
         if (timer) clearInterval(timer);
       };
     }
-    const startedMs = new Date(sessionState.sessionStartedAt).getTime();
+    const startedMs = new Date(clockAnchor).getTime();
     const plannedSec = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
     const walker = !!bookingData?.isWalkerSession;
     const tick = () => {
@@ -196,6 +198,7 @@ export function HomeServiceTrackingManager({
   }, [
     sessionState.sessionStartedAt,
     sessionState.status,
+    bookingData?.sessionStartedAt,
     bookingData?.isWalkerSession,
     bookingData?.plannedWalkDurationMinutes,
   ]);
@@ -310,7 +313,7 @@ export function HomeServiceTrackingManager({
         setSessionState(prev => ({
           ...prev,
           status: 'in_progress',
-          sessionStartedAt: prev.sessionStartedAt || anchor,
+          sessionStartedAt: anchor || prev.sessionStartedAt,
         }));
         const plannedSec = (bookingData?.plannedWalkDurationMinutes ?? 30) * 60;
         if (bookingData?.isWalkerSession && anchor) {

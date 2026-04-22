@@ -1426,6 +1426,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       // Already in progress (e.g. page refresh) — idempotent success, no OTP re-entry
       if (booking.status === BookingStatus.IN_PROGRESS) {
+        const nowIso = new Date().toISOString();
+        if (!(booking as any).started_at) {
+          try {
+            await update('bookings', { id: bookingId }, { started_at: nowIso });
+          } catch (e: any) {
+            console.warn('[START-SESSION] idempotent started_at:', e?.message || e);
+          }
+        }
         try {
           const gpsRows = await select('gps_tracking_sessions', { booking_id: bookingId });
           const activeGps = gpsRows
@@ -1465,12 +1473,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 
-      // Start session
+      // Start session — persist started_at so GET /details can restore walk countdown after refresh
+      const nowIso = new Date().toISOString();
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: BookingStatus.IN_PROGRESS,
           otp_verified: true,
+          started_at: (booking as any).started_at || nowIso,
         }
       );
 
