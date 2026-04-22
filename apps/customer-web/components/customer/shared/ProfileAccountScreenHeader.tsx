@@ -16,7 +16,8 @@ export interface ProfileAccountScreenHeaderProps {
 }
 
 /**
- * Thin wrapper around ServiceDashboardHeader for account flows (X + Back, curved collar).
+ * Thin wrapper around ServiceDashboardHeader for account flows (X + Back). The header
+ * uses a bottom-rounded orange bar (no extra light “collar” under it).
  */
 export function ProfileAccountScreenHeader({
   onCloseToHome,

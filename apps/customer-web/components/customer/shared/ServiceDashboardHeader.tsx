@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft, ChevronLeft, LucideIcon, CheckCircle2, X } from 'lucide-react';
-import { Fragment, ReactNode } from 'react';
+import { Fragment, ReactNode, useId } from 'react';
 
 export interface StatCard {
   value: string;
@@ -47,6 +47,73 @@ export interface ServiceDashboardHeaderProps {
   fullWidth?: boolean;
   /** When set, each stat card is a button (index 0 = first stat). Pet Sitting: Sitters → browse all, etc. */
   onStatClick?: (index: number) => void;
+  /**
+   * @default true — old UI used a light “collar” (gray) under the orange; we default to
+   * bottom-rounded orange with no extra strip. Set to true only if a screen must keep the
+   * legacy content-colored curve (rare).
+   */
+  useLegacyContentCollar?: boolean;
+  /**
+   * `wave` — default U-curve is part of the header (most hub/list screens).
+   * `flat` — use with ServiceDashboardHeaderBottomWave directly above a hero image so the dip sits on the photo edge.
+   */
+  bottomEdge?: 'wave' | 'flat';
+}
+
+/**
+ * U-shaped “down” curve (center dips).
+ * - `onPhoto` — `absolute` at the top of a hero so the bulge is painted *on* the image (not in the
+ *   scroll gap between a flat header and the photo), matching the usual in-app “curve above the photo” look.
+ * - `flow` — block row under a flat header (rare; prefer onPhoto for profiles).
+ */
+export function ServiceDashboardHeaderBottomWave({
+  className = '',
+  headerColor = 'bg-[#FF8C42]',
+  headerGradient,
+  variant = 'onPhoto',
+}: {
+  className?: string;
+  headerColor?: string;
+  headerGradient?: string;
+  variant?: 'onPhoto' | 'flow';
+}) {
+  const waveGradId = useId().replace(/:/g, '');
+  const waveUsesGradient = Boolean(
+    headerGradient || (typeof headerColor === 'string' && headerColor.includes('gradient'))
+  );
+  const variantCls =
+    variant === 'onPhoto'
+      ? 'absolute top-0 left-0 z-[32] h-7 w-full max-h-9 min-h-6 sm:h-8 sm:min-h-7'
+      : 'relative z-[1] -mb-px h-5 w-full shrink-0 sm:h-6';
+  return (
+    <svg
+      className={`pointer-events-none block w-full ${variantCls} ${className}`.trim()}
+      viewBox="0 0 1200 24"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      {waveUsesGradient && (
+        <defs>
+          <linearGradient
+            id={waveGradId}
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="0"
+            gradientUnits="objectBoundingBox"
+          >
+            <stop offset="0%" stopColor="#FF8C42" />
+            <stop offset="50%" stopColor="#FF7A35" />
+            <stop offset="100%" stopColor="#FF6B35" />
+          </linearGradient>
+        </defs>
+      )}
+      <path
+        d="M0 0 L1200 0 L1200 4.5 Q600 24 0 4.5 L0 0 Z"
+        fill={waveUsesGradient ? `url(#${waveGradId})` : '#FF8C42'}
+      />
+    </svg>
+  );
 }
 
 export function ServiceDashboardHeader({
@@ -65,18 +132,28 @@ export function ServiceDashboardHeader({
   className = '',
   fullWidth = false,
   onStatClick,
+  useLegacyContentCollar = false,
+  bottomEdge = 'wave',
 }: ServiceDashboardHeaderProps) {
+  const waveGradId = useId().replace(/:/g, '');
+  const waveUsesGradient = Boolean(
+    headerGradient || (typeof headerColor === 'string' && headerColor.includes('gradient'))
+  );
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
-  
+
   return (
     <div
       className={`relative z-10 isolate w-full ${fullWidth ? 'max-w-none' : 'mx-auto max-w-customer'} ${className}`.trim()}
     >
-      {/* Orange Header Background */}
+      {/*
+        Downward curve: bottom edge of the orange is a U-shaped dip (center projects down into the
+        next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
+      */}
       <div
-        className={`${headerGradient || headerColor} text-white pb-4 md:pb-6 pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
+        className={`relative z-20 ${headerGradient || headerColor} text-white pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
       >
+        <div className="pb-4 md:pb-6">
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
           <>
@@ -240,12 +317,47 @@ export function ServiceDashboardHeader({
             </div>
           </div>
         )}
+        </div>
+
+        {bottomEdge === 'wave' && (
+          <svg
+            className="pointer-events-none -mb-px block h-5 w-full shrink-0 sm:h-6"
+            viewBox="0 0 1200 24"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            {waveUsesGradient && (
+              <defs>
+                <linearGradient
+                  id={waveGradId}
+                  x1="0"
+                  y1="0"
+                  x2="1"
+                  y2="0"
+                  gradientUnits="objectBoundingBox"
+                >
+                  <stop offset="0%" stopColor="#FF8C42" />
+                  <stop offset="50%" stopColor="#FF7A35" />
+                  <stop offset="100%" stopColor="#FF6B35" />
+                </linearGradient>
+              </defs>
+            )}
+            <path
+              d="M0 0 L1200 0 L1200 4.5 Q600 24 0 4.5 L0 0 Z"
+              fill={waveUsesGradient ? `url(#${waveGradId})` : '#FF8C42'}
+            />
+          </svg>
+        )}
       </div>
 
-      {/* Inward curve — decorative only; must not sit above main content and steal taps (Pet Sitting hub, etc.). */}
-      <div className="pointer-events-none relative -mt-4 min-h-[40px] rounded-t-[32px] bg-white">
-        <div className="pointer-events-none absolute left-0 right-0 top-0 h-8 rounded-t-[32px] bg-white" aria-hidden />
-      </div>
+      {useLegacyContentCollar && (
+        <div className="pointer-events-none relative -mt-4 min-h-[32px] rounded-t-[32px] bg-gray-50">
+          <div
+            className="pointer-events-none absolute left-0 right-0 top-0 h-8 rounded-t-[32px] bg-gray-50"
+            aria-hidden
+          />
+        </div>
+      )}
     </div>
   );
 }

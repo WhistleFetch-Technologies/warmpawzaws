@@ -66,6 +66,67 @@ export function resolveVendorProfilePhotoUrl(raw: Record<string, unknown> | null
   return undefined;
 }
 
+function nonEmptyUrlArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .filter((s) => s.length > 0);
+}
+
+function dedupeUrlsPreserveOrder(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of urls) {
+    if (!seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+    }
+  }
+  return out;
+}
+
+/**
+ * Gallery URLs for provider profile hero — merges facility, vendor, and discovery
+ * provider fields so every uploaded photo can appear (deduped, stable order).
+ */
+export function getVendorHeroPhotoUrls(args: {
+  /** Facility row from /customer/facility/:id (e.g. facility.photos) */
+  facility?: object | null;
+  /** Merged or GET /customer/vendor/:id (facilityPhotos, photoUrl, photos, …) */
+  vendor?: object | null;
+  /** In-app provider row (photo, photos from discovery) */
+  profileProvider?: object | null;
+}): string[] {
+  const { facility, vendor, profileProvider } = args;
+  const ordered: string[] = [];
+
+  const f = facility && typeof facility === 'object' ? (facility as Record<string, unknown>) : null;
+  ordered.push(...nonEmptyUrlArray(f?.photos));
+
+  if (vendor && typeof vendor === 'object') {
+    const v = vendor as Record<string, unknown>;
+    ordered.push(...nonEmptyUrlArray(v.facilityPhotos ?? v.facility_photos));
+    ordered.push(...nonEmptyUrlArray(v.photos));
+    ordered.push(...nonEmptyUrlArray(v.gallery));
+    const vOne =
+      pickNonEmptyString(v.photoUrl) ||
+      pickNonEmptyString(v.photo_url) ||
+      pickNonEmptyString(v.photo);
+    if (vOne) ordered.push(vOne);
+  }
+
+  if (profileProvider && typeof profileProvider === 'object') {
+    const p = profileProvider as Record<string, unknown>;
+    ordered.push(...nonEmptyUrlArray(p.photos));
+    ordered.push(...nonEmptyUrlArray(p.gallery));
+    const pOne =
+      pickNonEmptyString(p.photo) || pickNonEmptyString(p.photoUrl) || pickNonEmptyString(p.photo_url);
+    if (pOne) ordered.push(pOne);
+  }
+
+  return dedupeUrlsPreserveOrder(ordered);
+}
+
 /** Hero / cover — never fall back to profile avatar (callers decide placeholders). */
 export function resolveVendorCoverImageUrl(raw: Record<string, unknown> | null | undefined): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined;

@@ -42,6 +42,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import {
+  getVendorHeroPhotoUrls,
   mergeCustomerFacilityPayload,
   ratingFromFacilityRoot,
   resolveVendorCoverImageUrl,
@@ -188,20 +189,20 @@ export function HomeServiceProviderProfile({
       const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
       const coverUrl = resolveVendorCoverImageUrl(merged);
 
-      const galleryFromFacility =
+      const facilityForHero: Record<string, unknown> | null =
         facilityRoot &&
         typeof facilityRoot.facility === 'object' &&
-        facilityRoot.facility !== null &&
-        Array.isArray((facilityRoot.facility as { photos?: unknown }).photos)
-          ? ((facilityRoot.facility as { photos: string[] }).photos)
-          : [];
-
-      const galleryFallback = [
-        ...(Array.isArray(merged.gallery) ? merged.gallery : []),
-        ...(Array.isArray(merged.photos) ? merged.photos : []),
-      ].filter((u): u is string => typeof u === 'string' && u.length > 0);
-
-      const gallery = galleryFromFacility.length > 0 ? galleryFromFacility : galleryFallback;
+        facilityRoot.facility !== null
+          ? (facilityRoot.facility as Record<string, unknown>)
+          : null;
+      const gallery = getVendorHeroPhotoUrls({
+        facility: facilityForHero,
+        vendor: merged,
+        profileProvider: {
+          photo: profilePhotoUrl,
+          photoUrl: profilePhotoUrl,
+        },
+      });
 
       const latRaw = merged.latitude ?? merged.lat;
       const lngRaw = merged.longitude ?? merged.lng;
