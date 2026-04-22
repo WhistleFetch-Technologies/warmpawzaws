@@ -31,7 +31,8 @@ export default function HomeServiceTrackingPageClient() {
   const loadBookingData = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/vendor/bookings/${bookingId}`);
+      // Must use /details: plain /vendor/bookings/:id is the list-by-vendor route (id = vendorId), not booking.
+      const response = await apiClient.get<any>(`/vendor/bookings/${encodeURIComponent(bookingId)}/details`);
       
       if (response.success && response.booking) {
         const booking = response.booking;
@@ -90,25 +91,24 @@ export default function HomeServiceTrackingPageClient() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading booking...</p>
-        </div>
+      <div className="vendor-app-column flex min-h-screen flex-col items-center justify-center bg-[#FFF5F1]">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-[#FF8C42] border-t-transparent" />
+        <p className="mt-4 text-sm font-medium text-gray-600">Loading booking…</p>
       </div>
     );
   }
 
   if (error || !vendorId || !bookingData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <p className="text-red-500 font-medium">{error || 'Unable to load booking'}</p>
+      <div className="vendor-app-column flex min-h-screen flex-col bg-[#FFF5F1] px-6 pb-10 pt-12">
+        <div className="mx-auto w-full max-w-md rounded-t-[40px] bg-white px-6 py-10 text-center shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
+          <p className="text-sm font-semibold text-red-600">{error || 'Unable to load booking'}</p>
           <button
+            type="button"
             onClick={handleBack}
-            className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg"
+            className="mt-6 w-full rounded-xl bg-[#FF8C42] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#FF7A2E]"
           >
-            Back to Bookings
+            Back to bookings
           </button>
         </div>
       </div>

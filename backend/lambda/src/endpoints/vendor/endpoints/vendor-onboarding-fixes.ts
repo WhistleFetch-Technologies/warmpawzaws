@@ -186,6 +186,39 @@ const DEFAULT_FORM_FIELDS = [
   }
 ];
 
+const PLACEHOLDER_FIELD_NAMES = new Set(['new_field', 'newfield', 'new-field']);
+
+/**
+ * Admin designer often leaves fieldName as "new_field" while label/id are real (e.g. Cancelled Cheque).
+ * Vendor schema sanitization strips those names entirely; assign stable names so vendor matches admin.
+ */
+function normalizeAdminPlaceholderFieldNames(rawFields: any[]): any[] {
+  if (!Array.isArray(rawFields) || rawFields.length === 0) return rawFields;
+  return rawFields.map((f: any) => {
+    const current = String(f?.fieldName || f?.name || '')
+      .toLowerCase()
+      .trim();
+    if (!PLACEHOLDER_FIELD_NAMES.has(current)) return f;
+
+    const label = String(f?.label || '').trim();
+    if (!label || /^new field$/i.test(label)) return f;
+
+    const slug = label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g, '_') || 'custom_field';
+
+    const idPart = String(f?.id || '')
+      .replace(/[^a-z0-9]/gi, '')
+      .slice(-12);
+    const suffix = idPart || 'field';
+    const stable = `${slug}_${suffix}`;
+
+    return { ...f, fieldName: stable, name: stable };
+  });
+}
+
 export function registerVendorOnboardingFixes(app: Hono) {
   /**
    * GET /vendor/onboarding/form-schema-fixed
@@ -242,9 +275,10 @@ export function registerVendorOnboardingFixes(app: Hono) {
       }
 
       if (identity) {
-          // Use identity values if available, fallback to query params
-          selectedRoleId = identity.selected_role_id || roleIdParam;
-          vendorType = identity.vendor_type || vendorTypeParam || 'business';
+          // Prefer explicit query params (Choose Role / catalogue flow) over DB identity,
+          // so the form matches admin onboarding config for the role the vendor is filling now.
+          selectedRoleId = roleIdParam || identity.selected_role_id;
+          vendorType = vendorTypeParam || identity.vendor_type || 'business';
       }
 
       // If still no role ID, return default form schema
@@ -264,22 +298,43 @@ export function registerVendorOnboardingFixes(app: Hono) {
         });
       }
 
-      // Get role information
-      const roles = await select('roles', { id: selectedRoleId });
+      // Get role information (vendors pass roles.id UUID; forms are keyed by roles.name)
+      let roles = await select('roles', { id: selectedRoleId });
       let roleName = 'default';
-      
+
       if (roles.length > 0) {
         roleName = roles[0].name;
       } else {
-        // roleId might be a role name, not UUID
-        roleName = selectedRoleId;
+        const byUuid = await query(
+          'SELECT * FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1',
+          [selectedRoleId]
+        );
+        if (byUuid.rows?.length) {
+          roles = byUuid.rows;
+          roleName = roles[0].name;
+        } else {
+          const byName = await query(
+            'SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1',
+            [selectedRoleId]
+          );
+          if (byName.rows?.length) {
+            roles = byName.rows;
+            roleName = roles[0].name;
+          } else {
+            roleName = selectedRoleId;
+          }
+        }
       }
-      
-      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${selectedRoleId})`);
-      
-      // Try to get form from onboarding_forms table
+
+      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (param: ${selectedRoleId})`);
+
+      // Prefer admin-maintained row: highest version, then latest update (avoids stale duplicate rows by created_at)
       const formsResult = await query(
-        `SELECT * FROM onboarding_forms WHERE role_id = $1 OR role_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT * FROM onboarding_forms
+         WHERE role_id = $1 OR role_id = $2
+         ORDER BY COALESCE(version, 1) DESC,
+                  COALESCE(updated_at, created_at) DESC NULLS LAST
+         LIMIT 1`,
         [roleName, selectedRoleId]
       );
       
@@ -289,6 +344,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
         console.log(`✅ [FORM SCHEMA] Found existing form for role ${roleName}`);
         const form = formsResult.rows[0];
         fields = typeof form.fields === 'string' ? JSON.parse(form.fields) : (form.fields || []);
+        fields = normalizeAdminPlaceholderFieldNames(fields);
       } else {
         console.log(`⚠️ [FORM SCHEMA] No form found for role ${roleName}, using DEFAULT FIELDS`);
         fields = DEFAULT_FORM_FIELDS;

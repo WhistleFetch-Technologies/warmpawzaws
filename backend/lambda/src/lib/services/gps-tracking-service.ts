@@ -241,18 +241,19 @@ class GPSTrackingServiceImpl {
       }
       const session = sessions[0];
 
-      if (session.status !== 'in_transit') {
+      const locatableStatuses = ['in_transit', 'arrived', 'started', 'active'];
+      if (!locatableStatuses.includes(String(session.status))) {
         throw new Error('Tracking session is not active');
       }
 
-      // Calculate new ETA
+      // Calculate new ETA (still useful while in_transit; harmless while arrived / walk in progress)
       const destination: Location = {
         latitude: parseFloat(session.destination_latitude),
         longitude: parseFloat(session.destination_longitude),
       };
       const eta = await this.calculateETA(currentLocation, destination);
 
-      // Check if vendor has arrived (within 100 meters)
+      // Check if vendor has arrived (within 100 meters) — only auto-transition from in_transit
       const distanceToDestination = this.calculateDistance(
         currentLocation.latitude,
         currentLocation.longitude,
@@ -261,16 +262,15 @@ class GPSTrackingServiceImpl {
       );
 
       let newStatus = session.status;
-      if (distanceToDestination < 0.1) { // 100 meters
+      if (session.status === 'in_transit' && distanceToDestination < 0.1) {
         newStatus = 'arrived';
-        
-        // Send arrival notification
+
         await sendEventNotification({
           eventType: 'vendor_arrived',
           recipientId: session.customer_id,
           recipientType: 'customer',
           relatedId: session.booking_id,
-          data: { 
+          data: {
             bookingId: session.booking_id,
             sessionId,
           },
@@ -288,14 +288,18 @@ class GPSTrackingServiceImpl {
         distance_remaining_km: eta.distanceKm,
         status: newStatus,
         last_update_at: new Date().toISOString(),
-        ...(newStatus === 'arrived' ? { arrived_at: new Date().toISOString() } : {}),
+        ...(newStatus === 'arrived' && session.status === 'in_transit'
+          ? { arrived_at: new Date().toISOString() }
+          : {}),
       });
 
-      // Update booking ETA
-      await update('bookings', { id: session.booking_id }, {
-        estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
-        ...(newStatus === 'arrived' ? { vendor_arrived_at: new Date().toISOString() } : {}),
-      });
+      // While en route, keep booking ETA fresh; after arrival / walk, avoid rewriting arrival timestamps every ping
+      if (session.status === 'in_transit') {
+        await update('bookings', { id: session.booking_id }, {
+          estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
+          ...(newStatus === 'arrived' ? { vendor_arrived_at: new Date().toISOString() } : {}),
+        });
+      }
 
       // Store location history
       await insert('gps_location_history', {

@@ -1038,10 +1038,20 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     // Pre-fill from resubmit (Go back to onboarding form) or from cached application
     const initialFormData = resubmitInitialData ?? vendorData?.application?.application_payload ?? null;
 
+    const vendorTypeFromStorage =
+      typeof window !== 'undefined' ? String(localStorage.getItem('vendorType') || '').toLowerCase() : '';
+    const onboardingVendorType: 'solo' | 'business' =
+      vendorData?.vendor_type === 'solo' ||
+      String(vendorData?.vendorType || '').toLowerCase() === 'solo' ||
+      vendorTypeFromStorage === 'solo'
+        ? 'solo'
+        : 'business';
+
     return (
       <DynamicVendorOnboardingForm
         roleId={selectedRole}
         vendorId={vendorData?.id || session.vendorId}
+        vendorType={onboardingVendorType}
         initialData={initialFormData ? { formData: initialFormData } : undefined}
         isEditMode={!!initialFormData}
         onSubmit={async (submissionData) => {
@@ -1110,6 +1120,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               phone,
               application_payload: {
                 ...sanitizedFormData,
+                vendor_type: onboardingVendorType === 'solo' ? 'solo' : 'business',
                 roleId: selectedRole,
                 location: submissionData.coordinates,
                 coordinates: submissionData.coordinates,

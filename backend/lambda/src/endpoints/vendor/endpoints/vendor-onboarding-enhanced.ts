@@ -479,9 +479,10 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
         const identities = await select('vendor_identity', { phone });
         if (identities.length > 0) {
           identity = identities[0];
-          // Use identity values if available, fallback to query params
-          selectedRoleId = identity.selected_role_id || roleIdParam;
-          vendorType = identity.vendor_type || vendorTypeParam || 'business';
+          // Prefer explicit roleId from the client (role chosen on this screen) over vendor_identity,
+          // so schema matches admin-configured onboarding_forms for that role.
+          selectedRoleId = roleIdParam || identity.selected_role_id;
+          vendorType = vendorTypeParam || identity.vendor_type || 'business';
         }
       }
 
@@ -504,22 +505,41 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // Get form schema from onboarding forms table (matching reference implementation)
-      // First, get the role to find its name
-      const roles = await select('roles', { id: selectedRoleId });
+      let roles = await select('roles', { id: selectedRoleId });
       let roleName = 'default';
-      
+
       if (roles.length > 0) {
         roleName = roles[0].name;
       } else {
-        // selectedRoleId might be a role name, not UUID
-        roleName = selectedRoleId;
+        const byUuid = await query(
+          'SELECT * FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1',
+          [selectedRoleId]
+        );
+        if (byUuid.rows?.length) {
+          roles = byUuid.rows;
+          roleName = roles[0].name;
+        } else {
+          const byName = await query(
+            'SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1',
+            [selectedRoleId]
+          );
+          if (byName.rows?.length) {
+            roles = byName.rows;
+            roleName = roles[0].name;
+          } else {
+            roleName = selectedRoleId;
+          }
+        }
       }
-      
-      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${selectedRoleId})`);
-      
-      // Forms are stored by role name, not UUID - try both
+
+      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (param: ${selectedRoleId})`);
+
       const formsResult = await query(
-        `SELECT * FROM onboarding_forms WHERE role_id = $1 OR role_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT * FROM onboarding_forms
+         WHERE role_id = $1 OR role_id = $2
+         ORDER BY COALESCE(version, 1) DESC,
+                  COALESCE(updated_at, created_at) DESC NULLS LAST
+         LIMIT 1`,
         [roleName, selectedRoleId]
       );
       const forms = formsResult.rows || [];

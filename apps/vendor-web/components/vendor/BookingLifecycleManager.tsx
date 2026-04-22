@@ -121,7 +121,7 @@ export function BookingLifecycleManager() {
       loadVendorBookings();
       
       // Show OTP to vendor
-      const updatedBooking = await apiClient.get(`/vendor/bookings/${booking.id}`) as any;
+      const updatedBooking = await apiClient.get(`/vendor/bookings/${booking.id}/details`) as any;
       setSelectedBooking(updatedBooking.booking);
       setShowConfirmModal(true);
     } catch (error: any) {

@@ -1,28 +1,43 @@
 'use client';
 
 /**
- * HomeServiceTrackingManager - Vendor GPS Tracking for Home Services
- * 
- * Features:
- * - Real-time GPS tracking during home service visits
- * - Route recording for walker/sitter sessions
- * - ETA updates for customers
- * - Start/End session with OTP verification
- * - Distance calculation and route map
- * - Session duration tracking
- * - Automatic location updates
+ * HomeServiceTrackingManager — vendor live session UI (universal vendor shell).
+ *
+ * Walk runtime: Stack A — Home service GPS only (`gps_tracking_sessions` +
+ * `POST /vendor/bookings/:id/location-update` → `gps_location_history`).
+ * Customer apps read via `GET /tracking/booking/:bookingId`.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  ArrowLeft, Navigation, MapPin, Clock, Play, Pause, Square, 
-  CheckCircle2, AlertTriangle, RefreshCw, Route, Zap, Phone,
-  MessageCircle, Camera, Flag
+import {
+  ArrowLeft,
+  Navigation,
+  MapPin,
+  Clock,
+  Play,
+  Square,
+  CheckCircle2,
+  RefreshCw,
+  Route,
+  Zap,
+  Phone,
+  MessageCircle,
+  Flag,
+  Footprints,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { cn } from '@/components/ui/utils';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -70,8 +85,6 @@ interface SessionState {
   distanceToDestination: number | null; // in km
 }
 
-type TrackingStatus = 'idle' | 'traveling' | 'arrived' | 'session_active' | 'completed';
-
 export function HomeServiceTrackingManager({
   vendorId,
   bookingId,
@@ -105,6 +118,7 @@ export function HomeServiceTrackingManager({
   // UI state
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [lastGpsSyncAt, setLastGpsSyncAt] = useState<string | null>(null);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpType, setOtpType] = useState<'start' | 'end'>('start');
   const [otpInput, setOtpInput] = useState('');
@@ -269,8 +283,8 @@ export function HomeServiceTrackingManager({
         latitude: loc.latitude,
         longitude: loc.longitude,
         accuracy: loc.accuracy,
-        // Note: Backend recalculates ETA/distance, so we don't send those
       });
+      setLastGpsSyncAt(new Date().toISOString());
     } catch (error: any) {
       console.error('Failed to send location update:', error);
       lastLocationUpdateSentRef.current = 0; // Allow retry sooner on failure
@@ -484,108 +498,168 @@ export function HomeServiceTrackingManager({
     return `${meters} m`;
   };
 
-  // Get status color and label
-  const getStatusInfo = () => {
-    switch (sessionState.status) {
-      case 'pending':
-        return { color: 'bg-gray-100 text-gray-700', label: 'Pending Start', icon: Clock };
-      case 'traveling':
-        return { color: 'bg-blue-100 text-blue-700', label: 'On the Way', icon: Navigation };
-      case 'arrived':
-        return { color: 'bg-amber-100 text-amber-700', label: 'Arrived', icon: MapPin };
-      case 'in_progress':
-        return { color: 'bg-green-100 text-green-700', label: 'In Progress', icon: Play };
-      case 'completed':
-        return { color: 'bg-purple-100 text-purple-700', label: 'Completed', icon: CheckCircle2 };
-      default:
-        return { color: 'bg-gray-100 text-gray-700', label: 'Unknown', icon: AlertTriangle };
+  const phaseLabels = bookingData?.isWalkerSession
+    ? ['En route', 'Arrived', 'Walking', 'Done']
+    : ['En route', 'Arrived', 'In service', 'Done'];
+
+  const focusStep =
+    sessionState.status === 'traveling'
+      ? 0
+      : sessionState.status === 'arrived'
+        ? 1
+        : sessionState.status === 'in_progress'
+          ? 2
+          : sessionState.status === 'completed'
+            ? 3
+            : 0;
+
+  const stepVisual = (i: number): 'done' | 'current' | 'next' | 'upcoming' => {
+    if (sessionState.status === 'completed') return 'done';
+    if (sessionState.status === 'pending') {
+      if (i === 0) return 'next';
+      return 'upcoming';
     }
+    if (i < focusStep) return 'done';
+    if (i === focusStep) return 'current';
+    return 'upcoming';
   };
 
-  const statusInfo = getStatusInfo();
-  const StatusIcon = statusInfo.icon;
+  const primaryBtn =
+    'w-full rounded-xl py-6 text-base font-semibold text-white shadow-sm bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-60';
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 text-green-600 animate-spin mx-auto mb-2" />
-          <p className="text-gray-600">Loading session...</p>
-        </div>
+      <div className="vendor-app-column flex min-h-screen flex-col items-center justify-center bg-[#FFF5F1]">
+        <RefreshCw className="h-10 w-10 animate-spin text-[#FF8C42]" aria-hidden />
+        <p className="mt-3 text-sm font-medium text-gray-600">Loading session…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-4 sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold">Home Service</h1>
-            <p className="text-sm text-white/80">{bookingData?.serviceName}</p>
-          </div>
-          <Badge className={statusInfo.color}>
-            <StatusIcon className="w-3 h-3 mr-1" />
-            {statusInfo.label}
-          </Badge>
+    <div className="vendor-root-scroll vendor-app-column flex min-h-screen flex-col bg-[#FFF5F1] overscroll-y-contain">
+      {/* Universal vendor hero (matches onboarding-style shell) */}
+      <div className="relative shrink-0 px-6 pb-6 pt-8 text-center">
+        <button
+          type="button"
+          onClick={onBack}
+          className="absolute left-6 top-8 rounded-full bg-white/70 p-2 shadow-sm transition-colors hover:bg-white"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-800" />
+        </button>
+        <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-[#FF8C42] shadow-lg shadow-orange-200/60">
+          {bookingData?.isWalkerSession ? (
+            <Footprints className="h-10 w-10 text-white" aria-hidden />
+          ) : (
+            <MapPin className="h-10 w-10 text-white" aria-hidden />
+          )}
         </div>
-
-        {/* Live Tracking Indicator */}
-        {trackingActive && (
-          <div className="mt-3 flex items-center gap-2 bg-white/20 backdrop-blur rounded-lg px-3 py-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            <span className="text-sm">Live tracking active</span>
-            {currentLocation && (
-              <span className="text-xs text-white/70 ml-auto">
-                Accuracy: {currentLocation.accuracy?.toFixed(0)}m
-              </span>
-            )}
-          </div>
-        )}
+        <h1 className="text-xl font-bold text-gray-900">
+          {bookingData?.isWalkerSession ? 'Walk session' : 'Home visit'}
+        </h1>
+        <p className="mt-1 text-sm font-medium text-gray-500">{bookingData?.serviceName}</p>
+        <p className="mt-0.5 text-xs text-gray-500">
+          {bookingData?.petName} · {bookingData?.customerName}
+        </p>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Customer Info Card */}
-        <Card className="p-4">
-          <div className="flex items-start justify-between mb-3">
+      <div className="flex min-h-0 flex-1 flex-col rounded-t-[40px] bg-white px-5 pb-8 pt-6 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
+        {/* Phase strip — maps session to Stack A lifecycle */}
+        <div className="mb-5 grid grid-cols-4 gap-1.5">
+          {phaseLabels.map((label, i) => {
+            const v = stepVisual(i);
+            return (
+              <div
+                key={label}
+                className={cn(
+                  'flex flex-col items-center rounded-xl border px-1 py-2 text-center transition-colors',
+                  v === 'done' && 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                  v === 'current' && 'border-[#FF8C42] bg-orange-50 text-gray-900 shadow-sm',
+                  v === 'next' && 'border-dashed border-[#FF8C42]/60 bg-white text-gray-800',
+                  v === 'upcoming' && 'border-gray-100 bg-gray-50 text-gray-400'
+                )}
+              >
+                <span className="mb-0.5 flex h-5 w-5 items-center justify-center">
+                  {v === 'done' ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                  ) : v === 'current' ? (
+                    <span className="h-2 w-2 rounded-full bg-[#FF8C42]" />
+                  ) : null}
+                </span>
+                <span className="text-[10px] font-semibold leading-tight">{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* GPS + customer-visible live map (Stack A) */}
+        <Card className="mb-4 border-orange-100 bg-orange-50/50 p-3 shadow-none">
+          <div className="flex items-start gap-2">
+            <div
+              className={cn(
+                'mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full',
+                trackingActive ? 'animate-pulse bg-emerald-500' : 'bg-gray-300'
+              )}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900">Live location (customer map)</p>
+              <p className="text-xs text-gray-600">
+                {trackingActive
+                  ? 'GPS on — your position syncs for the pet parent.'
+                  : 'GPS off until you start the journey or the walk.'}
+              </p>
+              {lastGpsSyncAt && (
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Last sent: {new Date(lastGpsSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {currentLocation?.accuracy != null
+                    ? ` · ±${Math.round(currentLocation.accuracy)}m`
+                    : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="mb-4 border-gray-100 p-4 shadow-sm">
+          <div className="mb-3 flex items-start justify-between gap-2">
             <div>
               <h3 className="font-semibold text-gray-900">{bookingData?.customerName}</h3>
               <p className="text-sm text-gray-500">Pet: {bookingData?.petName}</p>
             </div>
-            <div className="flex gap-2">
-              <a 
+            <div className="flex shrink-0 gap-2">
+              <a
                 href={`tel:${bookingData?.customerPhone}`}
-                className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200"
+                className="rounded-full border border-[#FF8C42]/30 bg-orange-50 p-2 text-[#FF8C42] transition-colors hover:bg-orange-100"
+                aria-label="Call customer"
               >
-                <Phone className="w-5 h-5" />
+                <Phone className="h-5 w-5" />
               </a>
-              <button className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200">
-                <MessageCircle className="w-5 h-5" />
+              <button
+                type="button"
+                className="rounded-full border border-gray-200 bg-white p-2 text-gray-500 hover:border-[#FF8C42]/40 hover:text-[#FF8C42]"
+                aria-label="Message (coming soon)"
+              >
+                <MessageCircle className="h-5 w-5" />
               </button>
             </div>
           </div>
-          
-          <div className="flex items-start gap-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-            <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex items-start gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
             <span>{bookingData?.address}</span>
           </div>
         </Card>
 
-        {/* ETA Card - Show when traveling */}
         {sessionState.status === 'traveling' && sessionState.currentEta !== null && (
-          <Card className="p-4 bg-blue-50 border-blue-200">
-            <div className="flex items-center justify-between">
+          <Card className="mb-4 border-blue-100 bg-blue-50/80 p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Navigation className="w-6 h-6 text-blue-600 animate-pulse" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+                  <Navigation className="h-6 w-6 animate-pulse text-blue-600" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-blue-900">{sessionState.currentEta} min</p>
-                  <p className="text-sm text-blue-700">Estimated arrival</p>
+                  <p className="text-sm text-blue-800">ETA to customer</p>
                 </div>
               </div>
               {sessionState.distanceToDestination !== null && (
@@ -593,107 +667,90 @@ export function HomeServiceTrackingManager({
                   <p className="text-lg font-semibold text-blue-900">
                     {sessionState.distanceToDestination.toFixed(1)} km
                   </p>
-                  <p className="text-xs text-blue-600">away</p>
+                  <p className="text-xs text-blue-700">remaining</p>
                 </div>
               )}
             </div>
           </Card>
         )}
 
-        {/* Session Stats - Show during active session */}
         {sessionState.status === 'in_progress' && (
-          <Card className="p-4">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-green-600" />
-              Session Stats
+          <Card className="mb-4 border-gray-100 p-4 shadow-sm">
+            <h3 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+              <Zap className="h-5 w-5 text-[#FF8C42]" />
+              Session stats
             </h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-3 bg-green-50 rounded-xl">
-                <Clock className="w-6 h-6 text-green-600 mx-auto mb-1" />
-                <p className="text-xl font-bold text-green-900">{formatDuration(sessionDuration)}</p>
-                <p className="text-xs text-green-700">Duration</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-orange-50/80 p-3 text-center">
+                <Clock className="mx-auto mb-1 h-6 w-6 text-[#FF8C42]" />
+                <p className="text-xl font-bold text-gray-900">{formatDuration(sessionDuration)}</p>
+                <p className="text-xs font-medium text-gray-600">Duration</p>
               </div>
-              
               {bookingData?.isWalkerSession && (
-                <div className="text-center p-3 bg-blue-50 rounded-xl">
-                  <Route className="w-6 h-6 text-blue-600 mx-auto mb-1" />
-                  <p className="text-xl font-bold text-blue-900">{formatDistance(sessionState.totalDistance)}</p>
-                  <p className="text-xs text-blue-700">Distance</p>
+                <div className="rounded-xl bg-sky-50 p-3 text-center">
+                  <Route className="mx-auto mb-1 h-6 w-6 text-sky-600" />
+                  <p className="text-xl font-bold text-gray-900">{formatDistance(sessionState.totalDistance)}</p>
+                  <p className="text-xs font-medium text-sky-800">Distance (device)</p>
                 </div>
               )}
             </div>
           </Card>
         )}
 
-        {/* Route Map Placeholder - Show for walkers */}
         {bookingData?.isWalkerSession && sessionState.routePoints.length > 0 && (
-          <Card className="p-4">
-            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Route className="w-5 h-5 text-purple-600" />
-              Walk Route
+          <Card className="mb-4 border-gray-100 p-4 shadow-sm">
+            <h3 className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
+              <Route className="h-5 w-5 text-[#FF8C42]" />
+              Walk route (preview)
             </h3>
-            
-            {/* Map placeholder - In production, integrate Google Maps */}
-            <div className="h-48 bg-gradient-to-br from-green-100 to-blue-100 rounded-xl flex items-center justify-center relative overflow-hidden">
-              <div className="absolute inset-0 opacity-20">
-                {/* Simplified route visualization */}
-                <svg className="w-full h-full" viewBox="0 0 100 100">
-                  <path
-                    d={`M ${sessionState.routePoints.map((p, i) => 
-                      `${((p.longitude % 1) * 100 + 50) % 100},${((p.latitude % 1) * 100 + 50) % 100}`
-                    ).join(' L ')}`}
-                    stroke="#22c55e"
-                    strokeWidth="2"
-                    fill="none"
-                  />
-                </svg>
-              </div>
-              <div className="text-center z-10">
-                <p className="text-gray-600 font-medium">Route Tracking Active</p>
-                <p className="text-sm text-gray-500">{sessionState.routePoints.length} points recorded</p>
+            <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-orange-50 to-sky-50">
+              <svg className="absolute inset-0 h-full w-full opacity-25" viewBox="0 0 100 100" aria-hidden>
+                <path
+                  d={`M ${sessionState.routePoints
+                    .map((p) => `${((p.longitude % 1) * 100 + 50) % 100},${((p.latitude % 1) * 100 + 50) % 100}`)
+                    .join(' L ')}`}
+                  stroke="#ea580c"
+                  strokeWidth="2"
+                  fill="none"
+                />
+              </svg>
+              <div className="relative z-10 text-center px-2">
+                <p className="text-sm font-medium text-gray-700">Recording locally</p>
+                <p className="text-xs text-gray-500">
+                  Customer live map uses GPS session history on the server.
+                </p>
+                <p className="mt-1 text-xs font-semibold text-[#FF8C42]">
+                  {sessionState.routePoints.length} points
+                </p>
               </div>
             </div>
           </Card>
         )}
 
-        {/* Completion Summary - Show when completed */}
         {sessionState.status === 'completed' && (
-          <Card className="p-4 bg-green-50 border-green-200">
-            <div className="text-center">
-              <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-green-900 mb-2">Service Completed!</h3>
-              
-              <div className="grid grid-cols-2 gap-4 mt-4 text-left">
-                <div className="bg-white rounded-lg p-3">
-                  <p className="text-sm text-gray-500">Duration</p>
-                  <p className="font-semibold">{formatDuration(sessionDuration)}</p>
-                </div>
-                {bookingData?.isWalkerSession && (
-                  <div className="bg-white rounded-lg p-3">
-                    <p className="text-sm text-gray-500">Distance</p>
-                    <p className="font-semibold">{formatDistance(sessionState.totalDistance)}</p>
-                  </div>
-                )}
+          <Card className="mb-4 border-emerald-100 bg-emerald-50/60 p-4 text-center shadow-sm">
+            <CheckCircle2 className="mx-auto mb-3 h-14 w-14 text-emerald-600" />
+            <h3 className="text-lg font-bold text-emerald-900">Completed</h3>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-left">
+              <div className="rounded-xl bg-white p-3 shadow-sm">
+                <p className="text-xs text-gray-500">Duration</p>
+                <p className="font-semibold text-gray-900">{formatDuration(sessionDuration)}</p>
               </div>
+              {bookingData?.isWalkerSession && (
+                <div className="rounded-xl bg-white p-3 shadow-sm">
+                  <p className="text-xs text-gray-500">Distance</p>
+                  <p className="font-semibold text-gray-900">{formatDistance(sessionState.totalDistance)}</p>
+                </div>
+              )}
             </div>
           </Card>
         )}
 
-        {/* Action Buttons */}
-        <div className="space-y-3 pb-6">
+        <div className="mt-auto space-y-3 pt-2">
           {sessionState.status === 'pending' && (
-            <Button
-              onClick={handleStartTravel}
-              disabled={processing}
-              className="w-full bg-blue-600 hover:bg-blue-700 py-6"
-            >
-              {processing ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <Navigation className="w-5 h-5 mr-2" />
-              )}
-              Start Journey to Customer
+            <Button onClick={handleStartTravel} disabled={processing} className={primaryBtn}>
+              {processing ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Navigation className="mr-2 h-5 w-5" />}
+              Start journey to customer
             </Button>
           )}
 
@@ -701,31 +758,19 @@ export function HomeServiceTrackingManager({
             <Button
               onClick={handleArrived}
               disabled={processing}
-              className="w-full bg-amber-500 hover:bg-amber-600 py-6"
+              className="w-full rounded-xl bg-amber-500 py-6 text-base font-semibold text-white shadow-sm hover:bg-amber-600 disabled:opacity-60"
             >
-              {processing ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <Flag className="w-5 h-5 mr-2" />
-              )}
-              I've Arrived
+              {processing ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Flag className="mr-2 h-5 w-5" />}
+              I&apos;ve arrived
             </Button>
           )}
 
           {sessionState.status === 'arrived' && (
-            <Button
-              onClick={handleStartSession}
-              disabled={processing}
-              className="w-full bg-green-600 hover:bg-green-700 py-6"
-            >
-              {processing ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <Play className="w-5 h-5 mr-2" />
-              )}
-              {bookingData?.isWalkerSession || bookingData?.isSitterSession 
-                ? 'Start Session (OTP Required)'
-                : 'Start Service'}
+            <Button onClick={handleStartSession} disabled={processing} className={primaryBtn}>
+              {processing ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
+              {bookingData?.isWalkerSession || bookingData?.isSitterSession
+                ? 'Start session (OTP)'
+                : 'Start service'}
             </Button>
           )}
 
@@ -733,87 +778,71 @@ export function HomeServiceTrackingManager({
             <Button
               onClick={handleEndSession}
               disabled={processing}
-              className="w-full bg-red-500 hover:bg-red-600 py-6"
+              className="w-full rounded-xl bg-rose-600 py-6 text-base font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60"
             >
-              {processing ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <Square className="w-5 h-5 mr-2" />
-              )}
-              {bookingData?.isWalkerSession || bookingData?.isSitterSession 
-                ? 'End Session (OTP Required)'
-                : 'Complete Service'}
+              {processing ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Square className="mr-2 h-5 w-5" />}
+              {bookingData?.isWalkerSession || bookingData?.isSitterSession ? 'End session (OTP)' : 'Complete service'}
             </Button>
           )}
 
           {sessionState.status === 'completed' && (
             <Button
-              onClick={() => onComplete({
-                bookingId,
-                status: 'completed',
-                duration: sessionDuration,
-                distance: sessionState.totalDistance
-              })}
-              className="w-full bg-purple-600 hover:bg-purple-700 py-6"
+              onClick={() =>
+                onComplete({
+                  bookingId,
+                  status: 'completed',
+                  duration: sessionDuration,
+                  distance: sessionState.totalDistance,
+                })
+              }
+              className={primaryBtn}
             >
-              <CheckCircle2 className="w-5 h-5 mr-2" />
-              Back to Dashboard
+              <CheckCircle2 className="mr-2 h-5 w-5" />
+              Back to bookings
             </Button>
           )}
         </div>
       </div>
 
-      {/* OTP Modal */}
-      {showOtpModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">
-              {otpType === 'start' ? 'Start Session' : 'End Session'}
-            </h2>
-            <p className="text-gray-600 mb-6">
-              Enter the OTP provided by {bookingData?.customerName}
-            </p>
-            
-            <Input
-              type="text"
-              placeholder="Enter 4 or 6-digit OTP"
-              value={otpInput}
-              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="text-center text-2xl tracking-widest mb-4"
-              maxLength={6}
-            />
-            
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowOtpModal(false)}
-                className="flex-1"
-                disabled={processing}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  const len = otpInput.length;
-                  if (len === 4 || len === 6) {
-                    if (otpType === 'start') {
-                      confirmStartSession(otpInput);
-                    } else {
-                      confirmEndSession(otpInput);
-                    }
-                  } else {
-                    toast.error('Please enter a valid 4 or 6-digit OTP');
-                  }
-                }}
-                disabled={(otpInput.length !== 4 && otpInput.length !== 6) || processing}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog open={showOtpModal} onOpenChange={(open) => !processing && setShowOtpModal(open)}>
+        <DialogContent className="max-w-sm rounded-2xl border-gray-100">
+          <DialogHeader>
+            <DialogTitle>{otpType === 'start' ? 'Start session' : 'End session'}</DialogTitle>
+            <DialogDescription>
+              Enter the OTP from {bookingData?.customerName}.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="text"
+            inputMode="numeric"
+            placeholder="4–6 digit OTP"
+            value={otpInput}
+            onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            className="text-center text-2xl tracking-widest"
+            maxLength={6}
+            autoComplete="one-time-code"
+          />
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="flex-1 rounded-xl" disabled={processing} onClick={() => setShowOtpModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 rounded-xl bg-[#FF8C42] hover:bg-[#FF7A2E]"
+              disabled={(otpInput.length !== 4 && otpInput.length !== 6) || processing}
+              onClick={() => {
+                const len = otpInput.length;
+                if (len === 4 || len === 6) {
+                  if (otpType === 'start') confirmStartSession(otpInput);
+                  else confirmEndSession(otpInput);
+                } else toast.error('Enter a valid 4 or 6-digit OTP');
+              }}
+            >
+              {processing ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Verify'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

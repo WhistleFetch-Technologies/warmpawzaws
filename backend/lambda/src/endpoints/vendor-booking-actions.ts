@@ -1027,8 +1027,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         booking_id: bookingId,
       });
 
-      const activeSession = sessions.find(s => 
-        s.status === 'in_transit' || s.status === 'started' || s.status === 'active'
+      // Stack A (home-service GPS): keep accepting pings after manual arrival so walk-in-progress
+      // still writes to gps_tracking_sessions + gps_location_history for customer live map.
+      const activeSession = sessions.find(s =>
+        s.status === 'in_transit' ||
+        s.status === 'started' ||
+        s.status === 'active' ||
+        s.status === 'arrived'
       );
 
       if (!activeSession) {

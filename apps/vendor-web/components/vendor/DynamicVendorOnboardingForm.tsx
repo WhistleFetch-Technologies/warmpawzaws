@@ -380,10 +380,13 @@ export function DynamicVendorOnboardingForm({
       let endpoint = '';
       
       try {
-        // Try new fixed endpoint
+        // Try new fixed endpoint (always pass roleId when we have it so schema matches admin catalogue for that role)
         const params = new URLSearchParams();
         if (phone) {
           params.append('phone', phone);
+        }
+        if (roleId) {
+          params.append('roleId', roleId);
         }
         endpoint = `/vendor/onboarding/form-schema-fixed?${params.toString()}`;
         console.log('[DYNAMIC FORM] 🔗 Trying FIXED endpoint:', endpoint);
@@ -407,9 +410,11 @@ export function DynamicVendorOnboardingForm({
 
       console.log('[DYNAMIC FORM] ✅ Raw response:', response);
       
-      // ✅ FIX: Unwrap double-wrapped response from BaseHandlerEnhanced
-      // Backend returns: { success: true, data: { success: true, fields: [...], sections: [...] } }
-      const data = response.data || response;
+      // Unwrap BaseHandler / apiClient nesting (sometimes { data: { sections } } or { data: { data: ... } })
+      let data: any = response?.data ?? response;
+      if (data?.data && (data.data.sections || data.data.fields || data.data.schema)) {
+        data = data.data;
+      }
       
       console.log('[DYNAMIC FORM] ✅ Unwrapped data:', data);
       console.log('[DYNAMIC FORM] 📋 Version:', data.version, 'Status:', data.status);
@@ -418,6 +423,16 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
+        const normalizeFieldType = (raw: unknown): string => {
+          const t = String(raw || 'text').trim().toLowerCase().replace(/_/g, '-');
+          if (t === 'phone') return 'tel';
+          if (t === 'aadhaarotp' || t === 'aadhar-otp') return 'aadhaar-otp';
+          if (t === 'panverify') return 'pan-verify';
+          if (t === 'gstverify') return 'gst-verify';
+          if (t === 'multi-select') return 'multiselect';
+          return t || 'text';
+        };
+
         const transformField = (f: any) => {
           // Normalize options - convert string arrays to {value, label} objects for multiselect/select fields
           let normalizedOptions = f.options;
@@ -439,15 +454,22 @@ export function DynamicVendorOnboardingForm({
             // Use id as the field name for generic fieldName values to ensure uniqueness
             fieldName = f.id || `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           }
+
+          const required =
+            Boolean(f.isMandatory) ||
+            Boolean(f.required) ||
+            Boolean(f.validation?.required);
           
           return {
             ...f,
+            type: normalizeFieldType(f.type),
             name: fieldName,
             isActive: f.isActive !== false && f.is_active !== false,
             options: normalizedOptions, // Add normalized options
+            // Spread first so isMandatory/required win over validation.required: false from DB
             validation: {
-              required: f.isMandatory || f.validation?.required,
-              ...f.validation
+              ...f.validation,
+              required,
             }
           };
         };
@@ -1687,12 +1709,12 @@ console.log("------------------------------------->",formData);
               }
               return (a.displayOrder || a.order || 0) - (b.displayOrder || b.order || 0);
             })
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`${field.sectionOrder ?? 0}-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 {field.type !== 'checkbox' && (
                   <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                     {field.label}
-                    {field.validation?.required && (
+                    {(field.validation?.required || (field as any).isMandatory) && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </Label>
@@ -1716,11 +1738,11 @@ console.log("------------------------------------->",formData);
           {form.documentSections?.flatMap(section => section.fields)
             .filter(f => f.isActive !== false)
             .sort((a, b) => a.order - b.order)
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`doc-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                   {field.label}
-                  {field.validation?.required && (
+                  {(field.validation?.required || (field as any).isMandatory) && (
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </Label>
