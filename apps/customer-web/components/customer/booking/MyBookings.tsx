@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
@@ -106,11 +106,21 @@ interface MyBookingsProps {
   /** Left X: full exit to home (shell reset). When set with onBack, header matches profile-style X + Back. */
   onCloseToHome?: () => void;
   initialBookingId?: string; // To open a specific booking
+  /** From live tracking etc.: `/bookings?reviewBookingId=` opens rate modal when list loads */
+  reviewBookingIdFromUrl?: string | null;
   onReorderMedicine?: (medications: any[]) => void;
   onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
 }
 
-export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
+export function MyBookings({
+  phone,
+  onBack,
+  onCloseToHome,
+  initialBookingId,
+  reviewBookingIdFromUrl,
+  onReorderMedicine,
+  onNavigate,
+}: MyBookingsProps) {
   const router = useRouter();
 
   const navigateToMealPlanOrders = () => {
@@ -152,6 +162,7 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
   } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
+  const reviewFromUrlHandledRef = useRef<string | null>(null);
 
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
@@ -190,6 +201,28 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
       }
     }
   }, [initialBookingId, bookings]);
+
+  useEffect(() => {
+    const rid = reviewBookingIdFromUrl?.trim();
+    if (!rid || bookings.length === 0) return;
+    if (reviewFromUrlHandledRef.current === rid) return;
+    const b = bookings.find((x) => x.bookingId === rid);
+    if (b?.status === 'completed') {
+      reviewFromUrlHandledRef.current = rid;
+      setShowReviewModal({
+        bookingId: b.bookingId,
+        vendorId: b.vendorId,
+        serviceName: b.serviceName,
+      });
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('reviewBookingId');
+        window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [reviewBookingIdFromUrl, bookings]);
 
   const loadBookings = async () => {
     try {
