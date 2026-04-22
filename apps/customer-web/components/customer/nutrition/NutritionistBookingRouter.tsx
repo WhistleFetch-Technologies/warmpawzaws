@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
@@ -1456,7 +1457,10 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
 
         // Try reverse geocoding
         try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           if (!apiKey) {
             console.warn('Google Maps API key not configured');
             toast.error('Location services not configured. Please enter address manually.');
