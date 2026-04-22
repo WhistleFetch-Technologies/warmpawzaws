@@ -126,7 +126,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
 
   return (
     <>
-      <header className="sticky top-0 z-20 px-2 py-3 bg-white border-b border-gray-100 shadow-sm">
+      <header className="sticky top-0 z-20 cw-header-safe-top cw-header-safe-x pb-3 bg-white border-b border-gray-100 shadow-sm">
         <div className="grid grid-cols-3 items-center gap-1 max-w-customer mx-auto">
           <div className="flex justify-start min-w-0">
             <button

@@ -39,8 +39,8 @@ export function CustomerOnboarding({ onBack, onNoPetComplete }: CustomerOnboardi
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#FF8C42] to-[#FF6B9D] flex flex-col w-full max-w-customer mx-auto">
-      {/* Top Bar with Back Button */}
-      <div className="px-4 pt-4 pb-2 flex items-center">
+      {/* Top Bar with Back Button — safe area so system status bar does not cover controls */}
+      <div className="cw-header-safe-top cw-header-safe-x pb-2 flex items-center">
         {onBack && (
           <button
             onClick={onBack}

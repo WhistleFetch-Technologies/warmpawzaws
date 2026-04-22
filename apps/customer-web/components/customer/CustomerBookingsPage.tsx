@@ -148,8 +148,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
     >
       {/* Header — safe top, mobile tap targets */}
       <div
-        className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm
-          pt-[max(0.75rem,env(safe-area-inset-top,0px))]
+        className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm cw-header-safe-top
           pl-[max(1rem,env(safe-area-inset-left,0px))]
           pr-[max(1rem,env(safe-area-inset-right,0px))]
           pb-3 flex flex-wrap items-center gap-2 justify-between"

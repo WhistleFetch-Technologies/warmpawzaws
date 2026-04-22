@@ -75,7 +75,7 @@ export function ServiceDashboardHeader({
     >
       {/* Orange Header Background */}
       <div
-        className={`${headerGradient || headerColor} text-white pb-4 md:pb-6 pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
+        className={`${headerGradient || headerColor} text-white pb-4 md:pb-6 pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))]`}
       >
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (

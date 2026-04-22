@@ -351,6 +351,8 @@ export function CustomerHomeWrapper({
   const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
   /** Screen to restore when leaving Shop via header back (SPA stack is not browser history). */
   const [shopReturnScreen, setShopReturnScreen] = useState<ScreenType | null>(null);
+  /** `vet` → Diagnostic Labs: header back should return here, not home (set only from `handleVetNavigate` lab path). */
+  const [labDiagnosticsReturnScreen, setLabDiagnosticsReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const [diagnosticsPackageHint, setDiagnosticsPackageHint] = useState<{ name?: string; testLabels?: string[] } | null>(null);
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
@@ -612,7 +614,10 @@ export function CustomerHomeWrapper({
     else if (service === 'ambulance') setCurrentScreen('ambulance');
     else if (service === 'nutritionist') setCurrentScreen('nutritionist');
     else if (service === 'pharmacy' || service === 'pharmacy_store') setCurrentScreen('pharmacy');
-    else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') setCurrentScreen('lab-diagnostics');
+    else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') {
+      setLabDiagnosticsReturnScreen(null);
+      setCurrentScreen('lab-diagnostics');
+    }
     else if (service === 'behaviorist' || service === 'behavioral') setCurrentScreen('behaviorist');
     else if (service === 'home-service' || service === 'home-service-selection') setCurrentScreen('home-service-selection');
     else if (service === 'relocation') setCurrentScreen('relocation');
@@ -689,6 +694,7 @@ export function CustomerHomeWrapper({
       screen === 'vet-lab-tests'
     ) {
       console.log('🔵 [handleVetNavigate] Setting lab-diagnostics screen');
+      setLabDiagnosticsReturnScreen('vet');
       setCurrentScreen('lab-diagnostics');
     }
     else if (screen === 'my-bookings' || screen === 'bookings') {
@@ -857,6 +863,7 @@ export function CustomerHomeWrapper({
       setScreenBeforePets(null);
       setPetSitterOriginScreen(null);
       setPetSitterFacilityOptionId(null);
+      setLabDiagnosticsReturnScreen(null);
       setCurrentScreen('home');
       setSelectedPetId(null);
       setSelectedBookingId(null);
@@ -887,6 +894,7 @@ export function CustomerHomeWrapper({
     setScreenBeforePets(null);
     setPetSitterOriginScreen(null);
     setPetSitterFacilityOptionId(null);
+    setLabDiagnosticsReturnScreen(null);
     setCurrentScreen('home');
     setSelectedPetId(null);
     setSelectedBookingId(null);
@@ -895,6 +903,21 @@ export function CustomerHomeWrapper({
     setSelectedVendorId(undefined);
     setSelectedProblem(null);
     setCurrentServiceType(null);
+  };
+
+  /** Diagnostic Labs: back to Veterinary hub when opened from vet; otherwise same reset as `handleBack` (e.g. home). */
+  const handleBackFromLabDiagnostics = () => {
+    const back = labDiagnosticsReturnScreen;
+    if (back != null) {
+      setLabDiagnosticsReturnScreen(null);
+      setUserSidebarOpen(false);
+      setPreviousScreen(null);
+      setSelectedVendorId(undefined);
+      setDiagnosticsPackageHint(null);
+      setCurrentScreen(back);
+      return;
+    }
+    handleBack();
   };
 
   /** Full bookings list (`CustomerBookingsPage`): return to caller (e.g. profile), else same as handleBack. */
@@ -1543,6 +1566,11 @@ export function CustomerHomeWrapper({
         serviceTypeName={vetServiceData?.serviceTypeName}
         category={vetServiceData?.category || 'vet'}
         onBack={() => {
+          if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet') {
+            setVetServiceData(null);
+            setCurrentScreen('vet');
+            return;
+          }
           if (vetServiceData?.vendorId) {
             setVetServiceData((p: any) => {
               if (!p || typeof p !== 'object') return p;
@@ -2368,7 +2396,7 @@ export function CustomerHomeWrapper({
   );
 
   // Lab Diagnostics Landing - Entry point for lab tests and diagnostics
-  if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+  if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBackFromLabDiagnostics} onNavigate={(screen, data) => { 
     if (screen === 'lab-booking') {
       if (isLegacyMockDiagnosticVendorId(data?.vendorId)) {
         toast.error('This lab is not available. Refresh the page or pick another lab.');
