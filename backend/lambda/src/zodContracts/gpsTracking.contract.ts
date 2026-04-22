@@ -20,10 +20,16 @@ export const completeBookingRequestSchema = z.object({
 export const startTravelRequestSchema = z.object({
     vendorId: uuidSchema,
     staffId: uuidSchema.optional(),
-    startLocation: z.object({
-        latitude: z.number().min(-90).max(90, "Latitude must be between -90 and 90"),
-        longitude: z.number().min(-180).max(180, "Longitude must be between -180 and 180"),
-    }).optional(),
+    // JSON often sends `null`; optional() only allows undefined, not null.
+    startLocation: z.preprocess(
+        (val) => (val === null ? undefined : val),
+        z
+            .object({
+                latitude: z.number().min(-90).max(90, "Latitude must be between -90 and 90"),
+                longitude: z.number().min(-180).max(180, "Longitude must be between -180 and 180"),
+            })
+            .optional()
+    ),
 }).strict();
 
 
@@ -31,10 +37,15 @@ export const startTravelRequestSchema = z.object({
 export const markArrivedRequestSchema = z.object({
     vendorId: uuidSchema,
     arrivedAt: datetimeSchema.optional(),
-    location: z.object({
-        latitude: z.number().min(-90).max(90, "Latitude must be between -90 and 90"),
-        longitude: z.number().min(-180).max(180, "Longitude must be between -180 and 180"),
-    }).optional(),
+    location: z.preprocess(
+        (val) => (val === null ? undefined : val),
+        z
+            .object({
+                latitude: z.number().min(-90).max(90, "Latitude must be between -90 and 90"),
+                longitude: z.number().min(-180).max(180, "Longitude must be between -180 and 180"),
+            })
+            .optional()
+    ),
 }).strict();
 
 

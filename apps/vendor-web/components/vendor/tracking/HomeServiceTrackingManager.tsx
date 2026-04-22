@@ -69,6 +69,34 @@ interface LocationPoint {
   accuracy?: number;
 }
 
+/** One-shot GPS read — use before start-travel; watchPosition does not run synchronously. */
+function getCurrentGeoPosition(): Promise<LocationPoint> {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(new Error('GPS not supported on this device'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          timestamp: new Date().toISOString(),
+          accuracy: position.coords.accuracy,
+        });
+      },
+      (err) => {
+        const code = (err as GeolocationPositionError)?.code;
+        if (code === 1) reject(new Error('Location permission denied. Allow location to start the journey.'));
+        else if (code === 2) reject(new Error('Location unavailable. Try again in an open area.'));
+        else if (code === 3) reject(new Error('Location request timed out. Try again.'));
+        else reject(new Error(err?.message || 'Could not read your location'));
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+  });
+}
+
 interface SessionState {
   status: 'pending' | 'traveling' | 'arrived' | 'in_progress' | 'completed' | 'cancelled';
   startedAt: string | null;
@@ -328,19 +356,23 @@ export function HomeServiceTrackingManager({
   const handleStartTravel = async () => {
     setProcessing(true);
     try {
-      startLocationTracking();
-      
+      const startLoc = await getCurrentGeoPosition();
+      setCurrentLocation(startLoc);
+      latestLocationRef.current = startLoc;
+
       await apiClient.post(`/vendor/bookings/${bookingId}/start-travel`, {
         vendorId,
-        startLocation: currentLocation
+        startLocation: { latitude: startLoc.latitude, longitude: startLoc.longitude },
       });
-      
+
+      startLocationTracking();
+
       setSessionState(prev => ({
         ...prev,
         status: 'traveling',
-        startedAt: new Date().toISOString()
+        startedAt: new Date().toISOString(),
       }));
-      
+
       toast.success('Started! Customer will see your live location.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to start');
@@ -354,10 +386,17 @@ export function HomeServiceTrackingManager({
   const handleArrived = async () => {
     setProcessing(true);
     try {
+      let loc = latestLocationRef.current ?? currentLocation;
+      if (!loc) {
+        loc = await getCurrentGeoPosition();
+        setCurrentLocation(loc);
+        latestLocationRef.current = loc;
+      }
+
       await apiClient.post(`/vendor/bookings/${bookingId}/mark-arrived`, {
         vendorId,
         arrivedAt: new Date().toISOString(),
-        location: currentLocation
+        location: { latitude: loc.latitude, longitude: loc.longitude },
       });
       
       setSessionState(prev => ({
