@@ -1344,6 +1344,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       'X-Forwarded-For': c.req.header('X-Forwarded-For') || undefined,
       'cf-connecting-ip': c.req.header('cf-connecting-ip') || undefined,
       'CF-Connecting-IP': c.req.header('CF-Connecting-IP') || undefined,
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
     };
     const out = await handleCustomerForgotPasswordRequest({ body, requestId, headers });
     return c.json(out.body as any, out.status);
@@ -1353,7 +1354,10 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
     const requestId =
       c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
     const body = await c.req.json().catch(() => ({}));
-    const out = await handleCustomerForgotPasswordVerifyOtp({ body, requestId });
+    const headers: Record<string, string | undefined> = {
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleCustomerForgotPasswordVerifyOtp({ body, requestId, headers });
     return c.json(out.body as any, out.status);
   });
 
