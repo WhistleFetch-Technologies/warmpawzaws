@@ -44,66 +44,21 @@ import {
   handleCustomerSetPassword,
   hasMeaningfulStoredPassword,
 } from '../customer/customerEndpoint/customer-password';
+import {
+  normalizePhoneForOtp,
+  selectCustomersByLast10Digits,
+  dialablePhoneForCustomerAuth,
+  findCustomerForPasswordLogin,
+} from '../../lib/services/auth/customer-username-lookup';
+import {
+  handleCustomerForgotPasswordRequest,
+  handleCustomerForgotPasswordVerifyOtp,
+  handleCustomerForgotPasswordReset,
+} from '../../lib/services/auth/customer-forgot-password';
 
 // ============================================================================
 // OTP HELPERS
 // ============================================================================
-
-/**
- * Normalize phone to canonical form for OTP storage/lookup.
- * Ensures "9326977987", "+919326977987", "919326977987" all match.
- * Indian 10-digit numbers: use last 10 digits. Others: digits only.
- */
-function normalizePhoneForOtp(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    const last10 = digits.slice(-10);
-    if (/^[6-9]\d{9}$/.test(last10)) return last10; // Indian mobile
-  }
-  return digits || phone;
-}
-
-/** Collapse +91 and 10-digit customer rows to one canonical record. */
-async function selectCustomersByLast10Digits(last10: string): Promise<any[]> {
-  const key = last10.replace(/\D/g, '').slice(-10);
-  if (!key || key.length < 10) return [];
-  const res = await query(
-    `SELECT * FROM customers
-     WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
-     ORDER BY
-       LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g')) ASC,
-       (profile_completed IS TRUE) DESC,
-       updated_at DESC NULLS LAST,
-       created_at DESC NULLS LAST`,
-    [key]
-  );
-  return (res as any).rows || [];
-}
-
-function dialablePhoneForCustomerAuth(dbPhone: string | null | undefined): string {
-  const raw = String(dbPhone || '').trim();
-  const d = raw.replace(/\D/g, '');
-  if (d.length === 10 && /^[6-9]\d{9}$/.test(d)) return `+91${d}`;
-  if (raw.startsWith('+')) return raw;
-  return raw || d || '';
-}
-
-async function findCustomerForPasswordLogin(rawUsername: string): Promise<any | null> {
-  const key = String(rawUsername || '').trim();
-  if (!key) return null;
-  const r1 = await query(`SELECT * FROM customers WHERE username = $1 LIMIT 3`, [key]);
-  const row1 = (r1 as any).rows?.[0];
-  if (row1) return row1;
-  const r2 = await query(`SELECT * FROM customers WHERE LOWER(username) = LOWER($1) LIMIT 3`, [key]);
-  const row2 = (r2 as any).rows?.[0];
-  if (row2) return row2;
-  const digits = key.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    const list = await selectCustomersByLast10Digits(digits.slice(-10));
-    if (list[0]) return list[0];
-  }
-  return null;
-}
 
 /** Persist Indian mobiles as 10 digits in `customers.phone` (same as profile POST). */
 function storagePhoneForNewCustomer(phone: string): string {
@@ -1379,6 +1334,36 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
   // (Also registered under /customer/profile/* in registerCustomerProfileEndpoints.)
   app.get('/auth/customer/password-status', handleCustomerAccountStatus);
   app.post('/auth/customer/set-password', handleCustomerSetPassword);
+
+  app.post('/auth/customer/forgot-password/request', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-forwarded-for': c.req.header('x-forwarded-for') || undefined,
+      'X-Forwarded-For': c.req.header('X-Forwarded-For') || undefined,
+      'cf-connecting-ip': c.req.header('cf-connecting-ip') || undefined,
+      'CF-Connecting-IP': c.req.header('CF-Connecting-IP') || undefined,
+    };
+    const out = await handleCustomerForgotPasswordRequest({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/customer/forgot-password/verify-otp', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const out = await handleCustomerForgotPasswordVerifyOtp({ body, requestId });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/customer/forgot-password/reset', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const out = await handleCustomerForgotPasswordReset({ body, requestId });
+    return c.json(out.body as any, out.status);
+  });
 
   app.post('/auth/login', async (c) => {
     const startTime = Date.now();

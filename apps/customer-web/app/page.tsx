@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
-import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import {
+  readProfileCompleted,
+  readOnboardingCompleted,
+  applyUnifiedProfileToCustomerLocalStorage,
+} from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 
 interface CustomerSession {
@@ -61,27 +65,11 @@ export default function HomePage() {
           );
           if (profileResponse?.profile) {
             const data = profileResponse.profile;
-            const onboardingStatus = data.onboarding_status || data.onboardingStatus;
-            const profileCompleted = data.profile_completed || data.onboardingComplete;
-            const name = data.name || data.full_name || '';
-            const hasRealName = !!name && String(name).trim() !== '' && name !== `Customer ${(storedPhone || '').slice(-4)}`;
-            const hasBookings = (data.bookings?.length || 0) > 0;
-            const hasProfileId = !!data.id;
-            const backendFullyOnboarded =
-              onboardingStatus === 'COMPLETED' || profileCompleted === true;
-            const hasMeaningfulProfile =
-              (hasProfileId && hasRealName) || (hasProfileId && hasBookings);
-            if (backendFullyOnboarded) {
-              localStorage.setItem('profile_completed', 'true');
-              localStorage.setItem('onboarding_completed', 'true');
-            } else if (hasMeaningfulProfile) {
-              localStorage.setItem('profile_completed', 'true');
-            }
-            const stageDone = readOnboardingCompleted();
-            const effectiveOnboarded = backendFullyOnboarded || stageDone;
             localStorage.setItem('customerData', JSON.stringify(data));
             persistCustomerDatabaseId(data);
-            localStorage.setItem('customerOnboardingComplete', effectiveOnboarded ? 'true' : 'false');
+            applyUnifiedProfileToCustomerLocalStorage(data, storedPhone);
+            const onboardingStatus = data.onboarding_status || data.onboardingStatus;
+            const effectiveOnboarded = readOnboardingCompleted();
             setSession({
               phone: storedPhone,
               sessionToken: storedToken,

@@ -3,6 +3,7 @@
  * Used by VerifyOtpHandlerEnhanced and admin vendor-portal bootstrap.
  */
 import { generateUATJWTToken } from '../../../utils/jwt-generator';
+import { query } from '../../../database/rds-connection';
 import {
   getOrCreateCognitoUser,
   authenticateCognitoUser,
@@ -15,14 +16,36 @@ export type VendorVerifyOtpInnerMeta = {
   version: 'v1';
 };
 
+async function resolveCustomerAuthVersionForJwt(userId: string): Promise<number> {
+  try {
+    const res = await query(
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM customers WHERE id = $1::uuid LIMIT 1`,
+      [userId]
+    );
+    return Number((res as any).rows?.[0]?.av ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 /** Issue access/id/refresh tokens — same branches as auth-enhanced verify-otp. */
 export async function issueAuthTokensAfterOtp(params: {
   userId: string;
   phone: string;
   role: 'customer' | 'vendor' | 'admin';
+  /** Optional override; otherwise loaded from `customers.auth_version` for customers. */
+  customerAuthVersion?: number;
 }): Promise<CognitoTokens> {
   const { userId, phone, role } = params;
   const isUATMode = process.env.UAT_MODE === 'true';
+
+  let customerJwtAuthVersion: number | undefined;
+  if (role === 'customer') {
+    customerJwtAuthVersion =
+      params.customerAuthVersion !== undefined && params.customerAuthVersion !== null
+        ? Number(params.customerAuthVersion)
+        : await resolveCustomerAuthVersionForJwt(userId);
+  }
 
   let cognitoTokens: CognitoTokens;
 
@@ -32,6 +55,7 @@ export async function issueAuthTokensAfterOtp(params: {
       phone,
       role,
       expiresIn: 24 * 60 * 60,
+      authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
     });
     console.log('[vendor-otp-success-payload] UAT Mode: Generated JWT tokens with 24h expiry');
   } else {
@@ -50,6 +74,7 @@ export async function issueAuthTokensAfterOtp(params: {
         phone,
         role,
         expiresIn: 24 * 60 * 60,
+        authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
       });
     } else {
       try {
@@ -70,6 +95,7 @@ export async function issueAuthTokensAfterOtp(params: {
           phone,
           role,
           expiresIn: 24 * 60 * 60,
+          authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
         });
       }
     }

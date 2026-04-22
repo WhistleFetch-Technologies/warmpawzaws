@@ -520,7 +520,11 @@ export class ApiClient {
         }
         
         // Handle 401 by clearing token and redirecting to auth (skip for unauthenticated public reads, e.g. legal policies on /auth)
-        if (response.status === 401 && !path.startsWith('/public/')) {
+        // Skip for customer forgot-password verify/reset — expected invalid OTP / token without logging the user out of the page flow.
+        const isCustomerForgotPasswordFlow =
+          path.includes('/auth/customer/forgot-password/verify-otp') ||
+          path.includes('/auth/customer/forgot-password/reset');
+        if (response.status === 401 && !path.startsWith('/public/') && !isCustomerForgotPasswordFlow) {
           if (typeof window !== 'undefined') {
             localStorage.removeItem('authToken');
             localStorage.removeItem('customerPhone');

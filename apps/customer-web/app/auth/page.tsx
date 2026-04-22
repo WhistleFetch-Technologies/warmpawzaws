@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { applyUnifiedProfileToCustomerLocalStorage } from '@/lib/customer-flow-guards';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 import {
   PlatformLegalPolicyDialog,
@@ -61,6 +62,7 @@ function AuthPageContent() {
         setShowReferralModal(true);
         setReferralApplied(true);
         localStorage.setItem('pendingReferralCode', c);
+        setAuthMode('signup');
       }
     }
   }, []);
@@ -80,11 +82,23 @@ function AuthPageContent() {
   const [legalDialogOpen, setLegalDialogOpen] = useState(false);
   const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
-  /** First-time users: OTP (signup). Returning users: username + password. */
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  /** Default: password login. OTP signup opens from "New user?" or referral links. */
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  /** Forgot password: dedicated server routes (never generic send-otp for reset). */
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
+  const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -275,6 +289,10 @@ function AuthPageContent() {
             localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
             localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
             persistCustomerDatabaseId(profileResponse.profile);
+            const tenDigits = (localStorage.getItem('customerPhone') || digits)
+              .replace(/\D/g, '')
+              .slice(-10);
+            applyUnifiedProfileToCustomerLocalStorage(profileResponse.profile, tenDigits);
           }
         }
       } catch {
@@ -291,6 +309,128 @@ function AuthPageContent() {
       } else {
         setError(err.message || 'Login failed');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  function pickForgotResponseData(res: unknown): Record<string, unknown> | null {
+    const r = res as Record<string, unknown> | null;
+    if (!r || typeof r !== 'object') return null;
+    const outer = r.data as Record<string, unknown> | undefined;
+    if (outer && typeof outer === 'object' && outer.data && typeof outer.data === 'object') {
+      return outer.data as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  const openForgotPassword = () => {
+    setForgotOpen(true);
+    setForgotStep(1);
+    setForgotUsername(loginUsername.trim());
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError(null);
+  };
+
+  const closeForgotPassword = () => {
+    setForgotOpen(false);
+    setForgotStep(1);
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError(null);
+  };
+
+  const submitForgotPasswordRequest = async () => {
+    const u = forgotUsername.trim();
+    if (!u) {
+      setError('Enter the username or email you use to log in');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setForgotInfo(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/request', { username: u });
+      const inner = pickForgotResponseData(res);
+      const msg =
+        (typeof inner?.message === 'string' && inner.message) ||
+        'If an account exists, we sent instructions.';
+      setForgotInfo(msg);
+      setForgotStep(2);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordVerifyOtp = async () => {
+    const u = forgotUsername.trim();
+    if (!forgotOtp || forgotOtp.length !== 6) {
+      setError('Enter the 6-digit code from SMS');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/verify-otp', {
+        username: u,
+        otp: forgotOtp,
+      });
+      const inner = pickForgotResponseData(res);
+      const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
+      if (!token) {
+        setError('Invalid or expired code');
+        return;
+      }
+      setForgotResetToken(token);
+      setForgotStep(3);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Invalid or expired code');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordReset = async () => {
+    if (forgotNewPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await apiClient.post<unknown>('/auth/customer/forgot-password/reset', {
+        resetToken: forgotResetToken,
+        newPassword: forgotNewPassword,
+        confirmPassword: forgotConfirmPassword,
+      });
+      setForgotSuccessBanner('Password updated. You can log in with your new password.');
+      closeForgotPassword();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e?.message || 'Could not reset password. Request a new code.');
     } finally {
       setLoading(false);
     }
@@ -795,10 +935,18 @@ function AuthPageContent() {
             {/* Subtitle */}
             <p className="text-center text-gray-600 mb-8 text-base leading-relaxed">
               {authMode === 'login' ? (
-                <>
-                  Log in with your username (usually your 10-digit mobile number)<br />
-                  and the password you created after signup.
-                </>
+                forgotOpen ? (
+                  <>
+                    {forgotStep === 3
+                      ? 'Choose a new password for your account.'
+                      : 'Reset your password using a code we send by SMS to your registered mobile number only.'}
+                  </>
+                ) : (
+                  <>
+                    Log in with your username (usually your 10-digit mobile number)<br />
+                    and the password you created after signup.
+                  </>
+                )
               ) : (
                 <>
                   Join our community of pet lovers and access<br />the best care for your furry friends
@@ -826,9 +974,144 @@ function AuthPageContent() {
               </div>
             )}
 
+            {forgotSuccessBanner && authMode === 'login' && !forgotOpen && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
+                {forgotSuccessBanner}
+              </div>
+            )}
+
             {/* Login (username + password) or Sign up (phone OTP) */}
             <div className="space-y-4">
               {authMode === 'login' ? (
+                forgotOpen ? (
+                  <>
+                    {forgotStep === 1 && (
+                      <>
+                        <label className="block text-gray-700 font-medium mb-2">Username or email</label>
+                        <input
+                          type="text"
+                          autoComplete="username"
+                          value={forgotUsername}
+                          onChange={(e) => setForgotUsername(e.target.value)}
+                          placeholder="Same as when you log in"
+                          className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordRequest}
+                          disabled={loading || !forgotUsername.trim()}
+                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                        >
+                          {loading ? 'Sending…' : 'Send code'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeForgotPassword}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back to log in
+                        </button>
+                      </>
+                    )}
+                    {forgotStep === 2 && (
+                      <>
+                        {forgotInfo ? (
+                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 mb-2">
+                            {forgotInfo}
+                          </div>
+                        ) : null}
+                        <label className="block text-gray-700 font-medium mb-2">6-digit code from SMS</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={forgotOtp}
+                          onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="••••••"
+                          className="w-full py-4 px-4 text-lg tracking-widest border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordVerifyOtp}
+                          disabled={loading || forgotOtp.length !== 6}
+                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                        >
+                          {loading ? 'Checking…' : 'Continue'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotStep(1);
+                            setForgotOtp('');
+                            setError(null);
+                          }}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back
+                        </button>
+                      </>
+                    )}
+                    {forgotStep === 3 && (
+                      <>
+                        <label className="block text-gray-700 font-medium mb-2">New password</label>
+                        <div className="relative">
+                          <input
+                            type={showForgotNewPassword ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            value={forgotNewPassword}
+                            onChange={(e) => setForgotNewPassword(e.target.value)}
+                            placeholder="At least 8 characters"
+                            className="w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowForgotNewPassword((v) => !v)}
+                            aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
+                          >
+                            {showForgotNewPassword ? (
+                              <EyeOff className="h-5 w-5" aria-hidden />
+                            ) : (
+                              <Eye className="h-5 w-5" aria-hidden />
+                            )}
+                          </button>
+                        </div>
+                        <label className="block text-gray-700 font-medium mb-2">Confirm password</label>
+                        <input
+                          type={showForgotNewPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          value={forgotConfirmPassword}
+                          onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                          placeholder="Re-enter password"
+                          className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordReset}
+                          disabled={
+                            loading ||
+                            forgotNewPassword.length < 8 ||
+                            forgotNewPassword !== forgotConfirmPassword
+                          }
+                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                        >
+                          {loading ? 'Updating…' : 'Update password'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotStep(2);
+                            setError(null);
+                          }}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
                 <>
                   <label className="block text-gray-700 font-medium mb-2">Username</label>
                   <input
@@ -864,6 +1147,13 @@ function AuthPageContent() {
                   </div>
                   <button
                     type="button"
+                    onClick={openForgotPassword}
+                    className="w-full text-right text-sm text-[#FF8C42] font-medium hover:underline pt-1"
+                  >
+                    Forgot password?
+                  </button>
+                  <button
+                    type="button"
                     onClick={passwordLogin}
                     disabled={loading || !loginUsername.trim() || !loginPassword.trim()}
                     className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
@@ -882,6 +1172,7 @@ function AuthPageContent() {
                     New user? Sign up with phone (OTP)
                   </button>
                 </>
+                )
               ) : (
                 <>
               <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
