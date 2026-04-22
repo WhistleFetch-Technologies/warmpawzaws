@@ -127,6 +127,9 @@ export function HomeServiceTrackingManager({
   const trackingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const latestLocationRef = useRef<LocationPoint | null>(null);
   const lastLocationUpdateSentRef = useRef<number>(0);
+  /** watchPosition callbacks close over stale state — always read latest phase here */
+  const sessionStatusRef = useRef<SessionState['status']>('pending');
+  const isWalkerSessionRef = useRef(!!bookingData?.isWalkerSession);
   // ✅ FIX: Reduced throttle to 5s for better real-time tracking updates
   const GPS_THROTTLE_MS = 5000; // Min 5s between server updates (backend recalculates ETA/distance)
   
@@ -152,6 +155,14 @@ export function HomeServiceTrackingManager({
   const [otpInput, setOtpInput] = useState('');
   const [sessionDuration, setSessionDuration] = useState(0);
   
+  useEffect(() => {
+    sessionStatusRef.current = sessionState.status;
+  }, [sessionState.status]);
+
+  useEffect(() => {
+    isWalkerSessionRef.current = !!bookingData?.isWalkerSession;
+  }, [bookingData?.isWalkerSession]);
+
   // Duration timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -188,14 +199,23 @@ export function HomeServiceTrackingManager({
       const response = await apiClient.get<any>(`/vendor/bookings/${bookingId}/tracking-session`);
       
       if (response.success && response.session) {
+        // API maps in_transit → "is_traveling"; UI uses "traveling" for the stepper + resume logic
+        const rawStatus = response.session.status as string;
+        const normalizedStatus =
+          rawStatus === 'is_traveling' || rawStatus === 'in_transit' ? 'traveling' : rawStatus;
+
         setSessionState(prev => ({
           ...prev,
           ...response.session,
+          status: normalizedStatus as SessionState['status'],
           routePoints: response.session.routePoints || []
         }));
-        
-        // If session was in progress, resume tracking
-        if (response.session.status === 'traveling' || response.session.status === 'in_progress') {
+
+        // Resume device GPS when en route or when an in-person session is already running (walker = route)
+        if (
+          normalizedStatus === 'traveling' ||
+          normalizedStatus === 'in_progress'
+        ) {
           startLocationTracking();
         }
       }
@@ -213,6 +233,16 @@ export function HomeServiceTrackingManager({
       return;
     }
 
+    // Avoid duplicate watchPosition / intervals if start is called again (e.g. walker after OTP)
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    if (trackingIntervalRef.current) {
+      clearInterval(trackingIntervalRef.current);
+      trackingIntervalRef.current = null;
+    }
+
     setTrackingActive(true);
 
     // Watch position continuously
@@ -228,8 +258,8 @@ export function HomeServiceTrackingManager({
         setCurrentLocation(newLocation);
         latestLocationRef.current = newLocation;
 
-        // Add to route if session is active (for walkers)
-        if (sessionState.status === 'in_progress' && bookingData?.isWalkerSession) {
+        // Add to route if session is active (for walkers) — use refs (geolocation callback is stale otherwise)
+        if (sessionStatusRef.current === 'in_progress' && isWalkerSessionRef.current) {
           setSessionState(prev => {
             const newPoints = [...prev.routePoints, newLocation];
             const newDistance = calculateTotalDistance(newPoints);
@@ -242,7 +272,7 @@ export function HomeServiceTrackingManager({
         }
         
         // Calculate ETA if traveling
-        if (sessionState.status === 'traveling' && bookingData?.latitude && bookingData?.longitude) {
+        if (sessionStatusRef.current === 'traveling' && bookingData?.latitude && bookingData?.longitude) {
           const distance = calculateDistance(
             newLocation.latitude,
             newLocation.longitude,
@@ -365,6 +395,7 @@ export function HomeServiceTrackingManager({
         startLocation: { latitude: startLoc.latitude, longitude: startLoc.longitude },
       });
 
+      sessionStatusRef.current = 'traveling';
       startLocationTracking();
 
       setSessionState(prev => ({
@@ -399,12 +430,17 @@ export function HomeServiceTrackingManager({
         location: { latitude: loc.latitude, longitude: loc.longitude },
       });
       
+      sessionStatusRef.current = 'arrived';
       setSessionState(prev => ({
         ...prev,
         status: 'arrived',
         arrivedAt: new Date().toISOString()
       }));
-      
+
+      // Journey live GPS ends here; backend only accepts location-update while in_transit/started/active.
+      // Walkers get watch restarted when they confirm start-session (OTP).
+      stopLocationTracking();
+
       toast.success('Marked as arrived! Please verify with customer.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to mark arrived');
@@ -413,28 +449,41 @@ export function HomeServiceTrackingManager({
     }
   };
 
-  // Start session (with OTP for walker/sitter)
+  // Start session — OTP required (4 or 6 digits) for API validation and customer verification
   const handleStartSession = () => {
-    if (bookingData?.isWalkerSession || bookingData?.isSitterSession) {
-      setOtpType('start');
-      setOtpInput('');
-      setShowOtpModal(true);
-    } else {
-      confirmStartSession();
-    }
+    setOtpType('start');
+    setOtpInput('');
+    setShowOtpModal(true);
   };
 
   const confirmStartSession = async (otp?: string) => {
     setProcessing(true);
     try {
+      const trimmed = String(otp ?? '').trim();
+      if (!/^\d{4}$|^\d{6}$/.test(trimmed)) {
+        toast.error('Enter the 4 or 6-digit OTP from the customer');
+        return;
+      }
+
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/start-session`, {
         vendorId,
-        otp,
+        otp: trimmed,
         startedAt: new Date().toISOString(),
-        location: currentLocation
+        ...(currentLocation
+          ? {
+              location: {
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                ...(currentLocation.accuracy != null ? { accuracy: currentLocation.accuracy } : {}),
+                ...(currentLocation.timestamp ? { timestamp: currentLocation.timestamp } : {}),
+              },
+            }
+          : {}),
       });
 
       if (response.success) {
+        sessionStatusRef.current = 'in_progress';
+        isWalkerSessionRef.current = !!bookingData?.isWalkerSession;
         setSessionState(prev => ({
           ...prev,
           status: 'in_progress',
@@ -459,25 +508,27 @@ export function HomeServiceTrackingManager({
     }
   };
 
-  // End session (with OTP)
+  // End session — OTP required for completion (same as start)
   const handleEndSession = () => {
-    if (bookingData?.isWalkerSession || bookingData?.isSitterSession) {
-      setOtpType('end');
-      setOtpInput('');
-      setShowOtpModal(true);
-    } else {
-      confirmEndSession();
-    }
+    setOtpType('end');
+    setOtpInput('');
+    setShowOtpModal(true);
   };
 
   const confirmEndSession = async (otp?: string) => {
     setProcessing(true);
     try {
+      const trimmed = String(otp ?? '').trim();
+      if (!/^\d{4}$|^\d{6}$/.test(trimmed)) {
+        toast.error('Enter the 4 or 6-digit OTP from the customer');
+        return;
+      }
+
       stopLocationTracking();
-      
+
       const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/complete`, {
         vendorId,
-        otp: otp || null,
+        otp: trimmed,
         notes: bookingData?.isWalkerSession
           ? `Route: ${sessionState.totalDistance}m, ${sessionDuration}min`
           : undefined,
@@ -568,7 +619,7 @@ export function HomeServiceTrackingManager({
 
   if (loading) {
     return (
-      <div className="vendor-app-column flex min-h-screen flex-col items-center justify-center bg-[#FFF5F1]">
+      <div className="vendor-app-column flex min-h-[100dvh] min-h-screen flex-col items-center justify-center bg-[#FFF5F1] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
         <RefreshCw className="h-10 w-10 animate-spin text-[#FF8C42]" aria-hidden />
         <p className="mt-3 text-sm font-medium text-gray-600">Loading session…</p>
       </div>
@@ -576,14 +627,15 @@ export function HomeServiceTrackingManager({
   }
 
   return (
-    <div className="vendor-root-scroll vendor-app-column flex min-h-screen flex-col bg-[#FFF5F1] overscroll-y-contain">
-      {/* Universal vendor hero (matches onboarding-style shell) */}
-      <div className="relative shrink-0 px-6 pb-6 pt-8 text-center">
+    <div className="vendor-root-scroll vendor-app-column flex min-h-[100dvh] min-h-screen flex-col bg-[#FFF5F1] overscroll-y-contain pb-[env(safe-area-inset-bottom)]">
+      {/* Header: safe-area + sticky for mobile browsers */}
+      <header className="sticky top-0 z-20 shrink-0 border-b border-orange-100/80 bg-[#FFF5F1]/95 px-4 pb-4 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm">
+        <div className="relative mx-auto max-w-lg text-center">
         <button
           type="button"
           onClick={onBack}
-          className="absolute left-6 top-8 rounded-full bg-white/70 p-2 shadow-sm transition-colors hover:bg-white"
-          aria-label="Back"
+          className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2.5 shadow-sm ring-1 ring-black/5 transition-colors hover:bg-white min-h-[44px] min-w-[44px] flex items-center justify-center"
+          aria-label="Back to bookings"
         >
           <ArrowLeft className="h-5 w-5 text-gray-800" />
         </button>
@@ -601,9 +653,10 @@ export function HomeServiceTrackingManager({
         <p className="mt-0.5 text-xs text-gray-500">
           {bookingData?.petName} · {bookingData?.customerName}
         </p>
-      </div>
+        </div>
+      </header>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-t-[40px] bg-white px-5 pb-8 pt-6 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-t-[28px] bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-10px_40px_rgba(0,0,0,0.04)] sm:mx-auto sm:max-w-lg sm:rounded-t-[40px] sm:px-5 sm:pb-8 sm:pt-6">
         {/* Phase strip — maps session to Stack A lifecycle */}
         <div className="mb-5 grid grid-cols-4 gap-1.5">
           {phaseLabels.map((label, i) => {
@@ -646,7 +699,11 @@ export function HomeServiceTrackingManager({
               <p className="text-xs text-gray-600">
                 {trackingActive
                   ? 'GPS on — your position syncs for the pet parent.'
-                  : 'GPS off until you start the journey or the walk.'}
+                  : sessionState.status === 'in_progress' && !bookingData?.isWalkerSession
+                    ? 'Live map was for your trip here. During in-home service the customer map stays on your last journey position.'
+                    : sessionState.status === 'arrived'
+                      ? 'Journey GPS paused at arrival. For dog walks, start the session (OTP) to resume route tracking.'
+                      : 'GPS off until you start the journey or the walk.'}
               </p>
               {lastGpsSyncAt && (
                 <p className="mt-1 text-[11px] text-gray-500">
@@ -785,7 +842,7 @@ export function HomeServiceTrackingManager({
           </Card>
         )}
 
-        <div className="mt-auto space-y-3 pt-2">
+        <footer className="mt-auto space-y-3 border-t border-gray-100/80 pt-4 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
           {sessionState.status === 'pending' && (
             <Button onClick={handleStartTravel} disabled={processing} className={primaryBtn}>
               {processing ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Navigation className="mr-2 h-5 w-5" />}
@@ -840,7 +897,7 @@ export function HomeServiceTrackingManager({
               Back to bookings
             </Button>
           )}
-        </div>
+        </footer>
       </div>
 
       <Dialog open={showOtpModal} onOpenChange={(open) => !processing && setShowOtpModal(open)}>

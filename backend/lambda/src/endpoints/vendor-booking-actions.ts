@@ -100,7 +100,7 @@ async function getExpectedOTPForBooking(
          WHERE metadata->>'bookingId' = $1
            AND metadata->>'action' = 'end'
            AND is_used = false
-           AND expires_at > NOW()
+           AND (expires_at IS NULL OR expires_at > NOW())
          ORDER BY created_at DESC
          LIMIT 1`,
         [bookingId]

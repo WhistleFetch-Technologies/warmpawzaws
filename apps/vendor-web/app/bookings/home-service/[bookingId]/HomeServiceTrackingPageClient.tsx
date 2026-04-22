@@ -1,14 +1,35 @@
 'use client';
 
-import { useRouter, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { HomeServiceTrackingManager } from '@/components/vendor/tracking/HomeServiceTrackingManager';
+import { consumeHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+
+function resolveHomeServiceBookingId(
+  pathSegment: string | undefined,
+  queryValue: string | null
+): string {
+  const q = (queryValue || '').trim();
+  if (q && q !== 'placeholder') return q;
+  const p = (pathSegment || '').trim();
+  if (p && p !== 'placeholder') return p;
+  return '';
+}
 
 export default function HomeServiceTrackingPageClient() {
   const router = useRouter();
   const params = useParams();
-  const bookingId = params?.bookingId as string;
+  const searchParams = useSearchParams();
+  const queryBookingId = searchParams.get('bookingId');
+  const bookingId = useMemo(
+    () =>
+      resolveHomeServiceBookingId(
+        typeof params?.bookingId === 'string' ? params.bookingId : undefined,
+        queryBookingId
+      ),
+    [params?.bookingId, queryBookingId]
+  );
   
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [bookingData, setBookingData] = useState<any>(null);
@@ -20,11 +41,15 @@ export default function HomeServiceTrackingPageClient() {
     if (storedVendorId) {
       setVendorId(storedVendorId);
     }
-    
-    if (bookingId && bookingId !== 'placeholder') {
+
+    setError(null);
+    setBookingData(null);
+
+    if (bookingId) {
       loadBookingData();
     } else {
       setLoading(false);
+      setError('Missing booking id');
     }
   }, [bookingId]);
 
@@ -44,11 +69,20 @@ export default function HomeServiceTrackingPageClient() {
           booking.service_name ||
           ''
         ).toLowerCase();
+        const vendorNameLower = String(
+          booking.vendorName ||
+            booking.vendor_name ||
+            booking.vendor?.business_name ||
+            booking.vendor?.businessName ||
+            ''
+        ).toLowerCase();
         const isWalkerSession =
           serviceTypeLower.includes('walk') ||
           serviceTypeLower === 'walking' ||
           serviceNameLower.includes('walk') ||
-          serviceNameLower.includes('walking');
+          serviceNameLower.includes('walking') ||
+          vendorNameLower.includes('walker') ||
+          vendorNameLower.includes('dog walk');
         const isSitterSession =
           serviceTypeLower.includes('sit') ||
           serviceTypeLower === 'sitting' ||
@@ -81,17 +115,23 @@ export default function HomeServiceTrackingPageClient() {
   };
 
   const handleBack = () => {
-    router.push('/bookings');
+    router.push(consumeHomeServiceTrackingReturnHref());
   };
 
-  const handleComplete = (result: any) => {
-    // Navigate back to bookings with success message
-    router.push(`/bookings?completed=${bookingId}`);
+  const handleComplete = (_result: any) => {
+    const base = consumeHomeServiceTrackingReturnHref();
+    const qIdx = base.indexOf('?');
+    const pathPart = qIdx === -1 ? base : base.slice(0, qIdx);
+    const queryPart = qIdx === -1 ? '' : base.slice(qIdx + 1);
+    const u = new URLSearchParams(queryPart);
+    u.set('completed', String(bookingId));
+    const q = u.toString();
+    router.push(q ? `${pathPart}?${q}` : `${pathPart}?completed=${encodeURIComponent(String(bookingId))}`);
   };
 
   if (loading) {
     return (
-      <div className="vendor-app-column flex min-h-screen flex-col items-center justify-center bg-[#FFF5F1]">
+      <div className="vendor-app-column flex min-h-[100dvh] min-h-screen flex-col items-center justify-center bg-[#FFF5F1] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="h-12 w-12 animate-spin rounded-full border-2 border-[#FF8C42] border-t-transparent" />
         <p className="mt-4 text-sm font-medium text-gray-600">Loading booking…</p>
       </div>
@@ -100,7 +140,7 @@ export default function HomeServiceTrackingPageClient() {
 
   if (error || !vendorId || !bookingData) {
     return (
-      <div className="vendor-app-column flex min-h-screen flex-col bg-[#FFF5F1] px-6 pb-10 pt-12">
+      <div className="vendor-app-column flex min-h-[100dvh] min-h-screen flex-col bg-[#FFF5F1] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="mx-auto w-full max-w-md rounded-t-[40px] bg-white px-6 py-10 text-center shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
           <p className="text-sm font-semibold text-red-600">{error || 'Unable to load booking'}</p>
           <button
@@ -116,12 +156,14 @@ export default function HomeServiceTrackingPageClient() {
   }
 
   return (
-    <HomeServiceTrackingManager
-      vendorId={vendorId}
-      bookingId={bookingId}
-      bookingData={bookingData}
-      onBack={handleBack}
-      onComplete={handleComplete}
-    />
+    <div className="min-h-[100dvh] min-h-screen bg-[#FFF5F1]">
+      <HomeServiceTrackingManager
+        vendorId={vendorId}
+        bookingId={bookingId}
+        bookingData={bookingData}
+        onBack={handleBack}
+        onComplete={handleComplete}
+      />
+    </div>
   );
 }

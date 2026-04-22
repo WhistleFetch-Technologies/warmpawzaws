@@ -1,23 +1,21 @@
 /**
- * Home Service Tracking Page
- * Route: /bookings/home-service/[bookingId]
- * 
- * Vendor page for managing a home service visit:
- * - GPS tracking
- * - Session start/end with OTP
- * - Route recording for walkers
+ * Dynamic segment kept for dev / bookmarks; production navigation uses
+ * /bookings/home-service?bookingId=… (see ../page.tsx).
  */
-
+import { Suspense } from 'react';
 import HomeServiceTrackingPageClient from './HomeServiceTrackingPageClient';
+import { HomeServiceTrackingLoadingFallback } from '../HomeServiceTrackingLoadingFallback';
 
-// Required for static export with dynamic routes
 export async function generateStaticParams() {
   return [{ bookingId: 'placeholder' }];
 }
 
-// Allow dynamic params at runtime (client-side navigation)
 export const dynamicParams = true;
 
 export default function HomeServiceTrackingPage() {
-  return <HomeServiceTrackingPageClient />;
+  return (
+    <Suspense fallback={<HomeServiceTrackingLoadingFallback />}>
+      <HomeServiceTrackingPageClient />
+    </Suspense>
+  );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
@@ -106,11 +106,21 @@ interface MyBookingsProps {
   /** Left X: full exit to home (shell reset). When set with onBack, header matches profile-style X + Back. */
   onCloseToHome?: () => void;
   initialBookingId?: string; // To open a specific booking
+  /** From live tracking etc.: `/bookings?reviewBookingId=` opens rate modal when list loads */
+  reviewBookingIdFromUrl?: string | null;
   onReorderMedicine?: (medications: any[]) => void;
   onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
 }
 
-export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
+export function MyBookings({
+  phone,
+  onBack,
+  onCloseToHome,
+  initialBookingId,
+  reviewBookingIdFromUrl,
+  onReorderMedicine,
+  onNavigate,
+}: MyBookingsProps) {
   const router = useRouter();
 
   const navigateToMealPlanOrders = () => {
@@ -134,6 +144,8 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
   const [activeFilter, setActiveFilter] = useState<'all' | 'upcoming' | 'completed'>('all');
   const [showOTP, setShowOTP] = useState<string | null>(null);
   const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
+  /** Reveal mask for end-of-service OTP after check-in (in_progress at_home). */
+  const [showCompletionOtpFor, setShowCompletionOtpFor] = useState<string | null>(null);
 
   // ✅ New state for cancel/reschedule modals
   const [showCancelModal, setShowCancelModal] = useState<string | null>(null);
@@ -150,6 +162,7 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
   } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
+  const reviewFromUrlHandledRef = useRef<string | null>(null);
 
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
@@ -188,6 +201,28 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
       }
     }
   }, [initialBookingId, bookings]);
+
+  useEffect(() => {
+    const rid = reviewBookingIdFromUrl?.trim();
+    if (!rid || bookings.length === 0) return;
+    if (reviewFromUrlHandledRef.current === rid) return;
+    const b = bookings.find((x) => x.bookingId === rid);
+    if (b?.status === 'completed') {
+      reviewFromUrlHandledRef.current = rid;
+      setShowReviewModal({
+        bookingId: b.bookingId,
+        vendorId: b.vendorId,
+        serviceName: b.serviceName,
+      });
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('reviewBookingId');
+        window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [reviewBookingIdFromUrl, bookings]);
 
   const loadBookings = async () => {
     try {
@@ -923,6 +958,63 @@ export function MyBookings({ phone, onBack, onCloseToHome, initialBookingId, onR
                     </div>
                   </div>
                 )}
+
+                {/* End-of-service OTP: shown after vendor used start OTP (walker / at-home in_progress) */}
+                {booking.otpVerified &&
+                  booking.status === 'in_progress' &&
+                  (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') &&
+                  (booking.completionOTP || booking.otpCode) && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 p-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="mb-2 flex items-center gap-2">
+                        <Key className="h-4 w-4 text-amber-800" />
+                        <span className="text-sm font-semibold text-amber-900">End-of-service OTP</span>
+                      </div>
+                      <p className="mb-2 text-xs text-amber-900/90">
+                        When the walk or visit is finished, share this code with your provider so they can complete the booking.
+                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-lg font-bold tracking-wider text-amber-950">
+                          {showCompletionOtpFor === booking.bookingId
+                            ? String(booking.completionOTP || booking.otpCode)
+                            : '••••••'}
+                        </span>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowCompletionOtpFor(
+                                showCompletionOtpFor === booking.bookingId ? null : booking.bookingId
+                              );
+                            }}
+                            className="rounded p-1.5 hover:bg-amber-100"
+                            aria-label={showCompletionOtpFor === booking.bookingId ? 'Hide OTP' : 'Show OTP'}
+                          >
+                            {showCompletionOtpFor === booking.bookingId ? (
+                              <EyeOff className="h-4 w-4 text-amber-800" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-amber-800" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyOTP(String(booking.completionOTP || booking.otpCode), `${booking.bookingId}-end`);
+                            }}
+                            className="rounded p-1.5 hover:bg-amber-100"
+                            aria-label="Copy end OTP"
+                          >
+                            {copiedOTP === `${booking.bookingId}-end` ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4 text-amber-800" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                 {booking.isPackage && booking.packageDetails && (
                   <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
