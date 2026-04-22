@@ -23,7 +23,9 @@ import { CognitoTokens } from '../../utils/cognito-client';
 import {
   SendOtpRequestSchema,
   VerifyOtpRequestSchema,
+  CustomerPasswordLoginRequestSchema,
 } from '@warmpawz/api-contracts/auth';
+import { verifyCustomerPassword } from '../../lib/services/auth/customer-password-crypto';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
 import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
@@ -37,6 +39,11 @@ import {
   JIO_LOGIN_OTP_SENDER_ID,
   JIO_LOGIN_OTP_TEMPLATE_ID,
 } from '../../constants/jio-login-otp-sms';
+import {
+  handleCustomerAccountStatus,
+  handleCustomerSetPassword,
+  hasMeaningfulStoredPassword,
+} from '../customer/customerEndpoint/customer-password';
 
 // ============================================================================
 // OTP HELPERS
@@ -71,6 +78,31 @@ async function selectCustomersByLast10Digits(last10: string): Promise<any[]> {
     [key]
   );
   return (res as any).rows || [];
+}
+
+function dialablePhoneForCustomerAuth(dbPhone: string | null | undefined): string {
+  const raw = String(dbPhone || '').trim();
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 10 && /^[6-9]\d{9}$/.test(d)) return `+91${d}`;
+  if (raw.startsWith('+')) return raw;
+  return raw || d || '';
+}
+
+async function findCustomerForPasswordLogin(rawUsername: string): Promise<any | null> {
+  const key = String(rawUsername || '').trim();
+  if (!key) return null;
+  const r1 = await query(`SELECT * FROM customers WHERE username = $1 LIMIT 3`, [key]);
+  const row1 = (r1 as any).rows?.[0];
+  if (row1) return row1;
+  const r2 = await query(`SELECT * FROM customers WHERE LOWER(username) = LOWER($1) LIMIT 3`, [key]);
+  const row2 = (r2 as any).rows?.[0];
+  if (row2) return row2;
+  const digits = key.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const list = await selectCustomersByLast10Digits(digits.slice(-10));
+    if (list[0]) return list[0];
+  }
+  return null;
 }
 
 /** Persist Indian mobiles as 10 digits in `customers.phone` (same as profile POST). */
@@ -599,6 +631,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           userId = customers[0].id;
           userData = customers[0];
 
+          try {
+            const storedCanon = storagePhoneForNewCustomer(phone);
+            const metaPatch: Record<string, unknown> = {
+              is_phone_verified: true,
+              updated_at: new Date().toISOString(),
+            };
+            if (!userData.username) {
+              (metaPatch as any).username = storedCanon;
+            }
+            await update('customers', { id: userId }, metaPatch as any);
+            userData = { ...userData, ...metaPatch };
+          } catch (metaErr: any) {
+            console.warn('[AUTH] Customer OTP metadata update skipped:', metaErr?.message);
+          }
+
           // Update last_login_at timestamp to persist login state (with timeout)
           try {
             const updatePromise = update('customers', { id: userId }, {
@@ -686,6 +733,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           try {
             const insertPromise = insert('customers', {
               phone: storedPhone,
+              username: storedPhone,
               full_name: `Customer ${storedPhone.slice(-4)}`, // Temporary name until profile is completed
               is_active: true,
               status: 'new',
@@ -693,6 +741,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               profile_completed: false,
               customer_identity_id: identityId,
               last_login_at: new Date().toISOString(),
+              is_phone_verified: true,
             });
             const insertTimeout = new Promise<any[]>((_, reject) =>
               setTimeout(() => reject(new Error('Customer insert timeout')), 5000)
@@ -1164,6 +1213,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             phone,
             full_name: userData?.full_name || null,
             email: userData?.email || null,
+            has_password: hasMeaningfulStoredPassword(userData?.password_hash),
+            username: userData?.username || storagePhoneForNewCustomer(phone),
           } : role === 'vendor' ? {
             id: (userId && userId.startsWith('temp_vendor_')) ? null : userId,
             phone,
@@ -1193,6 +1244,128 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event) || {};
+    const parsed = CustomerPasswordLoginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return this.error(
+        'Validation failed',
+        400,
+        'VALIDATION_ERROR',
+        { errors: parsed.error.errors },
+        context.requestId
+      );
+    }
+
+    const { username, password } = parsed.data;
+    const role = parsed.data.role ?? 'customer';
+    if (role !== 'customer') {
+      return this.error('Only customer login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
+    }
+
+    try {
+      const customer = await findCustomerForPasswordLogin(username);
+      if (!customer) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+      if (!hasMeaningfulStoredPassword(customer.password_hash)) {
+        return this.error(
+          'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
+          403,
+          'PASSWORD_NOT_SET',
+          undefined,
+          context.requestId
+        );
+      }
+
+      const valid = await verifyCustomerPassword(password, customer.password_hash);
+      if (!valid) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+
+      const userId = customer.id as string;
+      const phoneForTokens = dialablePhoneForCustomerAuth(customer.phone);
+      const phoneOut = phoneForTokens || String(customer.phone || username).trim();
+
+      let cognitoTokens: CognitoTokens;
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
+          userId,
+          phone: phoneOut,
+          role: 'customer',
+        });
+      } catch (jwtError: any) {
+        console.error('[AUTH] Customer login token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
+      }
+
+      try {
+        await update('customers', { id: userId }, {
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } catch (loginUpdateErr: any) {
+        console.warn('[AUTH] login last_login_at update skipped:', loginUpdateErr?.message);
+      }
+
+      const customerState = await getCustomerStateForAuth(userId);
+      const isNewUser = customerState === 'new';
+
+      return this.success(
+        {
+          success: true,
+          data: {
+            token: {
+              access_token: cognitoTokens.accessToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            user: {
+              id: userId,
+              phone: phoneOut,
+              role: 'customer',
+              is_active: customer?.is_active !== false,
+              created_at: customer?.created_at || new Date().toISOString(),
+            },
+            state: isNewUser ? 'new' : 'existing',
+            profile: {
+              id: userId,
+              phone: phoneOut,
+              full_name: customer?.full_name || null,
+              email: customer?.email || null,
+              has_password: true,
+              username: customer?.username || null,
+            },
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: context.requestId,
+            version: 'v1',
+          },
+        },
+        context.requestId
+      );
+    } catch (error: any) {
+      console.error('[AUTH] Customer password login error:', error);
+      return this.error(
+        error?.message || 'Login failed',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        context.requestId
+      );
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -1200,6 +1373,63 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 export function registerAuthEndpointsEnhanced(app: Hono) {
   const sendOtpHandler = new SendOtpHandlerEnhanced();
   const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
+  const customerPasswordLoginHandler = new CustomerPasswordLoginHandler();
+
+  // Customer first-time password + status: register early with other /auth routes.
+  // (Also registered under /customer/profile/* in registerCustomerProfileEndpoints.)
+  app.get('/auth/customer/password-status', handleCustomerAccountStatus);
+  app.post('/auth/customer/set-password', handleCustomerSetPassword);
+
+  app.post('/auth/login', async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000;
+    try {
+      const parseBodyWithTimeout = async (): Promise<any> => {
+        return Promise.race([
+          c.req.json(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request body parsing timeout')), 5000)
+          ),
+        ]);
+      };
+
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError: any) {
+        console.error('[AUTH] Error parsing login body:', parseError);
+        return c.json(
+          { message: 'Invalid request format', error: parseError.message || 'Request parsing failed' },
+          400
+        );
+      }
+
+      const context = createLambdaContext();
+      const result: any = await Promise.race([
+        customerPasswordLoginHandler.execute(event, context),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Handler execution timeout')), TIMEOUT_MS)
+        ),
+      ]);
+
+      if (!result || !result.body) {
+        throw new Error('Handler returned invalid response');
+      }
+
+      const body = JSON.parse(result.body);
+      console.log(`[AUTH] login completed in ${Date.now() - startTime}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      const statusCode = error?.message?.includes('timeout') ? 503 : 500;
+      return c.json(
+        {
+          message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
+          error: error?.message || 'Internal Server Error',
+        },
+        statusCode
+      );
+    }
+  });
 
   app.post('/auth/send-otp', async (c) => {
     try {
@@ -1396,6 +1626,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       }, statusCode);
     }
   });
+
 }
 
 async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): Promise<any> {

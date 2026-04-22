@@ -4,6 +4,31 @@
  */
 
 import { ensureCustomerIdStorageReconciledOnce } from './customer-id-storage';
+import { getCognitoTokens, clearCognitoTokens } from './cognito-auth';
+
+/** After OTP, customer must set password before treating login as complete (first-time / legacy OTP-only). */
+export const SESSION_KEY_NEEDS_PASSWORD_SETUP = 'warmpawz_needs_password_setup';
+
+export function setNeedsPasswordSetupAfterOtp(): void {
+  if (typeof window !== 'undefined') sessionStorage.setItem(SESSION_KEY_NEEDS_PASSWORD_SETUP, '1');
+}
+
+export function clearNeedsPasswordSetup(): void {
+  if (typeof window !== 'undefined') sessionStorage.removeItem(SESSION_KEY_NEEDS_PASSWORD_SETUP);
+}
+
+export function needsPasswordSetupAfterOtp(): boolean {
+  return typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY_NEEDS_PASSWORD_SETUP) === '1';
+}
+
+/** Prefer Cognito bundle (`customerCognitoTokens`), then legacy `authToken` / `cognitoAccessToken`. */
+export function getStoredCustomerJwtForSession(): string | null {
+  if (typeof window === 'undefined') return null;
+  const c = getCognitoTokens();
+  if (c?.idToken) return c.idToken;
+  if (c?.accessToken) return c.accessToken;
+  return localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+}
 
 /**
  * Check if this is a hard refresh
@@ -16,7 +41,7 @@ export function isHardRefresh(): boolean {
   
   // Add debug logging for troubleshooting
   const debugInfo = {
-    hasToken: !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken')),
+    hasToken: !!getStoredCustomerJwtForSession(),
     hasSessionFlag: !!sessionStorage.getItem('_warmpawz_has_session'),
     justLoggedIn: !!sessionStorage.getItem('_warmpawz_just_logged_in'),
     pathname: window.location.pathname,
@@ -58,7 +83,7 @@ export function isHardRefresh(): boolean {
   }
   
   // Method 1: Check navigation type (most reliable)
-  const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
+  const hasToken = !!getStoredCustomerJwtForSession();
   
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
@@ -103,6 +128,12 @@ export function isHardRefresh(): boolean {
  */
 export function clearCustomerSession(): void {
   if (typeof window === 'undefined') return;
+
+  try {
+    clearCognitoTokens();
+  } catch {
+    /* ignore */
+  }
   
   localStorage.removeItem('customerPhone');
   localStorage.removeItem('customerId');
@@ -132,6 +163,7 @@ export function clearCustomerSession(): void {
   // Tab session flags (avoid stale “logged in” after explicit sign-out)
   sessionStorage.removeItem('_warmpawz_has_session');
   sessionStorage.removeItem('_warmpawz_just_logged_in');
+  sessionStorage.removeItem(SESSION_KEY_NEEDS_PASSWORD_SETUP);
 }
 
 /**
@@ -188,8 +220,7 @@ export function initializeSession(): void {
   }
   
   // Check token expiry
-  const token = localStorage.getItem('authToken') || 
-                localStorage.getItem('cognitoAccessToken');
+  const token = getStoredCustomerJwtForSession();
   
   if (token && isTokenExpired(token)) {
     console.log('[Session] Token expired - clearing customer session');

@@ -164,6 +164,7 @@ import platformPoliciesApp from '../endpoints/platform-policies';
 import { registerAuthEndpointsEnhanced } from 'src/endpoints/Auth/auth-enhanced';
 import { registerServiceDiscoveryEndpoints } from 'src/endpoints/customer/customerEndpoint/service-discovery.customer';
 import { registerCustomerProfileEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-profile.customer';
+import { registerCustomerPasswordEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-password';
 import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor/endpoints/vendorAnalytics.vendor';
 import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/customerEndpoint/customer-enhanced';
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
@@ -171,7 +172,6 @@ import { registerCustomerContentEndpoints } from 'src/endpoints/customer/custome
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
-import { registerCustomerPasswordEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-password';
 import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints/admin-integrations';
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
@@ -526,7 +526,8 @@ registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles,
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings/active, /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
-registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
+registerCustomerPasswordEndpoints(app); // POST /customer/change-password (legacy); literals live in profile module
+registerCustomerProfileEndpoints(app); // password-status, set-password, account/* first — then /customer/profile/* — before /customer/:customerId
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
@@ -600,7 +601,6 @@ registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
-registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
 registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
@@ -1017,6 +1017,23 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
   },
 });
 
+/**
+ * When API Gateway / CloudFront maps `/prefix/*` to this Lambda, `rawPath` still includes the prefix.
+ * Hono routes are registered without that prefix — set `API_HTTP_PATH_PREFIX` (e.g. `/uat` or `/api`) to strip it.
+ */
+function applyHttpPathPrefixMapping(path: string): string {
+  const p0 = path && path.startsWith('/') ? path : `/${path || ''}`;
+  const prefix = (process.env.API_HTTP_PATH_PREFIX || '').trim();
+  if (!prefix) return p0;
+  const norm = prefix.startsWith('/') ? prefix : `/${prefix}`;
+  if (p0 === norm) return '/';
+  if (p0.startsWith(`${norm}/`)) {
+    const rest = p0.slice(norm.length) || '/';
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  return p0;
+}
+
 export const handler = async (
   event: APIGatewayProxyEventV2,
   context: Context
@@ -1162,7 +1179,9 @@ export const handler = async (
     // Convert API Gateway HTTP API (v2) event to Request
     // domainName is only present when using custom domains
     // For default endpoints, construct from apiId or use relative URL
-    const rawPath = event.rawPath || event.requestContext?.http?.path || '/';
+    const rawPath = applyHttpPathPrefixMapping(
+      event.rawPath || event.requestContext?.http?.path || '/'
+    );
     const queryString = event.rawQueryString ? `?${event.rawQueryString}` : '';
     
     // Try to get domainName from requestContext (custom domain) or construct from apiId
@@ -1202,7 +1221,9 @@ export const handler = async (
     // Handle body based on content type
     const contentType = headers.get('content-type') || '';
     const isMultipartFormData = contentType.includes('multipart/form-data');
-    const isJson = contentType.includes('application/json');
+    const isJson =
+      contentType.includes('application/json') ||
+      contentType.includes('+json');
     
     // For multipart/form-data, we need to preserve binary data
     // For JSON, we can parse it
@@ -1243,6 +1264,26 @@ export const handler = async (
           }
         } else {
           requestBody = event.body;
+        }
+      }
+    }
+
+    // Clients / proxies sometimes omit or vary Content-Type; still parse JSON object bodies for `c.env.parsedBody`.
+    if (
+      !isMultipartFormData &&
+      parsedBody === null &&
+      typeof requestBody === 'string' &&
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(httpMethod)
+    ) {
+      const lead = requestBody.trim().charAt(0);
+      if (lead === '{') {
+        try {
+          const obj = JSON.parse(requestBody) as unknown;
+          if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+            parsedBody = obj as Record<string, unknown>;
+          }
+        } catch {
+          /* leave null */
         }
       }
     }

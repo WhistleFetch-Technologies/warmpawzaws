@@ -13,7 +13,11 @@ import {
 import { validateEmail } from '@/lib/validation';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
-import { clearCustomerSession } from '@/lib/session-utils';
+import {
+  clearCustomerSession,
+  getStoredCustomerJwtForSession,
+  needsPasswordSetupAfterOtp,
+} from '@/lib/session-utils';
 
 interface CustomerProfile {
   id: string;
@@ -42,7 +46,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const phone = localStorage.getItem('customerPhone');
-    const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+    const token = getStoredCustomerJwtForSession();
     if (!phone || !token) {
       router.push('/auth');
       return;
@@ -74,6 +78,18 @@ export default function ProfilePage() {
       }
     } catch {
       // Unified fetch is best-effort; gates still use profile_completed
+    }
+    if (needsPasswordSetupAfterOtp()) {
+      router.replace('/auth/set-password?next=' + encodeURIComponent('/onboarding'));
+      return;
+    }
+    const next =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('next')
+        : null;
+    if (next && next.startsWith('/')) {
+      router.replace(next);
+      return;
     }
     router.replace('/onboarding');
   }, [router]);

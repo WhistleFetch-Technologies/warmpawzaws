@@ -24,6 +24,13 @@ export const VerifyOtpRequestSchema = z.object({
   pendingReferralCode: z.string().max(64).optional(),
 });
 
+/** Customer username + password login (no OTP). */
+export const CustomerPasswordLoginRequestSchema = z.object({
+  username: z.string().min(3).max(64),
+  password: z.string().min(1),
+  role: z.enum(['customer']).optional(),
+});
+
 export const AdminLoginRequestSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -68,6 +75,7 @@ export const AuthResponseSchema = z.object({
 
 export type SendOtpRequest = z.infer<typeof SendOtpRequestSchema>;
 export type VerifyOtpRequest = z.infer<typeof VerifyOtpRequestSchema>;
+export type CustomerPasswordLoginRequest = z.infer<typeof CustomerPasswordLoginRequestSchema>;
 export type AdminLoginRequest = z.infer<typeof AdminLoginRequestSchema>;
 export type RefreshTokenRequest = z.infer<typeof RefreshTokenRequestSchema>;
 export type AuthToken = z.infer<typeof AuthTokenSchema>;
