@@ -1261,14 +1261,27 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
             if (response.success || response.applicationId) {
               setResubmitInitialData(null);
-              setPostSubmitPasswordPayload({
+              const completionPayload = {
                 ...submissionData,
                 applicationId: response.applicationId,
                 vendorId: response.vendorId,
                 status: 'submitted',
-              });
-              setPasswordGateVariant('after_profile_submit');
-              setPasswordGateOpen(true);
+              };
+              // Align with WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT: gate only after admin approval (API allowlist).
+              let needPasswordSetup = false;
+              try {
+                needPasswordSetup = await fetchVendorNeedsPasswordSetup();
+              } catch {
+                needPasswordSetup = false;
+              }
+              if (needPasswordSetup) {
+                setPostSubmitPasswordPayload(completionPayload);
+                setPasswordGateVariant('after_profile_submit');
+                setPasswordGateOpen(true);
+              } else {
+                setPostSubmitPasswordPayload(null);
+                handleOnboardingComplete(completionPayload);
+              }
             } else {
               console.error('❌ [VendorApp] Failed to submit:', response);
               alert(response.error || 'Failed to submit application');
