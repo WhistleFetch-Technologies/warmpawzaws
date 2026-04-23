@@ -224,10 +224,17 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       if (response?.provider) {
         setPreviousWalker({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
       } else {
-        const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=walking`).catch(() => null);
-        if (pkgRes?.packages?.length > 0) {
-          const pkg = pkgRes.packages[0];
-          if (pkg.vendorId && pkg.vendorName) setPreviousWalker({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+        const pkgRes = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/packages`).catch(() => null);
+        const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
+        const walkish = pkgs.filter((p: any) => {
+          const t = String(p.packageType || p.package_type || '').toLowerCase();
+          return !t || t.includes('walk') || t === 'dog_walking' || t === 'walker';
+        });
+        if (walkish.length > 0) {
+          const pkg = walkish[0];
+          const used = Number(pkg.sessionsUsed ?? pkg.sessions_used ?? 0);
+          const total = Number(pkg.totalSessions ?? pkg.total_sessions ?? 0);
+          if (pkg.vendorId && pkg.vendorName) setPreviousWalker({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: total > 0 ? `${used}/${total}` : used || 1 });
         }
       }
     } catch { /* ignore */ }
@@ -250,12 +257,13 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
 
   const loadActivePackages = async () => {
     try {
-      const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=walking`);
-      if (response?.packages && Array.isArray(response.packages)) {
-        setActivePackages(response.packages);
-      } else {
-        setActivePackages([]);
-      }
+      const response = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/packages`);
+      const raw = Array.isArray(response?.packages) ? response.packages : [];
+      const walkish = raw.filter((p: any) => {
+        const t = String(p.packageType || p.package_type || '').toLowerCase();
+        return !t || t.includes('walk') || t === 'dog_walking' || t === 'walker';
+      });
+      setActivePackages(walkish);
     } catch (error: any) {
       // Silently fail - no packages is not an error
       console.log('No active packages or error loading:', error?.message);
@@ -453,7 +461,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       const phoneParam = phone
         ? `&customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
         : '';
-      const servicesUrl = `/customer/vendor/${encodeURIComponent(vid)}/services?category=walking${phoneParam}`;
+      const servicesUrl = `/customer/vendor/${encodeURIComponent(vid)}/services${phoneParam ? `?${phoneParam.replace(/^&/, '')}` : ''}`;
       const [svcRes, spRes] = await Promise.allSettled([
         apiClient.get(servicesUrl) as Promise<Record<string, any>>,
         apiClient.get(`/vendor/${encodeURIComponent(vid)}/packages`) as Promise<{ packages?: any[] }>,
@@ -732,7 +740,16 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                   <div>
                     <p className="font-medium text-sm">{pkg.packageName || 'Walking Package'}</p>
                     <p className="text-xs text-gray-500">
-                      {pkg.remainingSessions === 'unlimited' ? 'Unlimited' : `${pkg.remainingSessions} sessions left`}
+                      {pkg.remainingSessions === 'unlimited' || pkg.isUnlimited
+                        ? 'Unlimited'
+                        : (() => {
+                            const used = Number(pkg.sessionsUsed ?? pkg.sessions_used ?? 0);
+                            const total = Number(pkg.totalSessions ?? pkg.total_sessions ?? 0);
+                            const rem = pkg.remainingSessions;
+                            const r = typeof rem === 'number' ? rem : Number(rem);
+                            if (total > 0) return `${used}/${total} used${Number.isFinite(r) ? ` · ${r} left` : ''}`;
+                            return `${pkg.remainingSessions ?? '—'} sessions left`;
+                          })()}
                     </p>
                   </div>
                   <Button 

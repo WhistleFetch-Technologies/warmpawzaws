@@ -165,11 +165,32 @@ export function PackageBookingPage({
 
   const loadMyPackages = async () => {
     try {
-      // In production, fetch customer's active packages from backend
-      // For now, we'll use empty array
-      setMyPackages([]);
+      const res = await apiClient
+        .get<any>(`/customer/${encodeURIComponent(customerPhone)}/packages`)
+        .catch(() => null);
+      const rows: any[] = Array.isArray(res?.packages) ? res.packages : [];
+      setMyPackages(
+        rows.map((p) => {
+          const total = Number(p.totalSessions ?? p.total_sessions ?? 0);
+          const used = Number(p.sessionsUsed ?? p.sessions_used ?? 0);
+          const unlimited = p.isUnlimited || p.remainingSessions === 'unlimited';
+          return {
+            id: String(p.id),
+            packageId: String(p.packageId || p.id),
+            packageName: String(p.packageName || p.package_name || 'Package'),
+            totalSessions: unlimited ? Math.max(used, 1) : total || Math.max(used, 1),
+            completedSessions: unlimited ? used : used,
+            status: (p.status === 'exhausted' || p.status === 'expired' ? 'completed' : 'active') as
+              | 'active'
+              | 'completed',
+            sessions: [],
+            createdAt: p.expiresAt || p.expires_at || new Date().toISOString(),
+          };
+        })
+      );
     } catch (err) {
       console.error('Error loading my packages:', err);
+      setMyPackages([]);
     }
   };
 

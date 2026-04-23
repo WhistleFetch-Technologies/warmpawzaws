@@ -48,6 +48,7 @@ import {
   RefreshCw, 
   X,
   Sparkles,
+  Package,
 } from 'lucide-react';
 import {
   getVendorRoleId,
@@ -559,6 +560,49 @@ export function VendorBookingManagement({
           // Track rescheduled bookings
           isRescheduled: Boolean(booking.isRescheduled || booking.rescheduledAt || booking.rescheduled_at),
           rescheduledAt: booking.rescheduledAt || booking.rescheduled_at || null,
+
+          packagePurchaseId: booking.packagePurchaseId ?? booking.package_purchase_id ?? null,
+          package_purchase_id: booking.package_purchase_id ?? booking.packagePurchaseId ?? null,
+          isPackageSession: Boolean(booking.isPackageSession ?? booking.is_package_session),
+          is_package_session: Boolean(booking.is_package_session ?? booking.isPackageSession),
+          packageSessionNumber:
+            booking.packageSessionNumber != null
+              ? Number(booking.packageSessionNumber)
+              : booking.package_session_number != null
+                ? Number(booking.package_session_number)
+                : null,
+          package_session_number:
+            booking.package_session_number != null
+              ? Number(booking.package_session_number)
+              : booking.packageSessionNumber != null
+                ? Number(booking.packageSessionNumber)
+                : null,
+          packageTotalSessions:
+            booking.packageTotalSessions != null
+              ? Number(booking.packageTotalSessions)
+              : booking.package_total_sessions != null
+                ? Number(booking.package_total_sessions)
+                : null,
+          package_total_sessions:
+            booking.package_total_sessions != null
+              ? Number(booking.package_total_sessions)
+              : booking.packageTotalSessions != null
+                ? Number(booking.packageTotalSessions)
+                : null,
+          packageRemainingSessions:
+            booking.packageRemainingSessions != null
+              ? Number(booking.packageRemainingSessions)
+              : booking.package_remaining_sessions != null
+                ? Number(booking.package_remaining_sessions)
+                : null,
+          package_remaining_sessions:
+            booking.package_remaining_sessions != null
+              ? Number(booking.package_remaining_sessions)
+              : booking.packageRemainingSessions != null
+                ? Number(booking.packageRemainingSessions)
+                : null,
+          packageUnlimitedUsage: Boolean(booking.packageUnlimitedUsage ?? booking.package_unlimited_usage),
+          package_name: booking.package_name ?? booking.packageName ?? null,
         };
         });
         
@@ -1234,6 +1278,25 @@ export function VendorBookingManagement({
                             {booking.isRescheduled && (
                               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
                                 📅 Rescheduled
+                              </span>
+                            )}
+                            {(booking as any).packagePurchaseId && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-800">
+                                <Package className="h-3 w-3 shrink-0" />
+                                {(booking as any).packageSessionNumber != null &&
+                                (booking as any).packageTotalSessions != null
+                                  ? `Session ${(booking as any).packageSessionNumber} of ${(booking as any).packageTotalSessions}`
+                                  : 'Package'}
+                                {(booking as any).packageRemainingSessions != null &&
+                                !(booking as any).packageUnlimitedUsage && (
+                                  <span className="text-purple-600">
+                                    {' '}
+                                    · {(booking as any).packageRemainingSessions} left
+                                  </span>
+                                )}
+                                {(booking as any).packageUnlimitedUsage ? (
+                                  <span className="text-purple-600"> · Unlimited</span>
+                                ) : null}
                               </span>
                             )}
                           </div>

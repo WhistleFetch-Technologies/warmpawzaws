@@ -40,7 +40,8 @@ async function selectCustomerIdByPhoneLast10(last10: string): Promise<string | n
  * Customer-web UAT login uses opaque `Bearer uat-token-customer-{10digits}-{timestamp}` (not a JWT).
  * Those must resolve by phone when `X-UAT-Mode: true` or `UAT_MODE=true`.
  */
-async function resolvePostgresCustomerIdFromAuthHeaders(
+/** Exported for package/session routes that must verify `package_purchases.customer_id`. */
+export async function resolvePostgresCustomerIdFromAuthHeaders(
   headers: Record<string, string | undefined>
 ): Promise<string | null> {
   const authRaw = headers['authorization'] || headers['Authorization'];

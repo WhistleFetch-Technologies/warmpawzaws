@@ -11,7 +11,8 @@ import {
   RefreshCw,
   CheckCircle,
   Play,
-  Square
+  Square,
+  Package,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
@@ -100,6 +101,22 @@ export function VendorBookingCard({
           <div className="flex items-center gap-1 text-xs font-medium text-[#FF8C42] mb-1">
             <span>{booking.serviceName}</span>
           </div>
+          {(booking.packagePurchaseId || booking.package_purchase_id) && (
+            <div className="mb-1 flex flex-wrap items-center gap-1 text-xs text-purple-800">
+              <Package className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {booking.packageSessionNumber != null && booking.packageTotalSessions != null
+                  ? `Session ${booking.packageSessionNumber} of ${booking.packageTotalSessions}`
+                  : 'Package session'}
+                {booking.packageRemainingSessions != null && !booking.packageUnlimitedUsage ? (
+                  <span className="text-purple-600"> · {booking.packageRemainingSessions} left</span>
+                ) : null}
+                {booking.packageUnlimitedUsage ? (
+                  <span className="text-purple-600"> · Unlimited</span>
+                ) : null}
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <MapPin className="w-3 h-3" />
             <span>{booking.location}</span>

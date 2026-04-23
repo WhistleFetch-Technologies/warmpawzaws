@@ -14,8 +14,93 @@
  * ============================================================================
  */
 
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { query, insert, update, select } from '../database/rds-connection';
+import { resolvePostgresCustomerIdFromAuthHeaders } from './customer/customerEndpoint/customer-password';
+import { resolveVendorsTableIdFromAuthHeaders } from './vendor/vendor-auth-password';
+
+async function buildPackageSessionsResponse(packagePurchaseId: string) {
+  const result = await query(
+    `
+        SELECT 
+          pss.*,
+          b.status as booking_status,
+          b.booking_date,
+          b.booking_time,
+          b.completed_at
+        FROM package_scheduled_sessions pss
+        LEFT JOIN bookings b ON pss.booking_id = b.id
+        WHERE pss.package_purchase_id = $1
+        ORDER BY pss.session_number ASC
+      `,
+    [packagePurchaseId]
+  );
+
+  const packageResult = await query(
+    `
+        SELECT pp.*, v.business_name as vendor_name
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.id = $1
+      `,
+    [packagePurchaseId]
+  );
+
+  const pkg = packageResult.rows[0];
+  if (!pkg) return null;
+
+  const sessions = result.rows;
+  const completedCount = sessions.filter((s: any) => s.status === 'completed').length;
+  const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
+  const pendingCount = sessions.filter((s: any) => s.status === 'pending').length;
+  const totalSessions = pkg?.total_sessions != null ? Number(pkg.total_sessions) : sessions.length;
+  const denom = totalSessions > 0 ? totalSessions : 1;
+
+  return {
+    success: true,
+    package: pkg,
+    sessions,
+    summary: {
+      total: totalSessions,
+      completed: completedCount,
+      scheduled: scheduledCount,
+      pending: pendingCount,
+      remaining: pkg?.remaining_sessions != null ? Number(pkg.remaining_sessions) : pendingCount,
+      progressPercent: Math.round((completedCount / denom) * 100),
+    },
+  };
+}
+
+async function packageSessionsAuthForRequest(
+  c: Context,
+  pkg: { customer_id?: string; vendor_id?: string }
+): Promise<'ok' | 'anonymous' | 'forbidden'> {
+  const authRaw = c.req.header('Authorization') || c.req.header('authorization') || '';
+  if (!authRaw.trim()) return 'anonymous';
+
+  const headers: Record<string, string | undefined> = {
+    authorization: authRaw,
+    'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-UAT-Mode'),
+    'X-UAT-Mode': c.req.header('X-UAT-Mode') || c.req.header('x-uat-mode'),
+  };
+
+  const [custId, vendId] = await Promise.all([
+    resolvePostgresCustomerIdFromAuthHeaders(headers),
+    resolveVendorsTableIdFromAuthHeaders(headers),
+  ]);
+
+  const custOk =
+    custId &&
+    pkg.customer_id != null &&
+    String(custId).toLowerCase() === String(pkg.customer_id).toLowerCase();
+  const vendOk =
+    vendId &&
+    pkg.vendor_id != null &&
+    String(vendId).toLowerCase() === String(pkg.vendor_id).toLowerCase();
+  if (custOk || vendOk) return 'ok';
+  return 'forbidden';
+}
 
 export function registerPackageBookingEndpoints(app: Hono) {
   
@@ -566,53 +651,57 @@ export function registerPackageBookingEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/packages/:packagePurchaseId/sessions
+   * Staff view of all scheduled sessions for a purchase (vendor must own the package).
+   */
+  app.get('/vendor/packages/:packagePurchaseId/sessions', async (c) => {
+    try {
+      const { packagePurchaseId } = c.req.param();
+      const headers: Record<string, string | undefined> = {
+        authorization: c.req.header('Authorization') || c.req.header('authorization'),
+        'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-UAT-Mode'),
+        'X-UAT-Mode': c.req.header('X-UAT-Mode') || c.req.header('x-uat-mode'),
+      };
+      const vendId = await resolveVendorsTableIdFromAuthHeaders(headers);
+      if (!vendId) {
+        return c.json({ success: false, error: 'Unauthorized' }, 401);
+      }
+      const body = await buildPackageSessionsResponse(packagePurchaseId);
+      if (!body) {
+        return c.json({ error: 'Package not found' }, 404);
+      }
+      const pkg = body.package as { vendor_id?: string };
+      if (!pkg?.vendor_id || String(pkg.vendor_id).toLowerCase() !== String(vendId).toLowerCase()) {
+        return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
+      return c.json(body);
+    } catch (error: any) {
+      console.error('Error fetching vendor package sessions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /packages/:packagePurchaseId/sessions
-   * Get all sessions for a package purchase
+   * Get all sessions for a package purchase.
+   * When Authorization is sent, customer or vendor must own the row; unauthenticated calls remain allowed for backward compatibility.
    */
   app.get("/packages/:packagePurchaseId/sessions", async (c) => {
     try {
       const { packagePurchaseId } = c.req.param();
 
-      const result = await query(`
-        SELECT 
-          pss.*,
-          b.status as booking_status,
-          b.booking_date,
-          b.booking_time,
-          b.completed_at
-        FROM package_scheduled_sessions pss
-        LEFT JOIN bookings b ON pss.booking_id = b.id
-        WHERE pss.package_purchase_id = $1
-        ORDER BY pss.session_number ASC
-      `, [packagePurchaseId]);
+      const body = await buildPackageSessionsResponse(packagePurchaseId);
+      if (!body) {
+        return c.json({ error: 'Package not found' }, 404);
+      }
 
-      // Get package info
-      const packageResult = await query(`
-        SELECT pp.*, v.business_name as vendor_name
-        FROM package_purchases pp
-        LEFT JOIN vendors v ON pp.vendor_id = v.id
-        WHERE pp.id = $1
-      `, [packagePurchaseId]);
+      const pkg = body.package as { customer_id?: string; vendor_id?: string };
+      const authz = await packageSessionsAuthForRequest(c, pkg);
+      if (authz === 'forbidden') {
+        return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
 
-      const pkg = packageResult.rows[0];
-      const sessions = result.rows;
-      const completedCount = sessions.filter((s: any) => s.status === 'completed').length;
-      const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
-      const pendingCount = sessions.filter((s: any) => s.status === 'pending').length;
-
-      return c.json({
-        success: true,
-        package: pkg,
-        sessions,
-        summary: {
-          total: pkg?.total_sessions || sessions.length,
-          completed: completedCount,
-          scheduled: scheduledCount,
-          pending: pendingCount,
-          remaining: pkg?.remaining_sessions || pendingCount,
-          progressPercent: Math.round((completedCount / (pkg?.total_sessions || 1)) * 100)
-        }
-      });
+      return c.json(body);
     } catch (error: any) {
       console.error('Error fetching package sessions:', error);
       return c.json({ error: error.message }, 500);

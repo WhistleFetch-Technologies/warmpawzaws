@@ -1,15 +1,13 @@
 /**
  * Customer Authentication Screen
- * Redesigned to match design reference with orange/white split layout
- * Identical functionality to web app
+ * Premium orange / card layout — same OTP flow, APIs, and storage as before.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Image,
@@ -18,19 +16,145 @@ import {
   ScrollView,
   Alert,
   Linking,
-  Dimensions,
+  LayoutAnimation,
+  UIManager,
+  Pressable,
+  StatusBar,
 } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { useScreenTopInset } from '../../components/layout/ScreenShell';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerApi, ApiService } from '../../services/api';
-
-const { width, height } = Dimensions.get('window');
 
 interface CustomerAuthScreenProps {
   onAuthSuccess: (session: any) => void;
 }
 
+function formatIndianMobileDisplay(digits: string): string {
+  if (!digits) return '';
+  const a = digits.slice(0, 5);
+  const b = digits.slice(5);
+  return b ? `${a} ${b}` : a;
+}
+
+type CtaButtonProps = {
+  label: string;
+  onPress: () => void;
+  /** True when interaction should be blocked (loading or invalid form). */
+  disabled: boolean;
+  loading: boolean;
+  /** When true, use strong CTA colors (loading or form valid). */
+  activeVisual: boolean;
+};
+
+function CtaButton({ label, onPress, disabled, loading, activeVisual }: CtaButtonProps) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    scale.value = withTiming(0.98, { duration: 90, easing: Easing.out(Easing.quad) });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withTiming(1, { duration: 140, easing: Easing.out(Easing.quad) });
+  };
+
+  const useStrongFill = loading || activeVisual;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
+    >
+      {({ pressed }) => (
+        <Animated.View
+          style={[
+            styles.ctaShell,
+            useStrongFill ? styles.ctaStrong : styles.ctaMuted,
+            pressed && !disabled && useStrongFill ? styles.ctaStrongPressed : null,
+            animatedStyle,
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={[styles.ctaLabel, useStrongFill ? styles.ctaLabelOnDark : styles.ctaLabelMuted]}>{label}</Text>
+          )}
+        </Animated.View>
+      )}
+    </Pressable>
+  );
+}
+
+type AuthHeroProps = {
+  topInset: number;
+  mode: 'welcome' | 'verify';
+};
+
+function AuthHero({ topInset, mode }: AuthHeroProps) {
+  const logoFloat = useSharedValue(0);
+
+  useEffect(() => {
+    logoFloat.value = withRepeat(
+      withSequence(
+        withTiming(-5, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+      ),
+      -1,
+      false,
+    );
+  }, [logoFloat]);
+
+  const logoMotion = useAnimatedStyle(() => ({
+    transform: [{ translateY: logoFloat.value }],
+  }));
+
+  return (
+    <View style={[styles.hero, { paddingTop: topInset + spacing.md }]}>
+      <View style={styles.heroGradientWash} pointerEvents="none" />
+      <View style={[styles.heroBlob, styles.heroBlobA]} pointerEvents="none" />
+      <View style={[styles.heroBlob, styles.heroBlobB]} pointerEvents="none" />
+      <View style={styles.heroVignetteTop} pointerEvents="none" />
+      <View style={styles.heroVignetteBottom} pointerEvents="none" />
+
+      <Animated.View entering={FadeInDown.duration(520)}>
+        <Animated.View style={[styles.logoWrap, logoMotion]}>
+          <Image source={require('../../assets/images/logo.png')} style={styles.logoImage} resizeMode="contain" />
+        </Animated.View>
+      </Animated.View>
+
+      {mode === 'welcome' ? (
+        <>
+          <Text style={styles.heroEyebrow}>Welcome</Text>
+          <Text style={styles.heroBrand}>Warmpawz</Text>
+          <Text style={styles.heroTagline}>Care that feels like family</Text>
+        </>
+      ) : (
+        <Text style={styles.heroVerifyTitle}>Verify your number</Text>
+      )}
+    </View>
+  );
+}
+
 export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
+  const topInset = useScreenTopInset();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [showOtpScreen, setShowOtpScreen] = useState(false);
@@ -40,7 +164,10 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
-  // Cleanup on unmount
+  const [phoneFocused, setPhoneFocused] = useState(false);
+  const [otpFocused, setOtpFocused] = useState(false);
+  const [referralFocused, setReferralFocused] = useState(false);
+
   useEffect(() => {
     return () => {
       setError('');
@@ -48,7 +175,12 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     };
   }, []);
 
-  // Resend timer
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (resendTimer > 0) {
       const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
@@ -56,27 +188,32 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     }
   }, [resendTimer]);
 
+  const openReferral = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowReferralInput(true);
+  }, []);
+
   const handleSendCode = async () => {
     setLoading(true);
     setError('');
 
     try {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-      
+
       if (cleanPhone.length !== 10) {
         setError('Please enter a valid 10-digit phone number');
         setLoading(false);
         return;
       }
 
-      const data = await CustomerApi.generateOtp(cleanPhone);
-      
+      const data = (await CustomerApi.generateOtp(cleanPhone)) as { uatMode?: boolean };
+
       if (data.uatMode) {
         Alert.alert('UAT Testing Mode', 'OTP: 123456');
       } else {
         Alert.alert('Success', 'OTP sent to your phone');
       }
-      
+
       setShowOtpScreen(true);
       setResendTimer(60);
       setLoading(false);
@@ -92,20 +229,23 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
 
     try {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-      
-      const data = await CustomerApi.verifyOtp(cleanPhone, otpCode, referralCode || undefined);
+
+      const data = (await CustomerApi.verifyOtp(cleanPhone, otpCode, referralCode || undefined)) as {
+        sessionToken?: string;
+        customer: { id: string; onboardingComplete: boolean; petIds?: string[] };
+        isNewUser?: boolean;
+      };
       if (referralCode?.trim()) {
         await AsyncStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
-      
-      // Save session token
+
       if (data.sessionToken) {
         await ApiService.saveSessionToken(data.sessionToken);
       }
-      
+
       const hasCompletedOnboarding = data.customer.onboardingComplete;
       const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
-      
+
       onAuthSuccess({
         phone: cleanPhone,
         customerId: data.customer.id,
@@ -114,9 +254,9 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
         verified: true,
         isNewUser: data.isNewUser,
         hasCompletedOnboarding,
-        hasPets
+        hasPets,
       });
-      
+
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Failed to verify OTP');
@@ -126,7 +266,7 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
 
   const handleResendCode = async () => {
     if (resendTimer > 0) return;
-    
+
     try {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
       await CustomerApi.generateOtp(cleanPhone);
@@ -137,129 +277,123 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     }
   };
 
-  const formatPhoneNumber = (text: string) => {
-    const cleaned = text.replace(/[^0-9]/g, '');
-    if (cleaned.length <= 10) {
-      if (cleaned.length > 0) {
-        return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
-      }
-      return '+91 ';
-    }
-    return phoneNumber;
-  };
+  const phoneHasError = !!error && !showOtpScreen;
+  const otpHasError = !!error && showOtpScreen;
+
+  const cardContentStyle = [
+    styles.cardContent,
+    { paddingBottom: spacing.xl + spacing.sm },
+  ];
 
   // OTP Verification Screen
   if (showOtpScreen) {
+    const canVerify = otpCode.length === 6;
     return (
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.root}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Orange Top Section (2/3) */}
-        <View style={styles.orangeSection}>
-          <View style={styles.logoContainer}>
-            <Image 
-              source={require('../../assets/images/logo.png')} 
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-          </View>
-          <Text style={styles.verifyTitle}>Verify Your Number</Text>
-        </View>
+        <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+        <AuthHero topInset={topInset} mode="verify" />
 
-        {/* White Bottom Card (1/3) */}
-        <View style={styles.whiteCard}>
-          <ScrollView 
-            contentContainerStyle={styles.whiteCardContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.otpInstruction}>
-              Enter the OTP sent to{'\n'}
-              <Text style={styles.phoneNumberText}>+91 {phoneNumber}</Text>
+        <View style={styles.card}>
+          <ScrollView contentContainerStyle={cardContentStyle} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.cardLead}>
+              Enter the code we sent to{' '}
+              <Text style={styles.cardLeadEmphasis}>+91 {formatIndianMobileDisplay(phoneNumber)}</Text>
             </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Verification Code</Text>
-              <TextInput
-                style={styles.otpInput}
-                placeholder="Enter 6-digit code"
-                value={otpCode}
-                onChangeText={setOtpCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                autoFocus
-              />
-            </View>
+            <Text style={styles.fieldLabel}>Verification code</Text>
+            <TextInput
+              style={[
+                styles.inputBase,
+                styles.otpInput,
+                otpFocused && styles.inputFocused,
+                otpHasError && styles.inputError,
+              ]}
+              placeholder="6-digit code"
+              placeholderTextColor={colors.textMuted}
+              value={otpCode}
+              onChangeText={setOtpCode}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+              onFocus={() => setOtpFocused(true)}
+              onBlur={() => setOtpFocused(false)}
+              accessibilityLabel="Verification code"
+            />
 
-            {showReferralInput && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Referral Code (Optional)</Text>
+            {showReferralInput ? (
+              <>
+                <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>Referral code (optional)</Text>
                 <TextInput
-                  style={styles.referralInput}
+                  style={[styles.inputBase, referralFocused && styles.inputFocused]}
                   placeholder="Enter referral code"
+                  placeholderTextColor={colors.textMuted}
                   value={referralCode}
                   onChangeText={setReferralCode}
                   autoCapitalize="characters"
+                  onFocus={() => setReferralFocused(true)}
+                  onBlur={() => setReferralFocused(false)}
                 />
-              </View>
-            )}
+              </>
+            ) : null}
 
             {error ? (
-              <View style={styles.errorContainer}>
+              <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={[styles.verifyButton, (loading || otpCode.length !== 6) && styles.buttonDisabled]}
-              onPress={handleVerifyOtp}
-              disabled={loading || otpCode.length !== 6}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.verifyButtonText}>Verify & Continue</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.otpLinks}>
-              <TouchableOpacity
-                onPress={handleResendCode}
-                disabled={resendTimer > 0}
-              >
-                <Text style={[styles.linkText, styles.blueLink, resendTimer > 0 && styles.linkDisabled]}>
-                  {resendTimer > 0 ? `Resend Code (${resendTimer}s)` : 'Resend Code'}
-                </Text>
-              </TouchableOpacity>
-              <Text style={styles.linkSeparator}> • </Text>
-              <TouchableOpacity onPress={() => Alert.alert('Help', 'Contact support for assistance')}>
-                <Text style={[styles.linkText, styles.orangeLink]}>Get Help</Text>
-              </TouchableOpacity>
+            <View style={styles.ctaBlock}>
+              <CtaButton
+                label="Verify & Continue"
+                onPress={handleVerifyOtp}
+                disabled={loading || !canVerify}
+                loading={loading}
+                activeVisual={loading || canVerify}
+              />
             </View>
 
-            <TouchableOpacity
+            <View style={styles.linkRow}>
+              <Pressable onPress={handleResendCode} disabled={resendTimer > 0} hitSlop={12}>
+                <Text style={[styles.linkPrimary, resendTimer > 0 && styles.linkFaded]}>
+                  {resendTimer > 0 ? `Resend code (${resendTimer}s)` : 'Resend code'}
+                </Text>
+              </Pressable>
+              <Text style={styles.linkDot}>·</Text>
+              <Pressable onPress={() => Alert.alert('Help', 'Contact support for assistance')} hitSlop={12}>
+                <Text style={styles.linkSecondary}>Get help</Text>
+              </Pressable>
+            </View>
+
+            <Pressable
               onPress={() => {
                 setShowOtpScreen(false);
                 setOtpCode('');
                 setError('');
               }}
-              style={styles.changeNumberLink}
+              style={styles.textLinkWrap}
+              hitSlop={12}
             >
-              <Text style={[styles.linkText, styles.blueLink]}>← Change phone number</Text>
-            </TouchableOpacity>
+              <Text style={styles.linkPrimary}>← Change phone number</Text>
+            </Pressable>
 
-            {!showReferralInput && (
-              <TouchableOpacity
-                onPress={() => setShowReferralInput(true)}
-                style={styles.referralLink}
+            {!showReferralInput ? (
+              <Pressable
+                onPress={openReferral}
+                style={styles.referralRow}
+                accessibilityRole="button"
+                accessibilityLabel="Have a referral code? Expand referral field"
               >
-                <Text style={[styles.linkText, styles.orangeLink]}>Have a referral code?</Text>
-              </TouchableOpacity>
-            )}
+                <Text style={styles.referralRowText}>Have a referral code?</Text>
+                <Text style={styles.referralChevron}>▼</Text>
+              </Pressable>
+            ) : null}
 
-            <View style={styles.appInfo}>
-              <Text style={styles.appInfoText}>WARMPAWS Provider v2.1.0</Text>
-              <Text style={styles.copyrightText}>© 2025 WARMPAWS Inc. All rights reserved</Text>
+            <View style={styles.footerMeta}>
+              <Text style={styles.footerVersion}>WARMPAWS Provider v2.1.0</Text>
+              <Text style={styles.footerCopy}>© 2026 WARMPAWS Inc. All rights reserved</Text>
             </View>
           </ScrollView>
         </View>
@@ -268,121 +402,113 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
   }
 
   // Phone Number Input Screen
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      {/* Orange Top Section (2/3) */}
-      <View style={styles.orangeSection}>
-        <View style={styles.logoContainer}>
-          <Image 
-            source={require('../../assets/images/logo.png')} 
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </View>
-        <Text style={styles.welcomeText}>Welcome to</Text>
-        <Text style={styles.welcomeTitle}>WARMPAWZ!</Text>
-      </View>
+  const canSend = phoneNumber.length === 10;
 
-      {/* White Bottom Card (1/3) */}
-      <View style={styles.whiteCard}>
-        <ScrollView 
-          contentContainerStyle={styles.whiteCardContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.introText}>
-            Join our community of pet lovers and access{'\n'}
-            the best care for your furry friends
+  return (
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+      <AuthHero topInset={topInset} mode="welcome" />
+
+      <View style={styles.card}>
+        <ScrollView contentContainerStyle={cardContentStyle} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={styles.cardIntro}>
+            Join pet lovers who book trusted care in a few taps — simple, warm, and reliable.
           </Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Phone Number</Text>
+          <Text style={styles.fieldLabel}>Mobile number</Text>
+          <View
+            style={[
+              styles.phoneRow,
+              phoneFocused && styles.phoneRowFocused,
+              phoneHasError && styles.phoneRowError,
+            ]}
+          >
+            <View style={styles.countryBadge}>
+              <Text style={styles.countryBadgeText}>+91</Text>
+            </View>
             <TextInput
-              style={styles.phoneInput}
-              placeholder="+91 74493 38923"
-              value={formatPhoneNumber(phoneNumber)}
+              style={styles.phoneInputField}
+              placeholder="98765 43210"
+              placeholderTextColor={colors.textMuted}
+              value={formatIndianMobileDisplay(phoneNumber)}
               onChangeText={(text) => {
                 const cleaned = text.replace(/[^0-9]/g, '');
                 if (cleaned.length <= 10) {
                   setPhoneNumber(cleaned);
                 }
               }}
-              keyboardType="phone-pad"
-              maxLength={15}
+              keyboardType="number-pad"
+              maxLength={12}
+              onFocus={() => setPhoneFocused(true)}
+              onBlur={() => setPhoneFocused(false)}
+              accessibilityLabel="10-digit mobile number without country code"
             />
           </View>
 
-          {showReferralInput && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Referral Code (Optional)</Text>
+          {showReferralInput ? (
+            <>
+              <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>Referral code (optional)</Text>
               <TextInput
-                style={styles.referralInput}
+                style={[styles.inputBase, referralFocused && styles.inputFocused]}
                 placeholder="Enter referral code"
+                placeholderTextColor={colors.textMuted}
                 value={referralCode}
                 onChangeText={setReferralCode}
                 autoCapitalize="characters"
+                onFocus={() => setReferralFocused(true)}
+                onBlur={() => setReferralFocused(false)}
               />
-            </View>
-          )}
+            </>
+          ) : null}
 
           {error ? (
-            <View style={styles.errorContainer}>
+            <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-          <TouchableOpacity
-            style={[styles.sendCodeButton, (loading || phoneNumber.length !== 10) && styles.buttonDisabled]}
-            onPress={handleSendCode}
-            disabled={loading || phoneNumber.length !== 10}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.sendCodeButtonText}>Send Verification Code</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.legalLinks}>
-            <Text style={styles.legalText}>
-              By continuing, you agree to our{' '}
-              <Text 
-                style={styles.legalLink}
-                onPress={() => Linking.openURL('https://warmpawz.com/terms')}
-              >
-                Terms of Service
-              </Text>
-              {' '}and{' '}
-              <Text 
-                style={styles.legalLink}
-                onPress={() => Linking.openURL('https://warmpawz.com/privacy')}
-              >
-                Privacy Policy
-              </Text>
-            </Text>
+          <View style={styles.ctaBlock}>
+            <CtaButton
+              label="Send Verification Code"
+              onPress={handleSendCode}
+              disabled={loading || !canSend}
+              loading={loading}
+              activeVisual={loading || canSend}
+            />
           </View>
 
-          {!showReferralInput && (
-            <TouchableOpacity
-              onPress={() => setShowReferralInput(true)}
-              style={styles.referralLink}
-            >
-              <Text style={[styles.linkText, styles.orangeLink]}>Have a referral code?</Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.legalBlock}>
+            <Text style={styles.legalIntro}>By continuing you agree to our</Text>
+            <View style={styles.legalLinksRow}>
+              <Pressable onPress={() => Linking.openURL('https://warmpawz.com/terms')} style={styles.legalHit} hitSlop={8}>
+                <Text style={styles.legalLink}>Terms of Service</Text>
+              </Pressable>
+              <Text style={styles.legalAmp}> and </Text>
+              <Pressable onPress={() => Linking.openURL('https://warmpawz.com/privacy')} style={styles.legalHit} hitSlop={8}>
+                <Text style={styles.legalLink}>Privacy Policy</Text>
+              </Pressable>
+            </View>
+          </View>
 
-          <View style={styles.appInfo}>
-            <TouchableOpacity
+          {!showReferralInput ? (
+            <Pressable onPress={openReferral} style={styles.referralRow} accessibilityRole="button">
+              <Text style={styles.referralRowText}>Have a referral code?</Text>
+              <Text style={styles.referralChevron}>▼</Text>
+            </Pressable>
+          ) : null}
+
+          <View style={styles.footerMeta}>
+            <Pressable
               onPress={() => Linking.openURL('https://warmpawz.com/help')}
               accessibilityRole="link"
               accessibilityLabel="Need help? Open help center"
+              style={styles.helpLinkWrap}
+              hitSlop={10}
             >
-              <Text style={[styles.helpText, styles.orangeLink]}>Need Help?</Text>
-            </TouchableOpacity>
-            <Text style={styles.appInfoText}>WARMPAWS Provider v2.1.0</Text>
-            <Text style={styles.copyrightText}>© 2025 WARMPAWS Inc. All rights reserved</Text>
+              <Text style={styles.helpLink}>Need help?</Text>
+            </Pressable>
+            <Text style={styles.footerVersion}>WARMPAWS Provider v2.1.0</Text>
+            <Text style={styles.footerCopy}>© 2026 WARMPAWS Inc. All rights reserved</Text>
           </View>
         </ScrollView>
       </View>
@@ -390,217 +516,380 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
   );
 }
 
+const HERO_ORANGE = colors.primary;
+const CARD_RADIUS = 28;
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.primary,
+    backgroundColor: HERO_ORANGE,
   },
-  // Orange Section (Top 2/3)
-  orangeSection: {
+  hero: {
     flex: 2,
-    backgroundColor: colors.primary,
+    backgroundColor: HERO_ORANGE,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: spacing.xl * 2,
+    paddingHorizontal: spacing.lg,
+    overflow: 'hidden',
   },
-  logoContainer: {
+  heroGradientWash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.primaryDark,
+    opacity: 0.22,
+    top: '35%',
+  },
+  heroBlob: {
+    position: 'absolute',
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  heroBlobA: {
+    width: 220,
+    height: 220,
+    top: '8%',
+    right: '-18%',
+  },
+  heroBlobB: {
+    width: 160,
+    height: 160,
+    bottom: '12%',
+    left: '-12%',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  heroVignetteTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 100,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  heroVignetteBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '32%',
+    backgroundColor: 'rgba(0,0,0,0.07)',
+  },
+  logoWrap: {
+    marginBottom: spacing.md,
     alignItems: 'center',
-    marginBottom: spacing.xl,
   },
   logoImage: {
-    width: 120,
-    height: 120,
+    width: 112,
+    height: 112,
   },
-  welcomeText: {
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.text,
+  heroEyebrow: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: 'rgba(255,255,255,0.88)',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
     marginBottom: spacing.xs,
   },
-  welcomeTitle: {
-    fontSize: typography.fontSizes['3xl'],
+  heroBrand: {
+    fontSize: typography.fontSizes['4xl'],
     fontWeight: typography.fontWeights.bold,
-    color: colors.text,
+    color: colors.white,
+    letterSpacing: -0.5,
+    marginBottom: spacing.sm,
   },
-  verifyTitle: {
+  heroTagline: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.medium,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    lineHeight: 24,
+    maxWidth: 300,
+  },
+  heroVerifyTitle: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: typography.fontWeights.bold,
-    color: colors.text,
-    marginTop: spacing.lg,
+    color: colors.white,
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
-  // White Card (Bottom 1/3)
-  whiteCard: {
-    flex: 1,
+  card: {
+    flex: 1.15,
     backgroundColor: colors.white,
-    borderTopLeftRadius: borderRadius.xl * 2,
-    borderTopRightRadius: borderRadius.xl * 2,
+    borderTopLeftRadius: CARD_RADIUS,
+    borderTopRightRadius: CARD_RADIUS,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.65)',
     paddingTop: spacing.lg,
+    shadowColor: '#1a0a00',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 28,
+    elevation: 14,
   },
-  whiteCardContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
+  cardContent: {
+    paddingHorizontal: spacing.lg,
   },
-  introText: {
+  cardIntro: {
     fontSize: typography.fontSizes.md,
-    color: colors.text,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
-    lineHeight: 22,
+    lineHeight: 24,
+    fontWeight: typography.fontWeights.medium,
   },
-  otpInstruction: {
+  cardLead: {
     fontSize: typography.fontSizes.md,
-    color: colors.text,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
-    lineHeight: 22,
+    lineHeight: 24,
   },
-  phoneNumberText: {
-    fontWeight: typography.fontWeights.semibold,
+  cardLeadEmphasis: {
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
   },
-  inputGroup: {
-    marginBottom: spacing.md,
-  },
-  inputLabel: {
+  fieldLabel: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.text,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  phoneInput: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+  fieldLabelSpaced: {
+    marginTop: spacing.md,
+  },
+  inputBase: {
+    minHeight: 52,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.md,
     fontSize: typography.fontSizes.md,
     color: colors.text,
+  },
+  inputFocused: {
+    borderColor: colors.ctaBackground,
+    backgroundColor: colors.white,
+    shadowColor: colors.ctaBackground,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  inputError: {
+    borderColor: colors.error,
+    backgroundColor: '#fff5f7',
   },
   otpInput: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: typography.fontSizes.xl,
     textAlign: 'center',
-    color: colors.text,
-    letterSpacing: 4,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: typography.fontWeights.semibold,
+    letterSpacing: 10,
   },
-  referralInput: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 52,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    backgroundColor: colors.backgroundSecondary,
+    paddingRight: spacing.sm,
+    overflow: 'hidden',
+  },
+  phoneRowFocused: {
+    borderColor: colors.ctaBackground,
+    backgroundColor: colors.white,
+    shadowColor: colors.ctaBackground,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  phoneRowError: {
+    borderColor: colors.error,
+    backgroundColor: '#fff5f7',
+  },
+  countryBadge: {
+    minWidth: 52,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    borderRightWidth: 1,
+    borderRightColor: colors.borderLight,
+    backgroundColor: 'rgba(255, 140, 66, 0.08)',
+  },
+  countryBadgeText: {
     fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.ctaBackground,
+  },
+  phoneInputField: {
+    flex: 1,
+    minHeight: 48,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.medium,
     color: colors.text,
   },
-  sendCodeButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-    marginTop: spacing.md,
+  ctaBlock: {
+    marginTop: spacing.lg,
     marginBottom: spacing.md,
   },
-  sendCodeButtonText: {
-    color: colors.white,
+  ctaShell: {
+    borderRadius: borderRadius.lg,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  ctaStrong: {
+    backgroundColor: colors.ctaBackground,
+  },
+  ctaStrongPressed: {
+    backgroundColor: colors.ctaBackgroundPressed,
+  },
+  ctaMuted: {
+    backgroundColor: colors.ctaDisabledBackground,
+  },
+  ctaLabel: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
   },
-  verifyButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
-  verifyButtonText: {
+  ctaLabelOnDark: {
     color: colors.white,
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.bold,
   },
-  buttonDisabled: {
-    opacity: 0.5,
+  ctaLabelMuted: {
+    color: colors.ctaDisabledText,
   },
-  errorContainer: {
-    backgroundColor: '#fee',
+  errorBanner: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
     padding: spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: '#fff0f2',
+    borderWidth: 1,
+    borderColor: 'rgba(212, 24, 61, 0.2)',
   },
   errorText: {
     color: colors.error,
     fontSize: typography.fontSizes.sm,
     textAlign: 'center',
+    fontWeight: typography.fontWeights.medium,
   },
-  legalLinks: {
+  legalBlock: {
     marginBottom: spacing.md,
-  },
-  legalText: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.text,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  legalLink: {
-    color: colors.primary,
-    textDecorationLine: 'underline',
-    fontWeight: typography.fontWeights.semibold,
-  },
-  otpLinks: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
   },
-  linkText: {
-    fontSize: typography.fontSizes.sm,
-  },
-  blueLink: {
-    color: '#3b82f6',
-    textDecorationLine: 'underline',
-  },
-  orangeLink: {
-    color: colors.primary,
-    textDecorationLine: 'underline',
-  },
-  linkDisabled: {
-    opacity: 0.5,
-  },
-  linkSeparator: {
-    color: colors.textSecondary,
-    fontSize: typography.fontSizes.sm,
-  },
-  changeNumberLink: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  referralLink: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  appInfo: {
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
-  helpText: {
+  legalIntro: {
     fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
-  appInfoText: {
-    fontSize: typography.fontSizes.xs,
+  legalLinksRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalHit: {
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  legalLink: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.ctaBackground,
+    fontWeight: typography.fontWeights.bold,
+    textDecorationLine: 'underline',
+  },
+  legalAmp: {
+    fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  linkPrimary: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.info,
+    fontWeight: typography.fontWeights.semibold,
+    textDecorationLine: 'underline',
+  },
+  linkSecondary: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.ctaBackground,
+    fontWeight: typography.fontWeights.semibold,
+    textDecorationLine: 'underline',
+  },
+  linkDot: {
+    fontSize: typography.fontSizes.md,
+    color: colors.textMuted,
+    marginHorizontal: spacing.xs,
+  },
+  linkFaded: {
+    opacity: 0.45,
+  },
+  textLinkWrap: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  referralRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: borderRadius.lg,
+    backgroundColor: 'rgba(184, 68, 14, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(184, 68, 14, 0.12)',
+  },
+  referralRowText: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.ctaBackground,
+  },
+  referralChevron: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.ctaBackground,
+    marginLeft: spacing.sm,
+    marginTop: 2,
+  },
+  footerMeta: {
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  helpLinkWrap: {
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  helpLink: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.ctaBackground,
+    textDecorationLine: 'underline',
+  },
+  footerVersion: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
     marginBottom: spacing.xs / 2,
   },
-  copyrightText: {
+  footerCopy: {
     fontSize: typography.fontSizes.xs,
-    color: colors.textSecondary,
+    color: colors.textMuted,
   },
 });

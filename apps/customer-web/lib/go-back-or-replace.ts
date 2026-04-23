@@ -66,6 +66,7 @@ export const WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY = 'warmpawz_account_sideba
 export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'order_history',
   'my-bookings',
+  'package-tracking',
   'shop',
   'cart',
   'wallet',

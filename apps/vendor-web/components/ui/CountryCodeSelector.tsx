@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { cn } from '@/components/ui/utils';
 
 // Vendor: India (+91) only; other regions commented for easy restore.
 export const COUNTRY_CODES = [
@@ -82,13 +83,16 @@ interface CountryCodeSelectorProps {
   onSelect: (code: string) => void;
   disabled?: boolean;
   className?: string;
+  /** Applied to the left trigger so its radius matches the parent group (e.g. `rounded-l-lg` with `rounded-lg` wrapper). */
+  triggerClassName?: string;
 }
 
 export function CountryCodeSelector({ 
   selectedCode, 
   onSelect, 
   disabled = false,
-  className = ''
+  className = '',
+  triggerClassName,
 }: CountryCodeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   // const [searchTerm, setSearchTerm] = useState('');
@@ -139,14 +143,14 @@ export function CountryCodeSelector({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`
-          flex items-center gap-2 h-full px-3 py-3
-          bg-gray-50 border-r border-gray-200
-          rounded-l-2xl
-          hover:bg-gray-100 transition-colors
-          disabled:opacity-50 disabled:cursor-not-allowed
-          min-w-[90px]
-        `}
+        className={cn(
+          'flex items-center gap-2 h-full px-3 py-3 min-w-[90px]',
+          'bg-gray-50 border-r border-gray-200',
+          'rounded-l-2xl',
+          'hover:bg-gray-100 transition-colors',
+          'disabled:opacity-50 disabled:cursor-not-allowed',
+          triggerClassName,
+        )}
       >
         <span className="text-xl">{selectedCountry.flag}</span>
         <span className="text-gray-700 font-medium text-sm">{selectedCountry.code}</span>

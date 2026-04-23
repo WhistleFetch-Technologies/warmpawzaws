@@ -1259,14 +1259,14 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
                 <Label htmlFor="login-phone">Phone number</Label>
-                <div className="mt-1 flex items-stretch border-2 border-gray-200 rounded-lg focus-within:border-[#FF8C42] bg-white">
+                <div className="mt-1 flex items-stretch border-2 border-gray-200 rounded-lg bg-white focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all">
                   <CountryCodeSelector
                     selectedCode={loginCountryCode}
                     onSelect={setLoginCountryCode}
                     disabled={loading}
-                    className="rounded-l-lg"
+                    triggerClassName="rounded-l-lg"
                   />
-                  <Input
+                  <input
                     id="login-phone"
                     type="tel"
                     inputMode="numeric"
@@ -1277,7 +1277,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                     }
                     required
                     maxLength={10}
-                    className="border-0 rounded-r-lg focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="min-w-0 flex-1 py-4 px-4 text-lg outline-none bg-transparent rounded-r-lg transition-colors duration-200"
                   />
                 </div>
                 <p className="mt-1 text-xs text-gray-500">

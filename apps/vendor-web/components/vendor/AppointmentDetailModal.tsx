@@ -1652,6 +1652,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                           Remaining: {booking.packageUnlimitedUsage ? 'Unlimited' : `${booking.packageRemainingSessions ?? 0} sessions`}
                         </p>
                       )}
+                      {booking.packagePurchaseId && (
+                        <button
+                          type="button"
+                          className="mt-2 text-left text-xs font-semibold text-amber-900 underline hover:text-amber-950"
+                          onClick={() =>
+                            router.push(`/packages/${encodeURIComponent(String(booking.packagePurchaseId))}`)
+                          }
+                        >
+                          View all package sessions
+                        </button>
+                      )}
                     </div>
                   )}
                   
