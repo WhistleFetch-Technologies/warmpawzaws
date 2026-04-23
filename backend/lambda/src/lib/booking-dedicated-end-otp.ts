@@ -18,6 +18,8 @@ function serviceLooksLikeDogWalk(serviceCategory: string, serviceName: string): 
   const c = (serviceCategory || '').toLowerCase().trim();
   const n = (serviceName || '').toLowerCase();
   if (['walker', 'walking', 'dog_walking'].includes(c)) return true;
+  // e.g. catalog "Walking & Exercise", "Dog Walking", display categories with spaces
+  if (c.includes('walk')) return true;
   if (n.includes('walk') || n.includes('walking')) return true;
   return false;
 }
@@ -29,15 +31,30 @@ function serviceLooksLikeDogWalk(serviceCategory: string, serviceName: string): 
  * when role rows are inactive or mis-synced.
  */
 export async function bookingUsesDedicatedEndSessionOtp(bookingId: string): Promise<boolean> {
+  // bookings.service_id is usually vendor_services.id — resolve name/category like customer booking APIs
   const res = await query(
     `SELECT b.service_style,
             b.service_type,
             LOWER(TRIM(COALESCE(r.name, ''))) AS role_slug,
-            LOWER(TRIM(COALESCE(s.category, ''))) AS svc_cat,
-            LOWER(COALESCE(s.name, '')) AS svc_name
+            LOWER(TRIM(COALESCE(br_svc.br_category, s.category, ''))) AS svc_cat,
+            LOWER(COALESCE(br_svc.br_name, s.name, '')) AS svc_name
      FROM bookings b
      LEFT JOIN vendors v ON v.id = b.vendor_id
      LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN LATERAL (
+       SELECT
+         COALESCE(sc.service_name, s_direct.name, vp.service_name) AS br_name,
+         COALESCE(sc.category_name, s_direct.category::text, vp.category::text) AS br_category
+       FROM vendor_services vp
+       LEFT JOIN service_catalog sc ON sc.id = COALESCE(vp.service_id, b.service_id)
+       LEFT JOIN services s_direct ON s_direct.id = COALESCE(vp.service_id, b.service_id) AND sc.id IS NULL
+       WHERE vp.vendor_id = b.vendor_id
+         AND (vp.service_id = b.service_id OR vp.id = b.service_id)
+       ORDER BY
+         CASE WHEN vp.service_id = b.service_id THEN 0 WHEN vp.id = b.service_id THEN 1 ELSE 2 END,
+         vp.updated_at DESC NULLS LAST
+       LIMIT 1
+     ) br_svc ON true
      LEFT JOIN services s ON s.id = b.service_id
      WHERE b.id = $1
      LIMIT 1`,
