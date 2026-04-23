@@ -78,7 +78,8 @@ Default values in `.env.local`:
 - `DB_NAME=warmpawz` - Database name
 - `DB_USER=postgres` - Database user
 - `DB_PASSWORD=postgres` - Database password
-- `UAT_MODE=true` - Enables test mode (OTP: 123456)
+- `UAT_MODE=true` - Enables test mode (OTP: 123456) and verification of JWTs with issuer `warmpawz-uat` (see `src/utils/jwt-verification.ts`; headers such as `X-UAT-Mode` do **not** turn this on).
+- `UAT_JWT_SECRET` - Optional; must match the API if you sign UAT-issuer tokens with a non-default secret (same variable on the Lambda that runs verify-OTP and protected routes like `/vendor/profile/set-password`).
 
 ## Troubleshooting
 

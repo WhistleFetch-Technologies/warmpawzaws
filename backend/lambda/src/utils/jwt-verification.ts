@@ -112,25 +112,27 @@ export async function verifyCognitoToken(
       console.log(`[JWT] Production JWT token check error (continuing): ${prodError.message || 'unknown'}`);
     }
 
-    // Check if this is a UAT token (issued by warmpawz-uat)
-    // UAT tokens are only allowed in UAT mode
-    const isUATMode = process.env.UAT_MODE === 'true';
-    if (isUATMode) {
+    // UAT-issuer JWTs (warmpawz-uat): verify with UAT_JWT_SECRET when UAT_MODE=true OR when the token claims that issuer.
+    // Headers (x-uat-mode) never enable verification — only env + token shape. Issuer claim is unauthenticated until verified.
+    // OTP/SMS bypass remains gated by UAT_MODE in auth handlers, not here.
+    const peek = decodeTokenUnsafe(token);
+    const peekIss = String((peek as any)?.iss || '');
+    const tryUatVerify = process.env.UAT_MODE === 'true' || peekIss === 'warmpawz-uat';
+    if (tryUatVerify) {
       try {
         const { verifyUATJWTToken } = await import('./jwt-generator');
         const uatResult = await verifyUATJWTToken(token);
         if (uatResult.valid && uatResult.payload) {
-          console.log('[JWT] UAT token verified successfully (issuer: warmpawz-uat)');
+          console.log('[JWT] UAT issuer token verified successfully (warmpawz-uat)');
           return uatResult.payload as CognitoTokenPayload;
         } else {
           console.log(`[JWT] UAT token verification failed: ${uatResult.error || 'unknown error'}`);
         }
       } catch (uatError: any) {
-        // Not a UAT token or verification failed, continue with Cognito verification
         console.log(`[JWT] UAT token check error (continuing to Cognito): ${uatError.message || 'unknown'}`);
       }
     } else {
-      console.log('[JWT] UAT mode is disabled - skipping UAT token verification');
+      console.log('[JWT] Skipping UAT issuer path (issuer not warmpawz-uat and UAT_MODE is not true)');
     }
 
     // Use environment variables if not provided
@@ -253,7 +255,7 @@ export async function extractAndVerifyAuthToken(
     return { valid: false, error: 'Invalid token signature' };
   }
 
-  const av = await enforceCustomerAuthVersionOnWarmpawzJwt(payload);
+  const av = await enforceWarmpawzJwtAuthVersionOnPayload(payload);
   if (!av.ok) {
     return { valid: false, error: av.error || 'Session invalidated' };
   }
@@ -262,10 +264,10 @@ export async function extractAndVerifyAuthToken(
 }
 
 /**
- * Invalidate fallback customer JWTs after password change when `customers.auth_version` bumps.
+ * Invalidate fallback customer/vendor JWTs after password change when `auth_version` bumps.
  * Cognito-issued tokens are not checked here (pool issuer); use AdminUserGlobalSignOut on password change.
  */
-async function enforceCustomerAuthVersionOnWarmpawzJwt(
+async function enforceWarmpawzJwtAuthVersionOnPayload(
   payload: CognitoTokenPayload
 ): Promise<{ ok: boolean; error?: string }> {
   const iss = String((payload as any).iss || '');
@@ -275,7 +277,8 @@ async function enforceCustomerAuthVersionOnWarmpawzJwt(
   const ut = payload['custom:user_type'];
   const groups = (payload['cognito:groups'] as string[]) || [];
   const isCustomer = ut === 'customer' || groups.includes('customer');
-  if (!isCustomer) return { ok: true };
+  const isVendor = ut === 'vendor' || groups.includes('vendor');
+  if (!isCustomer && !isVendor) return { ok: true };
 
   const sub = String(payload.sub || '');
   if (!sub || !/^[0-9a-fA-F-]{36}$/.test(sub)) {
@@ -284,8 +287,10 @@ async function enforceCustomerAuthVersionOnWarmpawzJwt(
 
   try {
     const { query } = await import('../database/rds-connection');
+    const sqlTable = isCustomer ? 'customers' : isVendor ? 'vendors' : '';
+    if (!sqlTable) return { ok: true };
     const res = await query(
-      `SELECT COALESCE(auth_version, 0)::int AS av FROM customers WHERE id = $1::uuid LIMIT 1`,
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM ${sqlTable} WHERE id = $1::uuid LIMIT 1`,
       [sub]
     );
     const row = (res as any).rows?.[0];

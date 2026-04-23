@@ -1123,6 +1123,9 @@ export function UniversalBookingRouter({
               customerPhone={phone}
               customerId={customerId || undefined}
               onBack={() => setShowPaymentPage(false)}
+              onPaymentAbandoned={() => {
+                if (selectedDate) void loadTimeSlots(selectedDate);
+              }}
               onSuccess={(bookingId) => {
                 setBookingId(bookingId);
                 setShowPaymentPage(false);

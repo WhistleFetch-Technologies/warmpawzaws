@@ -162,6 +162,46 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     return () => window.removeEventListener(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT, onProfileSubmitted);
   }, []);
 
+  /** While under admin review, re-check password eligibility so the gate can open after approval without a full reload. */
+  useEffect(() => {
+    if (status !== 'pending') return;
+    if (typeof window === 'undefined') return;
+    if (!localStorage.getItem('authToken')) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const need = await fetchVendorNeedsPasswordSetup();
+        if (cancelled || !need) return;
+        setPasswordGateVariant('resume');
+        setPasswordGateOpen(true);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const intervalMs = 45_000;
+    const intervalId = window.setInterval(() => {
+      void tick();
+    }, intervalMs);
+    const onFocus = () => {
+      void tick();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [status]);
+
   /**
    * Background validation: calls /vendor/:vendorId/profile to confirm the vendor account
    * is still valid (not deleted or deactivated). If invalid, clears session and
@@ -1221,14 +1261,27 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
             if (response.success || response.applicationId) {
               setResubmitInitialData(null);
-              setPostSubmitPasswordPayload({
+              const completionPayload = {
                 ...submissionData,
                 applicationId: response.applicationId,
                 vendorId: response.vendorId,
                 status: 'submitted',
-              });
-              setPasswordGateVariant('after_profile_submit');
-              setPasswordGateOpen(true);
+              };
+              // Align with WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT: gate only after admin approval (API allowlist).
+              let needPasswordSetup = false;
+              try {
+                needPasswordSetup = await fetchVendorNeedsPasswordSetup();
+              } catch {
+                needPasswordSetup = false;
+              }
+              if (needPasswordSetup) {
+                setPostSubmitPasswordPayload(completionPayload);
+                setPasswordGateVariant('after_profile_submit');
+                setPasswordGateOpen(true);
+              } else {
+                setPostSubmitPasswordPayload(null);
+                handleOnboardingComplete(completionPayload);
+              }
             } else {
               console.error('❌ [VendorApp] Failed to submit:', response);
               alert(response.error || 'Failed to submit application');

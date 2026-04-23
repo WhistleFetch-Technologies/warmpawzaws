@@ -110,3 +110,37 @@ export function getOpenVendorPortalBaseUrl(): string {
   // dev.admin, dev CloudFront, previews, unknown remote host → dev vendor (HTTPS only)
   return DEV_VENDOR;
 }
+
+// --- Customer web (admin "Open customer portal") — same pattern as vendor ---
+
+const PROD_CUSTOMER = 'https://customer.warmpawz.com';
+const DEV_CUSTOMER = 'https://dev.customer.warmpawz.com';
+export const LOCAL_CUSTOMER_ORIGIN = 'http://127.0.0.1:3001';
+
+/**
+ * Default customer-web origin when opening the customer app from admin (parity with vendor portal base).
+ */
+export function getOpenCustomerPortalBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return DEV_CUSTOMER;
+  }
+
+  let host = (window.location.hostname || '').replace(/\.$/, '').toLowerCase();
+  if (!host && window.location.href) {
+    try {
+      host = new URL(window.location.href).hostname.replace(/\.$/, '').toLowerCase();
+    } catch {
+      /* empty */
+    }
+  }
+
+  if (host === '127.0.0.1' || host === 'localhost') {
+    return LOCAL_CUSTOMER_ORIGIN;
+  }
+
+  if (PROD_ADMIN_HOSTS.has(host)) {
+    return PROD_CUSTOMER;
+  }
+
+  return DEV_CUSTOMER;
+}

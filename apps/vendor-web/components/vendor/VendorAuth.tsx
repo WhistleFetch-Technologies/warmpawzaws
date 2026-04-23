@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
@@ -17,6 +17,18 @@ import {
 
 const logoImage = '/logo.png';
 
+const UAT_FORGOT_OTP_HINT = '123456';
+
+function pickForgotResponseData(res: unknown): Record<string, unknown> | null {
+  const r = res as Record<string, unknown> | null;
+  if (!r || typeof r !== 'object') return null;
+  const outer = r.data as Record<string, unknown> | undefined;
+  if (outer && typeof outer === 'object' && outer.data && typeof outer.data === 'object') {
+    return outer.data as Record<string, unknown>;
+  }
+  return null;
+}
+
 interface VendorAuthProps {
   onAuthSuccess: (session: any) => void;
   /** When true, auth blocks fill the scroll area inside VendorPublicAppShell (no min-h-screen). */
@@ -24,7 +36,8 @@ interface VendorAuthProps {
 }
 
 export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorAuthProps) {
-  const [isSignUp, setIsSignUp] = useState(true);
+  /** Default sign-in first (same as customer-web /auth login default). */
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentStep, setCurrentStep] = useState(1);
@@ -46,6 +59,38 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
   /** Phone + password sign-in (backend: username = dialable phone). */
   const [loginPhoneDigits, setLoginPhoneDigits] = useState('');
   const [loginCountryCode, setLoginCountryCode] = useState('+91');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  /** Forgot password: dedicated vendor routes (same envelope parsing as customer-web). */
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
+  const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [uatRuntimeForgotHint, setUatRuntimeForgotHint] = useState(false);
+
+  useEffect(() => {
+    setUatRuntimeForgotHint(isUatMode());
+  }, []);
+
+  // Referral deep link: open registration with code applied (parity with customer-web /auth ?ref=).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
+    if (!refCode?.trim()) return;
+    const c = refCode.trim().toUpperCase();
+    setReferralCode(c);
+    setReferralApplied(true);
+    setShowReferralInput(true);
+    localStorage.setItem('pendingReferralCode', c);
+    setIsSignUp(true);
+  }, []);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -136,6 +181,119 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
   const formatPhoneDisplay = (num: string) => {
     if (num.length <= 5) return num;
     return `${num.slice(0, 5)} ${num.slice(5)}`;
+  };
+
+  const openForgotPassword = () => {
+    setForgotOpen(true);
+    setForgotStep(1);
+    const d = loginPhoneDigits.replace(/\D/g, '').slice(-10);
+    setForgotUsername(d.length === 10 ? `${loginCountryCode.trim()}${d}` : '');
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError('');
+  };
+
+  const closeForgotPassword = () => {
+    setForgotOpen(false);
+    setForgotStep(1);
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError('');
+  };
+
+  const submitForgotPasswordRequest = async () => {
+    const u = forgotUsername.trim();
+    if (!u) {
+      setError('Enter the phone number or email you use to log in');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setForgotInfo(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/request', { username: u });
+      const inner = pickForgotResponseData(res);
+      const msg =
+        (typeof inner?.message === 'string' && inner.message) ||
+        'If an account exists, we sent instructions.';
+      setForgotInfo(msg);
+      setForgotStep(2);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordVerifyOtp = async () => {
+    const u = forgotUsername.trim();
+    if (!forgotOtp || forgotOtp.length !== 6) {
+      setError('Enter the 6-digit code from SMS');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/verify-otp', {
+        username: u,
+        otp: forgotOtp,
+      });
+      const inner = pickForgotResponseData(res);
+      const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
+      if (!token) {
+        setError('Invalid or expired code');
+        return;
+      }
+      setForgotResetToken(token);
+      setForgotStep(3);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Invalid or expired code');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordReset = async () => {
+    if (forgotNewPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.post<unknown>('/auth/vendor/forgot-password/reset', {
+        resetToken: forgotResetToken,
+        newPassword: forgotNewPassword,
+        confirmPassword: forgotConfirmPassword,
+      });
+      setForgotSuccessBanner('Password updated. You can log in with your new password.');
+      closeForgotPassword();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e?.message || 'Could not reset password. Request a new code.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -943,12 +1101,161 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
               <p className="text-gray-600">Vendor Portal</p>
             </div>
 
+            {forgotSuccessBanner && !forgotOpen && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
+                {forgotSuccessBanner}
+              </div>
+            )}
+
+            {forgotOpen && (
+              <p className="text-center text-sm text-gray-600 mb-6 leading-relaxed">
+                {forgotStep === 3
+                  ? 'Choose a new password for your account.'
+                  : 'Reset your password using a code we send by SMS to your registered mobile number only.'}
+              </p>
+            )}
+
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 {error}
               </div>
             )}
 
+            {forgotOpen ? (
+              <div className="space-y-4">
+                {forgotStep === 1 && (
+                  <>
+                    <label className="block text-gray-700 font-medium text-sm">Phone or email</label>
+                    <input
+                      type="text"
+                      autoComplete="username"
+                      value={forgotUsername}
+                      onChange={(e) => setForgotUsername(e.target.value)}
+                      placeholder="e.g. +91939893220 or you@example.com"
+                      className="w-full py-3 px-4 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <p className="text-xs text-gray-500 -mt-2">
+                      Use your dialable mobile (country code + 10 digits, same as sign in) or the email on your vendor
+                      account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordRequest}
+                      disabled={loading || !forgotUsername.trim()}
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Sending…' : 'Send code'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeForgotPassword}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back to log in
+                    </button>
+                  </>
+                )}
+                {forgotStep === 2 && (
+                  <>
+                    {forgotInfo ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700">
+                        {forgotInfo}
+                      </div>
+                    ) : null}
+                    {uatRuntimeForgotHint ? (
+                      <p className="text-xs text-gray-500">
+                        UAT / dev: when the API is in forgot-password test mode, use OTP{' '}
+                        <span className="font-mono font-medium">{UAT_FORGOT_OTP_HINT}</span>.
+                      </p>
+                    ) : null}
+                    <label className="block text-gray-700 font-medium text-sm">6-digit code from SMS</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={forgotOtp}
+                      onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="••••••"
+                      className="w-full py-3 px-4 text-lg tracking-widest border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordVerifyOtp}
+                      disabled={loading || forgotOtp.length !== 6}
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Checking…' : 'Continue'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(1);
+                        setForgotOtp('');
+                        setError('');
+                      }}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back
+                    </button>
+                  </>
+                )}
+                {forgotStep === 3 && (
+                  <>
+                    <label className="block text-gray-700 font-medium text-sm">New password</label>
+                    <div className="relative">
+                      <input
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="At least 8 characters"
+                        className="w-full py-3 pl-4 pr-12 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNewPassword((v) => !v)}
+                        aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                      >
+                        {showForgotNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <label className="block text-gray-700 font-medium text-sm">Confirm password</label>
+                    <input
+                      type={showForgotNewPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={forgotConfirmPassword}
+                      onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      className="w-full py-3 px-4 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordReset}
+                      disabled={
+                        loading ||
+                        forgotNewPassword.length < 8 ||
+                        forgotNewPassword !== forgotConfirmPassword
+                      }
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Updating…' : 'Update password'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(2);
+                        setError('');
+                      }}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
                 <Label htmlFor="login-phone">Phone number</Label>
@@ -981,15 +1288,33 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
 
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  className="mt-1"
-                />
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    autoComplete="current-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={openForgotPassword}
+                  className="w-full text-right text-sm text-[#FF8C42] font-medium hover:underline pt-1"
+                >
+                  Forgot password?
+                </button>
               </div>
 
               <Button
@@ -1000,20 +1325,23 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                 {loading ? 'Please wait...' : 'Sign In'}
               </Button>
             </form>
+            )}
 
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSignUp(true);
-                  setError('');
-                  setCurrentStep(1);
-                }}
-                className="text-[#FF8C42] hover:underline"
-              >
-                New vendor? Register here
-              </button>
-            </div>
+            {!forgotOpen && (
+              <div className="mt-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setError('');
+                    setCurrentStep(1);
+                  }}
+                  className="text-[#FF8C42] hover:underline"
+                >
+                  New vendor? Register here
+                </button>
+              </div>
+            )}
 
             <p className="text-center text-sm text-gray-500 mt-6">
               By signing in, you agree to our{' '}

@@ -20,6 +20,32 @@ import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '..
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import {
+  bookingUsesDedicatedEndSessionOtp,
+  ensureDedicatedEndSessionOtp,
+} from '../../../lib/booking-dedicated-end-otp';
+
+/**
+ * bookings.service_id usually references vendor_services.id (FK).
+ * Resolve display fields via vendor_services + service_catalog (+ legacy services).
+ */
+const SQL_BOOKING_SERVICE_LATERAL = `
+LEFT JOIN LATERAL (
+  SELECT
+    COALESCE(sc.service_name, s_direct.name, vp.service_name) AS br_name,
+    COALESCE(sc.description, s_direct.description, vp.custom_description) AS br_description,
+    COALESCE(sc.category_name, s_direct.category::text, vp.category::text) AS br_category,
+    COALESCE(vp.custom_duration, vp.duration_minutes, sc.duration_minutes, s_direct.duration_minutes) AS br_duration
+  FROM vendor_services vp
+  LEFT JOIN service_catalog sc ON sc.id = COALESCE(vp.service_id, b.service_id)
+  LEFT JOIN services s_direct ON s_direct.id = COALESCE(vp.service_id, b.service_id) AND sc.id IS NULL
+  WHERE vp.vendor_id = b.vendor_id
+    AND (vp.service_id = b.service_id OR vp.id = b.service_id)
+  ORDER BY
+    CASE WHEN vp.service_id = b.service_id THEN 0 WHEN vp.id = b.service_id THEN 1 ELSE 2 END,
+    vp.updated_at DESC NULLS LAST
+  LIMIT 1
+) br_svc ON true`;
 
 export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   /**
@@ -56,11 +82,14 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                v.business_name as vendor_name,
                v.phone as vendor_phone,
                v.city as vendor_city,
-               s.name as service_name,
-               s.category as service_category
+               COALESCE(br_svc.br_name, s.name) AS list_svc_name,
+               COALESCE(br_svc.br_category, s.category) AS list_svc_category,
+               COALESCE(br_svc.br_description, s.description) AS list_svc_description,
+               COALESCE(br_svc.br_duration, s.duration_minutes, b.duration_minutes, b.total_duration_minutes) AS list_svc_duration
         FROM bookings b
         LEFT JOIN vendors v ON b.vendor_id = v.id
-        LEFT JOIN services s ON b.service_id = s.id
+        ${SQL_BOOKING_SERVICE_LATERAL}
+        LEFT JOIN services s ON s.id = b.service_id
         WHERE b.customer_id = $1
       `;
 
@@ -109,8 +138,11 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           vendorPhone: b.vendor_phone,
           vendorCity: b.vendor_city,
           serviceId: b.service_id,
-          serviceName: b.service_name,
-          serviceCategory: b.service_category,
+          serviceName: b.list_svc_name ?? b.service_name,
+          serviceCategory: b.list_svc_category ?? b.service_category,
+          serviceDescription: b.list_svc_description ?? null,
+          serviceDurationMinutes:
+            b.list_svc_duration != null ? Number(b.list_svc_duration) : undefined,
           status: b.status,
           paymentStatus: b.payment_status,
           bookingDate: b.booking_date,
@@ -170,10 +202,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 v.city as vendor_city,
                 v.state as vendor_state,
                 v.pincode as vendor_pincode,
-                s.name as service_name,
-                s.description as service_description,
-                s.category as service_category,
-                s.duration_minutes as service_duration,
+                COALESCE(br_svc.br_name, s.name) AS service_name,
+                COALESCE(br_svc.br_description, s.description) AS service_description,
+                COALESCE(br_svc.br_category, s.category) AS service_category,
+                COALESCE(br_svc.br_duration, s.duration_minutes, b.duration_minutes, b.total_duration_minutes) AS service_duration,
                 st.name as staff_name,
                 st.phone as staff_phone,
                 p.id as pet_id_from_table,
@@ -185,7 +217,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 p.profile_photo_url as pet_photo_from_table
          FROM bookings b
          LEFT JOIN vendors v ON b.vendor_id = v.id
-         LEFT JOIN services s ON b.service_id = s.id
+         ${SQL_BOOKING_SERVICE_LATERAL}
+         LEFT JOIN services s ON s.id = b.service_id
          LEFT JOIN staff st ON b.staff_id = st.id
          LEFT JOIN LATERAL (
            SELECT id, name, species, breed, age_years, weight_kg, profile_photo_url
@@ -205,6 +238,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
       const booking = bookingQuery.rows[0];
 
+      const atHomeBooking =
+        booking.service_style === 'at_home' || booking.service_type === 'at_home';
+      const dedicatedWalk = await bookingUsesDedicatedEndSessionOtp(bookingId);
+
       let resolvedCompletionOtp = booking.completion_otp ?? null;
       if (booking.status === 'in_progress' && booking.otp_verified && !resolvedCompletionOtp) {
         const endRes = await query(
@@ -219,8 +256,6 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         ).catch(() => ({ rows: [] }));
         resolvedCompletionOtp = (endRes as any).rows?.[0]?.otp_code ?? null;
       }
-      const atHomeBooking =
-        booking.service_style === 'at_home' || booking.service_type === 'at_home';
       if (
         !resolvedCompletionOtp &&
         booking.status === 'in_progress' &&
@@ -228,7 +263,45 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         atHomeBooking &&
         booking.otp_code
       ) {
-        resolvedCompletionOtp = booking.otp_code;
+        if (!dedicatedWalk) {
+          resolvedCompletionOtp = booking.otp_code;
+        }
+      }
+
+      // Walk/sitter bookings: never leave completion OTP equal to start (repair older rows / missed start hook)
+      if (
+        atHomeBooking &&
+        booking.status === 'in_progress' &&
+        booking.otp_verified &&
+        dedicatedWalk
+      ) {
+        const startO = String(booking.otp_code || '').trim();
+        const cur = String(resolvedCompletionOtp ?? '').trim();
+        if (!cur || cur === startO) {
+          try {
+            await ensureDedicatedEndSessionOtp(bookingId);
+          } catch {
+            /* non-fatal */
+          }
+          const cap = await query(`SELECT completion_otp FROM bookings WHERE id = $1`, [bookingId]).catch(() => ({
+            rows: [],
+          }));
+          const newCo = (cap as any).rows?.[0]?.completion_otp;
+          if (newCo != null && String(newCo).trim()) {
+            resolvedCompletionOtp = String(newCo).trim();
+          } else {
+            const er = await query(
+              `SELECT otp_code FROM otp_tokens
+               WHERE metadata->>'bookingId' = $1
+                 AND metadata->>'action' = 'end'
+                 AND is_used = false
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [bookingId]
+            ).catch(() => ({ rows: [] }));
+            resolvedCompletionOtp = String((er as any).rows?.[0]?.otp_code || '').trim() || null;
+          }
+        }
       }
 
       // ✅ FIX: Extract pet_id from multiple sources
@@ -373,10 +446,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 v.city as vendor_city,
                 v.state as vendor_state,
                 v.pincode as vendor_pincode,
-                s.name as service_name,
-                s.description as service_description,
-                s.category as service_category,
-                s.duration_minutes as service_duration,
+                COALESCE(br_svc.br_name, s.name) AS service_name,
+                COALESCE(br_svc.br_description, s.description) AS service_description,
+                COALESCE(br_svc.br_category, s.category) AS service_category,
+                COALESCE(br_svc.br_duration, s.duration_minutes, b.duration_minutes, b.total_duration_minutes) AS service_duration,
                 st.name as staff_name,
                 st.phone as staff_phone,
                 p.id as pet_id_from_table,
@@ -388,7 +461,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 p.profile_photo_url as pet_photo_from_table
          FROM bookings b
          LEFT JOIN vendors v ON b.vendor_id = v.id
-         LEFT JOIN services s ON b.service_id = s.id
+         ${SQL_BOOKING_SERVICE_LATERAL}
+         LEFT JOIN services s ON s.id = b.service_id
          LEFT JOIN staff st ON b.staff_id = st.id
          LEFT JOIN LATERAL (
            SELECT id, name, species, breed, age_years, weight_kg, profile_photo_url
@@ -536,10 +610,11 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         `SELECT b.*,
                 v.business_name as vendor_name,
                 v.phone as vendor_phone,
-                s.name as service_name
+                COALESCE(br_svc.br_name, s.name) AS list_svc_name
          FROM bookings b
          LEFT JOIN vendors v ON b.vendor_id = v.id
-         LEFT JOIN services s ON b.service_id = s.id
+         ${SQL_BOOKING_SERVICE_LATERAL}
+         LEFT JOIN services s ON s.id = b.service_id
          WHERE b.customer_id = $1
          AND b.status = 'completed'
          AND b.completed_at IS NOT NULL
@@ -568,7 +643,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
             vendorName: booking.vendor_name,
             vendorPhone: booking.vendor_phone,
             serviceId: booking.service_id,
-            serviceName: booking.service_name,
+            serviceName: booking.list_svc_name ?? booking.service_name,
             bookingDate: booking.booking_date,
             bookingTime: booking.booking_time,
             completedAt: booking.completed_at,

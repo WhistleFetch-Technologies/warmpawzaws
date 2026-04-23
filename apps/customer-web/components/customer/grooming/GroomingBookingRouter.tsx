@@ -940,6 +940,9 @@ export function GroomingBookingRouter({
             customerId={customerId || undefined}
             selectedServices={allSelectedServices}
             onBack={() => setShowPaymentPage(false)}
+            onPaymentAbandoned={() => {
+              if (selectedDate) void loadTimeSlots(selectedDate);
+            }}
             onSuccess={handlePaymentSuccess}
             />
           </div>

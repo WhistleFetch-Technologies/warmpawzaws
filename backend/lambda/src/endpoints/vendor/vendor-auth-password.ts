@@ -10,16 +10,67 @@ import { hashCustomerPasswordBcrypt } from '../../lib/services/auth/customer-pas
 import { updateVendorPasswordHashWithAuthVersionBump } from '../../lib/services/auth/vendor-auth-version-support';
 import {
   findVendorForPasswordLogin,
+  findVendorIdViaVendorIdentityByPhone,
   mergeVendorIdentityOnboarding,
 } from '../../lib/services/auth/vendor-username-lookup';
-import { dialablePhoneForCustomerAuth } from '../../lib/services/auth/customer-username-lookup';
+import { dialablePhoneForCustomerAuth, normalizePhoneForOtp } from '../../lib/services/auth/customer-username-lookup';
 import { hasMeaningfulStoredPassword } from '../customer/customerEndpoint/customer-password';
 import { VendorSetPasswordRequestSchema } from '@warmpawz/api-contracts/auth';
 
 const PROFILE_INCOMPLETE_STATUSES = new Set(['INIT', 'ROLE_PENDING', 'FORM_PENDING']);
 
+/** First-time portal password may be set only after admin approval (vendor_identity.onboarding_status). */
+const PASSWORD_SETUP_ELIGIBLE_STATUSES = new Set(['APPROVED', 'ACTIVATED']);
+
+/** `temp_vendor_${phone}_${Date.now()}` — recover phone when JWT claims omit it. */
+function phoneFromTempVendorSub(sub: string): string | null {
+  const prefix = 'temp_vendor_';
+  if (!sub.startsWith(prefix)) return null;
+  const rest = sub.slice(prefix.length);
+  const u = rest.lastIndexOf('_');
+  if (u <= 0) return null;
+  const maybeTs = rest.slice(u + 1);
+  if (!/^\d{10,}$/.test(maybeTs)) return null;
+  return rest.slice(0, u) || null;
+}
+
 function pickStr(v: unknown): string {
   return typeof v === 'string' ? v : '';
+}
+
+/** Phone strings to try for vendors / vendor_identity (claim shapes and DB shapes differ). */
+function vendorPhoneLookupCandidates(payload: {
+  sub?: string;
+  phone_number?: string;
+  'cognito:username'?: string;
+}): string[] {
+  const out: string[] = [];
+  const add = (s: string) => {
+    const t = String(s || '').trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+  const raw = String(payload.phone_number || payload['cognito:username'] || '').trim();
+  if (raw) {
+    add(raw);
+    add(dialablePhoneForCustomerAuth(raw));
+    add(normalizePhoneForOtp(raw));
+  }
+  const sub = String(payload.sub || '').trim();
+  if (sub.startsWith('temp_vendor_')) {
+    const embedded = phoneFromTempVendorSub(sub);
+    if (embedded) {
+      add(embedded);
+      add(dialablePhoneForCustomerAuth(embedded));
+      add(normalizePhoneForOtp(embedded));
+    }
+  }
+  return out;
+}
+
+function cognitoGroupsAsArray(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw as string[];
+  if (typeof raw === 'string' && raw) return [raw];
+  return [];
 }
 
 function authHeadersFromVendorRequest(c: Context): Record<string, string | undefined> {
@@ -90,38 +141,57 @@ export async function resolveVendorsTableIdFromAuthHeaders(
   if (auth) normalized.authorization = auth;
 
   const res = await extractAndVerifyAuthToken(normalized);
-  if (!res.valid || !res.payload) return null;
-  const groups = (res.payload['cognito:groups'] as string[]) || [];
-  const ut = res.payload['custom:user_type'];
-  if (!groups.includes('vendor') && ut !== 'vendor') return null;
+  if (!res.valid || !res.payload) {
+    console.warn(`[vendor-password] JWT/auth failed before vendor lookup: ${res.error || 'unknown'}`);
+    return null;
+  }
+  const p = res.payload;
+  const groups = cognitoGroupsAsArray(p['cognito:groups']);
+  const ut = p['custom:user_type'];
+  if (!groups.includes('vendor') && ut !== 'vendor') {
+    console.warn(`[vendor-password] Token verified but role is not vendor (custom:user_type=${String(ut)})`);
+    return null;
+  }
 
-  const sub = String(res.payload.sub || '').trim();
-  const phoneClaim = dialablePhoneForCustomerAuth(
-    String(res.payload.phone_number || res.payload['cognito:username'] || '')
-  );
+  const sub = String(p.sub || '').trim();
+  let phoneCandidates = vendorPhoneLookupCandidates(p);
 
   if (sub && /^[0-9a-fA-F-]{36}$/.test(sub)) {
     const vRow = await query(`SELECT id FROM vendors WHERE id = $1::uuid LIMIT 1`, [sub]);
     if ((vRow as any).rows?.[0]) return String((vRow as any).rows[0].id);
 
     const idRow = await query(
-      `SELECT vendor_id FROM vendor_identity WHERE id = $1::uuid AND (is_deleted IS NULL OR is_deleted = false) LIMIT 1`,
+      `SELECT vendor_id, phone FROM vendor_identity WHERE id = $1::uuid AND (is_deleted IS NULL OR is_deleted = false) LIMIT 1`,
       [sub]
     );
-    const vid = (idRow as any).rows?.[0]?.vendor_id;
-    if (vid) return String(vid);
+    const id0 = (idRow as any).rows?.[0];
+    if (id0?.vendor_id) return String(id0.vendor_id);
+    if (id0?.phone) {
+      const fromVi = String(id0.phone).trim();
+      const extra = [fromVi, dialablePhoneForCustomerAuth(fromVi), normalizePhoneForOtp(fromVi)].filter(
+        (x) => String(x || '').trim().length > 0
+      ) as string[];
+      phoneCandidates = [...new Set([...extra, ...phoneCandidates])];
+    }
   }
 
-  if (sub && sub.startsWith('temp_vendor_') && phoneClaim) {
-    const v = await findVendorForPasswordLogin(phoneClaim);
+  const seen = new Set<string>();
+  for (const c of phoneCandidates) {
+    const k = c.trim();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    const v = await findVendorForPasswordLogin(k);
     if (v?.id) return String(v.id);
+    const viaIdentity = await findVendorIdViaVendorIdentityByPhone(k);
+    if (viaIdentity) return viaIdentity;
   }
 
-  if (phoneClaim) {
-    const v = await findVendorForPasswordLogin(phoneClaim);
-    if (v?.id) return String(v.id);
-  }
-
+  const subKind =
+    !sub ? 'empty' : sub.startsWith('temp_vendor_') ? 'temp_vendor' : /^[0-9a-fA-F-]{36}$/.test(sub) ? 'uuid' : 'other';
+  const phoneFromClaims = String(p.phone_number || p['cognito:username'] || '').trim();
+  console.warn(
+    `[vendor-password] JWT verified for vendor role but no vendors row matched (sub_kind=${subKind}, has_phone_claim=${Boolean(phoneFromClaims)}, candidates_tried=${seen.size})`
+  );
   return null;
 }
 
@@ -147,9 +217,9 @@ export async function handleVendorPasswordStatus(c: Context) {
   }
 
   const onboarding = String(merged.onboarding_status || 'INIT').toUpperCase();
-  const profileComplete = !PROFILE_INCOMPLETE_STATUSES.has(onboarding);
   const hasPwd = hasMeaningfulStoredPassword(merged.password_hash);
-  const needs_password_setup = profileComplete && !hasPwd;
+  const password_setup_eligible = PASSWORD_SETUP_ELIGIBLE_STATUSES.has(onboarding);
+  const needs_password_setup = password_setup_eligible && !hasPwd;
 
   return c.json({
     success: true,
@@ -157,6 +227,7 @@ export async function handleVendorPasswordStatus(c: Context) {
       vendor_id: merged.id,
       has_password: hasPwd,
       onboarding_status: onboarding,
+      password_setup_eligible,
       needs_password_setup,
     },
     meta: { timestamp: new Date().toISOString(), version: 'v1' },
@@ -212,6 +283,21 @@ export async function handleVendorSetPassword(c: Context) {
         error: {
           code: 'PROFILE_INCOMPLETE',
           message: 'Complete your vendor profile before setting a password.',
+        },
+        meta: { version: 'v1' },
+      },
+      403
+    );
+  }
+
+  if (!PASSWORD_SETUP_ELIGIBLE_STATUSES.has(onboarding)) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'PENDING_ADMIN_APPROVAL',
+          message:
+            'Your application is not approved yet. You can set a portal password after an administrator approves your vendor account.',
         },
         meta: { version: 'v1' },
       },

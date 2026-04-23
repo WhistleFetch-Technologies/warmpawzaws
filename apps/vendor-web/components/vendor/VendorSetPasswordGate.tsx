@@ -8,18 +8,30 @@ import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Eye, EyeOff } from 'lucide-react';
 
 type GateVariant = 'after_profile_submit' | 'resume';
 
-function unwrapPasswordStatusPayload(raw: unknown): { needs_password_setup?: boolean } {
+function unwrapPasswordStatusPayload(raw: unknown): {
+  needs_password_setup?: boolean;
+  password_setup_eligible?: boolean;
+} {
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== 'object') return {};
-  if ('needs_password_setup' in r) return r as { needs_password_setup?: boolean };
+  if ('needs_password_setup' in r || 'password_setup_eligible' in r) {
+    return r as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
+  }
   const d1 = r.data as Record<string, unknown> | undefined;
-  if (d1 && typeof d1 === 'object' && 'needs_password_setup' in d1) return d1 as { needs_password_setup?: boolean };
+  if (d1 && typeof d1 === 'object' && ('needs_password_setup' in d1 || 'password_setup_eligible' in d1)) {
+    return d1 as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
+  }
   const inner = d1?.data as Record<string, unknown> | undefined;
-  if (inner && typeof inner === 'object' && 'needs_password_setup' in inner) {
-    return inner as { needs_password_setup?: boolean };
+  if (
+    inner &&
+    typeof inner === 'object' &&
+    ('needs_password_setup' in inner || 'password_setup_eligible' in inner)
+  ) {
+    return inner as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
   }
   return {};
 }
@@ -42,6 +54,8 @@ export function VendorSetPasswordGate(props: {
   const { open, onSuccess, variant = 'resume' } = props;
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -83,6 +97,10 @@ export function VendorSetPasswordGate(props: {
         'Could not save password. Please try again.';
       if (code === 'PROFILE_INCOMPLETE') {
         setError('Complete any remaining profile steps first, then try again.');
+      } else if (code === 'PENDING_ADMIN_APPROVAL') {
+        setError(
+          'Your application is still under review. You can create a portal password after an administrator approves your account.'
+        );
       } else if (code === 'PASSWORD_ALREADY_SET') {
         setError('A password is already set for this account.');
       } else {
@@ -106,29 +124,49 @@ export function VendorSetPasswordGate(props: {
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
             <Label htmlFor="vendor-gate-password">Password</Label>
-            <Input
-              id="vendor-gate-password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(ev) => setPassword(ev.target.value)}
-              className="mt-1"
-              required
-              minLength={8}
-            />
+            <div className="relative mt-1">
+              <Input
+                id="vendor-gate-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                className="pr-10"
+                required
+                minLength={8}
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div>
             <Label htmlFor="vendor-gate-confirm">Confirm password</Label>
-            <Input
-              id="vendor-gate-confirm"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(ev) => setConfirmPassword(ev.target.value)}
-              className="mt-1"
-              required
-              minLength={8}
-            />
+            <div className="relative mt-1">
+              <Input
+                id="vendor-gate-confirm"
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(ev) => setConfirmPassword(ev.target.value)}
+                className="pr-10"
+                required
+                minLength={8}
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <Button
             type="submit"

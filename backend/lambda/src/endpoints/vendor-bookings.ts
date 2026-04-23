@@ -19,7 +19,13 @@ import { randomUUID } from 'crypto';
 import { select, update, query, insert } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
 import { resolveVendorId } from '../utils/vendor-resolve';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedServices } from '../utils/entity-extractor';
+import {
+  normalizeDbRow,
+  normalizeDbRows,
+  extractEntityIds,
+  parseSelectedServices,
+  resolveVendorVisibleBookingAmount,
+} from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../lib/rule-engine';
@@ -212,8 +218,21 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             }
           }
 
+          const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          if (serviceNested) {
+            serviceNested = {
+              ...serviceNested,
+              price: vendorVisibleAmount,
+              basePrice: vendorVisibleAmount,
+            };
+          }
           return {
             ...booking,
+            total_amount: vendorVisibleAmount,
+            totalAmount: vendorVisibleAmount,
+            price: vendorVisibleAmount,
+            base_price: vendorVisibleAmount,
+            basePrice: vendorVisibleAmount,
             serviceType: booking.service_type,
             serviceStyle: booking.service_type,
             serviceName: serviceSnap?.serviceName || booking.service_name,
@@ -772,13 +791,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
                  AND (id = $2::uuid OR service_id = $2::uuid)
                ORDER BY
                  CASE WHEN id = $2::uuid THEN 0 ELSE 1 END,
-                 CASE
-                   WHEN $3::text IS NOT NULL AND trim($3::text) <> '' AND service_style::text = trim($3::text)
-                   THEN 0 ELSE 1
-                 END,
-                 (COALESCE(NULLIF(custom_duration, 0), duration_minutes)) DESC
+                 CASE WHEN service_id = $2::uuid THEN 0 ELSE 1 END,
+                 updated_at DESC NULLS LAST
                LIMIT 1`,
-              [booking.vendor_id, booking.service_id, (booking as any).service_type ?? null]
+              [booking.vendor_id, booking.service_id]
             )
               .then((r: any) => r.rows || [])
               .catch(() => [])
@@ -869,6 +885,23 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         ((booking as any).started_at as string | undefined) ||
         null;
 
+      const catalogBaseForVendor =
+        catalogService.length > 0 ? Number((catalogService[0] as any)?.base_price ?? 0) : null;
+      const legacyServicePx =
+        service.length > 0 ? Number((service[0] as any)?.price ?? 0) : null;
+      const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, {
+        serviceSnap,
+        vendorSvc,
+        catalogBasePrice:
+          catalogBaseForVendor != null && Number.isFinite(catalogBaseForVendor) && catalogBaseForVendor > 0
+            ? catalogBaseForVendor
+            : null,
+        legacyServicePrice:
+          legacyServicePx != null && Number.isFinite(legacyServicePx) && legacyServicePx > 0
+            ? legacyServicePx
+            : null,
+      });
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -884,7 +917,11 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         schedule: booking.booking_time, // Alias for frontend compatibility
         startDate: booking.booking_date, // Alias for frontend compatibility
         duration: serviceDurationMinutes,
-        totalAmount: parseFloat(booking.total_amount || '0'),
+        totalAmount: vendorVisibleAmount,
+        total_amount: vendorVisibleAmount,
+        price: vendorVisibleAmount,
+        basePrice: vendorVisibleAmount,
+        base_price: vendorVisibleAmount,
         serviceStyle: serviceSnap?.serviceStyle || booking.service_style || booking.service_type || 'at_clinic',
         serviceType: booking.service_type,
         notes: booking.notes,
@@ -983,6 +1020,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             const base = snapshotToNestedService(serviceSnap);
             return {
               ...base,
+              price: vendorVisibleAmount,
+              basePrice: vendorVisibleAmount,
               duration: serviceDurationMinutes,
               duration_minutes: serviceDurationMinutes,
               durationMinutes: serviceDurationMinutes,
@@ -1009,8 +1048,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
               duration: serviceDurationMinutes,
               duration_minutes: serviceDurationMinutes,
               durationMinutes: serviceDurationMinutes,
-              basePrice: catalogService.length > 0 ? Number((cat as any)?.base_price ?? 0) : Number(service[0]?.price ?? 0),
-              price: catalogService.length > 0 ? Number((cat as any)?.base_price ?? 0) : Number(service[0]?.price ?? 0),
+              basePrice: vendorVisibleAmount,
+              price: vendorVisibleAmount,
               specializationIds: specArr,
               specialization_ids: specArr,
               service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || vendorSvc?.service_style || null),
@@ -1192,8 +1231,21 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             }
           }
 
+          const vendorVisibleAmountAlias = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          if (serviceNested) {
+            serviceNested = {
+              ...serviceNested,
+              price: vendorVisibleAmountAlias,
+              basePrice: vendorVisibleAmountAlias,
+            };
+          }
           return {
             ...booking,
+            total_amount: vendorVisibleAmountAlias,
+            totalAmount: vendorVisibleAmountAlias,
+            price: vendorVisibleAmountAlias,
+            base_price: vendorVisibleAmountAlias,
+            basePrice: vendorVisibleAmountAlias,
             serviceType: booking.service_type,
             serviceStyle: booking.service_type,
             serviceName: serviceSnap?.serviceName || booking.service_name,
@@ -1271,6 +1323,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             (legacy.length > 0 ? legacy[0].name : null) ||
             'Unknown Service';
           const styleFromSnap = serviceSnap?.serviceStyle || serviceSnap?.service_style;
+          const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
           return {
             id: booking.id,
             customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
@@ -1278,9 +1331,19 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             booking_date: booking.booking_date,
             booking_time: booking.booking_time,
             status: booking.status,
-            total_amount: parseFloat(booking.total_amount || '0'),
+            total_amount: vendorVisibleAmount,
+            totalAmount: vendorVisibleAmount,
+            price: vendorVisibleAmount,
+            base_price: vendorVisibleAmount,
+            basePrice: vendorVisibleAmount,
             service_style: styleFromSnap || booking.service_type || booking.service_style || 'at_clinic',
-            service: serviceSnap ? snapshotToNestedService(serviceSnap) : null,
+            service: serviceSnap
+              ? {
+                  ...snapshotToNestedService(serviceSnap),
+                  price: vendorVisibleAmount,
+                  basePrice: vendorVisibleAmount,
+                }
+              : null,
           };
         })
       );

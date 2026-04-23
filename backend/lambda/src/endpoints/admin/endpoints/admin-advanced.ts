@@ -6072,10 +6072,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/payments/tiers', async (c) => {
     try {
       const body = (await c.req.json()) as Record<string, unknown>;
-      const name = String(body.name ?? body.tier_name ?? '').trim();
-      const displayName = String(body.displayName ?? body.display_name ?? name).trim();
+      const rawInternal = String(body.name ?? body.tier_name ?? '').trim();
+      const rawDisplay = String(body.displayName ?? body.display_name ?? '').trim();
+      // UI allows display-only labels; tier_name must still be set for DB — default internal name from display name.
+      const name = rawInternal || rawDisplay;
+      const displayName = rawDisplay || rawInternal;
       if (!name) {
-        return c.json({ success: false, error: 'Tier name is required' }, 400);
+        return c.json({ success: false, error: 'Display name or internal tier name is required' }, 400);
       }
       const description = String(body.description ?? '').trim();
       const commissionRate = Number(body.commissionRate ?? body.commission_rate ?? 15);

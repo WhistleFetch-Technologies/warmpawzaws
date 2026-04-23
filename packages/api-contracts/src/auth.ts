@@ -17,7 +17,8 @@ export const SendOtpRequestSchema = z.object({
 
 export const VerifyOtpRequestSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
+  /** 6-digit production OTPs; 8-digit allowed for dev UAT bypass (must match server UAT_MODE rules). */
+  otp: z.string().regex(/^\d{6}$|^\d{8}$/, 'OTP must be 6 or 8 digits'),
   role: z.enum(['customer', 'vendor', 'admin']).optional(),
   /** Peer or vendor referral code (optional) */
   referralCode: z.string().max(64).optional(),
@@ -80,6 +81,22 @@ export const CustomerForgotPasswordResetSchema = z.object({
   confirmPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
+/** Vendor forgot password — same request shapes as customer; server resolves phone or email. */
+export const VendorForgotPasswordRequestSchema = z.object({
+  username: z.string().min(1).max(256),
+});
+
+export const VendorForgotPasswordVerifyOtpSchema = z.object({
+  username: z.string().min(1).max(256),
+  otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
+});
+
+export const VendorForgotPasswordResetSchema = z.object({
+  resetToken: z.string().min(10).max(8192),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
 export const AdminLoginRequestSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -130,6 +147,9 @@ export type VendorSetPasswordRequest = z.infer<typeof VendorSetPasswordRequestSc
 export type CustomerForgotPasswordRequest = z.infer<typeof CustomerForgotPasswordRequestSchema>;
 export type CustomerForgotPasswordVerifyOtp = z.infer<typeof CustomerForgotPasswordVerifyOtpSchema>;
 export type CustomerForgotPasswordReset = z.infer<typeof CustomerForgotPasswordResetSchema>;
+export type VendorForgotPasswordRequest = z.infer<typeof VendorForgotPasswordRequestSchema>;
+export type VendorForgotPasswordVerifyOtp = z.infer<typeof VendorForgotPasswordVerifyOtpSchema>;
+export type VendorForgotPasswordReset = z.infer<typeof VendorForgotPasswordResetSchema>;
 export type AdminLoginRequest = z.infer<typeof AdminLoginRequestSchema>;
 export type RefreshTokenRequest = z.infer<typeof RefreshTokenRequestSchema>;
 export type AuthToken = z.infer<typeof AuthTokenSchema>;

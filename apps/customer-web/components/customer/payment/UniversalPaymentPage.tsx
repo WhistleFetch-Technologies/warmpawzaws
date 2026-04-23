@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
@@ -20,7 +21,11 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-import { digitsToRazorpayContactE164, sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
+import {
+  digitsToRazorpayContactE164,
+  sanitizeRazorpayInstanceOptions,
+  getWarmpawzRazorpayStandardDisplayConfig,
+} from '@/lib/razorpay/razorpay-utils';
 import {
   isWarmpawzCustomerNativeWebView,
   waitForWarmpawzNativeRazorpayResult,
@@ -114,6 +119,8 @@ interface UniversalPaymentPageProps {
   // Navigation
   onBack: () => void;
   onSuccess: (bookingId: string, orderId?: string, otpCode?: string, meta?: { isInstantTele?: boolean }) => void;
+  /** After user closes Razorpay without paying (or we attempt slot release). Use to refetch `available-slots` so UI matches DB. */
+  onPaymentAbandoned?: () => void;
 }
 
 interface CouponResult {
@@ -301,6 +308,7 @@ export function UniversalPaymentPage({
   layoutVariant = 'fullscreen',
   onBack,
   onSuccess,
+  onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
   const router = useRouter();
   // State
@@ -330,6 +338,8 @@ export function UniversalPaymentPage({
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
+  /** Optional UPI ID (VPA) for collect flow — passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
+  const [manualUpiVpa, setManualUpiVpa] = useState('');
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
@@ -1327,6 +1337,10 @@ export function UniversalPaymentPage({
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
       let requiredUpfrontAmount: number | null = null;
+      /** True once Razorpay success handler runs (do not cancel booking on modal dismiss — payment may have succeeded). */
+      let razorpayGatewaySuccessHandled = false;
+      /** True on payment.failed — user may retry; do not auto-cancel slot on dismiss. */
+      let razorpayPaymentFailed = false;
 
       // Step 1: Create booking/order if not already created
       let currentBookingId: string | undefined = bookingId;
@@ -2290,6 +2304,12 @@ export function UniversalPaymentPage({
       const razorpayPrefill: Record<string, string> = {};
       if (e164Contact) razorpayPrefill.contact = e164Contact;
       if (prefillEmail) razorpayPrefill.email = prefillEmail;
+      const upiVpaTrimmed = manualUpiVpa.replace(/\s+/g, '').trim().toLowerCase();
+      const validPrefillVpa = upiVpaTrimmed.length > 0 && /^[\w.+-]+@[\w.-]+$/.test(upiVpaTrimmed);
+      if (validPrefillVpa) {
+        razorpayPrefill.vpa = upiVpaTrimmed;
+        razorpayPrefill.method = 'upi';
+      }
 
       const processRazorpaySuccess = async (response: any) => {
         try {
@@ -2442,7 +2462,96 @@ export function UniversalPaymentPage({
         }
       };
 
-      const options = {
+      const bookingIdForSlotReleaseOnDismiss: string | undefined =
+        type === 'booking' &&
+        flowType !== 'tele-instant' &&
+        typeof currentBookingId === 'string' &&
+        currentBookingId.length > 0 &&
+        !bookingCreationDeferred
+          ? currentBookingId
+          : undefined;
+
+      const releaseSlotIfCheckoutAbandoned = async () => {
+        const bid = bookingIdForSlotReleaseOnDismiss;
+        if (!bid || razorpayGatewaySuccessHandled || razorpayPaymentFailed) return;
+
+        const cid = typeof customerId === 'string' && customerId.trim() ? customerId.trim() : '';
+        const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+        const qs = new URLSearchParams();
+        if (cid) qs.set('customerId', cid);
+        if (phoneDigits.length >= 10) qs.set('phone', phoneDigits);
+        const qstr = qs.toString() ? `?${qs.toString()}` : '';
+
+        const pickBooking = (detail: any) =>
+          detail?.data?.booking ?? detail?.booking ?? null;
+
+        let st: string | undefined;
+        let paymentStRaw: string | undefined;
+        try {
+          const detail = await apiClient.get(`/bookings/${bid}${qstr}`);
+          const b = pickBooking(detail);
+          st =
+            b?.status ??
+            detail?.data?.status ??
+            detail?.status;
+          paymentStRaw =
+            b?.payment_status ??
+            b?.paymentStatus ??
+            detail?.data?.booking?.payment_status;
+        } catch {
+          try {
+            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`);
+            const b2 = pickBooking(detail2);
+            st =
+              b2?.status ??
+              detail2?.data?.status ??
+              detail2?.status;
+            paymentStRaw =
+              b2?.payment_status ??
+              b2?.paymentStatus ??
+              detail2?.data?.booking?.payment_status;
+          } catch {
+            /* GET optional — still attempt cancel when status unknown */
+          }
+        }
+
+        const pst = String(paymentStRaw ?? '').toLowerCase();
+        const paidLike = pst === 'paid' || pst === 'completed';
+
+        // Backend often creates pre-payment rows as status=confirmed + payment_status=pending (slot held).
+        // Old logic only cancelled pending/pending_payment — confirmed+unpaid was skipped, so slots never released.
+        const terminalNoCancel = st && ['cancelled', 'completed', 'no_show', 'in_progress'].includes(st);
+        const paidConfirmed = st === 'confirmed' && paidLike;
+        const skipCancel = terminalNoCancel || paidConfirmed;
+
+        if (!skipCancel) {
+          try {
+            await apiClient.post(`/bookings/${bid}/cancel`, {
+              reason: 'Payment abandoned',
+              cancellationReason: 'Payment abandoned',
+              ...(cid ? { customerId: cid } : {}),
+              ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
+            });
+            toast.info('Payment cancelled. Your time slot has been released.');
+          } catch (e: any) {
+            console.warn('[PAYMENT] Release slot (cancel booking) failed:', e);
+            const msg =
+              e?.response?.error?.message ??
+              e?.responseData?.error?.message ??
+              e?.message ??
+              'Could not release the slot. Try refreshing the page or pick another time.';
+            toast.error(typeof msg === 'string' ? msg : 'Could not release the slot. Please try again.');
+          }
+        }
+
+        try {
+          onPaymentAbandoned?.();
+        } catch (cbErr) {
+          console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+        }
+      };
+
+      const options: Record<string, unknown> = {
         key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
         amount: amountPaise,
         currency: 'INR',
@@ -2450,9 +2559,27 @@ export function UniversalPaymentPage({
         description: paymentDescription,
         order_id: razorpayOrderId,
         handler: async (response: any) => {
+          razorpayGatewaySuccessHandled = true;
           await processRazorpaySuccess(response);
         },
+        theme: { color: '#FF8C42' },
+        modal: {
+          ondismiss: () => {
+            setProcessing(false);
+            void releaseSlotIfCheckoutAbandoned();
+          },
+        },
       };
+      // Custom `display` block can surface QR-only UPI on desktop; when user prefills VPA use default layout + prefill (Razorpay Payment Link–style `prefill.vpa`).
+      if (!validPrefillVpa) {
+        options.config = getWarmpawzRazorpayStandardDisplayConfig();
+      }
+      if (Object.keys(razorpayPrefill).length > 0) {
+        options.prefill = razorpayPrefill;
+      }
+      if (validPrefillVpa || (e164Contact && prefillEmail)) {
+        options.method = 'upi';
+      }
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
@@ -2479,11 +2606,13 @@ export function UniversalPaymentPage({
             JSON.stringify({ type: WARMPAWZ_RAZORPAY_NATIVE_MSG.OPEN, payload: nativeOpenPayload })
           );
           const nativeResponse = await resultPromise;
+          razorpayGatewaySuccessHandled = true;
           await processRazorpaySuccess(nativeResponse);
         } catch (nativeErr: any) {
           const msg = nativeErr?.message || 'Payment cancelled';
           if (msg === 'Payment cancelled' || msg.toLowerCase().includes('cancel')) {
             toast.info('Payment cancelled');
+            void releaseSlotIfCheckoutAbandoned();
           } else {
             toast.error(msg);
           }
@@ -2500,6 +2629,7 @@ export function UniversalPaymentPage({
           const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
           // ✅ Listen for payment failures (these don't trigger the handler callback)
           razorpay.on('payment.failed', (resp: any) => {
+            razorpayPaymentFailed = true;
             console.error('❌ [RAZORPAY] Payment failed event:', {
               code: resp?.error?.code,
               description: resp?.error?.description,
@@ -3253,6 +3383,30 @@ export function UniversalPaymentPage({
               <Plus className="w-4 h-4" />
               Save card for faster checkout
             </button>
+          )}
+
+          {selectedMethod === 'razorpay' && (
+            <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+              <label htmlFor="warmpawz-upi-vpa" className="text-xs font-medium text-gray-700">
+                UPI ID (optional)
+              </label>
+              <Input
+                id="warmpawz-upi-vpa"
+                type="text"
+                inputMode="email"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="e.g. yourname@paytm"
+                value={manualUpiVpa}
+                onChange={(e) => setManualUpiVpa(e.target.value)}
+                className="rounded-xl border-gray-200"
+              />
+              <p className="text-[11px] leading-snug text-gray-500">
+                If entered, we pass this to Razorpay as <span className="font-mono">prefill.vpa</span>. Desktop checkout often
+                stays QR-first; try mobile browser if collect does not appear — per Razorpay/NPCI rules.
+              </p>
+            </div>
           )}
         </Card>
 

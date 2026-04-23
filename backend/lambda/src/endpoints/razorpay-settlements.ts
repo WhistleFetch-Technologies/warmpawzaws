@@ -840,6 +840,19 @@ export function registerRazorpaySettlementEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  /** Admin Finance → Settlement dashboard: process one row by settlements.id (UUID). */
+  app.post('/admin/payments/settlements/:id/process', async (c) => {
+    const id = c.req.param('id');
+    if (!id || !isValidUUID(id)) {
+      return c.json({ success: false, error: 'Valid settlement ID is required' }, 400);
+    }
+    const event = await createApiGatewayEvent(c);
+    event.body = JSON.stringify({ settlementId: id });
+    const context = createLambdaContext();
+    const result = await processSettlementHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
   app.get('/settlements/:settlementId', async (c) => {
     const event = await createApiGatewayEvent(c);
     event.pathParameters = { settlementId: c.req.param('settlementId') };
