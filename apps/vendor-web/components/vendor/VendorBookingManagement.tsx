@@ -760,7 +760,9 @@ export function VendorBookingManagement({
         apiClient.get(`/vendor/${vendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${vendorId}/bank-account`).catch(() => null)) as Promise<any>,
-        apiClient.get(`/settlements/policy`).catch(() => null) as Promise<any>,
+        apiClient
+          .get(`/settlements/policy?vendorId=${encodeURIComponent(vendorId)}`)
+          .catch(() => null) as Promise<any>,
       ]);
       
       console.log('📊 [VENDOR-UI] Payouts API responses:', { settlementsData, settlementsSummary, bankData, policyData });
@@ -828,11 +830,11 @@ export function VendorBookingManagement({
 
   const handleRequestPayout = async () => {
     if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
-      alert('No amount available for payout');
+      toast.error('No amount available for payout');
       return;
     }
     if (!payoutsData?.bankAccount?.verified) {
-      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      toast.error('Please add and verify your bank account in Settings first.');
       router.push('/settings?tab=bank');
       return;
     }
@@ -848,17 +850,17 @@ export function VendorBookingManagement({
       }) as any;
       
       if (response?.success) {
-        alert(
+        toast.success(
           (response as any)?.message ||
             'Payout request submitted. You will be notified when it is processed.'
         );
         loadPayoutsData(); // Refresh data
       } else {
-        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+        toast.error(`Failed to request payout: ${response?.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error requesting payout:', error);
-      alert('❌ Error requesting payout. Please try again.');
+      toast.error('Error requesting payout. Please try again.');
     }
   };
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
 
@@ -720,7 +721,7 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
     try {
       const response = await apiClient.post<any>('/settlements/request', { vendorId, amount: earnings.pending });
       if (response?.success) {
-        alert(
+        toast.success(
           response?.message ||
             'Payout request submitted. You will be notified when it is processed.'
         );
@@ -728,7 +729,7 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
       }
     } catch (err) {
       console.error('Error requesting payout:', err);
-      alert('Failed to request payout');
+      toast.error('Failed to request payout');
     } finally {
       setRequestingPayout(false);
     }

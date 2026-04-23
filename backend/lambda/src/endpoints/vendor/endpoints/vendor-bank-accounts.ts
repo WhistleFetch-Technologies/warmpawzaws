@@ -15,6 +15,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
 import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
+import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 import { resolveVendorById } from './vendorProfile.vendor';
 
 /** Normalize DB boolean (pg usually returns boolean; some paths may return 't'/'f' strings). */
@@ -61,8 +62,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       }
 
       // ✅ PROD FIX: Only use is_primary in ORDER BY if table is vendor_bank_accounts (vendor_bank_details doesn't have this column)
-      const orderByClause = schema.table_exists 
-        ? 'ORDER BY is_primary DESC, created_at DESC' 
+      const orderByClause = schema.table_exists
+        ? 'ORDER BY is_primary DESC NULLS LAST, updated_at DESC NULLS LAST, created_at DESC'
         : 'ORDER BY created_at DESC';
       
       const accounts = await query(
@@ -238,6 +239,22 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
           `SELECT * FROM ${tableName} WHERE id = $1 AND vendor_id = $2`,
           [existingId, actualVendorId]
         );
+        if (schema.table_exists) {
+          try {
+            await promoteVendorBankAccountToPrimary(actualVendorId, String(existingId));
+            const refreshed = await query(
+              `SELECT * FROM ${tableName} WHERE id = $1 AND vendor_id = $2`,
+              [existingId, actualVendorId]
+            );
+            return c.json({
+              success: true,
+              account: refreshed.rows?.[0] ?? updated.rows?.[0] ?? existing.rows[0],
+              message: 'Bank account updated successfully',
+            });
+          } catch (pe) {
+            console.warn('[BankAccount] promote to primary after update:', pe);
+          }
+        }
         return c.json({
           success: true,
           account: updated.rows?.[0] ?? existing.rows[0],
@@ -282,10 +299,29 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       }
 
       const result = await insert(tableName, insertData);
+      const inserted = result[0] as { id?: string } | undefined;
+      // First account is already is_primary from insertData; re-assert for constraint parity.
+      // Do not promote on insert when adding a second+ account (isPrimary === false).
+      if (schema.table_exists && inserted?.id && isPrimary) {
+        try {
+          await promoteVendorBankAccountToPrimary(actualVendorId, String(inserted.id));
+          const refreshed = await query(
+            `SELECT * FROM ${tableName} WHERE id = $1 AND vendor_id = $2`,
+            [inserted.id, actualVendorId]
+          );
+          return c.json({
+            success: true,
+            account: refreshed.rows?.[0] ?? inserted,
+            message: 'Bank account added successfully',
+          });
+        } catch (pe) {
+          console.warn('[BankAccount] promote to primary after first insert:', pe);
+        }
+      }
 
       return c.json({
         success: true,
-        account: result[0],
+        account: inserted,
         message: 'Bank account added successfully',
       });
     } catch (error: any) {

@@ -21,6 +21,7 @@ import {
 
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 interface VendorEarningsSettlementDashboardProps {
   vendorId: string;
@@ -379,11 +380,11 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       earnings?.pendingSettlement ?? 0
     );
     if (availableAmount <= 0) {
-      alert('No amount available for payout');
+      toast.error('No amount available for payout');
       return;
     }
     if (!bankVerified || !bankAccount) {
-      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      toast.error('Please add and verify your bank account in Settings first.');
       router.push('/settings?tab=bank');
       return;
     }
@@ -397,17 +398,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       });
       
       if (response?.success) {
-        alert(
+        toast.success(
           response?.message ||
             'Payout request submitted. You will be notified when it is processed.'
         );
         await loadAllData();
       } else {
-        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+        toast.error(`Failed to request payout: ${response?.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error requesting payout:', error);
-      alert('❌ Error requesting payout. Please try again.');
+      toast.error('Error requesting payout. Please try again.');
     } finally {
       setRequestingPayout(false);
     }

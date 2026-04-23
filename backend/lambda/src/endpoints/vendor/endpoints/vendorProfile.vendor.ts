@@ -20,6 +20,7 @@ import { select, update, insert, query } from '../../../database/rds-connection'
 import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
@@ -1539,7 +1540,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       if (schema.has_accounts_table) {
         try {
           const accounts = await query(
-            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC LIMIT 1`,
             [resolvedVendorId]
           );
           bankAccounts = accounts.rows;
@@ -1599,6 +1600,56 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
       const resolvedVendorId = vendor.id;
 
+      // Keep vendor_bank_accounts in sync with GET /bank-details (prefers this table, latest updated_at).
+      let syncedAccountsRowId: string | null = null;
+      try {
+        const schemaCheck = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts'
+          ) as table_exists
+        `);
+        if (schemaCheck.rows[0]?.table_exists) {
+          const cleanAcct = String(account_number).replace(/\s/g, '');
+          const ifsc = ifsc_code.toUpperCase().trim();
+          const matchRow = await query(
+            `SELECT id FROM vendor_bank_accounts
+             WHERE vendor_id = $1::uuid AND account_number = $2
+             LIMIT 1`,
+            [resolvedVendorId, cleanAcct]
+          );
+          let rowId: string | undefined = matchRow.rows[0]?.id;
+          if (!rowId) {
+            const latest = await query(
+              `SELECT id FROM vendor_bank_accounts
+               WHERE vendor_id = $1::uuid
+               ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC
+               LIMIT 1`,
+              [resolvedVendorId]
+            );
+            rowId = latest.rows[0]?.id;
+          }
+          if (rowId) {
+            await query(
+              `UPDATE vendor_bank_accounts SET
+                account_holder_name = $1,
+                account_number = $2,
+                ifsc_code = $3,
+                bank_name = $4,
+                is_verified = false,
+                verification_status = 'pending',
+                verified_at = NULL,
+                updated_at = NOW()
+              WHERE id = $5::uuid AND vendor_id = $6::uuid`,
+              [account_holder_name.trim(), cleanAcct, ifsc, bank_name.trim(), rowId, resolvedVendorId]
+            );
+            syncedAccountsRowId = String(rowId);
+          }
+        }
+      } catch (e) {
+        console.warn('[VENDOR-PROFILE] vendor_bank_accounts sync skipped:', e);
+      }
+
       // Check if bank account already exists
       const existing = await select('vendor_bank_details', { vendor_id: resolvedVendorId });
       
@@ -1621,6 +1672,14 @@ export function registerVendorProfileEndpoints(app: Hono) {
       } else {
         // Create new
         await insert('vendor_bank_details', bankData);
+      }
+
+      if (syncedAccountsRowId) {
+        try {
+          await promoteVendorBankAccountToPrimary(resolvedVendorId, syncedAccountsRowId);
+        } catch (pe) {
+          console.warn('[VENDOR-PROFILE] promote bank account to primary:', pe);
+        }
       }
 
       // Update setup completion
@@ -1678,7 +1737,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       if (schema.has_accounts_table) {
         try {
           const accounts = await query(
-            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC LIMIT 1`,
             [resolvedVendorId]
           );
           bankAccounts = accounts.rows || [];

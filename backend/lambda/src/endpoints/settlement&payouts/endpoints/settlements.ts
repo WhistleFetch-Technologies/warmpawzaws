@@ -17,7 +17,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
-import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
+import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
+import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -31,6 +32,86 @@ import { z } from 'zod';
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
+
+/** `payouts.payment_ids` is NOT NULL — copy from `settlements.payment_ids` or use []. */
+function coercePaymentIdsForPayoutRow(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (t.startsWith('{') && t.endsWith('}')) {
+      const inner = t.slice(1, -1).trim();
+      if (!inner) return [];
+      return inner.split(',').map((s) => s.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean);
+    }
+    try {
+      const p = JSON.parse(t);
+      return Array.isArray(p) ? p.map(String).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** When Razorpay Payouts is not enabled on the merchant account, record a pending payout for admin processing. */
+function shouldQueueVendorPayoutForAdminReview(razorpayError: unknown): boolean {
+  const e = razorpayError as Record<string, unknown> | undefined;
+  const status = (e?.statusCode ?? e?.status) as number | undefined;
+  const raw = String(
+    (e?.message as string) ||
+      (typeof e?.error === 'object' && e?.error && (e.error as { description?: string }).description) ||
+      (e?.error as string) ||
+      ''
+  );
+  const msg = raw.toLowerCase();
+  if (status === 404) return true;
+  if (status === 401 || status === 403) return true;
+  if (msg.includes('not found')) return true;
+  if (msg.includes('does not exist')) return true;
+  if (msg.includes('url was not found')) return true;
+  if (msg.includes('requested url was not found')) return true;
+  if (msg.includes('payout') && (msg.includes('not enabled') || msg.includes('unavailable'))) return true;
+  if (msg.includes('feature') && msg.includes('not')) return true;
+  if (msg.includes('bad request') && msg.includes('payout')) return true;
+  return false;
+}
+
+/** Gold+ (tier_level >= 3) may attempt instant Razorpay bank payout; lower tiers are queued per tier policy unless tier features override. */
+const AUTOMATED_VENDOR_BANK_PAYOUT_MIN_TIER_LEVEL = 3;
+
+function tierRowAllowsAutomatedPayout(row: Record<string, unknown> | undefined): boolean {
+  if (!row) return true;
+  const feat = row.features;
+  if (feat && typeof feat === 'object' && !Array.isArray(feat)) {
+    const f = feat as Record<string, unknown>;
+    if (f.vendorPayoutProcessing === 'manual' || f.automatedVendorBankPayout === false) return false;
+    if (f.vendorPayoutProcessing === 'automated' || f.automatedVendorBankPayout === true) return true;
+  }
+  const tl = row.tier_level;
+  const tierLevel = tl != null && tl !== '' ? Number(tl) : NaN;
+  if (!Number.isFinite(tierLevel)) return true;
+  return tierLevel >= AUTOMATED_VENDOR_BANK_PAYOUT_MIN_TIER_LEVEL;
+}
+
+async function loadVendorTierPayoutRow(vendorId: string): Promise<Record<string, unknown> | undefined> {
+  const r = await query(
+    `SELECT vt.tier_level, vt.tier_name, vt.display_name, vt.payout_period_days, vt.features
+     FROM vendors v
+     LEFT JOIN vendor_tiers vt ON vt.is_active = true AND TRIM(LOWER(COALESCE(v.tier, ''))) = TRIM(LOWER(vt.tier_name))
+     WHERE v.id = $1::uuid
+     LIMIT 1`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+  return r.rows?.[0] as Record<string, unknown> | undefined;
+}
+
+function sanitizePayoutApiMessageForVendor(raw: string): string {
+  return String(raw || '')
+    .replace(/\brazorpay\s*[-_]?\s*x\b/gi, 'Razorpay')
+    .replace(/\brazorpayx\b/gi, 'Razorpay')
+    .replace(/\bRazorpayX\b/g, 'Razorpay');
+}
 
 /**
  * Parse `cancellation_policies.vendor_cancellation_penalty` JSONB:
@@ -139,6 +220,122 @@ async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actua
   });
   console.log(`[BankDetails] Created vendor record for ${vendorId}`);
   return { actualVendorId: vendorId };
+}
+
+/** GET /bank-details masks account numbers; Settings must not persist a masked placeholder as the real account number. */
+async function resolveAccountNumberForBankSave(vendorId: string, submitted: string): Promise<string> {
+  const clean = String(submitted || '').replace(/\s/g, '');
+  const looksMasked = /^\*{3,}\d{1,4}$/.test(clean) || /^[•…]{3,}\d{1,4}$/.test(clean);
+  if (!looksMasked) return clean;
+
+  try {
+    const t = await query(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts'
+      ) as ex
+    `);
+    if (t.rows[0]?.ex) {
+      const r = await query(
+        `SELECT account_number FROM vendor_bank_accounts
+         WHERE vendor_id = $1::uuid
+         ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC
+         LIMIT 1`,
+        [vendorId]
+      );
+      const n = r.rows[0]?.account_number;
+      const digits = n != null ? String(n).replace(/\s/g, '') : '';
+      if (digits.length >= 9 && !/^\*{3,}\d{1,4}$/.test(digits)) return digits;
+    }
+    const d = await select('vendor_bank_details', { vendor_id: vendorId });
+    const n = (d[0] as { account_number?: string } | undefined)?.account_number;
+    const digits = n != null ? String(n).replace(/\s/g, '') : '';
+    if (digits.length >= 9 && !/^\*{3,}\d{1,4}$/.test(digits)) return digits;
+  } catch (e) {
+    console.warn('[BankDetails] resolveAccountNumberForBankSave:', e);
+  }
+  return clean;
+}
+
+/**
+ * Write bank fields to the same tables GET /vendor/:id/bank-details reads from:
+ * it prefers `vendor_bank_accounts`, then falls back to `vendor_bank_details`.
+ * Previously PUT/POST only updated `vendor_bank_details`, so vendors with a row
+ * in `vendor_bank_accounts` kept seeing stale data after saving from Settings.
+ */
+async function persistVendorBankDetailsForVendor(
+  vendorId: string,
+  accountNumber: string,
+  ifscCode: string,
+  accountHolderName: string,
+  bankName: string | null | undefined
+): Promise<any> {
+  const cleanAcct = await resolveAccountNumberForBankSave(vendorId, String(accountNumber));
+  const ifsc = (ifscCode || '').toUpperCase();
+  const holder = String(accountHolderName || '').trim();
+  const bankTrim =
+    bankName != null && String(bankName).trim() !== '' ? String(bankName).trim() : null;
+
+  try {
+    const schemaCheck = await query(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'vendor_bank_accounts'
+      ) as table_exists
+    `);
+    if (schemaCheck.rows[0]?.table_exists) {
+      const primaryRow = await query(
+        `SELECT id FROM vendor_bank_accounts
+         WHERE vendor_id = $1::uuid
+         ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC
+         LIMIT 1`,
+        [vendorId]
+      );
+      const rowId = primaryRow.rows[0]?.id;
+      if (rowId) {
+        await query(
+          `UPDATE vendor_bank_accounts SET
+            account_holder_name = $1,
+            account_number = $2,
+            ifsc_code = $3,
+            bank_name = COALESCE($4, bank_name),
+            is_verified = false,
+            verification_status = 'pending',
+            verified_at = NULL,
+            updated_at = NOW()
+          WHERE id = $5::uuid AND vendor_id = $6::uuid`,
+          [holder, cleanAcct, ifsc, bankTrim, rowId, vendorId]
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[BankDetails] vendor_bank_accounts sync skipped:', e);
+  }
+
+  const existing = await select('vendor_bank_details', { vendor_id: vendorId });
+  const previousBankName =
+    existing.length > 0 ? String((existing[0] as { bank_name?: string }).bank_name || '').trim() : '';
+  const bank_name = bankTrim || previousBankName || 'Unknown Bank';
+
+  const detailsPayload: Record<string, unknown> = {
+    account_number: cleanAcct,
+    ifsc_code: ifsc,
+    account_holder_name: holder,
+    bank_name,
+    updated_at: new Date().toISOString(),
+    is_verified: false,
+    verified_at: null,
+  };
+
+  if (existing.length > 0) {
+    const updated = await update('vendor_bank_details', { vendor_id: vendorId }, detailsPayload);
+    return updated[0];
+  }
+  const created = await insert('vendor_bank_details', {
+    vendor_id: vendorId,
+    ...detailsPayload,
+  });
+  return created[0];
 }
 
 export function registerSettlementEndpoints(app: Hono) {
@@ -277,12 +474,11 @@ export function registerSettlementEndpoints(app: Hono) {
   /**
    * GET /settlements/policy
    * Get settlement policy for vendors to see.
-   * Single source of truth: payout/hold period comes from default tier (vendor_tiers), not platform_settings.
+   * Optional `?vendorId=` uses that vendor's tier row for hold days and payout automation flags.
    * ✅ CRITICAL: This must be BEFORE /settlements/:id to avoid matching "policy" as an ID
    */
   app.get("/settlements/policy", async (c) => {
     try {
-      // Single source of truth: default tier defines payout period (hold period)
       const defaultTierResult = await query(`
         SELECT payout_period_days, commission_rate, tier_name, display_name
         FROM vendor_tiers
@@ -291,11 +487,33 @@ export function registerSettlementEndpoints(app: Hono) {
         LIMIT 1
       `).catch(() => ({ rows: [] }));
       const defaultTier = defaultTierResult.rows?.[0];
-      const payoutPeriodDays = defaultTier?.payout_period_days != null
+      const defaultPayoutDays = defaultTier?.payout_period_days != null
         ? Number(defaultTier.payout_period_days)
         : 7;
 
-      // Non-period settings still from payout_rules (min amount, auto, default commission for display)
+      let payoutPeriodDays = defaultPayoutDays;
+      let vendorTierSummary: Record<string, unknown> | null = null;
+      const vendorIdQuery = c.req.query('vendorId')?.trim();
+      if (vendorIdQuery) {
+        try {
+          const resolvedVid = await resolveVendorId(vendorIdQuery);
+          const vtRow = await loadVendorTierPayoutRow(resolvedVid);
+          if (vtRow?.payout_period_days != null && !isNaN(Number(vtRow.payout_period_days))) {
+            payoutPeriodDays = Math.max(0, Number(vtRow.payout_period_days));
+          }
+          const dname = String(vtRow?.display_name || vtRow?.tier_name || '').trim();
+          vendorTierSummary = {
+            displayName: dname || null,
+            tierName: vtRow?.tier_name != null ? String(vtRow.tier_name) : null,
+            tierLevel: vtRow?.tier_level != null ? Number(vtRow.tier_level) : null,
+            payoutPeriodDays,
+            automatedBankPayoutEligible: tierRowAllowsAutomatedPayout(vtRow),
+          };
+        } catch {
+          /* ignore bad vendor id */
+        }
+      }
+
       const payoutRules = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
       const rules = payoutRules.length > 0
         ? (payoutRules[0].setting_value as any)
@@ -305,7 +523,6 @@ export function registerSettlementEndpoints(app: Hono) {
           defaultCommission: 10,
         };
 
-      // Schedule: when the job runs (no period - period is from tier)
       const scheduleSettings = await query(`
         SELECT * FROM platform_settings
         WHERE setting_key LIKE 'admin:finance:settlement%'
@@ -315,8 +532,24 @@ export function registerSettlementEndpoints(app: Hono) {
       const schedule = rawSchedule
         ? (typeof rawSchedule === 'string' ? JSON.parse(rawSchedule) : rawSchedule)
         : { scheduleType: 'weekly', minPayoutAmount: rules.minimumPayout };
-      // Ensure schedule exposes period from tier (read-only)
       const settlementSchedule = { ...schedule, settlementPeriodDays: payoutPeriodDays };
+
+      const tierLabel =
+        vendorTierSummary && typeof vendorTierSummary.displayName === 'string' && vendorTierSummary.displayName
+          ? String(vendorTierSummary.displayName)
+          : vendorTierSummary && typeof vendorTierSummary.tierName === 'string' && vendorTierSummary.tierName
+            ? String(vendorTierSummary.tierName)
+            : 'your tier';
+
+      const description = vendorTierSummary
+        ? `Earnings are held for ${payoutPeriodDays} days (${tierLabel}) before becoming eligible for settlement. ` +
+          `Minimum payout amount is ₹${rules.minimumPayout ?? 1000}. ` +
+          `Platform commission follows your tier. On-demand bank transfer may be available on higher tiers; otherwise payouts are processed on schedule by Warmpawz finance. ` +
+          `Bank account must be verified via Razorpay to receive payouts.`
+        : `Earnings are held for ${payoutPeriodDays} days (per your tier) before becoming eligible for settlement. ` +
+          `Minimum payout amount is ₹${rules.minimumPayout ?? 1000}. ` +
+          `Platform commission is deducted based on your tier (default ${rules.defaultCommission ?? 10}%). ` +
+          `Bank account must be verified via Razorpay to receive payouts.`;
 
       return c.json({
         success: true,
@@ -329,10 +562,8 @@ export function registerSettlementEndpoints(app: Hono) {
           settlementSchedule,
           bankVerificationRequired: true,
           paymentProcessor: 'Razorpay',
-          description: `Earnings are held for ${payoutPeriodDays} days (per your tier) before becoming eligible for settlement. ` +
-            `Minimum payout amount is ₹${rules.minimumPayout ?? 1000}. ` +
-            `Platform commission is deducted based on your tier (default ${rules.defaultCommission ?? 10}%). ` +
-            `Bank account must be verified via Razorpay to receive payouts.`,
+          description,
+          vendorTier: vendorTierSummary,
         },
       });
     } catch (error: any) {
@@ -706,7 +937,7 @@ export function registerSettlementEndpoints(app: Hono) {
    * POST /settlements/request
    * Request a payout (vendor-initiated). Requires verified bank account.
    * Supports on-demand payout from vendor_earnings (bypasses settlement cycle).
-   * Immediately triggers Razorpay payout when funds available.
+   * Tries Razorpay Payouts when enabled on the account; otherwise records a pending payout for admin processing.
    */
   app.post("/settlements/request", async (c) => {
     try {
@@ -750,7 +981,7 @@ export function registerSettlementEndpoints(app: Hono) {
       }
 
       // Get pending amount from BOTH settlements and vendor_earnings (align with frontend "Available for payout")
-      const [settlementsPendingRes, earningsPendingRes] = await Promise.all([
+      const [settlementsPendingRes, earningsPendingRes, payoutsHeldRes] = await Promise.all([
         query(
           `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
           [vendorId]
@@ -759,10 +990,15 @@ export function registerSettlementEndpoints(app: Hono) {
           `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
           [vendorId]
         ).catch(() => ({ rows: [{ pending: '0' }] })),
+        query(
+          `SELECT COALESCE(SUM(amount), 0) as held FROM payouts WHERE vendor_id = $1 AND payout_status IN ('pending', 'scheduled', 'processing')`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ held: '0' }] })),
       ]);
       const settlementsPending = parseFloat(settlementsPendingRes.rows[0]?.pending || '0');
       const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || '0');
-      const availableAmount = settlementsPending + earningsPending;
+      const heldInOpenPayouts = parseFloat(payoutsHeldRes.rows[0]?.held || '0');
+      const availableAmount = Math.max(0, settlementsPending + earningsPending - heldInOpenPayouts);
       if (requestAmount > availableAmount) {
         return c.json({ success: false, error: `Amount exceeds available (₹${availableAmount.toFixed(0)})` }, 400);
       }
@@ -785,11 +1021,11 @@ export function registerSettlementEndpoints(app: Hono) {
         }
       }
 
-      // Create payout record
+      // Create payout record (pending until Razorpay confirms or admin processes)
       const payoutInsert = await insert('payouts', {
         vendor_id: vendorId,
         amount: actualPayoutAmount,
-        payout_status: 'processing',
+        payout_status: 'pending',
         bank_account_number: bank.account_number,
         ifsc_code: bank.ifsc_code,
         account_holder_name: bank.account_holder_name,
@@ -797,26 +1033,109 @@ export function registerSettlementEndpoints(app: Hono) {
       }).catch(() => null);
       const payoutId = payoutInsert?.[0]?.id;
 
-      // Immediately trigger Razorpay payout (wire with Razorpay Marketplace API)
+      const tierRow = await loadVendorTierPayoutRow(vendorId);
+      const tryAutomatedRazorpay = tierRowAllowsAutomatedPayout(tierRow);
+      const tierDisplay =
+        String(tierRow?.display_name || tierRow?.tier_name || 'your plan').trim() || 'your plan';
+      const tierPayoutDays =
+        tierRow?.payout_period_days != null && !isNaN(Number(tierRow.payout_period_days))
+          ? Math.max(0, Number(tierRow.payout_period_days))
+          : 7;
+
+      const notifyVendorPayoutQueued = async () => {
+        try {
+          await pushNotificationService.sendToUser(
+            { userId: vendorId, userType: 'vendor' },
+            {
+              title: 'Payout request received',
+              body: `₹${actualPayoutAmount.toLocaleString('en-IN')} is queued for transfer by the Warmpawz team to your verified bank account.`,
+              sound: 'default',
+              priority: 'normal',
+              data: {
+                eventType: 'vendor_payout_queued_admin',
+                payoutId: payoutId ?? '',
+                vendorId,
+                amount: actualPayoutAmount,
+              },
+            }
+          );
+        } catch (notifyErr: unknown) {
+          console.warn('[settlements/request] Vendor push after queued payout:', (notifyErr as Error)?.message);
+        }
+      };
+
+      const respondQueued = async (message: string, processingMode: string) => {
+        await notifyVendorPayoutQueued();
+        return c.json({
+          success: true,
+          message,
+          payoutId,
+          razorpayPayoutId: null,
+          queuedForAdmin: true,
+          processingMode,
+        });
+      };
+
+      // Tier policy: lower tiers (or tier.features) queue for finance without calling Razorpay Payouts API.
+      if (!tryAutomatedRazorpay) {
+        return await respondQueued(
+          `Payout request recorded. Your ${tierDisplay} tier uses scheduled payouts: Warmpawz finance will process this to your verified bank as per your tier cycle (typically after the ${tierPayoutDays}-day hold). You will be notified when it is sent.`,
+          'tier_scheduled',
+        );
+      }
+
+      const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+      if (!sourceAccount) {
+        return await respondQueued(
+          'Payout request recorded. Instant bank transfer is not enabled yet; your request is queued and Warmpawz finance will send it to your verified bank. You will be notified when it is sent.',
+          'platform_manual',
+        );
+      }
+
+      // Razorpay composite payout: account_number = platform payout source; fund_account = beneficiary.
       try {
-        const razorpayClient = await getRazorpayClient();
-        const payoutResponse = await razorpayClient.payouts.create({
-          account_number: bank.account_number,
-          fund_account: {
-            account_type: 'bank_account',
-            bank_account: {
-              name: bank.account_holder_name,
-              ifsc: bank.ifsc_code,
-              account_number: bank.account_number,
-            },
-          },
-          amount: Math.round(actualPayoutAmount * 100), // paise
+        const razorpayClient = getRazorpayClient();
+        let vendorPhone = '0000000000';
+        try {
+          const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+          if (v?.rows?.[0]?.phone) {
+            vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
+          }
+        } catch (_) { /* keep default */ }
+
+        const beneficiaryAccount = String(bank.account_number || '').replace(/\s/g, '');
+        const ifscCode = String(bank.ifsc_code || bank.ifsc || '').toUpperCase().trim();
+        const accountHolder = String(bank.account_holder_name || bank.account_holder || 'Vendor').trim();
+
+        const compositeBody = {
+          account_number: sourceAccount,
+          amount: Math.round(actualPayoutAmount * 100),
           currency: 'INR',
           mode: 'IMPS',
           purpose: 'payout',
           queue_if_low_balance: true,
-          reference_id: `PAYOUT-${payoutId || Date.now()}`,
-        });
+          reference_id: `PAYOUT-${payoutId || Date.now()}`.slice(0, 40),
+          fund_account: {
+            account_type: 'bank_account',
+            bank_account: {
+              name: accountHolder,
+              ifsc: ifscCode,
+              account_number: beneficiaryAccount,
+            },
+            contact: {
+              name: accountHolder,
+              email: `vendor-${vendorId}@payout.warmpawz.com`,
+              contact: vendorPhone,
+              type: 'vendor',
+              reference_id: `vendor-${vendorId}`.slice(0, 40),
+            },
+          },
+        };
+
+        const payoutResponse = await razorpayClient.payouts.create(
+          compositeBody,
+          payoutId ? String(payoutId) : undefined,
+        );
 
         if (payoutId) {
           await update('payouts', { id: payoutId }, {
@@ -825,10 +1144,8 @@ export function registerSettlementEndpoints(app: Hono) {
           });
         }
 
-        // Mark settlements and vendor_earnings: allocate to actualPayoutAmount
         let remainingToAllocate = actualPayoutAmount;
 
-        // First allocate from settlements (full records only - can't partially pay a settlement)
         if (settlementsPending > 0 && remainingToAllocate > 0) {
           const settlementRows = await query(
             `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
@@ -848,7 +1165,6 @@ export function registerSettlementEndpoints(app: Hono) {
           }
         }
 
-        // Then allocate from vendor_earnings (FIFO, full records only)
         if (earningsPending > 0 && remainingToAllocate > 0) {
           const toMark = await query(
             `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
@@ -858,7 +1174,7 @@ export function registerSettlementEndpoints(app: Hono) {
           for (const row of toMark.rows) {
             const amt = parseFloat(row.amount || '0');
             if (amt <= 0) continue;
-            if (allocated + amt > remainingToAllocate) break; // only mark full records
+            if (allocated + amt > remainingToAllocate) break;
             allocated += amt;
             await query(
               `UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`,
@@ -872,25 +1188,25 @@ export function registerSettlementEndpoints(app: Hono) {
           message: 'Payout initiated successfully. Funds will reach your bank within 1–2 business days.',
           payoutId,
           razorpayPayoutId: payoutResponse.id,
+          processingMode: 'razorpay_automated',
         });
       } catch (razorpayError: any) {
-        const isNotFound = razorpayError?.message?.includes('not found') || razorpayError?.message?.includes('404') || razorpayError?.statusCode === 404;
+        const queueForAdmin = shouldQueueVendorPayoutForAdminReview(razorpayError);
+        const rawFail = razorpayError?.message || 'Razorpay API error';
+        const safeFail = sanitizePayoutApiMessageForVendor(rawFail);
         if (payoutId) {
           await update('payouts', { id: payoutId }, {
-            payout_status: isNotFound ? 'pending' : 'failed',
-            failure_reason: razorpayError?.message || 'Razorpay API error',
+            payout_status: queueForAdmin ? 'pending' : 'failed',
+            failure_reason: safeFail,
           });
         }
-        if (isNotFound) {
-          return c.json({
-            success: true,
-            message: 'Payout request recorded. RazorpayX payout API is not available for this account; your request will be processed manually or when RazorpayX is configured.',
-            payoutId,
-            razorpayPayoutId: null,
-          });
+        if (queueForAdmin) {
+          return await respondQueued(
+            'Payout request recorded. Razorpay could not start an instant transfer for this request; it has been queued for Warmpawz finance. You will be notified when the funds are sent to your verified bank account.',
+            'razorpay_fallback_manual',
+          );
         }
-        const msg = razorpayError?.message || 'Razorpay payout failed';
-        return c.json({ success: false, error: msg }, 500);
+        return c.json({ success: false, error: safeFail }, 500);
       }
     } catch (error: any) {
       console.error('Error requesting settlement:', error);
@@ -935,13 +1251,19 @@ export function registerSettlementEndpoints(app: Hono) {
       const { settlementId, vendorId, amount } = (c as any).get('validatedBody') as z.infer<typeof processPayoutSchema>;
 
 
-      // Get vendor bank details
-      const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+      // Get vendor bank details (vendor_bank_accounts and/or vendor_bank_details; resolve identity id)
+      const bankDetails = await fetchVendorBankRowsForPayout(String(vendorId));
       if (bankDetails.length === 0) {
         return c.json({ error: 'Vendor bank details not found' }, 404);
       }
 
-      const bank = bankDetails[0];
+      const bank = bankDetails[0] as any;
+
+      let payoutPaymentIds: string[] = [];
+      if (settlementId) {
+        const sidRes = await query(`SELECT payment_ids FROM settlements WHERE id = $1::uuid LIMIT 1`, [settlementId]).catch(() => ({ rows: [] }));
+        payoutPaymentIds = coercePaymentIdsForPayoutRow((sidRes as { rows?: { payment_ids?: unknown }[] }).rows?.[0]?.payment_ids);
+      }
 
       // Create payout record
       const payout = await insert('payouts', {
@@ -952,28 +1274,56 @@ export function registerSettlementEndpoints(app: Hono) {
         ifsc_code: bank.ifsc_code,
         account_holder_name: bank.account_holder_name,
         payout_status: 'processing',
+        payment_ids: payoutPaymentIds,
       });
 
-      // Process via Razorpay
+      // Process via Razorpay (composite payout: source account + beneficiary fund_account)
       try {
-        const razorpayClient = await getRazorpayClient();
+        const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+        if (!sourceAccount) {
+          await update('payouts', { id: payout[0].id }, { payout_status: 'failed', failure_reason: 'Razorpay payout source account not configured' });
+          return c.json({
+            success: false,
+            error:
+              'Razorpay payout source account is not configured on the server. Set RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER or add it in Admin → Payment gateways (Razorpay Banking customer identifier).',
+          }, 503);
+        }
+        let vendorPhone = '0000000000';
+        try {
+          const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+          if (v?.rows?.[0]?.phone) {
+            vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
+          }
+        } catch (_) { /* */ }
+        const beneficiaryAccount = String(bank.account_number || '').replace(/\s/g, '');
+        const ifscCode = String(bank.ifsc_code || bank.ifsc || '').toUpperCase().trim();
+        const accountHolder = String(bank.account_holder_name || bank.account_holder || 'Vendor').trim();
+
+        const razorpayClient = getRazorpayClient();
         const payoutResponse = await razorpayClient.payouts.create({
-          account_number: bank.account_number,
-          fund_account: {
-            account_type: 'bank_account',
-            bank_account: {
-              name: bank.account_holder_name,
-              ifsc: bank.ifsc_code,
-              account_number: bank.account_number,
-            },
-          },
-          amount: Math.round(amount * 100), // Convert to paise
+          account_number: sourceAccount,
+          amount: Math.round(amount * 100),
           currency: 'INR',
           mode: 'IMPS',
           purpose: 'payout',
           queue_if_low_balance: true,
-          reference_id: `PAYOUT-${payout[0].id}`,
-        });
+          reference_id: `PAYOUT-${payout[0].id}`.slice(0, 40),
+          fund_account: {
+            account_type: 'bank_account',
+            bank_account: {
+              name: accountHolder,
+              ifsc: ifscCode,
+              account_number: beneficiaryAccount,
+            },
+            contact: {
+              name: accountHolder,
+              email: `vendor-${vendorId}@payout.warmpawz.com`,
+              contact: vendorPhone,
+              type: 'vendor',
+              reference_id: `vendor-${vendorId}`.slice(0, 40),
+            },
+          },
+        }, String(payout[0].id));
 
         // Update payout with Razorpay ID
         await update('payouts',
@@ -1062,6 +1412,7 @@ export function registerSettlementEndpoints(app: Hono) {
             account_holder_name: bank.account_holder_name,
             payout_status: 'processing',
             created_at: new Date().toISOString(),
+            payment_ids: coercePaymentIdsForPayoutRow(settlement.payment_ids),
           });
 
           // Process via Razorpay
@@ -1169,27 +1520,13 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ error: 'account_number, ifsc_code, and account_holder_name are required' }, 400);
       }
 
-      const existing = await select('vendor_bank_details', { vendor_id: vendorId });
-      let bankDetails;
-      if (existing.length > 0) {
-        const updated = await update('vendor_bank_details', { vendor_id: vendorId }, {
-          account_number: accountNumber,
-          ifsc_code: (ifscCode || '').toUpperCase(),
-          account_holder_name: accountHolderName,
-          bank_name: bankName || null,
-          updated_at: new Date().toISOString(),
-        });
-        bankDetails = updated[0];
-      } else {
-        const created = await insert('vendor_bank_details', {
-          vendor_id: vendorId,
-          account_number: accountNumber,
-          ifsc_code: (ifscCode || '').toUpperCase(),
-          account_holder_name: accountHolderName,
-          bank_name: bankName || null,
-        });
-        bankDetails = created[0];
-      }
+      const bankDetails = await persistVendorBankDetailsForVendor(
+        vendorId,
+        String(accountNumber),
+        String(ifscCode),
+        String(accountHolderName),
+        bankName as string | null | undefined
+      );
       return c.json({ success: true, bankDetails, message: 'Bank details saved successfully' });
     } catch (error: any) {
       console.error('Error updating bank details:', error);
@@ -1221,29 +1558,13 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ error: 'accountNumber, ifscCode, and accountHolderName are required' }, 400);
       }
 
-      const existing = await select('vendor_bank_details', { vendor_id: vendorId });
-      let bankDetails;
-      if (existing.length > 0) {
-        const updated = await update('vendor_bank_details',
-          { vendor_id: vendorId },
-          {
-            account_number: accountNumber,
-            ifsc_code: (ifscCode || '').toString().toUpperCase(),
-            account_holder_name: accountHolderName,
-            bank_name: bankName || null,
-          }
-        );
-        bankDetails = updated[0];
-      } else {
-        const created = await insert('vendor_bank_details', {
-          vendor_id: vendorId,
-          account_number: accountNumber,
-          ifsc_code: (ifscCode || '').toString().toUpperCase(),
-          account_holder_name: accountHolderName,
-          bank_name: bankName || null,
-        });
-        bankDetails = created[0];
-      }
+      const bankDetails = await persistVendorBankDetailsForVendor(
+        vendorId,
+        String(accountNumber),
+        String(ifscCode),
+        String(accountHolderName),
+        bankName as string | null | undefined
+      );
 
       return c.json({
         success: true,
@@ -1295,7 +1616,7 @@ export function registerSettlementEndpoints(app: Hono) {
           const accounts = await query(
             `SELECT * FROM vendor_bank_accounts 
              WHERE vendor_id = $1 
-             ORDER BY is_primary DESC, created_at DESC 
+             ORDER BY updated_at DESC NULLS LAST, is_primary DESC NULLS LAST, created_at DESC 
              LIMIT 1`,
             [actualVendorId]
           );
@@ -1344,9 +1665,9 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
-   * Helper: create payout and optionally trigger RazorpayX payout for automatic disbursal.
+   * Helper: create payout and optionally trigger Razorpay Payouts (composite) for automatic disbursal.
    * Uses verified bank from vendor_bank_accounts (is_verified) or vendor_bank_details (is_verified), or vendors.bank_verified.
-   * When RAZORPAY_X_ACCOUNT_NUMBER is set, calls Razorpay Composite Payout API so vendor receives money automatically.
+   * When a Razorpay Banking payout source account is configured (secret / platform settings / RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER), uses the Razorpay Payouts API for automatic disbursal.
    */
   async function createPayout(settlementId: string, vendorId: string, amount: number) {
     let bankDetails: any[] = [];
@@ -1392,6 +1713,9 @@ export function registerSettlementEndpoints(app: Hono) {
       return;
     }
 
+    const payIdsRes = await query(`SELECT payment_ids FROM settlements WHERE id = $1::uuid LIMIT 1`, [settlementId]).catch(() => ({ rows: [] }));
+    const payoutPaymentIds = coercePaymentIdsForPayoutRow((payIdsRes as { rows?: { payment_ids?: unknown }[] }).rows?.[0]?.payment_ids);
+
     const payoutRecord = await insert('payouts', {
       vendor_id: vendorId,
       amount: amount,
@@ -1400,12 +1724,13 @@ export function registerSettlementEndpoints(app: Hono) {
       ifsc_code: ifscCode,
       account_holder_name: accountHolder,
       payout_status: 'pending',
+      payment_ids: payoutPaymentIds,
     });
     const payoutId = payoutRecord[0]?.id;
     if (!payoutId) return;
 
-    const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-    if (!razorpayXAccountNumber) {
+    const payoutSourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+    if (!payoutSourceAccount) {
       return;
     }
     let vendorPhone = '0000000000';
@@ -1415,7 +1740,7 @@ export function registerSettlementEndpoints(app: Hono) {
     } catch (_) { }
     const razorpayClient = getRazorpayClient();
     const compositeBody = {
-      account_number: razorpayXAccountNumber,
+      account_number: payoutSourceAccount,
       amount: Math.round(amount * 100),
       currency: 'INR',
       mode: 'IMPS',

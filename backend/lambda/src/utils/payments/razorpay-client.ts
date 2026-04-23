@@ -12,11 +12,31 @@
 import { query, select } from '../../database/rds-connection';
 import { getSecretJson } from '../aws/secrets-manager';
 
+/**
+ * Razorpay Banking customer identifier for vendor payouts (Dashboard → Banking).
+ * Supports current and legacy JSON/env key names.
+ */
+export function pickPayoutSourceAccountFromRecord(rec: Record<string, unknown> | undefined | null): string {
+  if (!rec) return '';
+  const keys = [
+    'payoutSourceAccountNumber',
+    'razorpayPayoutSourceAccountNumber',
+    'razorpayBankingAccountNumber',
+    'razorpayXAccountNumber',
+    'xAccountNumber',
+  ] as const;
+  for (const k of keys) {
+    const v = rec[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
 export interface RazorpayConfig {
   keyId: string;
   keySecret: string;
   webhookSecret?: string;
-  /** RazorpayX Current Account number (Customer Identifier) for Payouts API - from x.razorpay.com → Banking */
+  /** Payout source (Razorpay Banking customer id); legacy field name kept for JSON compatibility. */
   razorpayXAccountNumber?: string;
 }
 
@@ -41,13 +61,13 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
       const config = integrations[0].integration_config as any;
       if (config.keyId && config.keySecret) {
         console.log('[RAZORPAY-CONFIG] Loaded from database');
-        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || '';
+        const xAccount = pickPayoutSourceAccountFromRecord(config);
         console.log('[RAZORPAY-CONFIG] Loaded from database', config);
         return {
           keyId: config.keyId,
           keySecret: config.keySecret,
           webhookSecret: config.webhookSecret || '',
-          razorpayXAccountNumber: xAccount?.trim() || undefined,
+          razorpayXAccountNumber: xAccount || undefined,
         };
       }
     }
@@ -62,6 +82,7 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
         keyId: string;
         keySecret: string;
         webhookSecret?: string;
+        payoutSourceAccountNumber?: string;
         razorpayXAccountNumber?: string;
         xAccountNumber?: string;
       }>('razorpay'),
@@ -79,12 +100,12 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
 
     if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
       console.log('[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager');
-      const xAccount = (secretConfig as any).razorpayXAccountNumber || (secretConfig as any).xAccountNumber || '';
+      const xAccount = pickPayoutSourceAccountFromRecord(secretConfig as Record<string, unknown>);
       return {
         keyId: secretConfig.keyId,
         keySecret: secretConfig.keySecret,
         webhookSecret: secretConfig.webhookSecret || '',
-        razorpayXAccountNumber: xAccount?.trim() || undefined,
+        razorpayXAccountNumber: xAccount || undefined,
       };
     }
   } catch (error: any) {
@@ -99,7 +120,9 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
   if (keyId && keySecret) {
-    const xFromEnv = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    const xFromEnv =
+      process.env.RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER?.trim() ||
+      process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
     console.log('[RAZORPAY-CONFIG] Loaded from environment variables');
     return {
       keyId,
@@ -230,8 +253,8 @@ export async function razorpayRequest(
   }
 }
 
-/** RazorpayX current account (customer identifier) — same as bank fund_account validations. */
-async function getRazorpayXSourceAccountNumber(): Promise<string | null> {
+/** Razorpay Banking payout source account (customer identifier in Dashboard → Banking). */
+export async function resolveRazorpayPayoutSourceAccountNumber(): Promise<string | null> {
   try {
     const config = await getRazorpayConfig();
     const x = (config as any).razorpayXAccountNumber;
@@ -239,7 +262,9 @@ async function getRazorpayXSourceAccountNumber(): Promise<string | null> {
   } catch {
     /* use env only */
   }
-  const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+  const env =
+    process.env.RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER?.trim() ||
+    process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
   return env || null;
 }
 
@@ -257,20 +282,19 @@ function isPaymentsValidateVpaUnavailableError(message: string): boolean {
 }
 
 /**
- * VPA validation via RazorpayX: POST /v1/fund_accounts/validations (pennydrop + account_type vpa).
- * @see https://razorpay.com/docs/api/x/account-validation/vpa/
+ * VPA validation via Razorpay Banking: POST /v1/fund_accounts/validations (pennydrop + account_type vpa).
  */
 async function validateRazorpayVpaViaFundAccountValidation(vpaAddress: string): Promise<{
   valid: boolean;
   customerName?: string;
   error?: string;
 }> {
-  const sourceAccount = await getRazorpayXSourceAccountNumber();
+  const sourceAccount = await resolveRazorpayPayoutSourceAccountNumber();
   if (!sourceAccount?.trim()) {
     return {
       valid: false,
       error:
-        'Standard UPI validate API is not enabled on your Razorpay account, and RazorpayX current account is missing. Add razorpayXAccountNumber to your Razorpay secret (Dashboard → Banking → Customer Identifier) or set RAZORPAY_X_ACCOUNT_NUMBER, or ask Razorpay support to enable VPA validation.',
+        'Standard UPI validate API is not enabled on your Razorpay account, and the payout source account is missing. Add the Banking customer identifier in platform Razorpay settings or set environment variable RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER (or legacy RAZORPAY_X_ACCOUNT_NUMBER), or ask Razorpay support to enable VPA validation.',
     };
   }
 
@@ -317,11 +341,11 @@ async function validateRazorpayVpaViaFundAccountValidation(vpaAddress: string): 
       valid: false,
       error:
         status === 'created'
-          ? 'VPA validation is processing; try again in a few seconds or check RazorpayX dashboard.'
+          ? 'VPA validation is processing; try again in a few seconds or check the Razorpay Dashboard.'
           : 'VPA validation did not complete',
     };
   } catch (e: any) {
-    const msg = String(e?.message || 'RazorpayX VPA validation failed')
+    const msg = String(e?.message || 'Razorpay VPA validation failed')
       .replace(/^Razorpay API error:\s*/i, '')
       .trim();
     return { valid: false, error: msg };
@@ -378,7 +402,7 @@ export async function validateRazorpayVpa(vpa: string): Promise<{
       const rawFirst = String(first?.message || '');
       if (isPaymentsValidateVpaUnavailableError(rawFirst)) {
         console.warn(
-          '[RAZORPAY-VPA] /payments/validate/vpa unavailable for this merchant; using RazorpayX fund_accounts/validations',
+          '[RAZORPAY-VPA] /payments/validate/vpa unavailable for this merchant; using Razorpay fund_accounts/validations',
         );
         return validateRazorpayVpaViaFundAccountValidation(normalized);
       }
@@ -437,9 +461,13 @@ export function getRazorpayClient() {
     contact_email?: string;
     reference_id?: string;
   }): Promise<{ valid: boolean; error?: string; validationId?: string }> => {
-    const sourceAccount = await getRazorpayXAccountNumber();
+    const sourceAccount = await resolveRazorpayPayoutSourceAccountNumber();
     if (!sourceAccount?.trim()) {
-      return { valid: false, error: 'RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)' };
+      return {
+        valid: false,
+        error:
+          'Razorpay payout source account is not configured. Add the Banking customer identifier in platform payment settings or set RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER on the server.',
+      };
     }
     const ref = params.reference_id || `val-${Date.now()}`;
     const body = {
@@ -468,28 +496,22 @@ export function getRazorpayClient() {
       const validationId = res?.id;
       if (status === 'completed') return { valid: true, validationId };
       if (status === 'failed') return { valid: false, error: res?.status_details?.description || 'Validation failed', validationId };
-      return { valid: false, error: status === 'created' ? 'Validation initiated; check RazorpayX dashboard for result' : 'Validation incomplete', validationId };
+      return { valid: false, error: status === 'created' ? 'Validation initiated; check Razorpay Dashboard for result' : 'Validation incomplete', validationId };
     } catch (e: any) {
       const msg = e?.message || 'Validation API error';
       return { valid: false, error: msg };
     }
   };
 
-  /** Get RazorpayX Current Account number for Payouts API (from secret or env) */
-  const getRazorpayXAccountNumber = async (): Promise<string | null> => {
-    try {
-      const config = await getRazorpayConfig();
-      if ((config as any).razorpayXAccountNumber) return (config as any).razorpayXAccountNumber.trim();
-    } catch (_) { }
-    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-    return env || null;
-  };
+  const getPayoutSourceAccountNumber = (): Promise<string | null> => resolveRazorpayPayoutSourceAccountNumber();
 
   return {
     request: razorpayRequest,
     getConfig: getRazorpayConfig,
     getAuthHeader: getRazorpayAuthHeader,
-    getRazorpayXAccountNumber,
+    /** @deprecated use getPayoutSourceAccountNumber */
+    getRazorpayXAccountNumber: getPayoutSourceAccountNumber,
+    getPayoutSourceAccountNumber,
     payments,
     payouts,
     validateBankAccount,

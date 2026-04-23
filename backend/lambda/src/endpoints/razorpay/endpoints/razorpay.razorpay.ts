@@ -1978,7 +1978,7 @@ export function registerRazorpayEndpoints(app: Hono) {
         }, 400);
       }
 
-      // When RazorpayX is configured (RAZORPAY_X_ACCOUNT_NUMBER + credentials in AWS Secrets), use Razorpay Fund Account Validation API
+      // When Razorpay Banking payout source + API keys are configured, use Razorpay Fund Account Validation API
       try {
         const client = getRazorpayClient();
         const result = await client.validateBankAccount({
@@ -2017,7 +2017,7 @@ export function registerRazorpayEndpoints(app: Hono) {
         console.warn('[verify-bank-account] Razorpay validation API not used:', apiErr?.message);
       }
 
-      // Format-only response when RazorpayX validation not configured or API unavailable
+      // Format-only response when Razorpay Banking validation is not configured or API unavailable
       return c.json({
         success: true,
         valid: false,
@@ -2029,7 +2029,8 @@ export function registerRazorpayEndpoints(app: Hono) {
           ifsc: ifsc_code,
         },
         account_number_masked: account_number.replace(/\d(?=\d{4})/g, '*'),
-        message: 'Format validation passed. For full verification, configure RazorpayX (RAZORPAY_X_ACCOUNT_NUMBER) and allowlist IPs in RazorpayX Dashboard.',
+        message:
+          'Format validation passed. For full verification, configure the Razorpay Banking payout source account (Admin → Payment gateways or RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER) and allowlist your server IPs in the Razorpay Dashboard.',
       });
     } catch (error: any) {
       console.error('Error verifying bank account:', error);

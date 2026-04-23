@@ -19,7 +19,8 @@ import { randomUUID, randomBytes, pbkdf2Sync } from 'crypto';
 import { Hono, type Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
-import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
+import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
+import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -47,6 +48,15 @@ function rbacCallerEmailHint(c: Context): string | undefined {
   const un = (p as { 'cognito:username'?: string })['cognito:username'];
   if (typeof un === 'string' && un.includes('@')) return un.trim();
   return undefined;
+}
+
+/** JOIN/SELECT on `vendor_identity` failed (missing table/relation, or missing column — Postgres: `column vi.* does not exist`). */
+function isVendorIdentityJoinUnsupportedError(msg: string): boolean {
+  const m = String(msg ?? '');
+  return (
+    m.includes('does not exist') &&
+    (m.includes('vendor_identity') || m.includes('column vi.'))
+  );
 }
 
 function hashAdminPasswordPlain(password: string): string {
@@ -3394,7 +3404,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         `);
       } catch (viErr: any) {
         const msg = String(viErr?.message ?? viErr ?? '');
-        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
+        if (isVendorIdentityJoinUnsupportedError(msg)) {
           result = await query(`
             SELECT s.*,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
@@ -6330,7 +6340,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         `);
       } catch (viErr: any) {
         const msg = String(viErr?.message ?? viErr ?? '');
-        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
+        if (isVendorIdentityJoinUnsupportedError(msg)) {
           payouts = await query(`
             SELECT p.*,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
@@ -6407,7 +6417,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           pending = await query(runPendingWithVi('settlement_status'));
         } catch (e1: any) {
           const m1 = String(e1?.message ?? e1 ?? '');
-          if (m1.includes('vendor_identity') && m1.includes('does not exist')) {
+          if (isVendorIdentityJoinUnsupportedError(m1)) {
             try {
               pending = await query(runPendingNoVi('settlement_status'));
             } catch {
@@ -6418,7 +6428,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               pending = await query(runPendingWithVi('status'));
             } catch (e2: any) {
               const m2 = String(e2?.message ?? e2 ?? '');
-              if (m2.includes('vendor_identity') && m2.includes('does not exist')) {
+              if (isVendorIdentityJoinUnsupportedError(m2)) {
                 pending = await query(runPendingNoVi('status'));
               } else {
                 throw e2;
@@ -6429,7 +6439,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               pending = await query(runPendingWithVi('status'));
             } catch (e3: any) {
               const m3 = String(e3?.message ?? e3 ?? '');
-              if (m3.includes('vendor_identity') && m3.includes('does not exist')) {
+              if (isVendorIdentityJoinUnsupportedError(m3)) {
                 pending = await query(runPendingNoVi('status'));
               } else {
                 throw e3;
@@ -6842,27 +6852,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ifscCode = String(payout.ifsc_code);
         accountHolder = String(payout.account_holder_name);
       } else {
-        let bankDetails: any[] = [];
-        try {
-          const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
-          if (schemaCheck.rows[0]?.ex) {
-            const acc = await query(
-              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
-              [vendorId]
-            );
-            bankDetails = (acc.rows || []).map((r: any) => ({
-              account_number: r.account_number,
-              ifsc_code: r.ifsc_code ?? r.ifsc,
-              account_holder_name: r.account_holder_name ?? r.account_holder,
-            }));
-          }
-        } catch {
-          // ignore
-        }
-        if (bankDetails.length === 0) {
-          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
-          bankDetails = Array.isArray(details) ? details : [];
-        }
+        const rows = await fetchVendorBankRowsForPayout(String(vendorId));
+        const bankDetails = (rows || []).map((r: any) => ({
+          account_number: r.account_number,
+          ifsc_code: r.ifsc_code ?? r.ifsc,
+          account_holder_name: r.account_holder_name ?? r.account_holder,
+        }));
         if (bankDetails.length === 0) {
           return c.json({ success: false, error: 'Vendor bank details not found. Ask vendor to add bank account.' }, 404);
         }
@@ -6874,11 +6869,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!accountNumber || !ifscCode || !accountHolder) {
         return c.json({ success: false, error: 'Incomplete bank details (account number, IFSC, or holder name missing)' }, 400);
       }
-      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-      if (!razorpayXAccountNumber) {
+      const payoutSourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+      if (!payoutSourceAccount) {
         return c.json({
           success: false,
-          error: 'RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com → Banking).',
+          error:
+            'Razorpay payout source account not configured. Set RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER (Razorpay Dashboard → Banking customer identifier) or configure Razorpay in Admin → Payment gateways.',
         }, 503);
       }
       let vendorPhone = '0000000000';
@@ -6890,7 +6886,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
       let payoutResponse: { id: string };
       const compositeBody = {
-        account_number: String(razorpayXAccountNumber).trim(),
+        account_number: String(payoutSourceAccount).trim(),
         amount: Math.round(amount * 100),
         currency: 'INR',
         mode: 'IMPS',
@@ -6913,25 +6909,33 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         queue_if_low_balance: true,
         reference_id: `PAYOUT-${payoutId}`.slice(0, 40),
       };
+      const razorpayClient = getRazorpayClient();
       try {
         payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
       } catch (razorpayError: any) {
         const rawMsg = razorpayError?.message ?? razorpayError?.error?.description ?? 'Razorpay payout failed';
         const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
         const msg = isNotFound
-          ? 'RazorpayX Payouts API is not available for this account. Enable RazorpayX, allowlist IPs in RazorpayX Dashboard, and ensure payout mode is configured.'
+          ? 'Razorpay Payouts is not available for this merchant account. Enable Payouts in the Razorpay Dashboard, allowlist your server IPs if required, and ensure the payout source account is configured.'
           : rawMsg;
         console.error('[admin/payouts/process] Razorpay error:', rawMsg);
         try {
           await query(
             `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
-            ['failed', msg, payoutId]
+            ['failed', `${msg}${isNotFound ? ` | Razorpay: ${String(rawMsg).slice(0, 400)}` : ''}`, payoutId]
           );
         } catch {
           // ignore update failure
         }
         const status = isNotFound ? 503 : 500;
-        return c.json({ success: false, error: msg }, status);
+        return c.json(
+          {
+            success: false,
+            error: msg,
+            ...(String(rawMsg) !== String(msg) ? { razorpayMessage: String(rawMsg).slice(0, 500) } : {}),
+          },
+          status,
+        );
       }
       try {
         await query(
@@ -8152,6 +8156,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
 
       const rz = body.razorpay || {};
+      const payoutSrc =
+        typeof rz.razorpay_x_account_number === 'string' ? rz.razorpay_x_account_number.trim() : '';
       await saveGatewayRow(
         'razorpay',
         !!rz.enabled,
@@ -8159,7 +8165,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           keyId: typeof rz.key_id === 'string' ? rz.key_id : '',
           keySecret: typeof rz.key_secret === 'string' ? rz.key_secret : '',
           webhookSecret: typeof rz.webhook_secret === 'string' ? rz.webhook_secret : '',
-          razorpayXAccountNumber: typeof rz.razorpay_x_account_number === 'string' ? rz.razorpay_x_account_number.trim() : '',
+          payoutSourceAccountNumber: payoutSrc,
+          razorpayXAccountNumber: payoutSrc,
           auto_capture: rz.auto_capture !== false,
           test_mode: !!rz.test_mode,
         },
