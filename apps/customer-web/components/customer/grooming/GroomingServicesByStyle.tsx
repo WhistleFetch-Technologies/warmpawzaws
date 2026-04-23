@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -337,7 +338,7 @@ export function GroomingServicesByStyle({
 
   const openGroomingProviderProfile = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
-    const vid = String(provider.vendorId || provider.providerId);
+    const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
     onNavigate('grooming_embed_vendor_profile', { vendorId: vid });
   };
 

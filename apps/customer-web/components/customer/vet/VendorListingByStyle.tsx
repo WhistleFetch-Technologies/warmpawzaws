@@ -5,6 +5,7 @@ import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -246,14 +247,21 @@ export function VendorListingByStyle({
   };
 
   const handleViewVendor = (vendor: Vendor) => {
-    onNavigate('vet-vendor-profile', {
-      vendorId: vendor.id,
-      vendorType: vendor.type,
+    const { screen, data } = getWebCustomerVendorStyleListingNavTarget({
+      vertical: 'vet',
       serviceStyle,
       category,
-      vendorName: vendor.name,
-      vendorData: vendor
+      serviceTypeName,
+      vendor: {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        vendorId: vendor.vendorId,
+        vendorName: vendor.vendorName,
+        vendorData: vendor,
+      },
     });
+    onNavigate(screen, data);
   };
 
   // Client-side sorting as fallback (backend handles primary sorting)

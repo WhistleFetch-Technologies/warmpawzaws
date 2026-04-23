@@ -21,6 +21,7 @@ import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandabl
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
+import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
 import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
 import type { BoardingServiceSlug } from "@/lib/boarding-service-types";
@@ -164,9 +165,16 @@ export function PetSitterServiceRouter({
     });
   };
 
-  const openSitterDetails = (e: MouseEvent, vendorId: string) => {
+  /** Chevron / “Details” → vendor profile (not the booking stepper). */
+  const openSitterVendorProfile = (e: MouseEvent, v: BoardingListVendor) => {
     e.stopPropagation();
-    goBook(vendorId);
+    const row: Record<string, unknown> = {
+      ...(v.raw && typeof v.raw === "object" ? (v.raw as Record<string, unknown>) : {}),
+      id: v.id,
+      type: "vendor",
+    };
+    const vid = pickCustomerVendorAccountId(row) || v.id;
+    onNavigate?.("pet-sitter-provider-profile", { vendorId: vid });
   };
 
   const displaySitters = vendors;
@@ -426,9 +434,9 @@ export function PetSitterServiceRouter({
                           e.stopPropagation();
                           setSelectedVendorId(v.id);
                         }}
-                        onDetails={openSitterDetails}
+                        onDetails={(e) => openSitterVendorProfile(e, v)}
                         onBookPlan={handleBookPlan}
-                        onOpenCenterDetails={openSitterDetails}
+                        onOpenCenterDetails={(e) => openSitterVendorProfile(e, v)}
                       />
                     );
                   })

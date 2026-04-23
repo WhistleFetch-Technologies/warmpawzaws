@@ -32,6 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 
 interface ServiceConfig {
@@ -202,9 +203,11 @@ export function HomeServiceProviderListView({
 
         const list = discoverData.providers ?? discoverData.vendors ?? [];
         if (discoverData.success && list.length > 0) {
-          const enrichedProviders: Provider[] = list.map((p: any) => ({
-            id: p.id || p.vendorId,
-            vendorId: p.vendorId || p.id,
+          const enrichedProviders: Provider[] = list.map((p: any) => {
+            const canonicalId = pickCustomerVendorAccountId(p as Record<string, unknown>) || String(p.vendorId || p.id || '');
+            return {
+            id: canonicalId,
+            vendorId: canonicalId,
             businessName: p.businessName || p.name || p.fullName,
             fullName: p.fullName ?? p.name ?? p.businessName,
             name: p.businessName || p.name || p.fullName || 'Provider',
@@ -230,7 +233,8 @@ export function HomeServiceProviderListView({
             experience: Number(p.experience ?? p.yearsExperience ?? 0),
             serviceCount: Number(p.completedBookings ?? p.serviceCount ?? 0),
             previouslyUsed: Boolean(p.previouslyUsed),
-          }));
+          };
+          });
 
           console.log(`✅ [HOME-SERVICE-LIST] Found ${enrichedProviders.length} providers from discover-services`);
           setProviders(enrichedProviders);

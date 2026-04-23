@@ -97,7 +97,7 @@ export function BottomTabNavigator({
             {...props}
             phone={phone}
             onSelectVendor={(vendorId) => {
-              onNavigate?.('ServiceDetail', { vendorId });
+              onNavigate?.('VendorProfile', { vendorId });
             }}
             onBack={() => {}}
           />

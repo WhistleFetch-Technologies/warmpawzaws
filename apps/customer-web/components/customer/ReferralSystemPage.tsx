@@ -187,6 +187,12 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     const shareResult = await invokeWebShare(sharePayloads);
     if (shareResult === 'shared' || shareResult === 'aborted') return;
 
+    // Android: Web Share often fails in embedded Chrome / WebView; try intent chooser
+    // before clipboard-only UX so users still get SEND targets when the intent URL works.
+    if (isAndroid) {
+      tryAndroidSendIntent();
+    }
+
     const copied = await copyTextToClipboard(combinedBody);
     if (copied) {
       toast.success('Referral message and link copied — paste into your chat or email.');
@@ -194,7 +200,6 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     }
 
     if (isAndroid) {
-      tryAndroidSendIntent();
       toast.info(
         'If nothing opened to share, use Copy next to your code — you can paste the link from there.'
       );

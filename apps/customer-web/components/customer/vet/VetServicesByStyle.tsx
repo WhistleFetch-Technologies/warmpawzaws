@@ -14,6 +14,7 @@ import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -195,21 +196,13 @@ export function VetServicesByStyle({
 
   const openVetProviderProfile = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
-    const pt = String(provider.providerType || '').toLowerCase();
-    if (pt === 'staff' || pt === 'individual') {
-      onNavigate('vet-doctor-details', {
-        doctorId: provider.providerId,
-        doctorProfileBackScreen: 'vet-services-by-style',
-      });
-      return;
-    }
-    const vid = String(provider.vendorId || provider.providerId);
-    onNavigate('vet-services-by-style', {
-      vendorId: vid,
+    const { screen, data } = getWebVetDiscoveryChevronNavTarget({
       serviceStyle: String(serviceStyle),
-      serviceTypeName: serviceTypeName || 'Veterinary Services',
-      category: category || 'vet',
+      serviceTypeName,
+      category,
+      provider: provider as unknown as Record<string, unknown>,
     });
+    onNavigate(screen, data);
   };
 
   const handleSelectService = (provider: Provider, service: any) => {

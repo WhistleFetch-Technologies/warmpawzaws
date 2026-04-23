@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { WALKING_NEEDS } from './ProblemGridSection';
@@ -94,9 +95,7 @@ function collectWalkerSearchHaystack(w: Record<string, unknown>): string {
 
 /** Canonical vendor id for API calls (prefer vendorId over staff/list id). */
 function resolveWalkerVendorId(walker: any): string | undefined {
-  const v = walker?.vendorId ?? walker?.providerId ?? walker?.id;
-  if (v == null) return undefined;
-  const s = String(v).trim();
+  const s = pickWalkerVendorId((walker || {}) as Record<string, unknown>);
   return s || undefined;
 }
 
@@ -178,12 +177,12 @@ function WalkerListCardHero({ walker }: { walker: Record<string, unknown> }) {
     'Walker profile';
 
   return (
-    <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative overflow-hidden">
+    <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative overflow-hidden z-0">
       {url && !failed ? (
         <img
           src={url}
           alt={alt}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 z-0 h-full w-full object-cover pointer-events-none"
           onError={() => setFailed(true)}
         />
       ) : null}
@@ -886,7 +885,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                     <button
                       type="button"
                       aria-label={`View ${walker.name || walker.businessName || 'walker'} profile`}
-                      className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-white/95 text-orange-600 shadow-md flex items-center justify-center hover:bg-white transition-colors"
+                      className="absolute top-3 right-3 z-20 h-9 w-9 rounded-full bg-white/95 text-orange-600 shadow-md flex items-center justify-center hover:bg-white transition-colors"
                       onClick={(e) => handleOpenWalkerProfile(walker, e)}
                     >
                       <ChevronRight className="w-5 h-5" aria-hidden />

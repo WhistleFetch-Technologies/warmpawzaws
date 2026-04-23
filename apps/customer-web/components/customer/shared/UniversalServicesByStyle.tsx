@@ -15,6 +15,11 @@ import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
+import {
+  getWebGroomingTrainingEmbedVendorId,
+  getWebVetDiscoveryChevronNavTarget,
+} from '@/lib/customer-vendor-profile-navigation';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -63,6 +68,111 @@ interface Provider {
     category?: string;
     inActivePackage?: boolean;
   }[];
+}
+
+function canonicalVendorKeysFromRow(p: Record<string, unknown>): Set<string> {
+  const out = new Set<string>();
+  const add = (x: unknown) => {
+    if (x == null) return;
+    const s = String(x).trim();
+    if (s) out.add(s);
+  };
+  add(p.id);
+  add(p.providerId);
+  add(p.provider_id);
+  add(p.vendorId);
+  add(p.vendor_id);
+  add(p.facilityId);
+  add(p.facility_id);
+  add(p.staffId);
+  add(p.staff_id);
+  try {
+    add(pickCustomerVendorAccountId(p));
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
+
+function rowMatchesEmbedVendorId(p: Record<string, unknown>, embedVendorId: string): boolean {
+  const want = String(embedVendorId || '').trim();
+  if (!want) return false;
+  return canonicalVendorKeysFromRow(p).has(want);
+}
+
+/** When hub/chevron passes a vendor id that does not appear in by-style/discover rows, load vendor + services directly. */
+async function fetchEmbeddedVendorAsProvider(args: {
+  embedVendorId: string;
+  phone: string;
+  finalCategory: string;
+  serviceStyle: ServiceStyle;
+  roleName: string;
+}): Promise<Provider | null> {
+  const { embedVendorId, phone, finalCategory, serviceStyle, roleName } = args;
+  const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+  const styleOrder: ServiceStyle[] =
+    serviceStyle === 'at_center' ? ['at_center', 'at_home', 'tele'] : [serviceStyle, 'at_center', 'at_home', 'tele'];
+
+  let services: Provider['services'] = [];
+  for (const st of styleOrder) {
+    try {
+      const servicesResponse = (await apiClient.get(
+        `/customer/vendor/${embedVendorId}/services?serviceStyle=${st}&category=${finalCategory}${phoneParam}`
+      )) as any;
+      const servicesArray = [
+        ...(servicesResponse?.services || []),
+        ...(servicesResponse?.packages || []),
+      ];
+      if (servicesArray.length === 0) continue;
+      services = servicesArray.map((s: any) => ({
+        id: String(s.id || s.service_id || ''),
+        serviceId: String(s.id || s.service_id || ''),
+        name: s.name || s.service_name || `${roleName} Service`,
+        price: Number(s.price || s.custom_price || 499),
+        originalPrice: Number(s.price || s.custom_price || 499),
+        vendorDiscount: s.vendor_discount || s.discount || 0,
+        duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
+        description: s.description || s.custom_description,
+        category: s.category_name || s.category,
+        isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
+        inActivePackage: !!s.inActivePackage,
+      }));
+      break;
+    } catch {
+      /* try next */
+    }
+  }
+  if (services.length === 0) return null;
+
+  const vendorRes = (await apiClient.get(`/customer/vendor/${embedVendorId}`).catch(() => null)) as any;
+  const v = vendorRes?.vendor || vendorRes;
+  const name =
+    (v && typeof v === 'object' && (v.businessName || v.business_name || v.name || v.fullName)) || 'Provider';
+  const ratingNum =
+    v && typeof v === 'object' ? Number(v.rating ?? v.avgRating ?? 4.5) : 4.5;
+  const reviewCount =
+    v && typeof v === 'object' ? Number(v.reviewCount ?? v.review_count ?? 0) : 0;
+
+  return {
+    providerId: embedVendorId,
+    providerType: 'vendor',
+    vendorId: embedVendorId,
+    name: String(name),
+    phone: v && typeof v === 'object' ? String(v.phone || '') : undefined,
+    photo: v && typeof v === 'object' ? (v.photo || v.photoUrl || v.logo) as string | undefined : undefined,
+    address:
+      v && typeof v === 'object'
+        ? String(v.address || [v.city, v.state].filter(Boolean).join(', ') || '')
+        : undefined,
+    experienceYears:
+      v && typeof v === 'object' ? Number(v.experience ?? v.yearsOfExperience ?? v.years_of_experience ?? 0) || undefined : undefined,
+    qualifications: v && typeof v === 'object' ? (v.qualifications as string | undefined) : undefined,
+    rating: Number.isFinite(ratingNum) ? ratingNum.toFixed(1) : '4.5',
+    reviewCount,
+    isVerified: v && typeof v === 'object' ? Boolean(v.isVerified ?? v.verified ?? v.is_verified) : false,
+    isIndividualProvider: true,
+    services,
+  };
 }
 
 export function UniversalServicesByStyle({ 
@@ -145,11 +255,24 @@ export function UniversalServicesByStyle({
           
           // Filter to specific vendor if vendorId is provided (vendor profile mode)
           if (vendorId) {
-            providerData = providerData.filter((p: any) => 
-              (p.providerId || p.vendorId || p.id) === vendorId
+            const want = String(vendorId).trim();
+            providerData = providerData.filter((p: any) =>
+              rowMatchesEmbedVendorId(p as Record<string, unknown>, want)
             );
+            if (providerData.length === 0) {
+              const fb = await fetchEmbeddedVendorAsProvider({
+                embedVendorId: want,
+                phone,
+                finalCategory,
+                serviceStyle,
+                roleName: config.roleName,
+              });
+              if (fb) {
+                providerData = [fb as any];
+              }
+            }
           }
-          
+
           // ✅ FIX: Normalize nextAvailableSlot to always be a string
           // Handle all possible field names: nextAvailable (API), nextAvailableSlot, nextAvailability
           providerData = providerData.map((p: any) => {
@@ -352,13 +475,25 @@ export function UniversalServicesByStyle({
         // Filter to specific vendor if vendorId is provided (vendor profile mode)
         let finalProviders = filteredProviders;
         if (vendorId) {
-          finalProviders = filteredProviders.filter(p => 
-            p.providerId === vendorId || 
-            p.vendorId === vendorId || 
-            p.staffId === vendorId
-          );
+          const want = String(vendorId).trim();
+          finalProviders = filteredProviders.filter((p) => {
+            const keys = [p.providerId, p.vendorId, p.staffId].filter(Boolean).map((x) => String(x));
+            return keys.includes(want);
+          });
+          if (finalProviders.length === 0) {
+            const fb = await fetchEmbeddedVendorAsProvider({
+              embedVendorId: want,
+              phone,
+              finalCategory,
+              serviceStyle,
+              roleName: config.roleName,
+            });
+            if (fb) {
+              finalProviders = [fb];
+            }
+          }
         }
-        
+
         setProviders(finalProviders);
         console.log(`✅ [${config.roleName}] Loaded ${finalProviders.length} solo/staff provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       }
@@ -425,27 +560,28 @@ export function UniversalServicesByStyle({
 
   const openProviderProfileForChevron = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
-    const vid = String(provider.vendorId || provider.providerId);
+    const row = provider as unknown as Record<string, unknown>;
     if (roleId === 'trainer') {
-      onNavigate('training_embed_vendor_profile', { vendorId: vid });
-      return;
-    }
-    if (roleId === 'veterinarian') {
-      const pt = String(provider.providerType || '').toLowerCase();
-      if (pt === 'staff' || pt === 'individual') {
-        onNavigate('vet-doctor-details', { doctorId: provider.providerId, doctorProfileBackScreen: 'vet' });
-        return;
-      }
-      onNavigate('vet-services-by-style', {
-        vendorId: vid,
-        serviceStyle: String(serviceStyle),
-        serviceTypeName: serviceTypeName || 'Veterinary Services',
-        category: category || 'vet',
+      onNavigate('training_embed_vendor_profile', {
+        vendorId: getWebGroomingTrainingEmbedVendorId(row),
       });
       return;
     }
+    if (roleId === 'veterinarian') {
+      const { screen, data } = getWebVetDiscoveryChevronNavTarget({
+        serviceStyle: String(serviceStyle),
+        serviceTypeName,
+        category,
+        provider: row,
+        doctorProfileBackScreen: 'vet',
+      });
+      onNavigate(screen, data);
+      return;
+    }
     if (roleId === 'groomer') {
-      onNavigate('grooming_embed_vendor_profile', { vendorId: vid });
+      onNavigate('grooming_embed_vendor_profile', {
+        vendorId: getWebGroomingTrainingEmbedVendorId(row),
+      });
     }
   };
 
@@ -667,7 +803,7 @@ export function UniversalServicesByStyle({
           </div>
         )}
 
-        <div className="max-w-md mx-auto px-4 pb-32">
+        <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar-sticky-cta">
           {/* Provider Header Info - Vet-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -1073,8 +1209,8 @@ export function UniversalServicesByStyle({
           </div>
         </div>
 
-        {/* Fixed Bottom Service Selection Summary & Book Button */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        {/* Fixed bottom CTA — sits above app bottom nav (same offset as boarding / vet profiles). */}
+        <div className="cw-fixed-above-customer-tabbar fixed bottom-0 left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
           {selectedServices.size > 0 && (
             <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
               <div className="flex items-center justify-between">

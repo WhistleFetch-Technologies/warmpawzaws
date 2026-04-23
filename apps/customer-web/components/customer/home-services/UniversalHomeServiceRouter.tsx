@@ -30,6 +30,7 @@ import { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
 import { HomeServiceLanding } from './HomeServiceLanding';
 import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
@@ -449,9 +450,10 @@ export function UniversalHomeServiceRouter({
   const handleProviderSelect = (provider: any) => {
     console.log('✅ [HOME-SERVICE-ROUTER] Provider selected:', provider);
     const raw = provider as Record<string, unknown>;
+    const vendorId = pickCustomerVendorAccountId(raw) || String(provider.vendorId || provider.id || '');
     setBookingFlow(prev => ({
       ...prev,
-      vendorId: provider.id || provider.vendorId,
+      vendorId,
       vendorName: provider.businessName || provider.name || provider.fullName,
       vendorAddress: provider.address,
       vendorPhone: provider.phone,

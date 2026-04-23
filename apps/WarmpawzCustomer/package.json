@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@warmpawz/shared-types": "file:../../packages/shared-types",
     "@react-native-async-storage/async-storage": "^1.21.0",
     "@react-native-clipboard/clipboard": "^1.16.3",
     "@react-native-community/netinfo": "^11.0.0",
