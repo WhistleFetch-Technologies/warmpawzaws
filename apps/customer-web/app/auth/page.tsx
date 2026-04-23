@@ -836,6 +836,9 @@ function AuthPageContent() {
           {/* Welcome Text */}
           <h1 className="text-2xl font-bold text-black italic text-center">Welcome to</h1>
           <h2 className="text-3xl font-extrabold text-black tracking-wide">WARMPAWZ!</h2>
+          <p className="mt-3 text-center text-lg font-bold text-black tracking-wide">
+            Pet Care Reimagined !!
+          </p>
         </div>
 
         {/* White Card Section */}
