@@ -720,7 +720,10 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
     try {
       const response = await apiClient.post<any>('/settlements/request', { vendorId, amount: earnings.pending });
       if (response?.success) {
-        alert('✅ Payout request submitted!');
+        alert(
+          response?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         loadEarnings();
       }
     } catch (err) {

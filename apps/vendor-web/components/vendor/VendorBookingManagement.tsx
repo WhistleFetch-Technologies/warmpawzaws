@@ -779,7 +779,14 @@ export function VendorBookingManagement({
       
       // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
       const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
-      
+      const bankVerifiedFlag =
+        !!bankAccount?.verified ||
+        !!bankAccount?.isVerified ||
+        !!bankAccount?.bank_verified ||
+        !!bankAccount?.is_verified ||
+        (typeof bankAccount?.verification_status === 'string' &&
+          bankAccount.verification_status.toLowerCase() === 'verified');
+
       const policy = policyData?.policy ?? policyData;
       const payoutDays = policy?.holdPeriodDays ?? policy?.payoutPeriodDays ?? 7;
       const payoutScheduleText =
@@ -796,7 +803,7 @@ export function VendorBookingManagement({
           bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
           accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',
           accountHolder: bankAccount.accountHolder || bankAccount.account_holder || vendorData?.fullName || 'Account Holder',
-          verified: bankAccount.verified || bankAccount.isVerified || false,
+          verified: bankVerifiedFlag,
         } : null,
         payoutHistory,
         payoutSchedule: payoutScheduleText,
@@ -841,7 +848,10 @@ export function VendorBookingManagement({
       }) as any;
       
       if (response?.success) {
-        alert('✅ Payout request submitted successfully!');
+        alert(
+          (response as any)?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         loadPayoutsData(); // Refresh data
       } else {
         alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
