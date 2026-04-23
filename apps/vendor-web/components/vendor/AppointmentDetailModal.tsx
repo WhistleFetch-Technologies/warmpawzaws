@@ -300,8 +300,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         petType: rawBooking.petType || rawBooking.petSpecies || '',
         petBreed: rawBooking.petBreed || '',
         petAge: rawBooking.petAge ? `${rawBooking.petAge} years` : '',
-        // Service info
-        serviceName: rawBooking.serviceName || 'Service',
+        // Service info (details API may put label on nested service; list uses service?.name first)
+        serviceName:
+          rawBooking.serviceName ||
+          rawBooking.service?.name ||
+          rawBooking.service?.serviceName ||
+          rawBooking.service_name ||
+          'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
         // ✅ FIX: Build location from detailed address → API location → customer/vendor address fallback
         location: rawBooking.customerAddressDetails?.formattedAddress || rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 

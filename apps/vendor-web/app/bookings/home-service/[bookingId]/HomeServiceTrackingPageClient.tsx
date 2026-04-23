@@ -20,6 +20,24 @@ function resolveHomeServiceBookingId(
   return '';
 }
 
+/** Planned walk length (minutes) from /details payload — same fields as vendor booking modal. */
+function extractPlannedServiceMinutesFromBooking(booking: any): number {
+  const svc = booking?.service;
+  const candidates = [
+    svc?.duration,
+    svc?.durationMinutes,
+    svc?.duration_minutes,
+    booking?.duration,
+    booking?.totalDurationMinutes,
+    booking?.total_duration_minutes,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 30;
+}
+
 export default function HomeServiceTrackingPageClient() {
   const router = useRouter();
   const params = useParams();
@@ -92,11 +110,8 @@ export default function HomeServiceTrackingPageClient() {
           serviceNameLower.includes('sit') ||
           serviceNameLower.includes('sitting');
 
-        // Same minutes as vendor Manage Service + customer booking: details API sets service.duration from vendor_services (then catalog / booking).
-        const rawPlan =
-          Number(booking.service?.duration ?? booking.service?.duration_minutes) ||
-          Number(booking.duration ?? booking.totalDurationMinutes ?? booking.total_duration_minutes) ||
-          30;
+        // Same minutes as vendor /details service object (e.g. 30 / 60 / 90 min Extended Dog Walk).
+        const rawPlan = extractPlannedServiceMinutesFromBooking(booking);
         const plannedWalkDurationMinutes = Math.min(1440, Math.max(5, Math.round(rawPlan) || 30));
         
         setBookingData({
