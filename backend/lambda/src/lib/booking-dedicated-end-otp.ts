@@ -1,10 +1,67 @@
 import { query, insert } from '../database/rds-connection';
 
+/** Vendor roles that always get a separate end-session OTP for at-home visits. */
+const DEDICATED_END_OTP_VENDOR_ROLE_SLUGS = new Set([
+  'pet_walker',
+  'walker',
+  'dog_walker',
+  'walker_solo',
+  'walking',
+  'pet_sitter',
+  'sitter',
+  'sitter_solo',
+  'pet_sitter_solo',
+  'pet_sitter_saas',
+]);
+
+function serviceLooksLikeDogWalk(serviceCategory: string, serviceName: string): boolean {
+  const c = (serviceCategory || '').toLowerCase().trim();
+  const n = (serviceName || '').toLowerCase();
+  if (['walker', 'walking', 'dog_walking'].includes(c)) return true;
+  if (n.includes('walk') || n.includes('walking')) return true;
+  return false;
+}
+
+/**
+ * At-home bookings that should use otp_tokens + completion_otp for session end
+ * (not the same code as bookings.otp_code).
+ * Uses vendor role and/or catalog service name/category so dog walkers still match
+ * when role rows are inactive or mis-synced.
+ */
+export async function bookingUsesDedicatedEndSessionOtp(bookingId: string): Promise<boolean> {
+  const res = await query(
+    `SELECT b.service_style,
+            b.service_type,
+            LOWER(TRIM(COALESCE(r.name, ''))) AS role_slug,
+            LOWER(TRIM(COALESCE(s.category, ''))) AS svc_cat,
+            LOWER(COALESCE(s.name, '')) AS svc_name
+     FROM bookings b
+     LEFT JOIN vendors v ON v.id = b.vendor_id
+     LEFT JOIN roles r ON r.id = v.role_id
+     LEFT JOIN services s ON s.id = b.service_id
+     WHERE b.id = $1
+     LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] }));
+
+  const row = (res as any).rows?.[0];
+  if (!row) return false;
+
+  const atHome = row.service_style === 'at_home' || row.service_type === 'at_home';
+  if (!atHome) return false;
+
+  const slug = String(row.role_slug || '');
+  if (slug && DEDICATED_END_OTP_VENDOR_ROLE_SLUGS.has(slug)) return true;
+
+  return serviceLooksLikeDogWalk(String(row.svc_cat || ''), String(row.svc_name || ''));
+}
+
 /**
  * After start OTP is verified, create a dedicated end-session OTP (otp_tokens + bookings.completion_otp)
  * for roles that complete with a different code than bookings.otp_code.
  */
 export async function ensureDedicatedEndSessionOtp(bookingId: string): Promise<void> {
+  const bid = String(bookingId);
   const existing = await query(
     `SELECT id FROM otp_tokens
      WHERE metadata->>'bookingId' = $1
@@ -13,7 +70,7 @@ export async function ensureDedicatedEndSessionOtp(bookingId: string): Promise<v
        AND (expires_at IS NULL OR expires_at > NOW())
      ORDER BY created_at DESC
      LIMIT 1`,
-    [bookingId]
+    [bid]
   ).catch(() => ({ rows: [] }));
   if ((existing as any).rows?.length) return;
 
@@ -24,9 +81,9 @@ export async function ensureDedicatedEndSessionOtp(bookingId: string): Promise<v
     otp_type: 'booking_end',
     expires_in_minutes: 1440,
     max_attempts: 5,
-    metadata: { bookingId, action: 'end' },
+    metadata: { bookingId: bid, action: 'end' },
   });
-  await query(`UPDATE bookings SET completion_otp = $1, updated_at = NOW() WHERE id = $2`, [otp, bookingId]).catch((e: any) =>
+  await query(`UPDATE bookings SET completion_otp = $1, updated_at = NOW() WHERE id = $2`, [otp, bid]).catch((e: any) =>
     console.warn('[END-SESSION-OTP] completion_otp update skipped:', e?.message)
   );
 }
