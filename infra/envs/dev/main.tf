@@ -212,7 +212,10 @@ module "lambda" {
     }
   }
 
-  common_env_vars = {
+  # UAT_MODE=true enables verifyCognitoToken to accept issuer warmpawz-uat (see backend/lambda/src/utils/jwt-verification.ts).
+  # Optional UAT_JWT_SECRET when var.uat_jwt_secret is non-empty — must match verify-OTP signing on this same Lambda.
+  common_env_vars = merge(
+    {
     ENVIRONMENT                 = local.environment
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
@@ -235,7 +238,9 @@ module "lambda" {
     API_BASE_URL                = "https://${local.api_subdomain}"
     COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
     COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
-  }
+    },
+    var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : {}
+  )
 
   secrets_arns = concat(
     ["${module.rds.secret_arn}"],

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
@@ -46,6 +46,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
   /** Phone + password sign-in (backend: username = dialable phone). */
   const [loginPhoneDigits, setLoginPhoneDigits] = useState('');
   const [loginCountryCode, setLoginCountryCode] = useState('+91');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -981,15 +982,26 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
 
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  className="mt-1"
-                />
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    autoComplete="current-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <Button

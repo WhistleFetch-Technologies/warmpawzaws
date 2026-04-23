@@ -10,6 +10,7 @@ import { hashCustomerPasswordBcrypt } from '../../lib/services/auth/customer-pas
 import { updateVendorPasswordHashWithAuthVersionBump } from '../../lib/services/auth/vendor-auth-version-support';
 import {
   findVendorForPasswordLogin,
+  findVendorIdViaVendorIdentityByPhone,
   mergeVendorIdentityOnboarding,
 } from '../../lib/services/auth/vendor-username-lookup';
 import { dialablePhoneForCustomerAuth } from '../../lib/services/auth/customer-username-lookup';
@@ -17,6 +18,18 @@ import { hasMeaningfulStoredPassword } from '../customer/customerEndpoint/custom
 import { VendorSetPasswordRequestSchema } from '@warmpawz/api-contracts/auth';
 
 const PROFILE_INCOMPLETE_STATUSES = new Set(['INIT', 'ROLE_PENDING', 'FORM_PENDING']);
+
+/** `temp_vendor_${phone}_${Date.now()}` — recover phone when JWT claims omit it. */
+function phoneFromTempVendorSub(sub: string): string | null {
+  const prefix = 'temp_vendor_';
+  if (!sub.startsWith(prefix)) return null;
+  const rest = sub.slice(prefix.length);
+  const u = rest.lastIndexOf('_');
+  if (u <= 0) return null;
+  const maybeTs = rest.slice(u + 1);
+  if (!/^\d{10,}$/.test(maybeTs)) return null;
+  return rest.slice(0, u) || null;
+}
 
 function pickStr(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -90,15 +103,23 @@ export async function resolveVendorsTableIdFromAuthHeaders(
   if (auth) normalized.authorization = auth;
 
   const res = await extractAndVerifyAuthToken(normalized);
-  if (!res.valid || !res.payload) return null;
+  if (!res.valid || !res.payload) {
+    console.warn(`[vendor-password] JWT/auth failed before vendor lookup: ${res.error || 'unknown'}`);
+    return null;
+  }
   const groups = (res.payload['cognito:groups'] as string[]) || [];
   const ut = res.payload['custom:user_type'];
-  if (!groups.includes('vendor') && ut !== 'vendor') return null;
+  if (!groups.includes('vendor') && ut !== 'vendor') {
+    console.warn(`[vendor-password] Token verified but role is not vendor (custom:user_type=${String(ut)})`);
+    return null;
+  }
 
   const sub = String(res.payload.sub || '').trim();
   const phoneClaim = dialablePhoneForCustomerAuth(
     String(res.payload.phone_number || res.payload['cognito:username'] || '')
   );
+  const phoneForLookup =
+    phoneClaim || (sub.startsWith('temp_vendor_') ? dialablePhoneForCustomerAuth(phoneFromTempVendorSub(sub) || '') : '');
 
   if (sub && /^[0-9a-fA-F-]{36}$/.test(sub)) {
     const vRow = await query(`SELECT id FROM vendors WHERE id = $1::uuid LIMIT 1`, [sub]);
@@ -112,16 +133,18 @@ export async function resolveVendorsTableIdFromAuthHeaders(
     if (vid) return String(vid);
   }
 
-  if (sub && sub.startsWith('temp_vendor_') && phoneClaim) {
-    const v = await findVendorForPasswordLogin(phoneClaim);
+  if (phoneForLookup) {
+    const v = await findVendorForPasswordLogin(phoneForLookup);
     if (v?.id) return String(v.id);
+    const viaIdentity = await findVendorIdViaVendorIdentityByPhone(phoneForLookup);
+    if (viaIdentity) return viaIdentity;
   }
 
-  if (phoneClaim) {
-    const v = await findVendorForPasswordLogin(phoneClaim);
-    if (v?.id) return String(v.id);
-  }
-
+  const subKind =
+    !sub ? 'empty' : sub.startsWith('temp_vendor_') ? 'temp_vendor' : /^[0-9a-fA-F-]{36}$/.test(sub) ? 'uuid' : 'other';
+  console.warn(
+    `[vendor-password] JWT verified for vendor role but no vendors row matched (sub_kind=${subKind}, has_phone_claim=${Boolean(phoneClaim)})`
+  );
   return null;
 }
 
