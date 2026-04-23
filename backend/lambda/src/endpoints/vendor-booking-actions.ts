@@ -20,6 +20,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
+import { ensureDedicatedEndSessionOtp } from '../lib/booking-dedicated-end-otp';
 
 /**
  * Get commission rate for a vendor from their tier configuration
@@ -89,8 +90,17 @@ async function getExpectedOTPForBooking(
     const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
     const roleName = rows[0]?.role_name?.toLowerCase() || '';
     
-    // Check if role is walker (pet_walker, walker, dog_walker)
-    const walkerRoles = ['pet_walker', 'walker', 'dog_walker'];
+    // Walker + sitter home visits: separate end-session OTP in otp_tokens (see ensureDedicatedEndSessionOtp)
+    const walkerRoles = [
+      'pet_walker',
+      'walker',
+      'dog_walker',
+      'pet_sitter',
+      'sitter',
+      'sitter_solo',
+      'pet_sitter_solo',
+      'pet_sitter_saas',
+    ];
     isWalkerService = walkerRoles.includes(roleName);
     
     if (isWalkerService) {
@@ -1184,6 +1194,19 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       );
 
       console.log(`✅ [START-SESSION] Session started successfully`);
+
+      // Walker / sitter at-home: issue end OTP (parity with gpsTracking start-session)
+      try {
+        const { isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, 'complete');
+        if (
+          isWalkerService &&
+          (booking.service_style === 'at_home' || booking.service_type === 'at_home')
+        ) {
+          await ensureDedicatedEndSessionOtp(bookingId);
+        }
+      } catch (otpErr: any) {
+        console.warn('[START-SESSION] End OTP issuance non-fatal:', otpErr?.message);
+      }
 
       // ✅ AUTO-INITIATE GPS TRACKING for at_home services
       if (booking.service_style === 'at_home' || booking.service_type === 'at_home') {

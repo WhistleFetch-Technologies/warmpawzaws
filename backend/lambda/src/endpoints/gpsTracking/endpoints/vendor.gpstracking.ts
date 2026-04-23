@@ -23,6 +23,7 @@ import {
   vendorCancellationReasonLabel,
   applyRefundAfterProviderCancellation,
 } from '../../../lib/services/provider-booking-cancel-refund';
+import { ensureDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
@@ -103,8 +104,16 @@ async function getExpectedOTPForBooking(
     const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
     const roleName = rows[0]?.role_name?.toLowerCase() || '';
 
-    // Check if role is walker (pet_walker, walker, dog_walker)
-    const walkerRoles = ['pet_walker', 'walker', 'dog_walker'];
+    const walkerRoles = [
+      'pet_walker',
+      'walker',
+      'dog_walker',
+      'pet_sitter',
+      'sitter',
+      'sitter_solo',
+      'pet_sitter_solo',
+      'pet_sitter_saas',
+    ];
     isWalkerService = walkerRoles.includes(roleName);
 
     if (isWalkerService) {
@@ -138,34 +147,6 @@ async function getExpectedOTPForBooking(
   }
 
   return { expectedOTP, isWalkerService };
-}
-
-/** After start OTP is verified, create a dedicated end-session OTP for walker vendors (customer + complete flow). */
-async function ensureWalkerEndOtpToken(bookingId: string): Promise<void> {
-  const existing = await query(
-    `SELECT id FROM otp_tokens
-     WHERE metadata->>'bookingId' = $1
-       AND metadata->>'action' = 'end'
-       AND is_used = false
-       AND (expires_at IS NULL OR expires_at > NOW())
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [bookingId]
-  ).catch(() => ({ rows: [] }));
-  if ((existing as any).rows?.length) return;
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  await insert('otp_tokens', {
-    phone: null,
-    otp_code: otp,
-    otp_type: 'booking_end',
-    expires_in_minutes: 1440,
-    max_attempts: 5,
-    metadata: { bookingId, action: 'end' },
-  });
-  await query(`UPDATE bookings SET completion_otp = $1, updated_at = NOW() WHERE id = $2`, [otp, bookingId]).catch((e: any) =>
-    console.warn('[START-SESSION] completion_otp update skipped:', e?.message)
-  );
 }
 
 async function bookingAllowsInServiceWalkTracking(booking: any): Promise<boolean> {
@@ -1491,7 +1472,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           isWalkerService &&
           (booking.service_style === ServiceStyle.AT_HOME || booking.service_type === ServiceStyle.AT_HOME)
         ) {
-          await ensureWalkerEndOtpToken(bookingId);
+          await ensureDedicatedEndSessionOtp(bookingId);
         }
       } catch (otpErr: any) {
         console.warn('[START-SESSION] End OTP issuance non-fatal:', otpErr?.message);

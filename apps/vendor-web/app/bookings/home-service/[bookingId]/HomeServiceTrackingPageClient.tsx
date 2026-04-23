@@ -121,8 +121,18 @@ export default function HomeServiceTrackingPageClient() {
           serviceName: booking.serviceName || booking.service_name || 'Home Service',
           serviceType: booking.serviceType || booking.service_type,
           address: booking.address || booking.location || '',
-          latitude: booking.latitude,
-          longitude: booking.longitude,
+          latitude:
+            booking.latitude != null && String(booking.latitude).trim() !== ''
+              ? Number(booking.latitude)
+              : booking.delivery_latitude != null && String(booking.delivery_latitude).trim() !== ''
+                ? Number(booking.delivery_latitude)
+                : undefined,
+          longitude:
+            booking.longitude != null && String(booking.longitude).trim() !== ''
+              ? Number(booking.longitude)
+              : booking.delivery_longitude != null && String(booking.delivery_longitude).trim() !== ''
+                ? Number(booking.delivery_longitude)
+                : undefined,
           scheduledTime: booking.scheduledTime || booking.booking_time || '',
           isWalkerSession,
           isSitterSession,
