@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-utils';
@@ -59,6 +60,8 @@ export function BoardingVendorExpandableCard({
   onBookPlan,
   onOpenCenterDetails,
 }: BoardingVendorExpandableCardProps) {
+  const centerProfileVendorId =
+    pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
   const minP = minPProp ?? minPriceForVendor(v);
   /** When only "View Services" expands, header can still collapse an open card (parity with tapping header again in default mode). */
   const headerActsAsCollapse = !headerTapExpandsServices && expanded;
@@ -118,7 +121,7 @@ export function BoardingVendorExpandableCard({
                   className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onOpenCenterDetails(e, v.id);
+                    onOpenCenterDetails(e, centerProfileVendorId);
                   }}
                 >
                   <ChevronRight
@@ -190,7 +193,7 @@ export function BoardingVendorExpandableCard({
             </h4>
             <button
               type="button"
-              onClick={(e) => onOpenCenterDetails(e, v.id)}
+              onClick={(e) => onOpenCenterDetails(e, centerProfileVendorId)}
               className="text-xs font-medium text-[#FF8C42] hover:underline"
             >
               Center details
@@ -299,7 +302,13 @@ export function BoardingVendorExpandableCard({
             >
               View Services
             </Button>
-            <Button type="button" size="sm" variant="ghost" className="text-gray-600" onClick={(e) => onDetails(e, v.id)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-gray-600"
+              onClick={(e) => onDetails(e, centerProfileVendorId)}
+            >
               Details
             </Button>
           </div>

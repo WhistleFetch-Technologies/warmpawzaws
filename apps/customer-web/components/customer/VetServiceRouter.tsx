@@ -17,7 +17,12 @@ import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandabl
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import {
+  type BoardingListVendor,
+  type BoardingPlanRow,
+  findBoardingListVendorByProfileKey,
+} from '@/lib/boarding-vendor-discovery-map';
+import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 
 interface VetServiceRouterProps {
@@ -284,25 +289,32 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
    * Chevron + "Details" should open the real provider profile: doctor screen for staff/individual,
    * clinic/center screen for facility vendors. Uses `raw.vendorId` when the card key is not the clinic id.
    */
-  const openVetProviderProfile = (e: MouseEvent, cardId: string) => {
+  const openVetProviderProfile = (e: MouseEvent, profileKey: string) => {
     e.stopPropagation();
-    const v = vendors.find((x) => x.id === cardId);
-    const raw = (v?.raw || {}) as Record<string, unknown>;
+    const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+    if (!v) {
+      toast.error('Could not open this profile. Try View Services or refresh.');
+      return;
+    }
+    const raw = (v.raw || {}) as Record<string, unknown>;
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
     const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
     const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
 
     if (providerType === 'staff' || providerType === 'individual') {
+      const doctorId =
+        pickVetPractitionerProfileEntityId(raw) || rawProviderId || v.id;
       handleNavigate('vet-doctor-details', {
-        doctorId: rawProviderId || cardId,
+        doctorId,
         doctorProfileBackScreen: 'vet',
       });
       return;
     }
 
-    const clinicEntityId = rawVendorId || cardId;
+    const clinicVendorId =
+      pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
     handleNavigate('vet-services-by-style', {
-      vendorId: clinicEntityId,
+      vendorId: clinicVendorId,
       serviceStyle: 'at_center',
       serviceTypeName: 'Vet Clinic',
       category: 'vet',

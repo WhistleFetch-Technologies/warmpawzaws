@@ -1,45 +1,40 @@
 /**
- * HomeServiceProviderProfile - Full Provider Profile View
- * 
- * Features:
- * - Overview with photo, rating, reviews
- * - Photo gallery
- * - Location with map
- * - Contact information
- * - Services offered with pricing
- * - Amenities
- * - Reviews section
- * - Book Now CTA
+ * HomeServiceProviderProfile — home-service vendor profile (walker, sitter, grooming, etc.)
+ *
+ * Vet-style layout: ServiceDashboardHeader, hero carousel, overlapping identity card,
+ * phased footer (“Select Services to Book” → Services emphasis → “Continue to book” → onSelectService).
  */
 
 "use client";
 
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { 
-  ArrowLeft, 
-  Star, 
-  MapPin, 
-  Phone, 
-  Clock, 
-  ChevronRight,
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import {
+  Star,
+  MapPin,
+  Phone,
   Heart,
   Share2,
-  BadgeCheck,
-  Calendar,
   MessageCircle,
   Navigation,
   Image as ImageIcon,
   X,
-  ExternalLink,
   Award,
   Users,
-  Briefcase
+  Footprints,
+  Scissors,
+  GraduationCap,
+  Stethoscope,
+  Brain,
+  Home,
+  FlaskConical,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import {
   getVendorHeroPhotoUrls,
@@ -49,6 +44,38 @@ import {
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
+
+/** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
+const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
+  walker: 'At your home',
+  grooming: 'At your home',
+  training: 'At your home',
+  veterinary: 'Home visit',
+  behaviourist: 'At your home',
+  sitter: 'In your home',
+  diagnostics: 'At-home collection',
+};
+
+function profileHeroPlaceholderIcon(serviceType: HomeServiceType): LucideIcon {
+  switch (serviceType) {
+    case 'walker':
+      return Footprints;
+    case 'grooming':
+      return Scissors;
+    case 'training':
+      return GraduationCap;
+    case 'veterinary':
+      return Stethoscope;
+    case 'behaviourist':
+      return Brain;
+    case 'sitter':
+      return Home;
+    case 'diagnostics':
+      return FlaskConical;
+    default:
+      return Home;
+  }
+}
 
 interface ServiceConfig {
   roleId: string;
@@ -141,18 +168,22 @@ export function HomeServiceProviderProfile({
   const [isFavorite, setIsFavorite] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [avatarImageFailed, setAvatarImageFailed] = useState(false);
-  const [coverImageFailed, setCoverImageFailed] = useState(false);
+  const tabsSectionRef = useRef<HTMLDivElement>(null);
+  const [profileBookingPhase, setProfileBookingPhase] = useState<'intro' | 'picking'>('intro');
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProviderDetails();
   }, [vendorId]);
 
+  useEffect(() => {
+    setProfileBookingPhase('intro');
+    setSelectedServiceId(null);
+  }, [vendorId]);
+
   const loadProviderDetails = async () => {
     try {
       setLoading(true);
-      setAvatarImageFailed(false);
-      setCoverImageFailed(false);
       console.log(`📍 [HOME-SERVICE-PROFILE] Loading vendor details for: ${vendorId}`);
 
       let facilityRoot: Record<string, unknown> | null = null;
@@ -318,9 +349,20 @@ export function HomeServiceProviderProfile({
   };
 
   const handleDirections = () => {
-    if (provider?.coordinates) {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${provider.coordinates.lat},${provider.coordinates.lng}`;
-      window.open(url, '_blank');
+    if (!provider) return;
+    const { lat, lng } = provider.coordinates;
+    if (lat && lng && lat !== 0 && lng !== 0) {
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+        '_blank'
+      );
+      return;
+    }
+    if (provider.address?.trim()) {
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(provider.address)}`,
+        '_blank'
+      );
     }
   };
 
@@ -339,6 +381,51 @@ export function HomeServiceProviderProfile({
     // TODO: Save to favorites API
   };
 
+  const revealServicesAndScroll = useCallback(() => {
+    if (!provider) return;
+    setProfileBookingPhase('picking');
+    setActiveTab('services');
+    const svc = provider.services;
+    if (svc.length === 1) {
+      setSelectedServiceId(svc[0]!.id);
+    } else {
+      setSelectedServiceId(null);
+    }
+    requestAnimationFrame(() => {
+      tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [provider]);
+
+  const continueBookingDisabled = useMemo(() => {
+    if (!provider || profileBookingPhase !== 'picking') return false;
+    const n = provider.services.length;
+    if (n <= 1) return false;
+    return !selectedServiceId;
+  }, [provider, profileBookingPhase, selectedServiceId]);
+
+  const heroPhotos = useMemo(
+    () => (provider?.gallery ?? []).filter((u) => typeof u === 'string' && u.trim().length > 0),
+    [provider?.gallery]
+  );
+  const hasPhotos = heroPhotos.length > 0;
+  const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
+  const dashboardStats = useMemo(() => {
+    if (!provider) return [];
+    return [
+      { value: provider.rating.toFixed(1), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+      { value: String(provider.reviewCount), label: 'Reviews' },
+      {
+        value:
+          provider.serviceCount > 0
+            ? `${provider.serviceCount}+`
+            : String(Math.max(provider.services.length, 0)),
+        label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
+        icon: <Users className="w-4 h-4" />,
+      },
+    ];
+  }, [provider]);
+  const headerSubtitle = `${config.displayName} · ${config.priceUnit}`;
+
   const tabs: { id: TabType; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'services', label: 'Services' },
@@ -348,7 +435,7 @@ export function HomeServiceProviderProfile({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center">
           <div 
             className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
@@ -362,7 +449,7 @@ export function HomeServiceProviderProfile({
 
   if (!provider) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center p-6">
           <p className="text-gray-600 mb-4">Provider not found</p>
           <button
@@ -382,169 +469,162 @@ export function HomeServiceProviderProfile({
   const accentFg: CSSProperties = { color: config.primaryColor };
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
-      {/* Cover Image & Header */}
-      <div className="relative">
-        <div className="h-48 bg-gray-200 overflow-hidden">
-          {provider.coverImage && !coverImageFailed ? (
-            <img
-              src={provider.coverImage}
-              alt={provider.businessName}
-              className="w-full h-full object-cover"
-              onError={() => setCoverImageFailed(true)}
-            />
-          ) : (
-            <div className={`w-full h-full bg-gradient-to-br ${config.bgGradient}`} />
-          )}
-        </div>
+    <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+      <ServiceDashboardHeader
+        className="!z-0 isolation-auto"
+        serviceName={provider.businessName}
+        serviceSubtitle={headerSubtitle}
+        serviceIcon={<span className="text-2xl leading-none">{config.icon}</span>}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton
+        headerColor="bg-[#FF8C42]"
+        bottomEdge="flat"
+      />
 
-        {/* Toolbar: safe-area so back/actions clear status bar (iOS / WebView) — matches UniversalProviderProfile */}
-        <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
-          <button
-            type="button"
-            onClick={onBack}
-            className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-5 w-5 text-gray-700" />
-          </button>
-          <div className="flex shrink-0 gap-2 pointer-events-auto">
-            <button
-              type="button"
-              onClick={toggleFavorite}
-              className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-md"
-              aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <Heart
-                className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`}
+      <div className="relative z-0 w-full flex-1">
+        {hasPhotos ? (
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
+              <VendorHeroPhotoCarousel
+                photos={heroPhotos}
+                name={provider.businessName}
+                frameClassName="relative aspect-[5/4] w-full max-h-[420px] overflow-hidden sm:aspect-auto sm:h-[280px] sm:max-h-none"
               />
-            </button>
-            <button
-              type="button"
-              onClick={handleShare}
-              className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-md"
-              aria-label="Share"
-            >
-              <Share2 className="h-5 w-5 text-gray-700" />
-            </button>
+            </div>
           </div>
-        </div>
-
-        {/* Profile Photo */}
-        <div className="absolute -bottom-12 left-[max(1rem,env(safe-area-inset-left,0px))]">
-          <div className="w-24 h-24 rounded-2xl border-4 border-white bg-white shadow-lg overflow-hidden">
-            {provider.photo && !avatarImageFailed ? (
-              <img
-                src={provider.photo}
-                alt={provider.businessName}
-                className="w-full h-full object-cover"
-                onError={() => setAvatarImageFailed(true)}
-              />
-            ) : (
+        ) : (
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] sm:rounded-t-[28px]">
               <div
-                className={`w-full h-full bg-gradient-to-br ${config.bgGradient} flex items-center justify-center text-white text-3xl`}
+                className={`relative flex aspect-[5/4] w-full max-h-[420px] items-center justify-center bg-gradient-to-br ${config.bgGradient} sm:aspect-auto sm:h-[280px] sm:max-h-none`}
               >
-                {config.icon}
+                <div className="text-center text-white">
+                  <PlaceholderIcon className="mx-auto mb-3 h-20 w-20 opacity-50" aria-hidden />
+                  <p className="text-sm opacity-80">No photos yet</p>
+                </div>
               </div>
-            )}
-          </div>
-          {provider.isVerified && (
-            <div className="absolute -top-1 -right-1 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white">
-              <BadgeCheck className="w-4 h-4 text-white" />
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Provider Info */}
-      <div className="pt-16 px-4">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">{provider.businessName}</h1>
-            {provider.fullName && provider.fullName !== provider.businessName && (
-              <p className="text-sm text-gray-500">{provider.fullName}</p>
-            )}
           </div>
-        </div>
+        )}
 
-        {/* Rating & Stats */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-1 rounded-full px-2.5 py-1" style={accentSoft}>
-            <Star className="w-4 h-4 fill-current" style={accentFg} />
-            <span className="text-sm font-semibold" style={accentFg}>{provider.rating.toFixed(1)}</span>
-            <span className="text-xs opacity-90" style={accentFg}>({provider.reviewCount})</span>
-          </div>
-          {provider.experience > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Briefcase className="w-4 h-4" />
-              <span>{provider.experience} yrs</span>
+        <div className="px-4 pb-36 sm:px-5">
+          <div className="relative z-10 -mt-6 mb-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-2xl font-bold text-gray-900">{provider.businessName}</h1>
+                {provider.fullName && provider.fullName !== provider.businessName ? (
+                  <p className="mt-0.5 text-sm text-gray-500">{provider.fullName}</p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  aria-label="Share"
+                >
+                  <Share2 className="h-5 w-5" />
+                </button>
+              </div>
             </div>
-          )}
-          {provider.serviceCount > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Users className="w-4 h-4" />
-              <span>{provider.serviceCount}+ served</span>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-lg bg-orange-50 px-3 py-1.5">
+                <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
+                <span className="text-lg font-bold text-gray-900">{provider.rating.toFixed(1)}</span>
+                <span className="text-sm text-gray-600">({provider.reviewCount} reviews)</span>
+              </div>
+              {provider.isVerified ? (
+                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  <Shield className="h-3.5 w-3.5" aria-hidden />
+                  Verified
+                </span>
+              ) : null}
             </div>
-          )}
-        </div>
 
-        {/* Quick Actions */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={handleCall}
-            type="button"
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium"
-            style={{ ...accentSoft, ...accentFg }}
-          >
-            <Phone className="w-4 h-4" />
-            Call
-          </button>
-          <button
-            onClick={handleDirections}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-50 text-blue-600 font-medium"
-          >
-            <Navigation className="w-4 h-4" />
-            Directions
-          </button>
-          <button
-            onClick={() => onNavigate?.('chat', { vendorId: provider.id })}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-50 text-purple-600 font-medium"
-          >
-            <MessageCircle className="w-4 h-4" />
-            Chat
-          </button>
-        </div>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+                <span className="text-lg leading-none" aria-hidden>
+                  {config.icon}
+                </span>
+                <span className="text-sm font-medium text-gray-700">{config.displayName}</span>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-1.5">
+                <MapPin className="h-4 w-4 shrink-0 text-[#FF8C42]" aria-hidden />
+                <span className="text-sm font-medium text-gray-700">{HOME_SERVICE_CONTEXT_LABEL[serviceType]}</span>
+              </div>
+            </div>
 
-        {/* Location */}
-        <div className="flex items-start gap-2 mb-4 p-3 bg-gray-50 rounded-xl">
-          <MapPin className="w-5 h-5 text-gray-500 mt-0.5" />
-          <div>
-            <p className="text-sm text-gray-700">{provider.address}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="sticky top-0 z-10 bg-white border-b">
-        <div className="flex">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-orange-500 text-orange-600'
-                  : 'border-transparent text-gray-500'
-              }`}
+            <div
+              className={`mb-4 grid gap-2 border-t border-gray-100 pt-4 ${provider.address?.trim() ? 'grid-cols-3' : 'grid-cols-2'}`}
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={handleCall}
+                disabled={!provider.phone}
+                className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Phone className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                <span className="text-xs font-medium text-gray-700">Call</span>
+              </button>
+              {provider.address?.trim() ? (
+                <button
+                  type="button"
+                  onClick={handleDirections}
+                  className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                >
+                  <Navigation className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                  <span className="text-xs font-medium text-gray-700">Directions</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onNavigate?.('chat', { vendorId: provider.id })}
+                className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+              >
+                <MessageCircle className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                <span className="text-xs font-medium text-gray-700">Chat</span>
+              </button>
+            </div>
 
-      {/* Tab Content */}
-      <div className="p-4">
+            {provider.address?.trim() ? (
+              <div className="flex items-start gap-3 border-t border-gray-100 pt-4 text-sm">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <span className="leading-relaxed text-gray-700">{provider.address}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div ref={tabsSectionRef} className="sticky top-0 z-10 scroll-mt-28 border-b border-gray-200 bg-white">
+            <div className="flex">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 border-b-2 py-3 text-sm font-medium transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-[#FF8C42] text-[#FF8C42]'
+                      : 'border-transparent text-gray-500'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="py-4">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -628,6 +708,12 @@ export function HomeServiceProviderProfile({
         {/* Services Tab */}
         {activeTab === 'services' && (
           <div className="space-y-3">
+            {profileBookingPhase === 'picking' && provider.services.length > 1 ? (
+              <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
+                Tap a service to select it, then use{' '}
+                <span className="font-medium text-gray-900">Continue to book</span> below.
+              </p>
+            ) : null}
             {provider.services.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500">No services listed</p>
@@ -636,7 +722,25 @@ export function HomeServiceProviderProfile({
               provider.services.map((service) => (
                 <div
                   key={service.id}
-                  className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm"
+                  role={profileBookingPhase === 'picking' ? 'button' : undefined}
+                  tabIndex={profileBookingPhase === 'picking' ? 0 : undefined}
+                  onClick={() => {
+                    if (profileBookingPhase === 'picking') setSelectedServiceId(service.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (profileBookingPhase !== 'picking') return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedServiceId(service.id);
+                    }
+                  }}
+                  className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${
+                    profileBookingPhase === 'picking' ? 'cursor-pointer hover:border-orange-300' : ''
+                  } ${
+                    profileBookingPhase === 'picking' && selectedServiceId === service.id
+                      ? 'border-2 border-orange-600 ring-2 ring-orange-100'
+                      : 'border border-gray-100'
+                  }`}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
@@ -775,16 +879,31 @@ export function HomeServiceProviderProfile({
             )}
           </div>
         )}
+          </div>
+        </div>
       </div>
 
-      {/* Fixed Book Now Button – standard orange to match vet dashboard (forensic theme compliance) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] max-w-md mx-auto">
-        <button
-          onClick={onSelectService}
-          className="w-full py-4 rounded-xl text-white font-semibold text-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] shadow-lg"
-        >
-          Book {config.displayName}
-        </button>
+      <div className="cw-fixed-above-customer-tabbar fixed bottom-0 left-0 right-0 z-40 border-t bg-white px-5 py-3 sm:px-6">
+        <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+          {profileBookingPhase === 'intro' ? (
+            <Button
+              type="button"
+              onClick={revealServicesAndScroll}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-md hover:bg-orange-600"
+            >
+              Select Services to Book
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => onSelectService()}
+              disabled={continueBookingDisabled}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-md hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {continueBookingDisabled ? 'Choose a service above' : 'Continue to book'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Gallery Lightbox */}

@@ -18,6 +18,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 interface ServiceDiscoveryScreenProps {
   phone: string;
@@ -142,7 +143,12 @@ export function ServiceDiscoveryScreen({
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.vendorCard}
-              onPress={() => onSelectVendor(item.id || item.vendorId)}
+              onPress={() =>
+                onSelectVendor(
+                  pickCustomerVendorAccountId(item as Record<string, unknown>) ||
+                    String(item.vendorId || item.id || '')
+                )
+              }
             >
               <View style={styles.vendorHeader}>
                 <View style={styles.vendorInfo}>

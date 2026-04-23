@@ -7,6 +7,7 @@ import {
   type BoardingServiceSlug,
   vendorOffersBoardingSlug,
 } from '@/lib/boarding-service-types';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 export interface BoardingPlanRow {
   rowId: string;
@@ -38,6 +39,23 @@ export interface BoardingListVendor extends BoardingVendorCard {
   planRows: BoardingPlanRow[];
   needsServiceFetch: boolean;
   isVerified?: boolean;
+}
+
+/**
+ * Resolve a hub/list row when the UI passes {@link pickCustomerVendorAccountId} (chevron)
+ * or legacy list key `v.id` — avoids silent misses from `vendors.find((x) => x.id === id)` only.
+ */
+export function findBoardingListVendorByProfileKey(
+  list: BoardingListVendor[],
+  key: string
+): BoardingListVendor | undefined {
+  const k = String(key ?? '').trim();
+  if (!k) return undefined;
+  return list.find((x) => {
+    const raw = (x.raw ?? {}) as Record<string, unknown>;
+    const canonical = pickCustomerVendorAccountId(raw) || x.id;
+    return canonical === k || x.id === k;
+  });
 }
 
 export function collectPublishedPlanLabels(row: any): string[] {

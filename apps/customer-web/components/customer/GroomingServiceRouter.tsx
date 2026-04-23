@@ -15,9 +15,14 @@ import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandabl
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import {
+  type BoardingListVendor,
+  type BoardingPlanRow,
+  findBoardingListVendorByProfileKey,
+} from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
   if (!iconName || !(LucideIcons as any)[iconName]) {
@@ -95,8 +100,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const handleBookPlan = useCallback(
     (v: BoardingListVendor, plan: BoardingPlanRow) => {
+      const vid =
+        pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
       onNavigate?.('create-booking', {
-        vendorId: v.id,
+        vendorId: vid,
         serviceType: 'grooming',
         serviceId: plan.rowId,
         serviceName: plan.name,
@@ -109,16 +116,28 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const openVendorDetails = useCallback(
-    (e: MouseEvent, vendorId: string) => {
+    (e: MouseEvent, profileKey: string) => {
       e.stopPropagation();
-      const v = vendors.find((x) => x.id === vendorId);
+      const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+      if (!v) {
+        toast.error('Could not open this profile. Try View Services or refresh.');
+        return;
+      }
+      const rawObj = v.raw && typeof v.raw === 'object' ? (v.raw as Record<string, unknown>) : {};
+      const row: Record<string, unknown> = {
+        ...rawObj,
+        id: profileKey,
+        vendorId: (rawObj as { vendorId?: string }).vendorId,
+        type: 'vendor',
+      };
+      const accountId = pickCustomerVendorAccountId(row) || v.id;
       onNavigate?.('grooming-vendor-profile', {
-        vendorId,
+        vendorId: accountId,
         vendorType: 'vendor' as const,
         serviceStyle: 'at_center',
         category: 'grooming',
-        vendorName: v?.name,
-        vendorData: v?.raw,
+        vendorName: v.name,
+        vendorData: v.raw,
       });
     },
     [onNavigate, vendors]

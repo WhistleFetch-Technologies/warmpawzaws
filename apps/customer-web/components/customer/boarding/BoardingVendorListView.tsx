@@ -207,7 +207,7 @@ export function BoardingVendorListView({
       </div>
 
       <StandardizedFooter
-        currentTab="bookings"
+        currentTab="home"
         onTabChange={(tab) => {
           if (tab === 'home') router.push('/');
           else if (tab === 'bookings') router.push('/bookings');

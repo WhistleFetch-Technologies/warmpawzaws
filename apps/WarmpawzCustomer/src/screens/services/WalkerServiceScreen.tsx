@@ -9,6 +9,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
@@ -18,6 +19,8 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { pickWalkerVendorId } from '@warmpawz/shared-types';
+import { openVendorProfile } from '../../navigation/openVendorProfile';
 
 type StepType = 'select' | 'walkers' | 'confirm';
 
@@ -151,10 +154,15 @@ export function WalkerServiceScreen({
   };
 
   const handleWalkerSelect = (walker: any) => {
+    const vid = pickWalkerVendorId(walker as Record<string, unknown>);
+    if (!vid) {
+      Alert.alert('Error', 'Unable to book with this walker — missing vendor id.');
+      return;
+    }
     setSelectedWalker(walker);
     setBookingDetails(prev => ({
       ...prev,
-      walkerId: walker.id,
+      walkerId: vid,
       walkerName: walker.name,
     }));
     setStep('confirm');
@@ -386,34 +394,55 @@ export function WalkerServiceScreen({
         <ScrollView style={styles.walkerList}>
           {walkers.map((walker, index) => {
             const photoUri = walkerProfilePhotoUrl(walker as Record<string, unknown>);
-            const rowKey = String(walker.id ?? walker.vendorId ?? '');
+            const rowKey = String(
+              pickWalkerVendorId(walker as Record<string, unknown>) || walker.id || walker.vendorId || ''
+            );
+            const profileVid = pickWalkerVendorId(walker as Record<string, unknown>);
             return (
-            <TouchableOpacity
+            <View
               key={rowKey ? rowKey : `walker-row-${index}`}
               style={styles.walkerCard}
-              onPress={() => handleWalkerSelect(walker)}
             >
-              <WalkerListThumb uri={photoUri} />
-              <View style={styles.walkerInfo}>
-                <Text style={styles.walkerName}>{walker.name}</Text>
-                {walker.rating && (
-                  <Text style={styles.walkerRating}>
-                    ⭐ {walker.rating.toFixed(1)}
-                  </Text>
-                )}
-                {walker.experience && (
-                  <Text style={styles.walkerExperience}>
-                    {walker.experience} years experience
-                  </Text>
-                )}
-                {walker.distance && (
-                  <Text style={styles.walkerDistance}>
-                    📍 {walker.distance} km away
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </TouchableOpacity>
+              <Pressable
+                style={styles.walkerCardMain}
+                onPress={() => handleWalkerSelect(walker)}
+                accessibilityRole="button"
+                accessibilityLabel={`Select ${walker.name || 'walker'} for booking`}
+              >
+                <WalkerListThumb uri={photoUri} />
+                <View style={styles.walkerInfo}>
+                  <Text style={styles.walkerName}>{walker.name}</Text>
+                  {walker.rating && (
+                    <Text style={styles.walkerRating}>
+                      ⭐ {walker.rating.toFixed(1)}
+                    </Text>
+                  )}
+                  {walker.experience && (
+                    <Text style={styles.walkerExperience}>
+                      {walker.experience} years experience
+                    </Text>
+                  )}
+                  {walker.distance && (
+                    <Text style={styles.walkerDistance}>
+                      📍 {walker.distance} km away
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`View ${walker.name || 'walker'} profile`}
+                hitSlop={10}
+                onPress={() => {
+                  if (!openVendorProfile(onNavigate, walker as Record<string, unknown>)) {
+                    Alert.alert('Profile unavailable', 'We could not resolve a vendor id for this walker.');
+                  }
+                }}
+                style={styles.walkerChevronHit}
+              >
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            </View>
             );
           })}
         </ScrollView>
@@ -653,7 +682,6 @@ const styles = StyleSheet.create({
   walkerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     padding: spacing.md,
@@ -661,6 +689,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.gray['200'],
     gap: spacing.sm,
+  },
+  walkerCardMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  walkerChevronHit: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    justifyContent: 'center',
   },
   walkerThumb: {
     width: 56,

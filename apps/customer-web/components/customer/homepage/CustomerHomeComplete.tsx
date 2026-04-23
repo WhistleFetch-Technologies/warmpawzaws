@@ -395,11 +395,11 @@ export function CustomerHomeComplete({
   const navigateFromFeaturedVendorMeta = useCallback(
     (v: Record<string, unknown>, extraNavigateData?: Record<string, unknown>) => {
       const dest = resolveFeaturedVendorDestination(v);
-      const rawId = v.vendorId ?? v.vendor_id;
+      const rawId = v.vendorId ?? v.vendor_id ?? v.id;
       const base =
         rawId != null && String(rawId).trim() !== ''
-          ? { vendorId: String(rawId) }
-          : undefined;
+          ? { ...v, vendorId: String(rawId) }
+          : { ...v };
       const data =
         extraNavigateData != null && Object.keys(extraNavigateData).length > 0
           ? { ...base, ...extraNavigateData }

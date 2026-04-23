@@ -5,3 +5,4 @@
  */
 
 export * from './entities';
+export * from './customer-vendor-profile';
