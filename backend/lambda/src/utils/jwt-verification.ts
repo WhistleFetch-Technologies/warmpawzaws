@@ -255,7 +255,7 @@ export async function extractAndVerifyAuthToken(
     return { valid: false, error: 'Invalid token signature' };
   }
 
-  const av = await enforceCustomerAuthVersionOnWarmpawzJwt(payload);
+  const av = await enforceWarmpawzJwtAuthVersionOnPayload(payload);
   if (!av.ok) {
     return { valid: false, error: av.error || 'Session invalidated' };
   }
@@ -264,10 +264,10 @@ export async function extractAndVerifyAuthToken(
 }
 
 /**
- * Invalidate fallback customer JWTs after password change when `customers.auth_version` bumps.
+ * Invalidate fallback customer/vendor JWTs after password change when `auth_version` bumps.
  * Cognito-issued tokens are not checked here (pool issuer); use AdminUserGlobalSignOut on password change.
  */
-async function enforceCustomerAuthVersionOnWarmpawzJwt(
+async function enforceWarmpawzJwtAuthVersionOnPayload(
   payload: CognitoTokenPayload
 ): Promise<{ ok: boolean; error?: string }> {
   const iss = String((payload as any).iss || '');
@@ -277,7 +277,8 @@ async function enforceCustomerAuthVersionOnWarmpawzJwt(
   const ut = payload['custom:user_type'];
   const groups = (payload['cognito:groups'] as string[]) || [];
   const isCustomer = ut === 'customer' || groups.includes('customer');
-  if (!isCustomer) return { ok: true };
+  const isVendor = ut === 'vendor' || groups.includes('vendor');
+  if (!isCustomer && !isVendor) return { ok: true };
 
   const sub = String(payload.sub || '');
   if (!sub || !/^[0-9a-fA-F-]{36}$/.test(sub)) {
@@ -286,8 +287,10 @@ async function enforceCustomerAuthVersionOnWarmpawzJwt(
 
   try {
     const { query } = await import('../database/rds-connection');
+    const sqlTable = isCustomer ? 'customers' : isVendor ? 'vendors' : '';
+    if (!sqlTable) return { ok: true };
     const res = await query(
-      `SELECT COALESCE(auth_version, 0)::int AS av FROM customers WHERE id = $1::uuid LIMIT 1`,
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM ${sqlTable} WHERE id = $1::uuid LIMIT 1`,
       [sub]
     );
     const row = (res as any).rows?.[0];

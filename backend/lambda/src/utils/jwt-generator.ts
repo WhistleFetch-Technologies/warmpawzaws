@@ -30,7 +30,7 @@ export async function generateUATJWTToken(params: {
   phone: string;
   role: 'customer' | 'vendor' | 'admin';
   expiresIn?: number; // seconds, default 60 for UAT
-  /** When set for customers, must match `customers.auth_version` or fallback JWTs are rejected. */
+  /** When set for customers/vendors, must match DB `auth_version` or fallback JWTs are rejected. */
   authVersion?: number;
 }): Promise<{ accessToken: string; idToken: string; refreshToken: string; expiresIn: number }> {
   const { userId, phone, role, expiresIn = 60, authVersion } = params;
@@ -49,7 +49,9 @@ export async function generateUATJWTToken(params: {
     'custom:user_type': role,
     'cognito:groups': [role],
     token_use: 'access',
-    ...(role === 'customer' && authVersion !== undefined ? { auth_version: authVersion } : {}),
+    ...((role === 'customer' || role === 'vendor') && authVersion !== undefined
+      ? { auth_version: authVersion }
+      : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
@@ -66,7 +68,9 @@ export async function generateUATJWTToken(params: {
     'custom:user_type': role,
     'cognito:groups': [role],
     token_use: 'id',
-    ...(role === 'customer' && authVersion !== undefined ? { auth_version: authVersion } : {}),
+    ...((role === 'customer' || role === 'vendor') && authVersion !== undefined
+      ? { auth_version: authVersion }
+      : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
@@ -126,7 +130,9 @@ export async function generateProductionJWTToken(params: {
     'custom:user_type': role,
     'cognito:groups': [role],
     token_use: 'access',
-    ...(role === 'customer' && authVersion !== undefined ? { auth_version: authVersion } : {}),
+    ...((role === 'customer' || role === 'vendor') && authVersion !== undefined
+      ? { auth_version: authVersion }
+      : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
@@ -143,7 +149,9 @@ export async function generateProductionJWTToken(params: {
     'custom:user_type': role,
     'cognito:groups': [role],
     token_use: 'id',
-    ...(role === 'customer' && authVersion !== undefined ? { auth_version: authVersion } : {}),
+    ...((role === 'customer' || role === 'vendor') && authVersion !== undefined
+      ? { auth_version: authVersion }
+      : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)

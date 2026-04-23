@@ -134,3 +134,36 @@ export async function findVendorIdViaVendorIdentityByPhone(rawUsername: string):
   }
   return null;
 }
+
+/**
+ * Forgot-password only: resolve vendor by `vendors.email` (case-insensitive, trimmed).
+ * Not used for password login. Skips soft-deleted rows.
+ */
+export async function findVendorByEmailForForgotPassword(rawEmail: string): Promise<any | null> {
+  const em = String(rawEmail || '').trim();
+  if (!em || !em.includes('@')) return null;
+  try {
+    const res = await query(
+      `SELECT * FROM vendors
+       WHERE NULLIF(TRIM(COALESCE(email, '')), '') IS NOT NULL
+         AND LOWER(TRIM(email)) = LOWER(TRIM($1))
+       LIMIT 10`,
+      [em]
+    );
+    const rows = (res as any).rows || [];
+    return rows.find((r: any) => !isVendorRowDeleted(r)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Phone/username (via {@link findVendorForPasswordLogin}), then email when username contains `@`. */
+export async function findVendorForForgotPassword(rawUsername: string): Promise<any | null> {
+  const byPhone = await findVendorForPasswordLogin(rawUsername);
+  if (byPhone) return byPhone;
+  const key = String(rawUsername || '').trim();
+  if (key.includes('@')) {
+    return findVendorByEmailForForgotPassword(key);
+  }
+  return null;
+}

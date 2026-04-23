@@ -81,6 +81,22 @@ export const CustomerForgotPasswordResetSchema = z.object({
   confirmPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
+/** Vendor forgot password — same request shapes as customer; server resolves phone or email. */
+export const VendorForgotPasswordRequestSchema = z.object({
+  username: z.string().min(1).max(256),
+});
+
+export const VendorForgotPasswordVerifyOtpSchema = z.object({
+  username: z.string().min(1).max(256),
+  otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
+});
+
+export const VendorForgotPasswordResetSchema = z.object({
+  resetToken: z.string().min(10).max(8192),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
 export const AdminLoginRequestSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -131,6 +147,9 @@ export type VendorSetPasswordRequest = z.infer<typeof VendorSetPasswordRequestSc
 export type CustomerForgotPasswordRequest = z.infer<typeof CustomerForgotPasswordRequestSchema>;
 export type CustomerForgotPasswordVerifyOtp = z.infer<typeof CustomerForgotPasswordVerifyOtpSchema>;
 export type CustomerForgotPasswordReset = z.infer<typeof CustomerForgotPasswordResetSchema>;
+export type VendorForgotPasswordRequest = z.infer<typeof VendorForgotPasswordRequestSchema>;
+export type VendorForgotPasswordVerifyOtp = z.infer<typeof VendorForgotPasswordVerifyOtpSchema>;
+export type VendorForgotPasswordReset = z.infer<typeof VendorForgotPasswordResetSchema>;
 export type AdminLoginRequest = z.infer<typeof AdminLoginRequestSchema>;
 export type RefreshTokenRequest = z.infer<typeof RefreshTokenRequestSchema>;
 export type AuthToken = z.infer<typeof AuthTokenSchema>;
