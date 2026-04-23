@@ -21,6 +21,7 @@ import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../
 import { publishNotification, sendToSQS } from '../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { fetchVendorBankRowsForPayout } from '../utils/vendor-bank-for-payout';
 import crypto from 'crypto';
 
 // ============================================================================
@@ -560,29 +561,7 @@ class ProcessSettlementHandler extends BaseHandler {
         }
 
         let bank: { account_number: string; ifsc_code?: string; account_holder_name?: string };
-        let bankDetails: any[] = [];
-        try {
-          const hasTable = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
-          if ((hasTable as any).rows?.[0]?.ex) {
-            const acc = await query(
-              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
-              [vendorId]
-            );
-            bankDetails = (acc as any).rows || [];
-          }
-        } catch (_) {}
-        if (bankDetails.length === 0) {
-          const anyAcc = await query(
-            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1::uuid
-             ORDER BY is_primary DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`,
-            [vendorId],
-          ).catch(() => ({ rows: [] }));
-          bankDetails = (anyAcc as any).rows || [];
-        }
-        if (bankDetails.length === 0) {
-          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
-          bankDetails = Array.isArray(details) ? details : [];
-        }
+        const bankDetails = await fetchVendorBankRowsForPayout(String(vendorId));
         if (bankDetails.length === 0) {
           results.push({
             id: sid,

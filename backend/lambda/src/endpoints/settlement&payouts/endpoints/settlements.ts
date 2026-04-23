@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
 import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
+import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getSnsClient } from '../../../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -1250,13 +1251,13 @@ export function registerSettlementEndpoints(app: Hono) {
       const { settlementId, vendorId, amount } = (c as any).get('validatedBody') as z.infer<typeof processPayoutSchema>;
 
 
-      // Get vendor bank details
-      const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+      // Get vendor bank details (vendor_bank_accounts and/or vendor_bank_details; resolve identity id)
+      const bankDetails = await fetchVendorBankRowsForPayout(String(vendorId));
       if (bankDetails.length === 0) {
         return c.json({ error: 'Vendor bank details not found' }, 404);
       }
 
-      const bank = bankDetails[0];
+      const bank = bankDetails[0] as any;
 
       let payoutPaymentIds: string[] = [];
       if (settlementId) {

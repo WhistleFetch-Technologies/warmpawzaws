@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { useVendorChromeScrollLock } from '@/hooks/useVendorChromeScrollLock';
-import { Star, ChevronLeft, ChevronRight, MessageSquare, ExternalLink } from 'lucide-react';
+import { Star, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +36,50 @@ interface VendorReviewsModalProps {
   onClose: () => void;
 }
 
+/** Maps GET /reviews/vendor/:id payloads (legacy rows or enhanced camelCase). */
+function normalizeVendorReview(r: Record<string, unknown>): VendorReviewItem {
+  const comment =
+    (typeof r.comment === 'string' ? r.comment : undefined) ??
+    (typeof r.review === 'string' ? r.review : undefined);
+  const customer_name =
+    (typeof r.customer_name === 'string' ? r.customer_name : undefined) ??
+    (typeof r.customerName === 'string' ? r.customerName : undefined);
+  const created_at =
+    (typeof r.created_at === 'string' ? r.created_at : undefined) ??
+    (typeof r.createdAt === 'string' ? r.createdAt : undefined) ??
+    new Date().toISOString();
+  const booking_id =
+    (typeof r.booking_id === 'string' ? r.booking_id : undefined) ??
+    (typeof r.bookingId === 'string' ? r.bookingId : undefined);
+
+  return {
+    id: String(r.id ?? ''),
+    customer_id: String(r.customer_id ?? r.customerId ?? ''),
+    vendor_id: String(r.vendor_id ?? r.vendorId ?? ''),
+    service_id:
+      typeof r.service_id === 'string'
+        ? r.service_id
+        : typeof r.serviceId === 'string'
+          ? r.serviceId
+          : undefined,
+    booking_id,
+    rating: typeof r.rating === 'number' ? r.rating : Number(r.rating) || 0,
+    comment,
+    images: Array.isArray(r.images) ? (r.images as string[]) : undefined,
+    is_approved:
+      typeof r.is_approved === 'boolean'
+        ? r.is_approved
+        : typeof r.isApproved === 'boolean'
+          ? r.isApproved
+          : true,
+    created_at,
+    customer_name,
+    vendor_name:
+      (typeof r.vendor_name === 'string' ? r.vendor_name : undefined) ??
+      (typeof r.vendorName === 'string' ? r.vendorName : undefined),
+  };
+}
+
 function formatReviewDate(dateString: string) {
   return new Date(dateString).toLocaleDateString('en-IN', {
     year: 'numeric',
@@ -59,7 +102,6 @@ function StarRow({ rating }: { rating: number }) {
 }
 
 export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsModalProps) {
-  const router = useRouter();
   const [reviews, setReviews] = useState<VendorReviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<VendorReviewItem | null>(null);
@@ -68,10 +110,11 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
     if (!vendorId) return;
     try {
       setLoading(true);
-      const response = (await apiClient.get<any>(`/reviews?vendorId=${vendorId}&limit=100`).catch(() => ({
-        reviews: [],
-      }))) as { reviews?: VendorReviewItem[]; averageRating?: number };
-      setReviews(response.reviews || []);
+      const response = (await apiClient.get<{ reviews?: Record<string, unknown>[] }>(
+        `/reviews/vendor/${encodeURIComponent(vendorId)}?limit=100`
+      )) as { reviews?: Record<string, unknown>[] };
+      const raw = response.reviews ?? [];
+      setReviews(raw.map((row) => normalizeVendorReview(row)));
     } catch (e: any) {
       console.error('[VendorReviewsModal]', e);
       toast.error(e?.message || 'Failed to load reviews');
@@ -92,11 +135,6 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
 
   const avg =
     reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
-
-  const goFullPage = () => {
-    onClose();
-    router.push('/operations/reviews');
-  };
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -220,18 +258,6 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
               ))}
             </ul>
           )}
-        </div>
-
-        <div className="shrink-0 border-t border-gray-100 bg-gray-50/80 px-4 py-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-orange-200 text-orange-800 hover:bg-orange-50"
-            onClick={goFullPage}
-          >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open full reviews page
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

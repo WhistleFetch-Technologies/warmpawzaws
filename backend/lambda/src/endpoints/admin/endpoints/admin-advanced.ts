@@ -20,6 +20,7 @@ import { Hono, type Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
+import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -6851,27 +6852,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ifscCode = String(payout.ifsc_code);
         accountHolder = String(payout.account_holder_name);
       } else {
-        let bankDetails: any[] = [];
-        try {
-          const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
-          if (schemaCheck.rows[0]?.ex) {
-            const acc = await query(
-              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
-              [vendorId]
-            );
-            bankDetails = (acc.rows || []).map((r: any) => ({
-              account_number: r.account_number,
-              ifsc_code: r.ifsc_code ?? r.ifsc,
-              account_holder_name: r.account_holder_name ?? r.account_holder,
-            }));
-          }
-        } catch {
-          // ignore
-        }
-        if (bankDetails.length === 0) {
-          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
-          bankDetails = Array.isArray(details) ? details : [];
-        }
+        const rows = await fetchVendorBankRowsForPayout(String(vendorId));
+        const bankDetails = (rows || []).map((r: any) => ({
+          account_number: r.account_number,
+          ifsc_code: r.ifsc_code ?? r.ifsc,
+          account_holder_name: r.account_holder_name ?? r.account_holder,
+        }));
         if (bankDetails.length === 0) {
           return c.json({ success: false, error: 'Vendor bank details not found. Ask vendor to add bank account.' }, 404);
         }
