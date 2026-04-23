@@ -12,7 +12,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 export interface VendorReviewItem {
@@ -188,11 +187,6 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <StarRow rating={selected.rating} />
-                  {selected.is_approved ? (
-                    <Badge className="bg-green-100 text-green-700">Approved</Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-800">Pending</Badge>
-                  )}
                 </div>
               </div>
               {selected.comment ? (

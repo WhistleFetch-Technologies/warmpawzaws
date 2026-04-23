@@ -260,12 +260,22 @@ export async function resolveRazorpayPayoutSourceAccountNumber(): Promise<string
     const x = (config as any).razorpayXAccountNumber;
     if (x != null && String(x).trim() !== '') return String(x).trim();
   } catch {
-    /* use env only */
+    /* continue: keys may be missing but secret may still hold payout source */
   }
   const env =
     process.env.RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER?.trim() ||
     process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-  return env || null;
+  if (env) return env;
+
+  // RDS `platform_integrations` often has keyId/keySecret without Banking id — merge payout source from the same secret used at deploy time.
+  try {
+    const secret = await getSecretJson<Record<string, unknown>>('razorpay');
+    const fromSecret = pickPayoutSourceAccountFromRecord(secret || undefined);
+    if (fromSecret) return fromSecret;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /**
