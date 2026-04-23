@@ -14,7 +14,7 @@ echo ""
 
 # Lambda Functions
 echo "📦 Lambda Functions:"
-for func in notification-processor email-processor sms-processor analytics-processor settlement-processor; do
+for func in notification-processor email-processor sms-processor analytics-retention settlement-processor; do
   FUNC_NAME="warmpawz-${func}${ENV_SUFFIX}"
   if aws lambda get-function --function-name "$FUNC_NAME" --region ap-south-1 > /dev/null 2>&1; then
     STATE=$(aws lambda get-function --function-name "$FUNC_NAME" --region ap-south-1 --query 'Configuration.State' --output text 2>/dev/null)

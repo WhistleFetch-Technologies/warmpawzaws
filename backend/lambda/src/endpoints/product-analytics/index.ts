@@ -1,0 +1,1 @@
+export { registerProductAnalyticsEndpoints } from './routes';

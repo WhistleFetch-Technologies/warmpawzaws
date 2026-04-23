@@ -2781,8 +2781,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
 
-    // Validate that booking can be cancelled
-    const cancellableStatuses = ['pending', 'confirmed'];
+    // Validate that booking can be cancelled (includes pending_payment: slot held until Razorpay completes)
+    const cancellableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(oldStatus)) {
       return this.error(
         `Booking cannot be cancelled. Current status: ${oldStatus}`,
@@ -2812,6 +2812,98 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      // Unpaid checkout abandoned: remove the draft booking so it never appears as "cancelled" in My bookings.
+      const reasonStr = String(reason ?? '').trim();
+      const isPaymentAbandonReason = /^payment abandoned$/i.test(reasonStr);
+
+      if (isPaymentAbandonReason) {
+        const queryParams = context.event.queryStringParameters || {};
+        const bookingCustomerId = String(
+          (currentBooking as any).customer_id ?? (currentBooking as any).customerId ?? ''
+        ).trim();
+
+        let requestCustomerId = '';
+        if (String(context.userRole || '').toLowerCase() === 'customer' && context.userId) {
+          requestCustomerId = String(context.userId).trim();
+        }
+        if (!requestCustomerId) {
+          requestCustomerId = String(body.customerId || body.customer_id || '').trim();
+        }
+
+        if (!requestCustomerId && (queryParams.phone || body.phone)) {
+          try {
+            const phone = String(queryParams.phone || body.phone || '');
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.length >= 10) {
+              const customers = await select('customers', { phone: cleanPhone });
+              if (customers.length > 0) {
+                requestCustomerId = String(customers[0].id);
+              }
+            }
+          } catch (e) {
+            console.warn('[CancelBooking] Abandon: phone → customer resolve failed', e);
+          }
+        }
+
+        const digits = (p: string) => p.replace(/\D/g, '');
+        const bookingPhoneDigits = digits(String((currentBooking as any).customer_phone || ''));
+        const requestPhoneDigits = digits(String(queryParams.phone || body.phone || ''));
+        const phoneMatchesBooking =
+          bookingPhoneDigits.length >= 10 &&
+          requestPhoneDigits.length >= 10 &&
+          bookingPhoneDigits.slice(-10) === requestPhoneDigits.slice(-10);
+
+        const customerIdMatchesBooking =
+          Boolean(bookingCustomerId && requestCustomerId && bookingCustomerId === requestCustomerId);
+
+        const isVendorActor = String(actorType || '').toLowerCase() === 'vendor';
+
+        if (!isVendorActor && (customerIdMatchesBooking || phoneMatchesBooking)) {
+          const bookingPaidForAbandon = await hasCustomerPaidCapture(bookingId, {
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount,
+            payment_status:
+              (currentBooking as any).payment_status ?? (currentBooking as any).paymentStatus,
+          });
+
+          if (!bookingPaidForAbandon) {
+            try {
+              await withTransaction(async (client) => {
+                await client.query(`DELETE FROM payments WHERE booking_id = $1::uuid`, [bookingId]);
+                await client.query(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]);
+              });
+
+              await logAuditEntry({
+                entityType: 'booking',
+                entityId: bookingId,
+                action: 'delete',
+                oldValues: { status: oldStatus, reason: reasonStr },
+                newValues: { checkoutAbandoned: true },
+                changedFields: ['row_deleted'],
+                actorId: requestCustomerId || actorId,
+                actorType: 'customer',
+                requestId,
+              });
+
+              return this.success(
+                {
+                  bookingId,
+                  message: 'Checkout abandoned; booking removed',
+                  deleted: true,
+                  refund: null,
+                },
+                requestId
+              );
+            } catch (hardDelErr: unknown) {
+              console.error(
+                '[CancelBooking] Abandon hard-delete failed; falling back to soft cancel:',
+                hardDelErr
+              );
+            }
+          }
+        }
+      }
+
       // Update booking status to cancelled
       await withTransaction(async (client) => {
         await client.query(
@@ -3695,9 +3787,11 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
   }
 
   const url = new URL(c.req.url, 'http://localhost');
+  const queryStringParameters = Object.fromEntries(url.searchParams.entries());
   return {
     rawPath: url.pathname,
     rawQueryString: url.search.substring(1),
+    queryStringParameters,
     requestContext: {
       http: {
         method: c.req.method || 'POST',

@@ -740,6 +740,7 @@ class GetAdminCapabilitiesHandler extends BaseHandler {
       { id: 'admin.dashboard', name: 'Dashboard', category: 'Admin Portal', description: 'Admin home / dashboard' },
       { id: 'admin.analytics', name: 'Analytics', category: 'Admin Portal', description: 'Analytics and metrics' },
       { id: 'admin.vendors', name: 'Vendor administration', category: 'Admin Portal', description: 'Vendors list, approval, vendor management' },
+      { id: 'admin.customers', name: 'Customer administration', category: 'Admin Portal', description: 'Customer accounts, lifecycle, insights' },
       { id: 'admin.catalog', name: 'Service catalog', category: 'Admin Portal', description: 'Service catalog management' },
       { id: 'admin.settlements', name: 'Settlements', category: 'Admin Portal', description: 'Settlements and finance payouts' },
       { id: 'admin.reports', name: 'Reports', category: 'Admin Portal', description: 'Reports' },

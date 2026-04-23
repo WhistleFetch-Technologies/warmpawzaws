@@ -26,16 +26,6 @@ import {
   parseSymptomsBedrockCompletion,
   parseBookingAssistBedrockCompletion,
 } from '../../utils/ai/ai-chatbot-response-parse';
-import {
-  fetchVendorToolAppendixForPrompt,
-  executeVendorToolRequests,
-  vendorChatMayTriggerBookingRevenueTool,
-} from '../../utils/ai/ai-vendor-chat-tools';
-import {
-  fetchVendorReadinessLines,
-  formatVendorReadinessSection,
-  type VendorReadinessMetrics,
-} from '../../utils/ai/ai-chatbot-vendor-readiness';
 import { getCustomerCoordinates } from '../../utils/customer-coordinates';
 import { lookupNearbyBookingVendors, type NearbyBookingVendorRow } from '../../utils/ai/ai-chatbot-nearby-vendors';
 import { roleFilterListForCategory } from '../../utils/ai/ai-chatbot-booking-roles';
@@ -449,7 +439,6 @@ export function registerAIChatbotEndpoints(app: Hono) {
         context,
         petId,
         vendorId: vendorIdFromBody,
-        includeVendorReadinessMetrics,
       } = body;
 
       if (!message) {
@@ -479,7 +468,6 @@ export function registerAIChatbotEndpoints(app: Hono) {
       let customerContext = '';
       let vendorContext = '';
       let vendorProfileBlock = '';
-      let vendorReadinessMetrics: VendorReadinessMetrics | null = null;
       let vendorAiSuffix = '';
       /** Bedrock generation params — only applied when isVendorSession; customer path uses fixed defaults below. */
       let vendorBedrockOpts = { maxTokens: 1024, temperature: 0.45, topP: 0.9 };
@@ -490,8 +478,7 @@ export function registerAIChatbotEndpoints(app: Hono) {
         try {
           const vendorRes = await query(
             `SELECT v.business_name, v.owner_name, v.category, v.tier, v.city, v.state, v.specialization,
-                    v.home_service_enabled, v.available_for_instant_tele, v.other_config,
-                    v.status, v.is_active, v.is_online, v.latitude, v.longitude,
+                    v.home_service_enabled, v.other_config,
                     COALESCE(NULLIF(TRIM(r.display_name), ''), r.name) AS role_name
              FROM vendors v
              LEFT JOIN roles r ON r.id = v.role_id
@@ -519,22 +506,8 @@ export function registerAIChatbotEndpoints(app: Hono) {
                 ? `- Specialization (summary): ${String(row.specialization).slice(0, 120)}`
                 : null,
               `- Home visits offered: ${row.home_service_enabled ? 'yes' : 'no'}`,
-              `- Instant tele catalog flag (available_for_instant_tele): ${
-                row.available_for_instant_tele === true ||
-                String(row.available_for_instant_tele || '').toLowerCase() === 'true'
-                  ? 'on'
-                  : 'off'
-              } (DB field; eligibility may also require tele services, identity checks, or admin rules not listed here)`,
             ].filter(Boolean);
             vendorProfileBlock = `VENDOR PROFILE (personalize tone and examples; never invent payouts, bank details, or private data):\n${profileLines.join('\n')}\n`;
-
-            try {
-              const readiness = await fetchVendorReadinessLines(effectiveVendorId, row);
-              vendorReadinessMetrics = readiness.metrics;
-              vendorProfileBlock += `\n${formatVendorReadinessSection(readiness.lines)}`;
-            } catch (e) {
-              logErrorSafe('ai-chatbot-vendor-readiness', e);
-            }
 
             const aiCfg = parseVendorAiChatFromOtherConfig(row.other_config);
             if (aiCfg.systemPromptSuffix) {
@@ -691,7 +664,7 @@ IMPORTANT RULES:
 - For support: Provide helpful information or escalate to agent if needed
 - If confidence < 0.7 or user requests human agent, set requiresAgent: true`;
 
-      const vendorSystemPromptBase = `You are the Warmpawz AI Assistant for **vendors** (pet care providers using the Warmpawz vendor app / dashboard).
+      const vendorSystemPrompt = `You are the Warmpawz AI Assistant for **vendors** (pet care providers using the Warmpawz vendor app / dashboard).
 
 ROLE: Help providers manage their business on Warmpawz — services, schedule/bookings, earnings and settlements, profile and settings, and how to contact platform support. Do NOT tell them to use customer-only flows like "Symptoms" or "Booking" tabs in the consumer app unless they are asking as a pet owner.
 
@@ -699,9 +672,9 @@ CONTEXT:
 ${vendorContext ? `- ${vendorContext}\n` : ''}${vendorProfileBlock ? `${vendorProfileBlock}\n` : ''}${bookingContext ? `- ${bookingContext}\n` : ''}${storeContext ? `- ${storeContext}\n` : ''}${transcriptHint}
 
 CAPABILITIES (vendor):
-1. Services: Adding/editing services, pricing, availability, service catalog vs custom services (solo vs business). Use VENDOR CUSTOMER VISIBILITY to explain missing publish/schedule/map items for the customer app.
+1. Services: Adding/editing services, pricing, availability, service catalog vs custom services (solo vs business)
 2. Bookings: Dashboard schedule, confirming visits, status updates, customer communication
-3. Payments & settlements: Earnings, payouts, reporting — never fabricate bank details; **when TOOL_RESULTS_JSON includes booking revenue or tele flags, quote those numbers and explain gross vs net briefly**
+3. Payments & settlements: Earnings, payouts, reporting — give high-level guidance; never fabricate account numbers or amounts
 4. Support: How to reach Warmpawz support for disputes or account issues
 
 INTENT CLASSIFICATION (vendor):
@@ -719,24 +692,9 @@ Respond with a VALID JSON object ONLY:
 
 IMPORTANT RULES:
 - Be concise and actionable; reference app areas: Bookings tab, Settings, Reporting, Services
-- **Facts in VENDOR PROFILE, VENDOR CUSTOMER VISIBILITY, and any TOOL_RESULTS_JSON block are authoritative.** TOOL_RESULTS_JSON comes from a server-side planner that ran allowlisted read-only SQL for this vendor — interpret it and answer in plain language. Use the visibility section for onboarding gaps. Never contradict those snapshots. If something is not in context, say you cannot see it and point them to the relevant screen in the vendor app.
-- **Vendors are business owners, not engineers.** In the "response" text, do not use internal jargon (database table names, SQL, JSON field names, "TOOL_RESULTS_JSON", UUIDs, or implementation details). Translate everything into what they see in the app (e.g. Scheduling / availability, Services published and turned on, online status, map location, Reporting for payouts). Security and correctness still come from server-side data — you explain outcomes, not infrastructure.
 - If the user needs human help (payout disputes, account lock), set requiresAgent: true
 - If confidence < 0.7 or they ask for a human, set requiresAgent: true
 ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when relevant):\n${vendorAiSuffix}\n` : ''}`;
-
-      let vendorToolAppendix = '';
-      if (isVendorSession && effectiveVendorId) {
-        try {
-          vendorToolAppendix = await fetchVendorToolAppendixForPrompt(effectiveVendorId, String(message || ''));
-        } catch (e) {
-          logErrorSafe('ai-chatbot-vendor-tools-appendix', e);
-        }
-      }
-
-      const vendorSystemPrompt = vendorToolAppendix
-        ? `${vendorSystemPromptBase}\n\n${vendorToolAppendix}`
-        : vendorSystemPromptBase;
 
       const systemPrompt = isVendorSession ? vendorSystemPrompt : customerSystemPrompt;
 
@@ -816,45 +774,6 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
               'Use the **Bookings** tab on your dashboard to see your schedule, open a booking for details, update status, and message the customer. You can complete or start services from the appointment card when supported.';
             confidence = 0.88;
             suggestedActions = ['Bookings', 'Dashboard'];
-          } else if (
-            effectiveVendorId &&
-            vendorChatMayTriggerBookingRevenueTool(String(message || ''))
-          ) {
-            intent = 'vendor_payouts';
-            const period =
-              /\b(last month|previous month|prior month)\b/.test(lowerMessage) ? 'previous_month' : 'current_month';
-            try {
-              const toolResults = await executeVendorToolRequests(effectiveVendorId, [
-                { name: 'get_vendor_booking_revenue_month', args: { period } },
-              ]);
-              const r = toolResults.get_vendor_booking_revenue_month as
-                | { completedBookingsCount?: number; grossBookingTotalInr?: number }
-                | undefined;
-              const gross = typeof r?.grossBookingTotalInr === 'number' ? r.grossBookingTotalInr : NaN;
-              if (r && !Number.isNaN(gross)) {
-                const label =
-                  period === 'previous_month' ? 'last calendar month' : 'this calendar month (so far)';
-                const fmt = new Intl.NumberFormat('en-IN', {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 2,
-                }).format(gross);
-                const n = typeof r.completedBookingsCount === 'number' ? r.completedBookingsCount : 0;
-                responseText =
-                  `For **${label}**, you have **${n}** completed booking(s) with **gross** booking revenue **₹${fmt}** (sum of completed booking totals). Commission and settlement timing can change what reaches your bank — open **Reporting** for net payout detail.`;
-                confidence = 0.9;
-                suggestedActions = ['Reporting', 'Dashboard'];
-              } else {
-                responseText =
-                  'For **payments and settlements**, open **Reporting** on your dashboard for earnings summaries, and check **Settings** for payout / bank details (labels may vary by app version). For a missing payout or dispute, use **Contact support** and include dates and booking references.';
-                confidence = 0.85;
-                suggestedActions = ['Reporting', 'Contact support'];
-              }
-            } catch {
-              responseText =
-                'For **payments and settlements**, open **Reporting** on your dashboard for earnings summaries, and check **Settings** for payout / bank details (labels may vary by app version). For a missing payout or dispute, use **Contact support** and include dates and booking references.';
-              confidence = 0.85;
-              suggestedActions = ['Reporting', 'Contact support'];
-            }
           } else if (
             /\b(payment|payout|payouts|settlement|settlements|earning|earnings|razorpay|bank|payout history)\b/.test(
               lowerMessage
@@ -1034,9 +953,6 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         ticketId: escalationTicketId,
         escalationTicketCreated,
         escalationCapReached,
-        ...(includeVendorReadinessMetrics === true && isVendorSession && effectiveVendorId && vendorReadinessMetrics
-          ? { vendorReadinessMetrics }
-          : {}),
       });
     } catch (error: unknown) {
       logErrorSafe('ai-chatbot-chat-handler', error);

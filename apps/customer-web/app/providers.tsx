@@ -6,6 +6,7 @@ import { useState, lazy, Suspense } from 'react';
 import { SearchContextProvider } from '@/context/SearchContext';
 import { CartProvider } from '@/context/CartContext';
 import { ScrollToTop } from '@/components/ScrollToTop';
+import { AnalyticsRouteTracker } from '@/components/AnalyticsRouteTracker';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -34,6 +35,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <CartProvider>
         <SearchContextProvider>
           <ScrollToTop />
+          <Suspense fallback={null}>
+            <AnalyticsRouteTracker />
+          </Suspense>
           {children}
           <Toaster position="top-right" />
           {/* Only load DevTools in development mode - prevents bundle bloat in production */}

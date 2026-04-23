@@ -7,6 +7,8 @@ import {
   getOpenVendorPortalBaseUrl,
   normalizeConfiguredVendorWebUrl,
   resolveVendorPortalOriginForLoopbackAdmin,
+  getOpenCustomerPortalBaseUrl,
+  LOCAL_CUSTOMER_ORIGIN,
 } from './open-vendor-portal-base';
 
 type RuntimeConfig = {
@@ -15,6 +17,8 @@ type RuntimeConfig = {
   environment?: string;
   /** Optional override for “Open vendor portal” target (deploy may inject via runtime-config). */
   vendorWebUrl?: string;
+  /** Optional override for “Open customer portal” target. */
+  customerWebUrl?: string;
 };
 
 declare global {
@@ -145,6 +149,27 @@ export function getVendorWebBaseUrl(): string {
     }
   }
   return getOpenVendorPortalBaseUrl();
+}
+
+/**
+ * Base URL for customer-web when admin uses “Open customer portal”.
+ */
+export function getCustomerWebBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    const cw = (cfg.customerWebUrl && typeof cfg.customerWebUrl === 'string' ? cfg.customerWebUrl.trim() : '').replace(
+      /\/+$/,
+      ''
+    );
+    if (cw && !/localhost|127\.0\.0\.1/i.test(cw)) {
+      return cw;
+    }
+    const apiBase = getApiBaseUrl();
+    if (resolveVendorPortalOriginForLoopbackAdmin(apiBase) !== null) {
+      return LOCAL_CUSTOMER_ORIGIN;
+    }
+  }
+  return getOpenCustomerPortalBaseUrl();
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

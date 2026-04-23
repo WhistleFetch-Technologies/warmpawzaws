@@ -27,6 +27,7 @@ export const ALL_ADMIN_PERMISSION_IDS = [
   'admin.dashboard',
   'admin.analytics',
   'admin.vendors',
+  'admin.customers',
   'admin.catalog',
   'admin.settlements',
   'admin.reports',

@@ -20,7 +20,8 @@ import {
   Briefcase,
   Gift,
   Menu,
-  X
+  X,
+  UserCircle,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
@@ -69,6 +70,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     const all: NavEntry[] = [
       { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard', permission: 'admin.dashboard', onClick: () => onNavigate('dashboard') },
       { icon: BarChart3, label: 'Analytics & Insights', id: 'analytics', permission: 'admin.analytics', onClick: () => onNavigate('analytics') },
+      { icon: BarChart3, label: 'Product analytics', id: 'product-analytics', permission: 'admin.analytics', onClick: () => onNavigate('product-analytics') },
       { icon: Briefcase, label: 'Enterprise & Revenue', id: 'enterprise', permission: 'admin.governance', onClick: () => onNavigate('enterprise') },
       {
         icon: Users,
@@ -77,6 +79,15 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         permission: 'admin.vendors',
         onClick: () => {
           window.location.href = '/vendors';
+        },
+      },
+      {
+        icon: UserCircle,
+        label: 'Customer Administration',
+        id: 'customers',
+        permission: 'admin.customers',
+        onClick: () => {
+          window.location.href = '/customers';
         },
       },
       { icon: ShoppingCart, label: 'E-Commerce', id: 'ecommerce', permission: 'admin.ecommerce', onClick: () => onNavigate('ecommerce') },
@@ -177,6 +188,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 const Icon = item.icon;
                 const isActive = activeView === item.id || 
                                (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management' || pathname === '/vendors')) ||
+                               (item.id === 'customers' && (activeView === 'customer-admin' || pathname === '/customers')) ||
                                (item.id === 'regions' && activeView === 'region-manager') ||
                                (item.id === 'catalog' && activeView === 'catalog-and-services');
                 
