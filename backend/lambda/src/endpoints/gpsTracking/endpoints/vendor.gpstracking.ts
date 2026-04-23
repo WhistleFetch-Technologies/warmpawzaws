@@ -23,7 +23,10 @@ import {
   vendorCancellationReasonLabel,
   applyRefundAfterProviderCancellation,
 } from '../../../lib/services/provider-booking-cancel-refund';
-import { ensureDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
+import {
+  bookingUsesDedicatedEndSessionOtp,
+  ensureDedicatedEndSessionOtp,
+} from '../../../lib/booking-dedicated-end-otp';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
@@ -89,35 +92,10 @@ async function getExpectedOTPForBooking(
     return { expectedOTP, isWalkerService: false };
   }
 
-  // For 'complete' or 'end' action, check if walker service
   try {
-    // Get vendor role to check if it's a walker
-    const vendorRoleResult = await query(
-      `SELECT r.name AS role_name
-       FROM vendors v
-       JOIN roles r ON r.id = v.role_id
-       WHERE v.id = $1 AND r.is_active = true
-       LIMIT 1`,
-      [booking.vendor_id]
-    ).catch(() => ({ rows: [] }));
-
-    const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
-    const roleName = rows[0]?.role_name?.toLowerCase() || '';
-
-    const walkerRoles = [
-      'pet_walker',
-      'walker',
-      'dog_walker',
-      'pet_sitter',
-      'sitter',
-      'sitter_solo',
-      'pet_sitter_solo',
-      'pet_sitter_saas',
-    ];
-    isWalkerService = walkerRoles.includes(roleName);
+    isWalkerService = await bookingUsesDedicatedEndSessionOtp(bookingId);
 
     if (isWalkerService) {
-      // Walker service: Get end OTP from otp_tokens table
       const endOtpResult = await query(
         `SELECT otp_code FROM otp_tokens
          WHERE metadata->>'bookingId' = $1
@@ -133,16 +111,13 @@ async function getExpectedOTPForBooking(
       if (endOtpRows.length > 0) {
         expectedOTP = String(endOtpRows[0].otp_code || '').trim();
       } else {
-        // Fallback to otp_code if end OTP not found
         expectedOTP = String(booking.otp_code || '').trim();
       }
     } else {
-      // Non-walker service: Use otp_code from bookings table (single OTP for completion)
       expectedOTP = String(booking.otp_code || '').trim();
     }
   } catch (error: any) {
-    console.error(`❌ [getExpectedOTPForBooking] Error checking walker service, falling back to otp_code:`, error);
-    // Fallback to otp_code if role check fails
+    console.error(`❌ [getExpectedOTPForBooking] Error checking dedicated end OTP, falling back to otp_code:`, error);
     expectedOTP = String(booking.otp_code || '').trim();
   }
 
@@ -159,7 +134,7 @@ async function bookingAllowsInServiceWalkTracking(booking: any): Promise<boolean
     [booking.vendor_id]
   ).catch(() => ({ rows: [] }));
   const n = String((res as any).rows?.[0]?.n || '');
-  return ['pet_walker', 'walker', 'dog_walker'].includes(n);
+  return ['pet_walker', 'walker', 'dog_walker', 'walker_solo', 'walking'].includes(n);
 }
 
 /**
@@ -1465,13 +1440,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       );
 
-      // Walker / walk-style home sessions: issue end OTP for customer to share at walk completion
       try {
-        const { isWalkerService } = await getExpectedOTPForBooking(booking, bookingId, OtpAction.COMPLETE);
-        if (
-          isWalkerService &&
-          (booking.service_style === ServiceStyle.AT_HOME || booking.service_type === ServiceStyle.AT_HOME)
-        ) {
+        if (await bookingUsesDedicatedEndSessionOtp(bookingId)) {
           await ensureDedicatedEndSessionOtp(bookingId);
         }
       } catch (otpErr: any) {

@@ -20,6 +20,7 @@ import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '..
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { bookingUsesDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
 
 /**
  * bookings.service_id usually references vendor_services.id (FK).
@@ -257,7 +258,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         atHomeBooking &&
         booking.otp_code
       ) {
-        resolvedCompletionOtp = booking.otp_code;
+        const dedicated = await bookingUsesDedicatedEndSessionOtp(bookingId);
+        if (!dedicated) {
+          resolvedCompletionOtp = booking.otp_code;
+        }
       }
 
       // ✅ FIX: Extract pet_id from multiple sources
