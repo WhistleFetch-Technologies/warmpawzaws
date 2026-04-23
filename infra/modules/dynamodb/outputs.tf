@@ -8,21 +8,6 @@ output "sessions_table_arn" {
   value       = aws_dynamodb_table.sessions.arn
 }
 
-output "analytics_events_table_name" {
-  description = "Analytics events table name"
-  value       = aws_dynamodb_table.analytics_events.name
-}
-
-output "analytics_events_table_arn" {
-  description = "Analytics events table ARN"
-  value       = aws_dynamodb_table.analytics_events.arn
-}
-
-output "analytics_events_stream_arn" {
-  description = "Analytics events stream ARN"
-  value       = aws_dynamodb_table.analytics_events.stream_arn
-}
-
 output "cache_table_name" {
   description = "Cache table name"
   value       = aws_dynamodb_table.cache.name

@@ -1478,6 +1478,9 @@ export function VetBookingRouter({
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
                 onBack={() => setShowPaymentPage(false)}
+                onPaymentAbandoned={() => {
+                  if (selectedDate) void loadTimeSlots(selectedDate);
+                }}
                 onSuccess={(bookingId) => {
                   setBookingId(bookingId);
                   setShowPaymentPage(false);

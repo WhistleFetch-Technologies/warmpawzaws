@@ -29,8 +29,8 @@ function dialablePhoneForChat(countryCode: string, phoneDigits: string): string 
   return `${countryCode.trim()}${d}`;
 }
 
-// UAT Mode Configuration - uses runtime config (deploy-time) for static exports
-const UAT_OTP = '123456'; // Static OTP for UAT testing
+// UAT Mode: must match backend when UAT_MODE=true (`auth-enhanced.ts`)
+const UAT_VALID_OTPS = ['123456', '12345678'] as const;
 
 /** Top padding under notch / status bar (requires viewport-fit=cover in root layout). */
 const authOrangeHeaderStyle = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
@@ -185,7 +185,7 @@ function AuthPageContent() {
     }
 
     if (UAT_MODE) {
-      console.log('🔧 [UAT Mode] OTP bypassed. Use:', UAT_OTP);
+      console.log('🔧 [UAT Mode] OTP bypassed. Use one of:', UAT_VALID_OTPS.join(', '));
       setOtpSent(true);
       setResendTimer(60);
       setUatHint(true);
@@ -437,7 +437,17 @@ function AuthPageContent() {
   };
 
   const verifyOtp = async () => {
-    if (!otp || otp.length !== 6) {
+    const otpTrim = otp?.trim() ?? '';
+    if (!otpTrim) {
+      setError('Please enter the OTP');
+      return;
+    }
+    if (UAT_MODE) {
+      if (!/^\d{6}$|^\d{8}$/.test(otpTrim)) {
+        setError('UAT: enter 6-digit OTP or 8-digit bypass (see hint below)');
+        return;
+      }
+    } else if (otpTrim.length !== 6 || !/^\d{6}$/.test(otpTrim)) {
       setError('Please enter the 6-digit OTP');
       return;
     }
@@ -447,108 +457,6 @@ function AuthPageContent() {
       ? referralCode.trim().toUpperCase()
       : pendingReferral;
 
-    // UAT without referral: local shortcut (no API verify) — same as before
-    if (UAT_MODE && !trimmedReferral) {
-      if (otp !== UAT_OTP) {
-        setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-
-      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-      localStorage.setItem('customerPhone', cleanPhone);
-      localStorage.setItem('customer_phone', cleanPhone);
-      localStorage.setItem('phone', cleanPhone);
-      localStorage.setItem('customerCountryCode', countryCode);
-      localStorage.setItem('authToken', `uat-token-customer-${cleanPhone}-${Date.now()}`);
-
-      sessionStorage.setItem('_warmpawz_has_session', 'true');
-      sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-      console.log('✅ [Auth] UAT Mode (no referral) - sessionStorage flags set before navigation');
-
-      let profileResponse: any = undefined;
-      try {
-        profileResponse = await apiClient.get<any>(
-          `/customer/profile/unified/${encodeURIComponent(cleanPhone)}`
-        );
-        if (profileResponse?.profile) {
-          localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
-          localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
-          persistCustomerDatabaseId(profileResponse.profile);
-
-          const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
-          const profileCompleted = profileResponse.profile.profile_completed;
-          const nameVal = profileResponse.profile.name || profileResponse.profile.full_name || '';
-          const hasRealName =
-            !!nameVal &&
-            String(nameVal).trim() !== '' &&
-            nameVal !== `Customer ${phone.replace(/\D/g, '').slice(-4)}`;
-          const hasProfileId = !!profileResponse.profile.id;
-          const backendFullyOnboarded =
-            onboardingStatus === 'COMPLETED' || profileCompleted === true;
-          const hasMeaningfulProfile = (hasProfileId && hasRealName) || false;
-
-          if (backendFullyOnboarded) {
-            localStorage.setItem('profile_completed', 'true');
-            localStorage.setItem('onboarding_completed', 'true');
-            setCustomerOnboardingCompleteFromAuth('true');
-          } else if (hasMeaningfulProfile) {
-            localStorage.setItem('profile_completed', 'true');
-            setCustomerOnboardingCompleteFromAuth('false');
-          } else {
-            setCustomerOnboardingCompleteFromAuth('false');
-          }
-
-          try {
-            const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
-            if (petsResponse?.pets?.length > 0) {
-              localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-            }
-          } catch { }
-        }
-      } catch {
-        // New customer - will go through onboarding
-        setCustomerOnboardingCompleteFromAuth('false');
-      }
-
-      setLoading(false);
-
-      const innerProfileUat = profileResponse?.profile as { has_password?: boolean } | undefined;
-      const hasPasswordUat = Boolean(innerProfileUat?.has_password);
-      const redirectPathUat =
-        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
-      if (!hasPasswordUat) {
-        setNeedsPasswordSetupAfterOtp();
-        const profileCompleted =
-          localStorage.getItem('profile_completed') === 'true' ||
-          localStorage.getItem('onboarding_completed') === 'true';
-        const onboardingDone =
-          localStorage.getItem('customerOnboardingComplete') === 'true';
-        const goProfileFirst = !profileCompleted && !onboardingDone;
-        if (goProfileFirst) {
-          router.push('/profile');
-        } else {
-          const afterPwd =
-            localStorage.getItem('onboarding_completed') === 'true' ||
-            localStorage.getItem('customerOnboardingComplete') === 'true'
-              ? '/'
-              : '/onboarding';
-          router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
-        }
-      } else {
-        clearNeedsPasswordSetup();
-        router.push(redirectPathUat);
-      }
-      return;
-    }
-
-    // Production OR UAT with referral: real OTP verify (vendor-web parity — backend applies referral)
-    if (UAT_MODE && trimmedReferral && otp !== UAT_OTP) {
-      setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
@@ -556,7 +464,7 @@ function AuthPageContent() {
       const fullPhoneForApi = `${countryCode}${phone}`;
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: fullPhoneForApi,
-        otp,
+        otp: otpTrim,
         role: 'customer',
         referralCode: trimmedReferral || undefined,
         pendingReferralCode: trimmedReferral || undefined,
@@ -797,7 +705,8 @@ function AuthPageContent() {
               {uatHint && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B9D]/10 rounded-xl text-center">
                   <p className="text-[#FF8C42] text-sm font-medium">
-                    🧪 UAT Mode: Use OTP <strong>{UAT_OTP}</strong>
+                    🧪 UAT Mode: OTP <strong>{UAT_VALID_OTPS.join(' or ')}</strong> · password login:{' '}
+                    <strong>12345678</strong>
                   </p>
                 </div>
               )}
@@ -961,7 +870,8 @@ function AuthPageContent() {
                   🧪 UAT MODE ACTIVE
                 </p>
                 <p className="text-yellow-700 text-xs">
-                  OTP is <strong className="font-bold">{UAT_OTP}</strong> - No SMS will be sent
+                  OTP <strong className="font-bold">{UAT_VALID_OTPS.join(' or ')}</strong> — no SMS. Full JWTs
+                  from <code className="text-xs">/auth/otp/verify</code>.
                 </p>
               </div>
             )}

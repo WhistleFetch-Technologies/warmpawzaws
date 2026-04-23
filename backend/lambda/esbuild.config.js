@@ -217,3 +217,42 @@ esbuild.build({
   console.error('Build failed (loyalty consumer):', error);
   process.exit(1);
 });
+
+// Allyticas RDS retention cleanup (scheduled Lambda)
+esbuild.build({
+  entryPoints: ['src/jobs/analytics-retention.ts'],
+  bundle: true,
+  platform: 'node',
+  target: 'node18',
+  outfile: 'dist/analytics-retention.js',
+  plugins: [apiContractsResolvePlugin, customExtensionResolvePlugin],
+  external: [
+    '@aws-sdk/*',
+    'aws-lambda',
+    'pg-native',
+    '@opensearch-project/opensearch',
+    '@opensearch-project/opensearch/aws',
+    'firebase-admin',
+  ],
+  packages: 'bundle',
+  format: 'cjs',
+  sourcemap: !isProduction,
+  minify: isProduction,
+  nodePaths: [
+    path.resolve(__dirname, 'node_modules'),
+    path.resolve(__dirname, '../../node_modules'),
+    path.resolve(__dirname, '../../packages/api-contracts/dist'),
+  ],
+  alias: {
+    '@warmpawz/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/dist/index.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/src/index.ts'),
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
+  },
+  logLevel: isProduction ? 'warning' : 'info',
+  color: true,
+}).catch((error) => {
+  console.error('Build failed (analytics-retention):', error);
+  process.exit(1);
+});

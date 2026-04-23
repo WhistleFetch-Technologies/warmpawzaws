@@ -4,6 +4,38 @@
  */
 
 /** E.164 contact for Razorpay `prefill.contact` (better UPI flows than raw digits-only strings). */
+/**
+ * Razorpay Standard Checkout: custom display so UPI is not QR-only (shows collect / VPA where Razorpay still offers it).
+ * Pattern from https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/sample-code/
+ */
+export function getWarmpawzRazorpayStandardDisplayConfig(): {
+  display: {
+    blocks: Record<string, { name: string; instruments: { method: string }[] }>;
+    sequence: string[];
+    preferences: { show_default_blocks: boolean };
+  };
+} {
+  return {
+    display: {
+      blocks: {
+        banks: {
+          name: 'All payment options',
+          instruments: [
+            { method: 'upi' },
+            { method: 'card' },
+            { method: 'wallet' },
+            { method: 'netbanking' },
+          ],
+        },
+      },
+      sequence: ['block.banks'],
+      preferences: {
+        show_default_blocks: false,
+      },
+    },
+  };
+}
+
 export function digitsToRazorpayContactE164(digitsOnly: string): string | undefined {
   const d = String(digitsOnly || '').replace(/\D/g, '');
   if (d.length >= 12 && d.startsWith('91')) return `+${d}`;
@@ -64,6 +96,12 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
       }
       if (Object.keys(n).length === 0) delete out[key];
       else out[key] = n;
+      continue;
+    }
+
+    if (key === 'config' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      out[key] = v;
+      continue;
     }
   }
 
@@ -196,18 +234,9 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     description: options.description?.trim() ? options.description : 'Payment',
     order_id: options.orderId,
     handler: options.onSuccess,
+    config: getWarmpawzRazorpayStandardDisplayConfig(),
     ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
-    // Razorpay: root `method` pre-selection applies only when BOTH contact and email are prefilled.
-    ...(e164 && email
-      ? {
-          method: 'upi',
-          config: {
-            display: {
-              preferences: { show_default_blocks: true },
-            },
-          },
-        }
-      : {}),
+    ...(e164 && email ? { method: 'upi' as const } : {}),
     theme: {
       color: '#FF8C42',
     },

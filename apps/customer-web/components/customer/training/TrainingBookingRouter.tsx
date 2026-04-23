@@ -1066,6 +1066,9 @@ export function TrainingBookingRouter({
             customerPhone={phone}
             customerId={customerId || undefined}
             onBack={() => setShowPaymentPage(false)}
+            onPaymentAbandoned={() => {
+              if (selectedDate) void loadTimeSlots(selectedDate);
+            }}
             onSuccess={handlePaymentSuccess}
           />
         )}

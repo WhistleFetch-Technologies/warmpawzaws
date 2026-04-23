@@ -53,6 +53,7 @@ import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoin
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
 import { registerEcommerceEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce';
 import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
+import { registerProductAnalyticsEndpoints } from '../endpoints/product-analytics';
 import { registerLoyaltyEndpoints } from '../endpoints/loyalty&reward/endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
@@ -125,6 +126,7 @@ import { registerVendorSecurityEndpoints } from '../endpoints/vendor/endpoints/v
 import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor/endpoints/vendor-distance-pricing';
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
 import { registerAdminComprehensiveEndpoints } from '../endpoints/admin/endpoints/admin-comprehensive';
+import { registerAdminCustomerEndpoints } from '../endpoints/admin/endpoints/admin-customer-endpoints';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
@@ -190,12 +192,20 @@ import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 // Create Hono app
 const app = new Hono();
 
-// CORS: allowed origins from env only (set by CDK/deploy from config/urls.json or ALLOWED_ORIGINS). No hardcoded URLs.
+/** Local apps posting Allyticas ingest / calling API from browser — must stay allowed even when ALLOWED_ORIGINS lists only prod domains (otherwise fetch from localhost fails CORS while curl still works). */
+const LOCAL_DEV_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:5173',
+];
+
+// CORS: merge env list (CDK/deploy) with localhost dev origins so browser sessions match curl smoke tests.
 const getAllowedOriginsList = (): string[] => {
   const fromEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (fromEnv.length > 0) return fromEnv;
-  // Local dev only when ALLOWED_ORIGINS not set
-  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173'];
+  const merged = [...new Set([...LOCAL_DEV_ORIGINS, ...fromEnv])];
+  return merged.length > 0 ? merged : LOCAL_DEV_ORIGINS;
 };
 
 const getDefaultCorsOrigin = (): string => {
@@ -543,6 +553,7 @@ registerSpecializedServiceFlows(app);
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
+registerAdminCustomerEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);
 registerSearchEndpoints(app);
@@ -572,6 +583,7 @@ registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
+registerProductAnalyticsEndpoints(app);
 registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);

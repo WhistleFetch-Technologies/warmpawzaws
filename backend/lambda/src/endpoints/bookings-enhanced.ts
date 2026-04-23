@@ -2380,8 +2380,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
 
-    // Validate that booking can be cancelled
-    const cancellableStatuses = ['pending', 'confirmed'];
+    // Validate that booking can be cancelled (includes pending_payment: slot held until Razorpay completes)
+    const cancellableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(oldStatus)) {
       return this.error(
         `Booking cannot be cancelled. Current status: ${oldStatus}`,

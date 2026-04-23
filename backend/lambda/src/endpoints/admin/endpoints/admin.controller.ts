@@ -1599,33 +1599,8 @@ export function registerAdminEndpoints(app: Hono) {
   // ============================================================================
 
   /**
-   * GET /admin/customers
-   * List all customers (for admin dashboard)
+   * GET /admin/customers — implemented in admin-customer-endpoints.ts (auth required).
    */
-  app.get('/admin/customers', async (c) => {
-    try {
-      // For now, allow without auth for testing (add auth later)
-      const customers = await select('customers', {});
-
-      return c.json({
-        success: true,
-        count: customers.length,
-        customers: customers.map(customer => ({
-          id: customer.id,
-          name: customer.full_name || customer.name,
-          full_name: customer.full_name,
-          email: customer.email,
-          phone: customer.phone,
-          created_at: customer.created_at,
-          is_active: customer.is_active,
-          status: customer.status || 'active',
-        })),
-      });
-    } catch (error: any) {
-      console.error('Error fetching customers:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
 
   /**
    * GET /admin/bookings

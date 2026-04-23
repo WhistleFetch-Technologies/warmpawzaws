@@ -32,6 +32,7 @@ import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
 import { issueAuthTokensAfterOtp } from '../../lib/services/auth/vendor-otp-success-payload';
 import { consumeVendorPortalCodeAndBuildPayload } from '../../lib/services/admin/vendor-portal-session-service';
+import { consumeCustomerPortalCodeAndBuildPayload } from '../../lib/services/admin/customer-portal-session-service';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
 import { processReferralSignup, processVendorReferralForCustomerSignup } from 'src/lib/services/referral-service';
 import {
@@ -61,6 +62,16 @@ import {
   handleCustomerForgotPasswordVerifyOtp,
   handleCustomerForgotPasswordReset,
 } from '../../lib/services/auth/customer-forgot-password';
+
+/**
+ * When `UAT_MODE=true`, this value skips password-hash checks for customer/vendor **password** login
+ * (account must still exist). OTP verify also accepts it in addition to `123456`.
+ * Override with env `UAT_DEV_PASSWORD_BYPASS`.
+ */
+const UAT_DEV_PASSWORD_BYPASS =
+  typeof process.env.UAT_DEV_PASSWORD_BYPASS === 'string' && process.env.UAT_DEV_PASSWORD_BYPASS.length > 0
+    ? process.env.UAT_DEV_PASSWORD_BYPASS
+    : '12345678';
 
 // ============================================================================
 // OTP HELPERS
@@ -273,7 +284,7 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
           });
         }
       } else {
-        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
+        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (dev OTPs: 123456 or ${UAT_DEV_PASSWORD_BYPASS})`);
       }
 
       const handlerDuration = Date.now() - handlerStartTime;
@@ -464,9 +475,9 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       // ============================================================================
       // UAT MODE: Allow fixed OTP 123456 for any phone number in UAT mode
       // ============================================================================
-      else if (isUATMode && otp === '123456') {
+      else if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
         isValid = true;
-        console.log(`[AUTH] UAT Mode: Fixed OTP 123456 accepted for ${phone}`);
+        console.log(`[AUTH] UAT Mode: Fixed OTP accepted for ${phone} (123456 or UAT bypass)`);
         Promise.race([
           (async () => {
             try {
@@ -1225,12 +1236,15 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
       return this.error('Only customer login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
     }
 
+    const isUATMode = process.env.UAT_MODE === 'true';
+    const uatPasswordBypass = isUATMode && password === UAT_DEV_PASSWORD_BYPASS;
+
     try {
       const customer = await findCustomerForPasswordLogin(username);
       if (!customer) {
         return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
       }
-      if (!hasMeaningfulStoredPassword(customer.password_hash)) {
+      if (!uatPasswordBypass && !hasMeaningfulStoredPassword(customer.password_hash)) {
         return this.error(
           'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
           403,
@@ -1240,9 +1254,13 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
         );
       }
 
-      const valid = await verifyCustomerPassword(password, customer.password_hash);
-      if (!valid) {
-        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      if (!uatPasswordBypass) {
+        const valid = await verifyCustomerPassword(password, customer.password_hash);
+        if (!valid) {
+          return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+        }
+      } else {
+        console.log(`[AUTH] UAT Mode: password bypass (${UAT_DEV_PASSWORD_BYPASS}) for customer ${username}`);
       }
 
       const userId = customer.id as string;
@@ -1347,6 +1365,9 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
       return this.error('Only vendor login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
     }
 
+    const isUATModeVendor = process.env.UAT_MODE === 'true';
+    const uatVendorPasswordBypass = isUATModeVendor && password === UAT_DEV_PASSWORD_BYPASS;
+
     try {
       const vendor = await findVendorForPasswordLogin(username);
       if (!vendor) {
@@ -1365,7 +1386,7 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
         );
       }
 
-      if (!hasMeaningfulStoredPassword(userData.password_hash)) {
+      if (!uatVendorPasswordBypass && !hasMeaningfulStoredPassword(userData.password_hash)) {
         return this.error(
           'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
           403,
@@ -1375,9 +1396,13 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
         );
       }
 
-      const valid = await verifyCustomerPassword(password, userData.password_hash);
-      if (!valid) {
-        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      if (!uatVendorPasswordBypass) {
+        const valid = await verifyCustomerPassword(password, userData.password_hash);
+        if (!valid) {
+          return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+        }
+      } else {
+        console.log(`[AUTH] UAT Mode: password bypass (${UAT_DEV_PASSWORD_BYPASS}) for vendor ${username}`);
       }
 
       const userId = userData.id as string;
@@ -1703,6 +1728,52 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
         message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
         error: errorMessage
       }, statusCode);
+    }
+  });
+
+  /** Exchange admin-issued one-time code for customer JWT + profile (customer-web bootstrap). */
+  app.post('/auth/customer-portal-session', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const code = typeof body?.code === 'string' ? body.code.trim() : '';
+      const requestId =
+        c.req.header('x-request-id') ||
+        c.req.header('X-Request-Id') ||
+        `req-${Date.now()}`;
+
+      const out = await consumeCustomerPortalCodeAndBuildPayload({ code, requestId });
+      if (!out.ok) {
+        return c.json(
+          {
+            success: false,
+            error: { code: out.errorCode || 'UNAUTHORIZED', message: out.error },
+            meta: { timestamp: new Date().toISOString(), requestId, version: 'v1' },
+          },
+          out.status as 400 | 401 | 403 | 404 | 500
+        );
+      }
+
+      return c.json(
+        {
+          success: true,
+          data: out.data,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId,
+            version: 'v1',
+          },
+        },
+        200
+      );
+    } catch (error: any) {
+      console.error('[AUTH] customer-portal-session error:', error);
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: error?.message || 'Internal Server Error' },
+        },
+        500
+      );
     }
   });
 

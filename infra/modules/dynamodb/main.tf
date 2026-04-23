@@ -57,80 +57,7 @@ resource "aws_dynamodb_table" "sessions" {
   }
 }
 
-# DynamoDB Table for Analytics Events
-resource "aws_dynamodb_table" "analytics_events" {
-  name         = "warmpawz-${var.environment}-analytics-events"
-  billing_mode = var.billing_mode
-  hash_key     = "event_id"
-  range_key    = "timestamp"
-
-  read_capacity  = var.billing_mode == "PROVISIONED" ? var.read_capacity * 2 : null
-  write_capacity = var.billing_mode == "PROVISIONED" ? var.write_capacity * 2 : null
-
-  attribute {
-    name = "event_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "timestamp"
-    type = "N"
-  }
-
-  attribute {
-    name = "user_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "event_type"
-    type = "S"
-  }
-
-  ttl {
-    attribute_name = "expires_at"
-    enabled        = true
-  }
-
-  global_secondary_index {
-    name            = "UserIdIndex"
-    hash_key        = "user_id"
-    range_key       = "timestamp"
-    projection_type = "ALL"
-    read_capacity   = var.billing_mode == "PROVISIONED" ? var.read_capacity : null
-    write_capacity  = var.billing_mode == "PROVISIONED" ? var.write_capacity : null
-  }
-
-  global_secondary_index {
-    name            = "EventTypeIndex"
-    hash_key        = "event_type"
-    range_key       = "timestamp"
-    projection_type = "ALL"
-    read_capacity   = var.billing_mode == "PROVISIONED" ? var.read_capacity : null
-    write_capacity  = var.billing_mode == "PROVISIONED" ? var.write_capacity : null
-  }
-
-  server_side_encryption {
-    enabled = true
-  }
-
-  point_in_time_recovery {
-    enabled = var.enable_pitr
-  }
-
-  stream_enabled   = true
-  stream_view_type = "NEW_AND_OLD_IMAGES"
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-analytics-events"
-    Environment = var.environment
-  }
-
-  lifecycle {
-    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
-    create_before_destroy = true # Ensure no downtime during updates
-  }
-}
+# Allyticas product analytics live in RDS Postgres — legacy analytics-events DynamoDB table removed.
 
 # DynamoDB Table for Cache
 resource "aws_dynamodb_table" "cache" {
@@ -208,10 +135,9 @@ resource "aws_dynamodb_table" "rate_limits" {
 # CloudWatch Alarms for DynamoDB
 resource "aws_cloudwatch_metric_alarm" "dynamodb_read_throttles" {
   for_each = {
-    sessions         = aws_dynamodb_table.sessions.name
-    analytics_events = aws_dynamodb_table.analytics_events.name
-    cache            = aws_dynamodb_table.cache.name
-    rate_limits      = aws_dynamodb_table.rate_limits.name
+    sessions    = aws_dynamodb_table.sessions.name
+    cache       = aws_dynamodb_table.cache.name
+    rate_limits = aws_dynamodb_table.rate_limits.name
   }
 
   alarm_name          = "warmpawz-${var.environment}-dynamodb-${each.key}-read-throttles"
@@ -237,10 +163,9 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_read_throttles" {
 
 resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttles" {
   for_each = {
-    sessions         = aws_dynamodb_table.sessions.name
-    analytics_events = aws_dynamodb_table.analytics_events.name
-    cache            = aws_dynamodb_table.cache.name
-    rate_limits      = aws_dynamodb_table.rate_limits.name
+    sessions    = aws_dynamodb_table.sessions.name
+    cache       = aws_dynamodb_table.cache.name
+    rate_limits = aws_dynamodb_table.rate_limits.name
   }
 
   alarm_name          = "warmpawz-${var.environment}-dynamodb-${each.key}-write-throttles"

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, Send, X, Minus, Bot, Sparkles, GripHorizontal } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { MessageSquare, Send, X, Minus, Bot, Sparkles, GripHorizontal, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 
@@ -16,9 +16,60 @@ interface ChatWidgetProps {
 }
 
 interface Message {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+function newMessageId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Renders `**bold**` segments from API copy as styled strong text. */
+function formatInlineSegments(text: string, strongClass: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={i} className={strongClass}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
+function ChatMessageBody({
+  content,
+  variant,
+}: {
+  content: string;
+  variant: 'user' | 'assistant';
+}) {
+  const blocks = content.split(/\n\n+/).map((b) => b.trim()).filter(Boolean);
+  const strongClass =
+    variant === 'user' ? 'font-semibold text-white' : 'font-semibold text-gray-900';
+  const paraClass =
+    variant === 'user'
+      ? 'text-[15px] leading-relaxed text-white/95 first:mt-0'
+      : 'text-[15px] leading-relaxed text-gray-800 first:mt-0';
+
+  if (blocks.length === 0) {
+    return <p className={paraClass}>{formatInlineSegments(content, strongClass)}</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, i) => (
+        <p key={i} className={`${paraClass} whitespace-pre-wrap`}>
+          {formatInlineSegments(block, strongClass)}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 function clampDragOffset(nx: number, ny: number): { x: number; y: number } {
@@ -146,6 +197,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
       if (!trimmed || isTyping) return;
 
       const userMessage: Message = {
+        id: newMessageId(),
         role: 'user',
         content: trimmed,
         timestamp: new Date(),
@@ -178,6 +230,11 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
         payload.vendorId = null;
       }
 
+      /** Dev / QA: set NEXT_PUBLIC_AI_CHAT_INCLUDE_VENDOR_READINESS_METRICS=true in .env.local to echo DB counts in the API JSON (see Network → response). */
+      if (process.env.NEXT_PUBLIC_AI_CHAT_INCLUDE_VENDOR_READINESS_METRICS === 'true') {
+        payload.includeVendorReadinessMetrics = true;
+      }
+
       try {
         const response = (await apiClient.post('/ai-chatbot/chat', payload)) as {
           success?: boolean;
@@ -186,6 +243,12 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
           message?: string;
           ticketId?: string;
           requiresAgent?: boolean;
+          vendorReadinessMetrics?: {
+            availabilityTotalRows?: number;
+            availabilityOpenRows?: number;
+            publishedForDiscovery?: number;
+            canonicalVendorId?: string;
+          };
         };
 
         if (response?.conversationId) {
@@ -195,7 +258,12 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
           setSupportTicketId(String(response.ticketId));
         }
 
+        if (response?.vendorReadinessMetrics != null) {
+          console.info('[Warmpawz Assistant] vendorReadinessMetrics', response.vendorReadinessMetrics);
+        }
+
         const assistantMessage: Message = {
+          id: newMessageId(),
           role: 'assistant',
           content:
             response?.response ||
@@ -212,6 +280,7 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
       } catch (error) {
         console.error('AI chatbot error:', error);
         const errorMessage: Message = {
+          id: newMessageId(),
           role: 'assistant',
           content:
             "I'm sorry, I'm having trouble connecting right now. Please try again in a moment, or contact support if the issue persists.",
@@ -357,7 +426,12 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-gray-50 p-4">
+            <div
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-gradient-to-b from-stone-50 to-gray-50/90 p-4"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions"
+            >
               {supportTicketId ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   A support ticket is open for this chat (ref.{' '}
@@ -397,45 +471,85 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
                 </div>
               ) : (
                 <>
-                  {messages.map((msg, idx) => (
+                  {messages.map((msg) => (
                     <div
-                      key={idx}
-                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      key={msg.id}
+                      className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
+                      {msg.role === 'assistant' && (
+                        <div
+                          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B1A] shadow-md ring-2 ring-white"
+                          aria-hidden
+                        >
+                          <Bot className="h-4 w-4 text-white" />
+                        </div>
+                      )}
                       <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
-                          msg.role === 'user'
-                            ? 'rounded-br-sm bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] text-white'
-                            : 'rounded-bl-sm border border-gray-100 bg-white text-gray-900 shadow-sm'
+                        className={`group min-w-0 max-w-[min(85%,20rem)] ${
+                          msg.role === 'user' ? 'flex flex-col items-end' : ''
                         }`}
                       >
-                        <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                        <p
-                          className={`mt-1 text-[10px] ${msg.role === 'user' ? 'text-white/70' : 'text-gray-400'}`}
+                        <div
+                          className={`rounded-2xl px-4 py-3 shadow-md transition-shadow ${
+                            msg.role === 'user'
+                              ? 'rounded-br-md bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF5C1A] text-white shadow-orange-500/20'
+                              : 'rounded-bl-md border border-gray-100/80 bg-white text-gray-900 shadow-gray-200/60 ring-1 ring-gray-900/5'
+                          }`}
                         >
-                          {formatTime(msg.timestamp)}
-                        </p>
+                          {msg.role === 'assistant' && (
+                            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[#FF7A35]">
+                              Assistant
+                            </p>
+                          )}
+                          <ChatMessageBody content={msg.content} variant={msg.role} />
+                        </div>
+                        <div
+                          className={`mt-1 flex items-center gap-1 px-0.5 ${
+                            msg.role === 'user' ? 'justify-end' : 'justify-start pl-10'
+                          }`}
+                        >
+                          <time
+                            dateTime={msg.timestamp.toISOString()}
+                            className={`text-[11px] tabular-nums ${
+                              msg.role === 'user' ? 'text-gray-500' : 'text-gray-400'
+                            }`}
+                          >
+                            {formatTime(msg.timestamp)}
+                          </time>
+                        </div>
                       </div>
+                      {msg.role === 'user' && (
+                        <div
+                          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 ring-2 ring-white"
+                          aria-hidden
+                        >
+                          <User className="h-4 w-4 text-gray-600" />
+                        </div>
+                      )}
                     </div>
                   ))}
 
                   {isTyping && (
-                    <div className="flex justify-start">
-                      <div className="rounded-2xl rounded-bl-sm border border-gray-100 bg-white px-4 py-3 shadow-sm">
-                        <div className="flex gap-1">
+                    <div className="flex justify-start gap-2">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B1A] shadow-md ring-2 ring-white">
+                        <Bot className="h-4 w-4 text-white" aria-hidden />
+                      </div>
+                      <div className="rounded-2xl rounded-bl-md border border-gray-100/80 bg-white px-4 py-3 shadow-md ring-1 ring-gray-900/5">
+                        <div className="flex items-center gap-1.5">
                           <span
-                            className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                            className="h-2 w-2 animate-bounce rounded-full bg-[#FF8C42]/70"
                             style={{ animationDelay: '0ms' }}
                           />
                           <span
-                            className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                            className="h-2 w-2 animate-bounce rounded-full bg-[#FF8C42]/70"
                             style={{ animationDelay: '150ms' }}
                           />
                           <span
-                            className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                            className="h-2 w-2 animate-bounce rounded-full bg-[#FF8C42]/70"
                             style={{ animationDelay: '300ms' }}
                           />
                         </div>
+                        <p className="mt-2 text-[11px] text-gray-400">Thinking…</p>
                       </div>
                     </div>
                   )}

@@ -17,7 +17,8 @@ export const SendOtpRequestSchema = z.object({
 
 export const VerifyOtpRequestSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
+  /** 6-digit production OTPs; 8-digit allowed for dev UAT bypass (must match server UAT_MODE rules). */
+  otp: z.string().regex(/^\d{6}$|^\d{8}$/, 'OTP must be 6 or 8 digits'),
   role: z.enum(['customer', 'vendor', 'admin']).optional(),
   /** Peer or vendor referral code (optional) */
   referralCode: z.string().max(64).optional(),
