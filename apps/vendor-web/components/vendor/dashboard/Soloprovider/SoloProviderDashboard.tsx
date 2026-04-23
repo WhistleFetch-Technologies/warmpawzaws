@@ -57,6 +57,7 @@ const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { toast } from 'sonner';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
+import { VendorReviewsModal } from '../../modals/VendorReviewsModal';
 import { VendorChatConversationsModal } from '../../VendorChatConversationsModal';
 import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
@@ -109,6 +110,7 @@ export function SoloProviderDashboard({
 
   // Modals
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
   const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
   const [selectedChatConversation, setSelectedChatConversation] = useState<{
     bookingId: string;
@@ -703,11 +705,17 @@ export function SoloProviderDashboard({
                 Solo Provider
               </Badge>
             </div>
-            <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setReviewsModalOpen(true)}
+              className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
+              title="View customer reviews"
+              aria-label={`Rating ${stats.rating.toFixed(1)}, ${stats.totalReviews} reviews. Open reviews`}
+            >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
               <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
               <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
-            </div>
+            </button>
           </div>
 
           {/* Service Availability Note - for non-pharmacy service providers */}
@@ -1057,6 +1065,13 @@ export function SoloProviderDashboard({
         onClose={() => setNotificationModalOpen(false)}
         onNotificationsRead={() => fetchDashboardData(true)}
       />
+      {vendorId ? (
+        <VendorReviewsModal
+          vendorId={vendorId}
+          open={reviewsModalOpen}
+          onClose={() => setReviewsModalOpen(false)}
+        />
+      ) : null}
 
       {/* Chat conversations list - wire message button */}
       {capabilities.chat && (

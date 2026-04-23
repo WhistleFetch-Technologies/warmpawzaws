@@ -9,6 +9,7 @@ import {
   Filter,
   Download,
   CheckCircle2,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -449,14 +450,24 @@ export function SettlementDashboard() {
                     </TableCell>
                     <TableCell>{settlement.date ? new Date(settlement.date).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>
-                      {settlement.status !== 'Paid' && settlement.status !== 'Failed' && !String(settlement.id).startsWith('ve-') && (
+                      {settlement.status !== 'Paid' && !String(settlement.id).startsWith('ve-') && (
                         <Button
                           size="sm"
+                          variant={settlement.status === 'Failed' ? 'outline' : 'default'}
                           onClick={() => handleProcessSettlement(settlement.id)}
                           disabled={processing}
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Process
+                          {settlement.status === 'Failed' ? (
+                            <>
+                              <RotateCcw className="w-4 h-4 mr-2" />
+                              Retry
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                              Process
+                            </>
+                          )}
                         </Button>
                       )}
                     </TableCell>

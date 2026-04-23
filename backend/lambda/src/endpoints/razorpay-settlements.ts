@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
-import { getRazorpayClient } from '../utils/payments/razorpay-client';
+import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../utils/payments/razorpay-client';
 import { publishNotification, sendToSQS } from '../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -267,6 +267,27 @@ class VerifyBankAccountHandler extends BaseHandler {
 // SETTLEMENT HANDLERS
 // ============================================================================
 
+/** `payouts.payment_ids` is NOT NULL — align with `settlements.payment_ids` (booking UUIDs) or []. */
+function coercePaymentIdsForPayoutRow(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (t.startsWith('{') && t.endsWith('}')) {
+      const inner = t.slice(1, -1).trim();
+      if (!inner) return [];
+      return inner.split(',').map((s) => s.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean);
+    }
+    try {
+      const p = JSON.parse(t);
+      return Array.isArray(p) ? p.map(String).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 class ProcessSettlementHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
@@ -478,15 +499,64 @@ class ProcessSettlementHandler extends BaseHandler {
         }
         const row = rows[0] as any;
         const vendorId = row.vendor_id;
+        const payoutPaymentIds = coercePaymentIdsForPayoutRow(row.payment_ids);
         const amount = parseFloat(row.net_amount ?? row.vendor_amount ?? '0');
         if (amount <= 0) {
           results.push({ id: sid, success: false, error: 'Invalid amount' });
           continue;
         }
-        const status = row.settlement_status ?? row.status ?? '';
-        if (status !== 'pending' && status !== 'failed') {
-          results.push({ id: sid, success: false, error: `Settlement not processable (status: ${status})` });
+        const statusRaw = row.settlement_status ?? row.status ?? '';
+        const normalizedStatus = String(statusRaw).toLowerCase().trim();
+        // `processing` is allowed: calculate-daily sets this when autoPayout is true even if Razorpay payout never started (e.g. no source account).
+        if (!['pending', 'failed', 'processing'].includes(normalizedStatus)) {
+          results.push({ id: sid, success: false, error: `Settlement not processable (status: ${statusRaw})` });
           continue;
+        }
+
+        const existingPayoutsRes = await query(
+          `SELECT id, payout_status, razorpay_payout_id
+           FROM payouts WHERE settlement_id = $1::uuid
+           ORDER BY created_at DESC NULLS LAST`,
+          [sid]
+        ).catch(() => ({ rows: [] }));
+        const existingPayoutRows: { id: string; payout_status?: string; razorpay_payout_id?: string | null }[] =
+          (existingPayoutsRes as any).rows || [];
+
+        const payoutStatusLower = (p: { payout_status?: string }) =>
+          String(p.payout_status || '').toLowerCase().trim();
+        const hasRazorpayId = (p: { razorpay_payout_id?: string | null }) =>
+          Boolean(String(p.razorpay_payout_id || '').trim());
+
+        if (
+          existingPayoutRows.some((p) =>
+            ['completed', 'paid', 'succeeded'].includes(payoutStatusLower(p)),
+          )
+        ) {
+          results.push({ id: sid, success: false, error: 'Settlement already has a completed payout' });
+          continue;
+        }
+        if (
+          existingPayoutRows.some((p) => {
+            const ps = payoutStatusLower(p);
+            return hasRazorpayId(p) && ['processing', 'pending', 'scheduled'].includes(ps);
+          })
+        ) {
+          results.push({
+            id: sid,
+            success: false,
+            error:
+              'A payout for this settlement is already in progress with Razorpay. Check Finance → Payouts or the Razorpay dashboard.',
+          });
+          continue;
+        }
+
+        const latestPayout = existingPayoutRows[0];
+        let payoutId: string | undefined;
+        if (latestPayout) {
+          const ps = payoutStatusLower(latestPayout);
+          if (!hasRazorpayId(latestPayout) && (ps === 'pending' || ps === 'processing')) {
+            payoutId = String(latestPayout.id);
+          }
         }
 
         let bank: { account_number: string; ifsc_code?: string; account_holder_name?: string };
@@ -502,11 +572,24 @@ class ProcessSettlementHandler extends BaseHandler {
           }
         } catch (_) {}
         if (bankDetails.length === 0) {
+          const anyAcc = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1::uuid
+             ORDER BY is_primary DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`,
+            [vendorId],
+          ).catch(() => ({ rows: [] }));
+          bankDetails = (anyAcc as any).rows || [];
+        }
+        if (bankDetails.length === 0) {
           const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
           bankDetails = Array.isArray(details) ? details : [];
         }
         if (bankDetails.length === 0) {
-          results.push({ id: sid, success: false, error: 'Vendor bank details not found' });
+          results.push({
+            id: sid,
+            success: false,
+            error:
+              'Vendor bank details not found. Add a bank account in the vendor app (or Admin) and mark it verified, or add vendor_bank_details.',
+          });
           continue;
         }
         const b = bankDetails[0] as any;
@@ -519,35 +602,87 @@ class ProcessSettlementHandler extends BaseHandler {
         }
         bank = { account_number: accountNumber, ifsc_code: ifscCode, account_holder_name: accountHolder };
 
-        const payoutInsert = await insert('payouts', {
-          vendor_id: vendorId,
-          amount,
-          settlement_id: sid,
-          bank_account_number: bank.account_number,
-          ifsc_code: bank.ifsc_code,
-          account_holder_name: bank.account_holder_name,
-          payout_status: 'pending',
-        });
-        const payoutId = (payoutInsert as any[])?.[0]?.id;
+        if (!payoutId) {
+          const payoutInsert = await insert('payouts', {
+            vendor_id: vendorId,
+            amount,
+            settlement_id: sid,
+            bank_account_number: bank.account_number,
+            ifsc_code: bank.ifsc_code,
+            account_holder_name: bank.account_holder_name,
+            payout_status: 'pending',
+            payment_ids: payoutPaymentIds,
+          });
+          payoutId = (payoutInsert as any[])?.[0]?.id;
+        } else {
+          await query(
+            `UPDATE payouts SET amount = $1, bank_account_number = $2, ifsc_code = $3, account_holder_name = $4,
+             payout_status = 'pending', failure_reason = NULL, payment_ids = $6
+             WHERE id = $5::uuid`,
+            [amount, bank.account_number, bank.ifsc_code, bank.account_holder_name, payoutId, payoutPaymentIds],
+          ).catch(() => null);
+        }
+
+        const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+        if (!sourceAccount) {
+          const msg =
+            'Razorpay payout source account is not configured. Set RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER (or legacy RAZORPAY_X_ACCOUNT_NUMBER) or add the Razorpay Banking customer identifier in Admin → Payment gateways.';
+          if (payoutId) {
+            await query(
+              `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+              ['failed', msg, payoutId],
+            );
+          }
+          await query(
+            `UPDATE settlements SET settlement_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+            ['failed', msg, sid],
+          ).catch(() => {});
+          results.push({ id: sid, success: false, error: msg });
+          continue;
+        }
+
+        let vendorPhone = '0000000000';
+        try {
+          const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+          if (v?.rows?.[0]?.phone) {
+            vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
+          }
+        } catch (_) {
+          /* keep default */
+        }
+        const beneficiaryAccount = String(bank.account_number || '').replace(/\s/g, '');
+        const beneficiaryIfsc = String(bank.ifsc_code || '').toUpperCase().trim();
+        const beneficiaryName = String(bank.account_holder_name || 'Vendor').trim();
 
         try {
-          const payoutResponse = await razorpayClient.payouts.create({
-            account_number: bank.account_number,
-            fund_account: {
-              account_type: 'bank_account',
-              bank_account: {
-                name: bank.account_holder_name,
-                ifsc: bank.ifsc_code,
-                account_number: bank.account_number,
+          const payoutResponse = await razorpayClient.payouts.create(
+            {
+              account_number: sourceAccount,
+              amount: Math.round(amount * 100),
+              currency: 'INR',
+              mode: 'IMPS',
+              purpose: 'payout',
+              queue_if_low_balance: true,
+              reference_id: `PAYOUT-${payoutId || sid}`.slice(0, 40),
+              narration: `Warmpawz settlement ${String(sid).slice(0, 8)}`,
+              fund_account: {
+                account_type: 'bank_account',
+                bank_account: {
+                  name: beneficiaryName,
+                  ifsc: beneficiaryIfsc,
+                  account_number: beneficiaryAccount,
+                },
+                contact: {
+                  name: beneficiaryName,
+                  email: `vendor-${vendorId}@payout.warmpawz.com`,
+                  contact: vendorPhone,
+                  type: 'vendor',
+                  reference_id: `v-${String(vendorId).replace(/-/g, '').slice(0, 32)}`,
+                },
               },
             },
-            amount: Math.round(amount * 100),
-            currency: 'INR',
-            mode: 'IMPS',
-            purpose: 'payout',
-            queue_if_low_balance: true,
-            reference_id: `PAYOUT-${payoutId || sid}`,
-          });
+            payoutId ? String(payoutId) : undefined,
+          );
           await query(
             `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
             ['processing', payoutResponse.id, payoutId]
@@ -558,18 +693,28 @@ class ProcessSettlementHandler extends BaseHandler {
           ).catch(() => {});
           results.push({ id: sid, success: true, payoutId });
         } catch (rpErr: any) {
-          const msg = rpErr?.message ?? rpErr?.error?.description ?? 'Razorpay payout failed';
+          const rawMsg = rpErr?.message ?? rpErr?.error?.description ?? 'Razorpay payout failed';
+          const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
+          const msg = isNotFound
+            ? 'Razorpay Payouts is not available for this merchant (RazorpayX/Banking). Enable Payouts in the Razorpay Dashboard, use API keys from the same account where the payout source customer id lives, allowlist your Lambda egress IPs if Razorpay requires it, and complete RazorpayX business activation.'
+            : String(rawMsg);
+          console.error('[ProcessSettlement] Razorpay error:', rawMsg);
           if (payoutId) {
             await query(
               `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
-              ['failed', msg, payoutId]
+              ['failed', isNotFound ? `${msg} | ${String(rawMsg).slice(0, 300)}` : msg, payoutId]
             );
           }
           await query(
             `UPDATE settlements SET settlement_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
-            ['failed', msg, sid]
+            ['failed', isNotFound ? `${msg} | ${String(rawMsg).slice(0, 300)}` : msg, sid]
           ).catch(() => {});
-          results.push({ id: sid, success: false, error: msg });
+          results.push({
+            id: sid,
+            success: false,
+            error: msg,
+            ...(String(rawMsg) !== String(msg) ? { razorpayMessage: String(rawMsg).slice(0, 500) } : {}),
+          });
         }
       } catch (err: any) {
         results.push({ id: sid, success: false, error: err?.message ?? 'Processing failed' });
