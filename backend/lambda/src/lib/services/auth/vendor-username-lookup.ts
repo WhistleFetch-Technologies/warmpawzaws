@@ -86,3 +86,51 @@ export async function findVendorForPasswordLogin(rawUsername: string): Promise<a
 
   return null;
 }
+
+/**
+ * When `vendors` has no row yet for this phone (e.g. application submitted, row pending),
+ * resolve `vendors.id` via `vendor_identity`: linked `vendor_id`, or a vendors row whose id equals identity.id.
+ */
+export async function findVendorIdViaVendorIdentityByPhone(rawUsername: string): Promise<string | null> {
+  const key = String(rawUsername || '').trim();
+  if (!key) return null;
+  const normalizedKey = normalizePhoneForOtp(key);
+  const digits = key.replace(/\D/g, '');
+  const last10 = digits.length >= 10 ? digits.slice(-10) : '';
+
+  const res = await query(
+    `SELECT vi.id, vi.vendor_id
+     FROM vendor_identity vi
+     WHERE (vi.is_deleted IS NULL OR vi.is_deleted = false OR vi.is_deleted = 'f')
+       AND (
+         vi.phone = $1
+         OR vi.phone = $2
+         OR ($3::text <> '' AND LENGTH(REGEXP_REPLACE(COALESCE(vi.phone, ''), '[^0-9]', '', 'g')) >= 10
+             AND RIGHT(REGEXP_REPLACE(COALESCE(vi.phone, ''), '[^0-9]', '', 'g'), 10) = $3)
+       )
+     ORDER BY vi.updated_at DESC NULLS LAST, vi.created_at DESC NULLS LAST
+     LIMIT 10`,
+    [key, normalizedKey, last10]
+  );
+  const rows = (res as any).rows || [];
+
+  for (const vi of rows) {
+    const vid = vi.vendor_id;
+    if (vid) {
+      const chk = await query(
+        `SELECT id FROM vendors WHERE id = $1::uuid AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f') LIMIT 1`,
+        [String(vid)]
+      );
+      if ((chk as any).rows?.[0]) return String((chk as any).rows[0].id);
+    }
+    const iid = vi.id;
+    if (iid) {
+      const chkSame = await query(
+        `SELECT id FROM vendors WHERE id = $1::uuid AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f') LIMIT 1`,
+        [String(iid)]
+      );
+      if ((chkSame as any).rows?.[0]) return String((chkSame as any).rows[0].id);
+    }
+  }
+  return null;
+}

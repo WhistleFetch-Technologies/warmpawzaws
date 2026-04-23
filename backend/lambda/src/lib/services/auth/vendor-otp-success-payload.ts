@@ -2,7 +2,7 @@
  * Shared payload builders for vendor auth success (verify-otp shape).
  * Used by VerifyOtpHandlerEnhanced and admin vendor-portal bootstrap.
  */
-import { generateUATJWTToken } from '../../../utils/jwt-generator';
+import { generateProductionJWTToken, generateUATJWTToken } from '../../../utils/jwt-generator';
 import { query } from '../../../database/rds-connection';
 import {
   getOrCreateCognitoUser,
@@ -67,9 +67,9 @@ export async function issueAuthTokensAfterOtp(params: {
 
     if (!cognitoUserPoolId) {
       console.warn(
-        '[vendor-otp-success-payload] Production Mode: Cognito not configured, using JWT tokens as fallback'
+        '[vendor-otp-success-payload] Production Mode: Cognito not configured, using production-issuer JWT fallback'
       );
-      cognitoTokens = await generateUATJWTToken({
+      cognitoTokens = await generateProductionJWTToken({
         userId,
         phone,
         role,
@@ -89,8 +89,8 @@ export async function issueAuthTokensAfterOtp(params: {
         cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
       } catch (cognitoError: any) {
         console.error('[vendor-otp-success-payload] Cognito failed:', cognitoError?.message || cognitoError);
-        console.warn('[vendor-otp-success-payload] Falling back to JWT tokens');
-        cognitoTokens = await generateUATJWTToken({
+        console.warn('[vendor-otp-success-payload] Falling back to production-issuer JWT tokens');
+        cognitoTokens = await generateProductionJWTToken({
           userId,
           phone,
           role,

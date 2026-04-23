@@ -48,3 +48,12 @@ LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh
 ```
 
 Alternate admin URL after deploy: `https://admin.warmpawz.com` (same CloudFront origin as `https://dbr09zyoq9akb.cloudfront.net`; see `prodscripts/PRODUCTION_CONFIG.md`).
+
+## API Lambda environment (UAT / dev HTTP API)
+
+The handler behind API Gateway (for example `warmpawz-dev-api-handler` on `https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com`) verifies **`warmpawz-uat` JWTs when `UAT_MODE=true` or when the token’s issuer claim is `warmpawz-uat`** (signature must match `UAT_JWT_SECRET`). Client headers such as `x-uat-mode` do not enable verification; see `backend/lambda/src/utils/jwt-verification.ts`.
+
+- **`UAT_MODE`**: Set to `true` on the dev/UAT API Lambda when vendor or customer apps use UAT OTP (`123456`) and UAT-issuer tokens. Terraform dev sets this in `infra/envs/dev/main.tf` (`common_env_vars`). Serverless-based deploys read SSM `/warmpawz/<stage>/features/uatMode` (`backend/lambda/serverless.yml`); it must be the string `true` for UAT JWT acceptance.
+- **`UAT_JWT_SECRET`**: HMAC secret for signing and verifying `warmpawz-uat` tokens (`backend/lambda/src/utils/jwt-generator.ts`). If unset, sign and verify both use the same built-in default on that process — but if you set it on one deploy path (AWS console, SSM, or Terraform variable `uat_jwt_secret` in dev), **every** code path that issues or checks those tokens on that Lambda must use the identical value. Optional Terraform: `infra/envs/dev/variables.tf` → `uat_jwt_secret` (merged into Lambda env when non-empty).
+
+**Local** (`npm run start:local` / `serverless.local.yml`): use `UAT_MODE=true` in `.env.local` for UAT issuer tokens; set `UAT_JWT_SECRET` if you override the default and need parity with a remote API.
