@@ -223,7 +223,11 @@ export class ApiClient {
       // After OTP / admin portal bootstrap, several parallel calls may 401 once (token shape, race).
       // Never strip the "just logged in" flag on first 401 — that made the *second* 401 wipe the session
       // and send users to the phone login screen while the portal tab was still loading.
-      if (response.status === 401) {
+      // Skip session clear for forgot-password verify/reset — invalid OTP / token should not redirect away from the flow.
+      const isVendorForgotPasswordFlow =
+        path.includes('/auth/vendor/forgot-password/verify-otp') ||
+        path.includes('/auth/vendor/forgot-password/reset');
+      if (response.status === 401 && !isVendorForgotPasswordFlow) {
         if (typeof window !== 'undefined') {
           const loginAt = Number(sessionStorage.getItem('_warmpawz_vendor_login_at') || 0);
           const inGrace = loginAt > 0 && Date.now() - loginAt < VENDOR_POST_LOGIN_401_GRACE_MS;

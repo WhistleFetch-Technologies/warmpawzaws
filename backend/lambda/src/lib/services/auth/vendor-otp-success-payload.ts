@@ -28,6 +28,18 @@ async function resolveCustomerAuthVersionForJwt(userId: string): Promise<number>
   }
 }
 
+async function resolveVendorAuthVersionForJwt(userId: string): Promise<number> {
+  try {
+    const res = await query(
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM vendors WHERE id = $1::uuid LIMIT 1`,
+      [userId]
+    );
+    return Number((res as any).rows?.[0]?.av ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 /** Issue access/id/refresh tokens — same branches as auth-enhanced verify-otp. */
 export async function issueAuthTokensAfterOtp(params: {
   userId: string;
@@ -35,6 +47,8 @@ export async function issueAuthTokensAfterOtp(params: {
   role: 'customer' | 'vendor' | 'admin';
   /** Optional override; otherwise loaded from `customers.auth_version` for customers. */
   customerAuthVersion?: number;
+  /** Optional override; otherwise loaded from `vendors.auth_version` for vendors. */
+  vendorAuthVersion?: number;
 }): Promise<CognitoTokens> {
   const { userId, phone, role } = params;
   const isUATMode = process.env.UAT_MODE === 'true';
@@ -47,6 +61,14 @@ export async function issueAuthTokensAfterOtp(params: {
         : await resolveCustomerAuthVersionForJwt(userId);
   }
 
+  let vendorJwtAuthVersion: number | undefined;
+  if (role === 'vendor') {
+    vendorJwtAuthVersion =
+      params.vendorAuthVersion !== undefined && params.vendorAuthVersion !== null
+        ? Number(params.vendorAuthVersion)
+        : await resolveVendorAuthVersionForJwt(userId);
+  }
+
   let cognitoTokens: CognitoTokens;
 
   if (isUATMode) {
@@ -55,7 +77,12 @@ export async function issueAuthTokensAfterOtp(params: {
       phone,
       role,
       expiresIn: 24 * 60 * 60,
-      authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
+      authVersion:
+        role === 'customer'
+          ? customerJwtAuthVersion
+          : role === 'vendor'
+            ? vendorJwtAuthVersion
+            : undefined,
     });
     console.log('[vendor-otp-success-payload] UAT Mode: Generated JWT tokens with 24h expiry');
   } else {
@@ -74,7 +101,12 @@ export async function issueAuthTokensAfterOtp(params: {
         phone,
         role,
         expiresIn: 24 * 60 * 60,
-        authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
+        authVersion:
+          role === 'customer'
+            ? customerJwtAuthVersion
+            : role === 'vendor'
+              ? vendorJwtAuthVersion
+              : undefined,
       });
     } else {
       try {
@@ -95,7 +127,12 @@ export async function issueAuthTokensAfterOtp(params: {
           phone,
           role,
           expiresIn: 24 * 60 * 60,
-          authVersion: role === 'customer' ? customerJwtAuthVersion : undefined,
+          authVersion:
+            role === 'customer'
+              ? customerJwtAuthVersion
+              : role === 'vendor'
+                ? vendorJwtAuthVersion
+                : undefined,
         });
       }
     }

@@ -61,6 +61,11 @@ import {
   handleCustomerForgotPasswordVerifyOtp,
   handleCustomerForgotPasswordReset,
 } from '../../lib/services/auth/customer-forgot-password';
+import {
+  handleVendorForgotPasswordRequest,
+  handleVendorForgotPasswordVerifyOtp,
+  handleVendorForgotPasswordReset,
+} from '../../lib/services/auth/vendor-forgot-password';
 
 // ============================================================================
 // OTP HELPERS
@@ -1513,6 +1518,40 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
     const body = await c.req.json().catch(() => ({}));
     const out = await handleCustomerForgotPasswordReset({ body, requestId });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/request', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-forwarded-for': c.req.header('x-forwarded-for') || undefined,
+      'X-Forwarded-For': c.req.header('X-Forwarded-For') || undefined,
+      'cf-connecting-ip': c.req.header('cf-connecting-ip') || undefined,
+      'CF-Connecting-IP': c.req.header('CF-Connecting-IP') || undefined,
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleVendorForgotPasswordRequest({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/verify-otp', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleVendorForgotPasswordVerifyOtp({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/reset', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const out = await handleVendorForgotPasswordReset({ body, requestId });
     return c.json(out.body as any, out.status);
   });
 
