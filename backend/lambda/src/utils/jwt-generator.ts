@@ -12,9 +12,14 @@
 
 import { SignJWT } from 'jose';
 
-// UAT Mode Secret Key (for signing JWT tokens)
-// In production, this should be stored in AWS Secrets Manager
-const UAT_JWT_SECRET = process.env.UAT_JWT_SECRET || 'uat-secret-key-change-in-production';
+/** Read on each use so sign/verify always match the Lambda env (avoids drift vs a stale module default). */
+function getUatJwtSecret(): string {
+  return process.env.UAT_JWT_SECRET || 'uat-secret-key-change-in-production';
+}
+
+function getProdOrFallbackSecret(): string {
+  return process.env.PROD_JWT_SECRET || process.env.JWT_SECRET || getUatJwtSecret();
+}
 
 /**
  * Generate a proper JWT token for UAT mode
@@ -31,7 +36,7 @@ export async function generateUATJWTToken(params: {
   const { userId, phone, role, expiresIn = 60, authVersion } = params;
   
   // Create secret key from string
-  const secret = new TextEncoder().encode(UAT_JWT_SECRET);
+  const secret = new TextEncoder().encode(getUatJwtSecret());
   
   const now = Math.floor(Date.now() / 1000);
   const exp = now + expiresIn;
@@ -108,8 +113,7 @@ export async function generateProductionJWTToken(params: {
   const { userId, phone, role, expiresIn = 24 * 60 * 60, authVersion } = params;
   
   // Production JWT Secret (should be different from UAT secret)
-  const PROD_JWT_SECRET = process.env.PROD_JWT_SECRET || process.env.JWT_SECRET || UAT_JWT_SECRET;
-  const secret = new TextEncoder().encode(PROD_JWT_SECRET);
+  const secret = new TextEncoder().encode(getProdOrFallbackSecret());
   
   const now = Math.floor(Date.now() / 1000);
   const exp = now + expiresIn;
@@ -182,7 +186,7 @@ export async function verifyUATJWTToken(token: string): Promise<{
   error?: string;
 }> {
   try {
-    const secret = new TextEncoder().encode(UAT_JWT_SECRET);
+    const secret = new TextEncoder().encode(getUatJwtSecret());
     const { jwtVerify } = await import('jose');
     
     const { payload } = await jwtVerify(token, secret, {
@@ -206,8 +210,7 @@ export async function verifyProductionJWTToken(token: string): Promise<{
   error?: string;
 }> {
   try {
-    const PROD_JWT_SECRET = process.env.PROD_JWT_SECRET || process.env.JWT_SECRET || UAT_JWT_SECRET;
-    const secret = new TextEncoder().encode(PROD_JWT_SECRET);
+    const secret = new TextEncoder().encode(getProdOrFallbackSecret());
     const { jwtVerify } = await import('jose');
     
     const { payload } = await jwtVerify(token, secret, {

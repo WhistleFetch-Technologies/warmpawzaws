@@ -97,6 +97,8 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
+        // Align with Terraform api-handler: UAT-issuer tokens (issueAuthTokensAfterOtp) when not prod; set UAT_JWT_SECRET on the function to match warmpawz-dev-api-handler if this Lambda is used for auth
+        UAT_MODE: environment === 'prod' ? 'false' : 'true',
         // Database (using RDS Proxy or direct cluster)
         AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,

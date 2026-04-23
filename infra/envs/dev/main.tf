@@ -185,6 +185,12 @@ module "secrets" {
   shiprocket_password = var.shiprocket_password
 }
 
+# Optional: load UAT JWT HMAC from SSM when var.uat_jwt_secret is not in tfvars (no runtime SSM read on Lambda).
+data "aws_ssm_parameter" "uat_jwt_secret" {
+  count = var.uat_jwt_secret == "" && var.uat_jwt_secret_ssm_parameter != "" ? 1 : 0
+  name  = var.uat_jwt_secret_ssm_parameter
+}
+
 # Lambda Module
 module "lambda" {
   source = "../../modules/lambda"
@@ -239,7 +245,9 @@ module "lambda" {
     COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
     COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
     },
-    var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : {}
+    var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : (
+      length(data.aws_ssm_parameter.uat_jwt_secret) > 0 ? { UAT_JWT_SECRET = data.aws_ssm_parameter.uat_jwt_secret[0].value } : {}
+    )
   )
 
   secrets_arns = concat(
