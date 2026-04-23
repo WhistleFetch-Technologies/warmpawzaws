@@ -27,6 +27,7 @@ import {
 } from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -45,17 +46,46 @@ import {
   Pill, 
   FileText, 
   RefreshCw, 
-  X 
+  X,
+  Sparkles,
 } from 'lucide-react';
 import {
   getVendorRoleId,
   getVendorAllowedServiceStyles,
   hasVendorRole,
   isSoloVendor,
-  isVendorWalkerProgramProgress,
 } from '@/lib/vendor-utils';
 import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
 import { DeclineBookingModal } from './DeclineBookingModal';
+
+/** 7-day chart when API omits dailyBreakdown: bucket by credited-at (realizedAt). */
+function buildDailyTrendFromEarningTransactions(transactions: any[]): Array<{ day: string; amount: number }> {
+  const shortDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const formatLocalYmd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const byKey = new Map<string, number>();
+  for (const t of transactions || []) {
+    const raw = t?.realizedAt ?? t?.realized_at ?? t?.createdAt ?? t?.created_at;
+    if (!raw) continue;
+    const k = formatLocalYmd(new Date(raw));
+    const a = Number(t?.amount ?? t?.price ?? 0);
+    if (!Number.isFinite(a)) continue;
+    byKey.set(k, (byKey.get(k) || 0) + a);
+  }
+  const ref = new Date();
+  const out: Array<{ day: string; amount: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - i, 12, 0, 0, 0);
+    const key = formatLocalYmd(d);
+    const amt = Math.round((byKey.get(key) || 0) * 100) / 100;
+    out.push({ day: shortDay[d.getDay()] ?? '—', amount: amt });
+  }
+  return out;
+}
 
 interface VendorBookingManagementProps {
   vendorId: string;
@@ -191,43 +221,6 @@ function formatDbTimeTo12h(raw: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-const WALK_SERVICE_HINT =
-  /walk|walking|dog\s*walk|pet\s*walk|stroll|outing|leash|पैदल|walkathon/i;
-/** Exclude obvious non-walk home visits when inferring from walker + at_home. */
-const NON_WALK_HOME_HINT =
-  /groom|bath|haircut|nail|vet\s|vaccin|dental|spa|trim|board|daycare|training\s*class|consult|pet\s*sit|house\s*sit|sitting/i;
-
-/**
- * Bookings that should use `/bookings/home-service?bookingId=` (start/end OTP + GPS).
- * Catalog names may omit the word "walk"; walker + at_home is a strong signal.
- */
-function bookingNeedsWalkLiveTracker(booking: Booking, vendorData?: any): boolean {
-  const name = String(booking.serviceName || booking.service_name || '').toLowerCase();
-  const cat = String(
-    (booking as any).serviceCategory || (booking as any).service_category || ''
-  ).toLowerCase();
-  const hay = `${name} ${cat}`;
-  if (WALK_SERVICE_HINT.test(hay)) return true;
-
-  if (vendorData && isVendorWalkerProgramProgress(vendorData)) {
-    const st = String(booking.serviceType || (booking as any).service_type || '').toLowerCase();
-    const atHome =
-      st === 'at_home' ||
-      st.includes('home') ||
-      st.includes('home_visit') ||
-      st.includes('home_service');
-    if (
-      atHome &&
-      booking.status !== 'completed' &&
-      booking.status !== 'cancelled' &&
-      !NON_WALK_HOME_HINT.test(hay)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export function VendorBookingManagement({
   vendorId,
   vendorData,
@@ -288,6 +281,15 @@ export function VendorBookingManagement({
     }>;
   } | null>(null);
   const [earningsLoading, setEarningsLoading] = useState(false);
+  const [tierInfo, setTierInfo] = useState<{
+    name?: string;
+    current?: string;
+    commission?: number;
+    commissionRate?: number;
+    canUpgrade?: boolean;
+    nextTier?: string | { name?: string };
+    payoutCycleLabel?: string;
+  } | null>(null);
   
   // Payouts State
   const [payoutsData, setPayoutsData] = useState<{
@@ -457,12 +459,12 @@ export function VendorBookingManagement({
     loadBookings();
   }, [selectedDate, activeFilter]);
   
-  // Load earnings data when earnings tab is active
+  // Load earnings when Earnings tab is shown (vendorId must be set; not tied to bookings date filter)
   useEffect(() => {
-    if (activeTab === 'earnings') {
+    if (activeTab === 'earnings' && vendorId) {
       loadEarningsData();
     }
-  }, [activeTab, activeFilter]);
+  }, [activeTab, vendorId]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -640,41 +642,75 @@ export function VendorBookingManagement({
   };
 
   const loadEarningsData = async () => {
+    if (!vendorId) return;
     try {
       setEarningsLoading(true);
       console.log('💰 [VENDOR-UI] Loading earnings data for vendor:', vendorId);
       
-      // Fetch earnings data for different periods in parallel
-      const [todayData, weekData, monthData, totalData, transactionsData] = await Promise.all([
+      // Fetch earnings, transactions, and tier in parallel
+      const [todayData, weekData, monthData, totalData, transactionsData, tierRes] = await Promise.all([
         apiClient.get(`/vendor/${vendorId}/earnings?period=day`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=week`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=month`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=10`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=25`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/tier`).catch(() => null) as Promise<any>,
       ]);
+
+      if (tierRes?.tier) {
+        setTierInfo(tierRes.tier);
+      } else {
+        setTierInfo(null);
+      }
       
       console.log('📊 [VENDOR-UI] Earnings API responses:', { todayData, weekData, monthData, totalData, transactionsData });
       
-      // Calculate daily trend from week data
-      const dailyTrend = weekData?.dailyBreakdown || weekData?.dailyEarnings || [
-        { day: 'Mon', amount: 0 },
-        { day: 'Tue', amount: 0 },
-        { day: 'Wed', amount: 0 },
-        { day: 'Thu', amount: 0 },
-        { day: 'Fri', amount: 0 },
-        { day: 'Sat', amount: 0 },
-        { day: 'Sun', amount: 0 },
-      ];
+      const fromApi =
+        weekData?.earnings?.dailyBreakdown ||
+        weekData?.earnings?.dailyEarnings ||
+        weekData?.dailyBreakdown ||
+        weekData?.dailyEarnings;
+      let dailyTrend: Array<{ day: string; amount: number }>;
+      if (Array.isArray(fromApi) && fromApi.length > 0) {
+        dailyTrend = fromApi.map((d: any, index: number) => ({
+          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || '',
+          amount: Number(d.amount ?? d.earnings ?? 0) || 0,
+        }));
+      } else {
+        const weekTx = weekData?.earnings?.transactions;
+        const built = Array.isArray(weekTx) && weekTx.length > 0 ? buildDailyTrendFromEarningTransactions(weekTx) : null;
+        dailyTrend =
+          built && built.some((x) => x.amount > 0)
+            ? built
+            : [
+                { day: 'Mon', amount: 0 },
+                { day: 'Tue', amount: 0 },
+                { day: 'Wed', amount: 0 },
+                { day: 'Thu', amount: 0 },
+                { day: 'Fri', amount: 0 },
+                { day: 'Sat', amount: 0 },
+                { day: 'Sun', amount: 0 },
+              ];
+      }
       
-      // Map transactions to display format
-      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 5).map((t: any) => ({
-        id: t.id || t.transactionId,
-        date: t.date || t.createdAt || new Date().toISOString().split('T')[0],
-        service: t.serviceName || t.service || 'Service',
-        amount: t.amount || t.price || 0,
-        status: t.status || 'completed',
-        customer: t.customerName || t.customer || 'Customer',
-      }));
+      // Prefer credited-at time so totals align with earnings APIs (booking_date can differ)
+      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 15).map((t: any) => {
+        const credited =
+          t.realizedAt ||
+          t.realized_at ||
+          t.createdAt ||
+          t.created_at ||
+          t.date ||
+          new Date().toISOString().split('T')[0];
+        return {
+          id: String(t.id || t.transactionId || Math.random()),
+          date: credited,
+          service: t.serviceName || t.service || 'Service',
+          amount: Number(t.amount || t.price || 0) || 0,
+          status: t.status || 'completed',
+          customer: t.customerName || t.customer || 'Customer',
+        };
+      });
       
       // API returns { success, earnings: { totalEarnings, thisPeriod, ... }, period } - extract numbers only
       const eNum = (res: any, field: 'thisPeriod' | 'totalEarnings') => {
@@ -698,6 +734,7 @@ export function VendorBookingManagement({
       console.log('✅ [VENDOR-UI] Earnings data loaded successfully');
     } catch (error) {
       console.error('❌ Error loading earnings:', error);
+      setTierInfo(null);
       // Set empty data on error
       setEarningsData({
         today: 0,
@@ -1475,6 +1512,57 @@ export function VendorBookingManagement({
               </div>
             ) : (
               <>
+                {/* Tier summary + upgrade (full flow on /earnings) */}
+                <div className="p-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white border-b border-orange-600/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Sparkles className="w-5 h-5 shrink-0 mt-0.5 opacity-95" />
+                      <div className="min-w-0">
+                        <p className="text-xs opacity-90">Your tier</p>
+                        <p className="text-lg font-bold truncate">
+                          {tierInfo?.name || tierInfo?.current || 'Standard'}
+                        </p>
+                        {(() => {
+                          const cr = tierInfo?.commissionRate ?? tierInfo?.commission;
+                          const commissionPct =
+                            typeof cr === 'number' && Number.isFinite(cr)
+                              ? cr > 1
+                                ? Math.round(cr)
+                                : Math.round(cr * 100)
+                              : 15;
+                          return (
+                            <p className="text-xs opacity-90 mt-1">
+                              Commission ~{commissionPct}% ·{' '}
+                              {tierInfo?.payoutCycleLabel || 'Settlement per Finance'}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      {tierInfo?.canUpgrade ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 px-3 bg-white text-orange-700 hover:bg-orange-50 font-semibold"
+                          onClick={() => router.push('/earnings')}
+                        >
+                          Upgrade tier
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 px-3 bg-white/95 text-orange-800 hover:bg-white font-medium"
+                          onClick={() => router.push('/earnings')}
+                        >
+                          Tiers & earnings
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Earnings Summary */}
                 <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
                   <div className="grid grid-cols-3 gap-3 mb-3">
@@ -1483,6 +1571,7 @@ export function VendorBookingManagement({
                         ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-xs text-gray-600">Today</div>
+                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">Credited today</div>
                     </div>
                     <div className="bg-white p-3 rounded-lg text-center">
                       <div className="text-2xl font-bold text-green-600">
@@ -1515,7 +1604,8 @@ export function VendorBookingManagement({
 
                 {/* Recent Transactions */}
                 <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
+                  <p className="text-xs text-gray-500 mb-3">Amounts credited to your account (may differ from appointment date).</p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
                     <div className="text-center py-8 text-gray-500 text-sm">
                       No transactions yet
@@ -1527,7 +1617,10 @@ export function VendorBookingManagement({
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
                               <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
-                              <div className="text-xs text-gray-500">{transaction.customer} • {new Date(transaction.date).toLocaleDateString('en-IN')}</div>
+                              <div className="text-xs text-gray-500">
+                                {transaction.customer} · Credited{' '}
+                                {new Date(transaction.date).toLocaleDateString('en-IN')}
+                              </div>
                             </div>
                             <div className="text-right">
                               <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString('en-IN')}</div>

@@ -35,6 +35,7 @@ import {
   persistCustomerNotificationSettings,
 } from '../../../utils/customer-notification-settings';
 import { presignProductImagesJsonb } from '../../../utils/s3-media-presign';
+import { bookingUsesDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
 
 /** First image URL from products.images JSONB (array of strings or { url } objects). */
 function firstProductImageUrl(images: unknown): string | undefined {
@@ -488,7 +489,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
             }
             const atHome = b.service_style === 'at_home' || b.service_type === 'at_home';
             if (!completion_otp && atHome && b.otp_code) {
-              completion_otp = b.otp_code;
+              const dedicated = await bookingUsesDedicatedEndSessionOtp(String(b.id));
+              if (!dedicated) {
+                completion_otp = b.otp_code;
+              }
             }
           }
           return { ...b, completion_otp };

@@ -18,6 +18,7 @@ import {
   Square,
   CheckCircle2,
   RefreshCw,
+  Loader2,
   Route,
   Zap,
   Phone,
@@ -160,7 +161,61 @@ export function HomeServiceTrackingManager({
   const [otpType, setOtpType] = useState<'start' | 'end'>('start');
   const [otpInput, setOtpInput] = useState('');
   const [sessionDuration, setSessionDuration] = useState(0);
-  
+
+  /** Customer pin for en-route map + ETA when booking lat/lng missing (geocode address once). */
+  const [resolvedCustomerDest, setResolvedCustomerDest] = useState<{ lat: number; lng: number } | null>(null);
+  const resolvedCustomerDestRef = useRef<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    resolvedCustomerDestRef.current = resolvedCustomerDest;
+  }, [resolvedCustomerDest]);
+
+  const journeyMapContainerRef = useRef<HTMLDivElement>(null);
+  const journeyMapInstanceRef = useRef<any>(null);
+  const journeyPolylineRef = useRef<any>(null);
+  const journeyVendorMarkerRef = useRef<any>(null);
+  const journeyHomeMarkerRef = useRef<any>(null);
+  const journeyMapStyleIdRef = useRef<string | null>(null);
+  const [journeyMapLoading, setJourneyMapLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!bookingData) return;
+      const lat = Number(bookingData.latitude);
+      const lng = Number(bookingData.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (!cancelled) setResolvedCustomerDest({ lat, lng });
+        return;
+      }
+      const addr = (bookingData.address || '').trim();
+      if (!addr) {
+        if (!cancelled) setResolvedCustomerDest(null);
+        return;
+      }
+      try {
+        const keyRes = (await apiClient.get<any>('/config/google-maps-key').catch(() => null)) as any;
+        const key = keyRes?.apiKey || keyRes?.key;
+        if (!key || cancelled) return;
+        if (keyRes?.mapId) journeyMapStyleIdRef.current = keyRes.mapId;
+        const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addr)}&key=${encodeURIComponent(key)}`;
+        const geo = await fetch(geoUrl).then((r) => r.json());
+        if (cancelled) return;
+        const loc = geo?.results?.[0]?.geometry?.location;
+        if (loc && Number.isFinite(Number(loc.lat)) && Number.isFinite(Number(loc.lng))) {
+          setResolvedCustomerDest({ lat: Number(loc.lat), lng: Number(loc.lng) });
+        } else {
+          setResolvedCustomerDest(null);
+        }
+      } catch {
+        if (!cancelled) setResolvedCustomerDest(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingData?.latitude, bookingData?.longitude, bookingData?.address]);
+
   useEffect(() => {
     sessionStatusRef.current = sessionState.status;
   }, [sessionState.status]);
@@ -215,7 +270,7 @@ export function HomeServiceTrackingManager({
     bookingData?.sessionStartedAt,
   ]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount (GPS only — map teardown runs after map helpers below)
   useEffect(() => {
     return () => {
       if (watchIdRef.current !== null) {
@@ -380,21 +435,23 @@ export function HomeServiceTrackingManager({
           });
         }
         
-        // Calculate ETA if traveling
-        if (sessionStatusRef.current === 'traveling' && bookingData?.latitude && bookingData?.longitude) {
-          const distance = calculateDistance(
-            newLocation.latitude,
-            newLocation.longitude,
-            bookingData.latitude,
-            bookingData.longitude
-          );
-          const etaMinutes = Math.ceil(distance / 0.5); // Assume 30 km/h average speed
-          
-          setSessionState(prev => ({
-            ...prev,
-            distanceToDestination: distance,
-            currentEta: etaMinutes
-          }));
+        // Calculate ETA if traveling (use geocoded customer pin when booking has no lat/lng)
+        if (sessionStatusRef.current === 'traveling') {
+          const dest = resolvedCustomerDestRef.current;
+          if (dest) {
+            const distance = calculateDistance(
+              newLocation.latitude,
+              newLocation.longitude,
+              dest.lat,
+              dest.lng
+            );
+            const etaMinutes = Math.ceil(distance / 0.5); // ~30 km/h heuristic
+            setSessionState((prev) => ({
+              ...prev,
+              distanceToDestination: distance,
+              currentEta: etaMinutes,
+            }));
+          }
         }
       },
       (error) => {
@@ -490,6 +547,167 @@ export function HomeServiceTrackingManager({
     }
     return Math.round(total * 1000); // Return in meters
   };
+
+  const loadGoogleMapsForJourney = useCallback((): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        resolve();
+        return;
+      }
+      if (document.querySelector('script[src*="maps.googleapis.com"]')) {
+        const iv = window.setInterval(() => {
+          if ((window as any).google?.maps) {
+            window.clearInterval(iv);
+            resolve();
+          }
+        }, 100);
+        window.setTimeout(() => {
+          window.clearInterval(iv);
+          if ((window as any).google?.maps) resolve();
+          else reject(new Error('Google Maps load timeout'));
+        }, 15000);
+        return;
+      }
+      void (async () => {
+        try {
+          const r = (await apiClient.get<any>('/config/google-maps-key').catch(() => null)) as any;
+          const key = r?.apiKey || r?.key;
+          if (r?.mapId) journeyMapStyleIdRef.current = r.mapId;
+          if (!key) {
+            reject(new Error('Google Maps API key not configured'));
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=geometry`;
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Failed to load Google Maps'));
+          document.head.appendChild(script);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error(String(e)));
+        }
+      })();
+    });
+  }, []);
+
+  const teardownJourneyMap = useCallback(() => {
+    try {
+      if (journeyPolylineRef.current) {
+        journeyPolylineRef.current.setMap(null);
+        journeyPolylineRef.current = null;
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (journeyVendorMarkerRef.current) {
+        journeyVendorMarkerRef.current.setMap(null);
+        journeyVendorMarkerRef.current = null;
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (journeyHomeMarkerRef.current) {
+        journeyHomeMarkerRef.current.setMap(null);
+        journeyHomeMarkerRef.current = null;
+      }
+    } catch {
+      /* ignore */
+    }
+    journeyMapInstanceRef.current = null;
+  }, []);
+
+  const buildOrRefreshJourneyMap = useCallback(async () => {
+    if (sessionStatusRef.current !== 'traveling') return;
+    if (!journeyMapContainerRef.current) return;
+    const dest = resolvedCustomerDestRef.current;
+    const vendor = latestLocationRef.current;
+    if (!dest || !vendor) return;
+
+    setJourneyMapLoading(true);
+    try {
+      await loadGoogleMapsForJourney();
+      const g = (window as any).google;
+      if (!g?.maps || !journeyMapContainerRef.current) return;
+
+      const destLL = new g.maps.LatLng(dest.lat, dest.lng);
+      const venLL = new g.maps.LatLng(vendor.latitude, vendor.longitude);
+
+      if (!journeyMapInstanceRef.current) {
+        const mapId = journeyMapStyleIdRef.current || undefined;
+        const opts: Record<string, unknown> = {
+          center: { lat: (dest.lat + vendor.latitude) / 2, lng: (dest.lng + vendor.longitude) / 2 },
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
+          zoomControl: true,
+        };
+        if (mapId) opts.mapId = mapId;
+        journeyMapInstanceRef.current = new g.maps.Map(journeyMapContainerRef.current, opts as any);
+      }
+
+      const map = journeyMapInstanceRef.current;
+      if (!journeyVendorMarkerRef.current) {
+        journeyVendorMarkerRef.current = new g.maps.Marker({
+          map,
+          position: venLL,
+          title: 'You',
+        });
+      } else {
+        journeyVendorMarkerRef.current.setPosition(venLL);
+      }
+
+      if (!journeyHomeMarkerRef.current) {
+        journeyHomeMarkerRef.current = new g.maps.Marker({
+          map,
+          position: destLL,
+          title: 'Customer',
+        });
+      } else {
+        journeyHomeMarkerRef.current.setPosition(destLL);
+      }
+
+      if (journeyPolylineRef.current) {
+        journeyPolylineRef.current.setMap(null);
+      }
+      journeyPolylineRef.current = new g.maps.Polyline({
+        path: [venLL, destLL],
+        geodesic: true,
+        strokeColor: '#FF8C42',
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+      });
+
+      const bounds = new g.maps.LatLngBounds();
+      bounds.extend(venLL);
+      bounds.extend(destLL);
+      map.fitBounds(bounds, { top: 40, right: 24, bottom: 40, left: 24 });
+    } catch (e) {
+      console.warn('[HomeServiceTracking] journey map:', e);
+    } finally {
+      setJourneyMapLoading(false);
+    }
+  }, [loadGoogleMapsForJourney]);
+
+  useEffect(() => {
+    if (sessionState.status !== 'traveling') {
+      teardownJourneyMap();
+      return;
+    }
+    const id = window.setTimeout(() => {
+      void buildOrRefreshJourneyMap();
+    }, 200);
+    return () => window.clearTimeout(id);
+  }, [sessionState.status, currentLocation, resolvedCustomerDest, buildOrRefreshJourneyMap, teardownJourneyMap]);
+
+  useEffect(() => {
+    return () => {
+      teardownJourneyMap();
+    };
+  }, [teardownJourneyMap]);
 
   // Start traveling
   const handleStartTravel = async () => {
@@ -840,6 +1058,24 @@ export function HomeServiceTrackingManager({
             </div>
           </div>
         </Card>
+
+        {sessionState.status === 'traveling' && (
+          <Card className="mb-4 overflow-hidden border-orange-100 shadow-sm">
+            <div className="border-b border-orange-100 bg-orange-50/80 px-3 py-2">
+              <p className="text-sm font-semibold text-gray-900">Route to customer</p>
+              <p className="text-xs text-gray-600">Your live position and the visit address (same as customer map).</p>
+            </div>
+            <div className="relative h-[min(52vh,320px)] w-full min-h-[220px] bg-gray-100">
+              <div ref={journeyMapContainerRef} className="h-full w-full" />
+              {(journeyMapLoading || !resolvedCustomerDest) && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 text-sm text-gray-600">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" aria-hidden />
+                  {!resolvedCustomerDest ? 'Finding customer location…' : 'Loading map…'}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         <Card className="mb-4 border-gray-100 p-4 shadow-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
