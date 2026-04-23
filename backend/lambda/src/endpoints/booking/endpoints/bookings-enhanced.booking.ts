@@ -1217,11 +1217,15 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ FIX: Optional columns that may or may not exist in prod DB
         // These are added to a separate list and attempted; if INSERT fails due to
         // missing column, we retry without them
+        const persistedServiceLabel = String(
+          service?.service_name || service?.name || serviceName || ''
+        ).trim();
         const optionalColumns: Record<string, any> = {
           payment_status: paymentStatus,
           subscription_id: subscriptionId,
           subscription_booking: isSubscriptionBooking,
           pet_id: petId || null,
+          ...(persistedServiceLabel ? { service_name: persistedServiceLabel } : {}),
           selected_services: selectedServices && selectedServices.length > 0 
             ? JSON.stringify(selectedServices) 
             : null,
@@ -1665,6 +1669,18 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         loyaltyServiceKind === 'nutrition_consultation' &&
         (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
 
+      const summaryDurationMinutes =
+        service?.custom_duration != null &&
+        String(service.custom_duration).trim() !== '' &&
+        Number(service.custom_duration) > 0
+          ? Number(service.custom_duration)
+          : service?.duration_minutes != null
+            ? Number(service.duration_minutes)
+            : null;
+      const summaryServiceName = (service?.service_name ?? service?.name ?? serviceName) as string | null | undefined;
+      const summaryDescription = (service?.custom_description as string | null | undefined) ?? null;
+      const summaryCatalogServiceId = (service?.service_id as string | undefined) || lookupServiceId;
+
       const response = {
         bookingId: booking.id,
         customerId,
@@ -1675,6 +1691,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         status: booking.status,
         message: 'Booking created successfully',
         isNew: true,
+        serviceId: booking.service_id,
+        serviceName: summaryServiceName ?? null,
+        service: {
+          catalogServiceId: summaryCatalogServiceId,
+          vendorServiceId: service?.id ?? booking.service_id,
+          name: summaryServiceName ?? null,
+          description: summaryDescription,
+          durationMinutes: summaryDurationMinutes,
+          category: (service?.category as string | null | undefined) ?? null,
+        },
         ...(otpCode && { otp: otpCode }), // Include OTP in response if generated
       };
 
@@ -1726,6 +1752,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               const awardBookNutritionLoyaltyOnCreateDup =
                 loyaltyServiceKindDup === 'nutrition_consultation' &&
                 (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
+              const dupSummaryDuration =
+                service?.custom_duration != null &&
+                String(service.custom_duration).trim() !== '' &&
+                Number(service.custom_duration) > 0
+                  ? Number(service.custom_duration)
+                  : service?.duration_minutes != null
+                    ? Number(service.duration_minutes)
+                    : null;
+              const dupSummaryName = (service?.service_name ?? service?.name ?? serviceName) as string | null | undefined;
+              const dupSummaryDesc = (service?.custom_description as string | null | undefined) ?? null;
+              const dupCatalogId = (service?.service_id as string | undefined) || lookupServiceId;
               return this.success({
                 bookingId: booking.id,
                 customerId,
@@ -1737,6 +1774,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 message: 'Booking already exists (duplicate request detected)',
                 isNew: false,
                 duplicate: true,
+                serviceId: booking.service_id,
+                serviceName: dupSummaryName ?? null,
+                service: {
+                  catalogServiceId: dupCatalogId,
+                  vendorServiceId: service?.id ?? booking.service_id,
+                  name: dupSummaryName ?? null,
+                  description: dupSummaryDesc,
+                  durationMinutes: dupSummaryDuration,
+                  category: (service?.category as string | null | undefined) ?? null,
+                },
               }, requestId);
             }
           }

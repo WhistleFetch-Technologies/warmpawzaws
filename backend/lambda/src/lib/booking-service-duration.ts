@@ -1,4 +1,5 @@
 import { query } from 'src/database/rds-connection';
+import { loadBookingServiceSnapshot } from 'src/utils/booking-service-snapshot';
 
 /** Booked service length (minutes), aligned with vendor Manage Service limits (5–1440). */
 export function clampPlannedServiceDurationMinutes(minutes: number): number {
@@ -6,10 +7,36 @@ export function clampPlannedServiceDurationMinutes(minutes: number): number {
 }
 
 /**
- * Minutes for the booked service — same source as vendor Manage Service / customer booking:
- * prefer vendor_services (custom_duration, then duration_minutes), then catalog, legacy services, then booking row.
+ * Minutes for the booked service — aligned with GET /vendor/bookings/:id/details:
+ * prefer `loadBookingServiceSnapshot` (vendor row + catalog join), then booking.duration columns, then legacy SQL fallbacks.
  */
 export async function resolvePlannedServiceDurationMinutesFromBookingId(bookingId: string): Promise<number> {
+  const br = await query(
+    `SELECT vendor_id, service_id, NULLIF(duration, 0)::numeric AS duration_nz, NULLIF(total_duration_minutes, 0)::numeric AS total_dur_nz
+     FROM bookings WHERE id = $1::uuid LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] as any[] }));
+
+  const row = br.rows?.[0];
+  const vendorId = row?.vendor_id as string | undefined | null;
+  const serviceId = row?.service_id as string | undefined | null;
+
+  if (vendorId && serviceId) {
+    try {
+      const snap = await loadBookingServiceSnapshot(vendorId, serviceId);
+      if (snap && Number(snap.durationMinutes) > 0) {
+        return clampPlannedServiceDurationMinutes(snap.durationMinutes);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const fromBookingRow = Number(row?.duration_nz) || Number(row?.total_dur_nz) || 0;
+  if (fromBookingRow > 0) {
+    return clampPlannedServiceDurationMinutes(fromBookingRow);
+  }
+
   const r = await query(
     `SELECT COALESCE(
        (SELECT (COALESCE(NULLIF(vs.custom_duration, 0), vs.duration_minutes))::numeric
