@@ -74,3 +74,9 @@ variable "uat_jwt_secret" {
   sensitive   = true
   default     = ""
 }
+
+variable "uat_jwt_secret_ssm_parameter" {
+  description = "When uat_jwt_secret is empty, set UAT_JWT_SECRET from this SSM Parameter (String or SecureString) at apply time—keeps one canonical value in AWS and avoids console/Terraform drift."
+  type        = string
+  default     = ""
+}
