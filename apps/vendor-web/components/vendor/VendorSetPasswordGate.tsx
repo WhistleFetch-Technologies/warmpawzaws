@@ -12,15 +12,26 @@ import { Eye, EyeOff } from 'lucide-react';
 
 type GateVariant = 'after_profile_submit' | 'resume';
 
-function unwrapPasswordStatusPayload(raw: unknown): { needs_password_setup?: boolean } {
+function unwrapPasswordStatusPayload(raw: unknown): {
+  needs_password_setup?: boolean;
+  password_setup_eligible?: boolean;
+} {
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== 'object') return {};
-  if ('needs_password_setup' in r) return r as { needs_password_setup?: boolean };
+  if ('needs_password_setup' in r || 'password_setup_eligible' in r) {
+    return r as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
+  }
   const d1 = r.data as Record<string, unknown> | undefined;
-  if (d1 && typeof d1 === 'object' && 'needs_password_setup' in d1) return d1 as { needs_password_setup?: boolean };
+  if (d1 && typeof d1 === 'object' && ('needs_password_setup' in d1 || 'password_setup_eligible' in d1)) {
+    return d1 as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
+  }
   const inner = d1?.data as Record<string, unknown> | undefined;
-  if (inner && typeof inner === 'object' && 'needs_password_setup' in inner) {
-    return inner as { needs_password_setup?: boolean };
+  if (
+    inner &&
+    typeof inner === 'object' &&
+    ('needs_password_setup' in inner || 'password_setup_eligible' in inner)
+  ) {
+    return inner as { needs_password_setup?: boolean; password_setup_eligible?: boolean };
   }
   return {};
 }
@@ -86,6 +97,10 @@ export function VendorSetPasswordGate(props: {
         'Could not save password. Please try again.';
       if (code === 'PROFILE_INCOMPLETE') {
         setError('Complete any remaining profile steps first, then try again.');
+      } else if (code === 'PENDING_ADMIN_APPROVAL') {
+        setError(
+          'Your application is still under review. You can create a portal password after an administrator approves your account.'
+        );
       } else if (code === 'PASSWORD_ALREADY_SET') {
         setError('A password is already set for this account.');
       } else {

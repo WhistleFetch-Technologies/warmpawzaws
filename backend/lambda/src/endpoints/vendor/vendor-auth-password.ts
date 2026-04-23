@@ -19,6 +19,9 @@ import { VendorSetPasswordRequestSchema } from '@warmpawz/api-contracts/auth';
 
 const PROFILE_INCOMPLETE_STATUSES = new Set(['INIT', 'ROLE_PENDING', 'FORM_PENDING']);
 
+/** First-time portal password may be set only after admin approval (vendor_identity.onboarding_status). */
+const PASSWORD_SETUP_ELIGIBLE_STATUSES = new Set(['APPROVED', 'ACTIVATED']);
+
 /** `temp_vendor_${phone}_${Date.now()}` — recover phone when JWT claims omit it. */
 function phoneFromTempVendorSub(sub: string): string | null {
   const prefix = 'temp_vendor_';
@@ -214,9 +217,9 @@ export async function handleVendorPasswordStatus(c: Context) {
   }
 
   const onboarding = String(merged.onboarding_status || 'INIT').toUpperCase();
-  const profileComplete = !PROFILE_INCOMPLETE_STATUSES.has(onboarding);
   const hasPwd = hasMeaningfulStoredPassword(merged.password_hash);
-  const needs_password_setup = profileComplete && !hasPwd;
+  const password_setup_eligible = PASSWORD_SETUP_ELIGIBLE_STATUSES.has(onboarding);
+  const needs_password_setup = password_setup_eligible && !hasPwd;
 
   return c.json({
     success: true,
@@ -224,6 +227,7 @@ export async function handleVendorPasswordStatus(c: Context) {
       vendor_id: merged.id,
       has_password: hasPwd,
       onboarding_status: onboarding,
+      password_setup_eligible,
       needs_password_setup,
     },
     meta: { timestamp: new Date().toISOString(), version: 'v1' },
@@ -279,6 +283,21 @@ export async function handleVendorSetPassword(c: Context) {
         error: {
           code: 'PROFILE_INCOMPLETE',
           message: 'Complete your vendor profile before setting a password.',
+        },
+        meta: { version: 'v1' },
+      },
+      403
+    );
+  }
+
+  if (!PASSWORD_SETUP_ELIGIBLE_STATUSES.has(onboarding)) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'PENDING_ADMIN_APPROVAL',
+          message:
+            'Your application is not approved yet. You can set a portal password after an administrator approves your vendor account.',
         },
         meta: { version: 'v1' },
       },
