@@ -350,8 +350,15 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => null);
       if (response?.bankDetails) {
-        setBankAccount(response.bankDetails);
-        setBankVerified(response.bankDetails.bank_verified || response.bankDetails.is_verified || false);
+        const b = response.bankDetails;
+        setBankAccount(b);
+        setBankVerified(
+          !!b.bank_verified ||
+            !!b.is_verified ||
+            !!b.verified ||
+            !!b.isVerified ||
+            (typeof b.verification_status === 'string' && b.verification_status.toLowerCase() === 'verified')
+        );
       }
     } catch (error) {
       console.error('Failed to fetch bank account:', error);
@@ -390,7 +397,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       });
       
       if (response?.success) {
-        alert('✅ Payout request submitted successfully!');
+        alert(
+          response?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         await loadAllData();
       } else {
         alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
