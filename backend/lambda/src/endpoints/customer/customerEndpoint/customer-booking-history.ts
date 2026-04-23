@@ -20,7 +20,10 @@ import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '..
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { bookingUsesDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
+import {
+  bookingUsesDedicatedEndSessionOtp,
+  ensureDedicatedEndSessionOtp,
+} from '../../../lib/booking-dedicated-end-otp';
 
 /**
  * bookings.service_id usually references vendor_services.id (FK).
@@ -235,6 +238,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
       const booking = bookingQuery.rows[0];
 
+      const atHomeBooking =
+        booking.service_style === 'at_home' || booking.service_type === 'at_home';
+      const dedicatedWalk = await bookingUsesDedicatedEndSessionOtp(bookingId);
+
       let resolvedCompletionOtp = booking.completion_otp ?? null;
       if (booking.status === 'in_progress' && booking.otp_verified && !resolvedCompletionOtp) {
         const endRes = await query(
@@ -249,8 +256,6 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         ).catch(() => ({ rows: [] }));
         resolvedCompletionOtp = (endRes as any).rows?.[0]?.otp_code ?? null;
       }
-      const atHomeBooking =
-        booking.service_style === 'at_home' || booking.service_type === 'at_home';
       if (
         !resolvedCompletionOtp &&
         booking.status === 'in_progress' &&
@@ -258,9 +263,44 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         atHomeBooking &&
         booking.otp_code
       ) {
-        const dedicated = await bookingUsesDedicatedEndSessionOtp(bookingId);
-        if (!dedicated) {
+        if (!dedicatedWalk) {
           resolvedCompletionOtp = booking.otp_code;
+        }
+      }
+
+      // Walk/sitter bookings: never leave completion OTP equal to start (repair older rows / missed start hook)
+      if (
+        atHomeBooking &&
+        booking.status === 'in_progress' &&
+        booking.otp_verified &&
+        dedicatedWalk
+      ) {
+        const startO = String(booking.otp_code || '').trim();
+        const cur = String(resolvedCompletionOtp ?? '').trim();
+        if (!cur || cur === startO) {
+          try {
+            await ensureDedicatedEndSessionOtp(bookingId);
+          } catch {
+            /* non-fatal */
+          }
+          const cap = await query(`SELECT completion_otp FROM bookings WHERE id = $1`, [bookingId]).catch(() => ({
+            rows: [],
+          }));
+          const newCo = (cap as any).rows?.[0]?.completion_otp;
+          if (newCo != null && String(newCo).trim()) {
+            resolvedCompletionOtp = String(newCo).trim();
+          } else {
+            const er = await query(
+              `SELECT otp_code FROM otp_tokens
+               WHERE metadata->>'bookingId' = $1
+                 AND metadata->>'action' = 'end'
+                 AND is_used = false
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [bookingId]
+            ).catch(() => ({ rows: [] }));
+            resolvedCompletionOtp = String((er as any).rows?.[0]?.otp_code || '').trim() || null;
+          }
         }
       }
 
