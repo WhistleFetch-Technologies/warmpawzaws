@@ -7,6 +7,8 @@ import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, A
 import { Button } from '@/components/ui/button';
 // Uses apiClient (API Gateway)
 import { toast } from 'sonner';
+import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 import { MedicalHistoryModal } from './MedicalHistoryModal';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
@@ -765,6 +767,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       setProcessing(false);
       isNavigatingRef.current = false;
     }
+  };
+
+  /** Dog walkers: one live journey screen (map + OTP) — avoid duplicate map modal here. */
+  const openWalkerLiveJourneyPage = () => {
+    if (!bookingId) return;
+    try {
+      const back =
+        typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search || ''}` || '/bookings'
+          : '/bookings';
+      setHomeServiceTrackingReturnHref(back);
+    } catch {
+      setHomeServiceTrackingReturnHref('/bookings');
+    }
+    onClose();
+    router.push(`/bookings/home-service?bookingId=${encodeURIComponent(bookingId)}`);
   };
 
   const handleStartTravel = async () => {
@@ -1982,8 +2000,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {/* Home style: Start Travel, etc. (all providers) - mounted near Chat */}
               {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <>
-                  {/* Start Travel - Show for confirmed, pending, traveling, or vendor_on_way (allows restarting after canceling tracking modal) */}
-                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') && (
+                  {/* Walker / walk-style home: single live journey page (map + start travel there). Others: in-modal GPS. */}
+                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&
+                    bookingNeedsWalkLiveTracker(booking, vendorData) && (
+                    <button
+                      type="button"
+                      onClick={openWalkerLiveJourneyPage}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      Live journey map
+                    </button>
+                  )}
+                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&
+                    !bookingNeedsWalkLiveTracker(booking, vendorData) && (
                     <button
                       onClick={handleStartTravel}
                       disabled={processing}

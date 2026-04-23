@@ -21,6 +21,37 @@ import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
+/** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
+function buildDailyBreakdownLast7Days(
+  earningsRows: Array<{ realized_at?: string | null; amount?: string | number | null }>,
+  ref: Date = new Date()
+): Array<{ day: string; date: string; amount: number }> {
+  const shortDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+  const formatLocalYmd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const byKey = new Map<string, number>();
+  for (const e of earningsRows) {
+    if (!e?.realized_at) continue;
+    const k = formatLocalYmd(new Date(e.realized_at));
+    const a = parseFloat(String(e.amount ?? '0'));
+    if (!Number.isFinite(a)) continue;
+    byKey.set(k, (byKey.get(k) || 0) + a);
+  }
+  const out: Array<{ day: string; date: string; amount: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - i, 12, 0, 0, 0);
+    const key = formatLocalYmd(d);
+    const raw = byKey.get(key) || 0;
+    const amt = Math.round(raw * 100) / 100;
+    out.push({ day: shortDay[d.getDay()] ?? '—', date: key, amount: amt });
+  }
+  return out;
+}
+
 export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   /**
    * GET /vendor/dashboard/:vendorId
@@ -697,11 +728,17 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       // Use computed total from vendor_earnings for lifetime so completed bookings show immediately
       const totalEarningsLifetime = period === 'lifetime' ? summary.totalEarnings : parseFloat(vendor.total_earnings || '0');
 
+      const dailyBreakdown = period === 'week' ? buildDailyBreakdownLast7Days(earnings) : undefined;
+
       return c.json({
         success: true,
+        dailyBreakdown,
+        dailyEarnings: dailyBreakdown,
         earnings: {
           ...summary,
           transactions,
+          dailyBreakdown,
+          dailyEarnings: dailyBreakdown,
           totalBookings,
           completedBookings,
           averageBookingValue: Math.round(averageBookingValue * 100) / 100,
