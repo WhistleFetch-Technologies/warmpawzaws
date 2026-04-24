@@ -247,19 +247,17 @@ class CreateBookingHandler extends BaseHandler {
 
         const { rows: existingBookings } = await client.query(overlapQuery, overlapParams);
 
-        // ✅ ATOMIC SLOT OVERLAP CHECK: Each slot is independent (30 min)
-        // A booking blocks ONLY the slot it starts at, regardless of service duration
-        // Booking at 09:00 blocks ONLY 09:00. Slot 09:30 remains available.
-        // This applies to ALL service types and ALL roles.
-        const SLOT_SIZE = 30;
+        // Interval overlap using stored booking duration and this service's duration (aligns with customer slot grid)
         const hasOverlap = existingBookings.some((existing: any) => {
           const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
-          const existingEndMinutes = existingStartMinutes + SLOT_SIZE;  // ✅ ATOMIC: one slot per booking
-          const newEnd = newBookingStartMinutes + SLOT_SIZE;
-          
-          // Overlap formula: (newStart < existingEnd) AND (newEnd > existingStart)
-          return newBookingStartMinutes < existingEndMinutes && newEnd > existingStartMinutes;
+          const existingDuration = Math.max(15, Number(existing.duration_minutes) || 30);
+          const existingEndMinutes = existingStartMinutes + existingDuration;
+
+          return (
+            newBookingStartMinutes < existingEndMinutes &&
+            newBookingEndMinutes > existingStartMinutes
+          );
         });
 
         if (hasOverlap) {

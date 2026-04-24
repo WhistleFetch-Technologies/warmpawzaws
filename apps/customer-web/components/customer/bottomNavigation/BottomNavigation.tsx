@@ -40,7 +40,7 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)]">
+    <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
       <div className="flex items-center justify-around px-4 py-3 sm:px-6">
         {/* Home Tab */}
         <button 

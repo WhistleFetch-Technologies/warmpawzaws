@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Plus, 
@@ -16,7 +16,7 @@ import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager';
-import { getVendorRoleId, normalizeServiceStyle, isServiceApplicableToRole } from '@/lib/vendor-utils';
+import { getVendorRoleId, getVendorRoleName, normalizeServiceStyle, isServiceApplicableToRole } from '@/lib/vendor-utils';
 import { getServiceStyleLabel } from '@/lib/service-style-labels';
 
 interface VendorServiceCatalogViewProps {
@@ -101,14 +101,31 @@ export function VendorServiceCatalogView({
   const [adding, setAdding] = useState(false);
   const [roleAllowedStyles, setRoleAllowedStyles] = useState<string[]>([]); // ✅ NEW: Store allowed styles from API
   const [vendorRoleName, setVendorRoleName] = useState<string>(''); // ✅ NEW: Store role name for filtering
+  /** First paint in multi-select: categories start collapsed — walkers never saw checkboxes until expanding twice. */
+  const didAutoExpandMultiSelectRef = useRef(false);
 
   useEffect(() => {
     loadCatalogData();
-  }, [vendorId]);
+  }, [vendorId, propRoleId, propRoleName, vendorData?.roleId, vendorData?.role_id, vendorData?.roleName, vendorData?.role_name]);
 
   useEffect(() => {
     groupServicesByCategory();
   }, [services, searchQuery, activeStyle, vendorData, roleAllowedStyles, vendorRoleName]);
+
+  useEffect(() => {
+    if (mode !== 'multi-select') {
+      didAutoExpandMultiSelectRef.current = false;
+      return;
+    }
+    if (groupedServices.length === 0) return;
+    if (didAutoExpandMultiSelectRef.current) return;
+    didAutoExpandMultiSelectRef.current = true;
+    const catIds = new Set(groupedServices.map((g) => g.categoryId));
+    const subIds = new Set<string>();
+    groupedServices.forEach((g) => g.subcategories.forEach((s) => subIds.add(s.subCategoryId)));
+    setExpandedCategories(catIds);
+    setExpandedSubcategories(subIds);
+  }, [mode, groupedServices]);
 
   const loadCatalogData = async () => {
     try {
@@ -134,7 +151,9 @@ export function VendorServiceCatalogView({
 
       // ✅ NEW: Try local service catalog first (faster, role-specific)
       const { getServiceCatalogForRole } = await import('@/lib/service-catalogs');
-      const localCatalog = getServiceCatalogForRole(vendorRoleId);
+      const roleNameForLocalCatalog =
+        propRoleName || getVendorRoleName(vendorData) || vendorData?.role?.display_name || null;
+      const localCatalog = getServiceCatalogForRole(vendorRoleId, roleNameForLocalCatalog);
       
       if (localCatalog && localCatalog.length > 0) {
         console.log('📚 [CATALOG] Using local service catalog:', localCatalog.length, 'services');
@@ -1021,9 +1040,28 @@ export function VendorServiceCatalogView({
                             return (
                               <div
                                 key={serviceKey}
+                                role={mode === 'multi-select' && !isDisabled ? 'button' : undefined}
+                                tabIndex={mode === 'multi-select' && !isDisabled ? 0 : undefined}
+                                onClick={
+                                  mode === 'multi-select' && !isDisabled
+                                    ? () => toggleServiceSelection(service)
+                                    : undefined
+                                }
+                                onKeyDown={
+                                  mode === 'multi-select' && !isDisabled
+                                    ? (e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault();
+                                          toggleServiceSelection(service);
+                                        }
+                                      }
+                                    : undefined
+                                }
                                 className={`p-4 pl-12 hover:bg-gray-50 transition-colors ${
                                   selected ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                                } ${isDisabled ? 'opacity-60' : ''}`}
+                                } ${isDisabled ? 'opacity-60' : ''} ${
+                                  mode === 'multi-select' && !isDisabled ? 'cursor-pointer' : ''
+                                }`}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   {/* ✅ FIX: Checkbox separate from content */}

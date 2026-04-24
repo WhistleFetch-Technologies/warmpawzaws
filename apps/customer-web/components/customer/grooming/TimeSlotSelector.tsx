@@ -50,7 +50,7 @@ export function TimeSlotSelector({
     if (selectedDate && vendorId) {
       loadSlotsForDate(selectedDate);
     }
-  }, [selectedDate, vendorId, serviceStyle]);
+  }, [selectedDate, vendorId, serviceStyle, serviceDuration]);
 
   const loadSlotsForDate = async (date: string) => {
     try {
