@@ -1,20 +1,10 @@
-'use client';
+import PackagePurchaseSessionsClient from './PackagePurchaseSessionsClient';
 
-import { useParams } from 'next/navigation';
-import { PackagePurchaseSessionsView } from '@/components/customer/packages/PackagePurchaseSessionsView';
+/** Non-empty list required for `output: 'export'` (Next treats `[]` as missing). */
+export async function generateStaticParams() {
+  return [{ packagePurchaseId: '__' }];
+}
 
 export default function CustomerPackagePurchasePage() {
-  const params = useParams();
-  const packagePurchaseId =
-    typeof params?.packagePurchaseId === 'string' ? params.packagePurchaseId : '';
-
-  if (!packagePurchaseId) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center p-6 text-sm text-gray-600">
-        Missing package id.
-      </div>
-    );
-  }
-
-  return <PackagePurchaseSessionsView packagePurchaseId={packagePurchaseId} />;
+  return <PackagePurchaseSessionsClient />;
 }

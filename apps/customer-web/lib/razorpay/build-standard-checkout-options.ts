@@ -9,10 +9,11 @@
  */
 
 import { apiClient } from '@/lib/api-client';
-import { digitsToRazorpayContactE164, sanitizeRazorpayInstanceOptions } from '@/lib/razorpay/razorpay-utils';
-
-/** Razorpay often hides UPI collect when `prefill.email` is missing; only used in UPI-block mode. */
-const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
+import {
+  digitsToRazorpayContactE164,
+  RAZORPAY_PREFILL_EMAIL_FALLBACK,
+  sanitizeRazorpayInstanceOptions,
+} from '@/lib/razorpay/razorpay-utils';
 
 /** Best-effort profile email for Razorpay `prefill.email` (non-fatal if profile missing). */
 export async function fetchCheckoutEmailForPrefill(customerPhone: string): Promise<string | undefined> {

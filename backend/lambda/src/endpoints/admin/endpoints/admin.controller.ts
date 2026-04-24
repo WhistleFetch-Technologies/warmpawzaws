@@ -29,6 +29,11 @@ import {
 	linkVendorReferralRecordsOnVendorApproval,
 	linkVendorOnboardingReferralsFromIdentityMetadata,
 } from '../../../lib/services/referral-service';
+import {
+	packageFieldsFromBookingRow,
+	SQL_PACKAGE_PURCHASE_JOIN,
+	SQL_PACKAGE_PURCHASE_SELECT,
+} from '../../../utils/customer-booking-package-fields';
 
 // ============================================================================
 // ADMIN HANDLERS
@@ -1612,6 +1617,7 @@ export function registerAdminEndpoints(app: Hono) {
       const bookings = await query(`
         SELECT 
           b.*,
+          ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
           c.full_name as customer_name,
           c.email as customer_email,
           c.phone as customer_phone,
@@ -1620,6 +1626,7 @@ export function registerAdminEndpoints(app: Hono) {
         FROM bookings b
         LEFT JOIN customers c ON b.customer_id = c.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
+        ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
         ORDER BY b.created_at DESC
         LIMIT 100
@@ -1628,7 +1635,7 @@ export function registerAdminEndpoints(app: Hono) {
       return c.json({
         success: true,
         count: bookings.rows.length,
-        bookings: bookings.rows,
+        bookings: bookings.rows.map((row: any) => ({ ...row, ...packageFieldsFromBookingRow(row) })),
       });
     } catch (error: any) {
       console.error('Error fetching bookings:', error);

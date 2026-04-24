@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Bike, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -11,6 +11,11 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import {
+  getWalkerRouterOfferingsForStyle,
+  mapWalkerApiRowToOption,
+  type WalkerServiceOption,
+} from '@/lib/walker-vendor-offerings';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -120,7 +125,8 @@ export function WalkerBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
-  const [vendorServices, setVendorServices] = useState<any[]>([]);
+  /** Raw GET /customer/vendor/:id/services { services, packages } for style filtering + package rows. */
+  const [vendorCatalog, setVendorCatalog] = useState<{ services: any[]; packages: any[] } | null>(null);
   // ✅ FIX: Initialize selectedVendorService with passed service data if available
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
     serviceId ? {
@@ -148,34 +154,54 @@ export function WalkerBookingRouter({
   const [showPaymentPage, setShowPaymentPage] = useState(false);
 
   // Default walk service options (used when no specific services loaded)
-  const defaultServiceTypeOptions = [
-    { id: 'walk_30min', name: '30 Min Walk', icon: Home, price: 199, duration: 30, desc: '30-minute walk session', color: 'green' },
-    { id: 'walk_60min', name: '60 Min Walk', icon: Home, price: 349, duration: 60, desc: '60-minute walk session', color: 'orange' },
-  ];
+  const defaultServiceTypeOptions: WalkerServiceOption[] = useMemo(
+    () => [
+      {
+        id: 'walk_30min',
+        serviceId: 'walk_30min',
+        name: '30 Min Walk',
+        price: 199,
+        duration: 30,
+        desc: '30-minute walk session',
+        serviceStyle: bookingServiceStyle,
+        isPackage: false,
+        priceLabel: '₹199',
+        iconColor: 'green',
+      },
+      {
+        id: 'walk_60min',
+        serviceId: 'walk_60min',
+        name: '60 Min Walk',
+        price: 349,
+        duration: 60,
+        desc: '60-minute walk session',
+        serviceStyle: bookingServiceStyle,
+        isPackage: false,
+        priceLabel: '₹349',
+        iconColor: 'orange',
+      },
+    ],
+    [bookingServiceStyle]
+  );
 
-  // Get actual services for current style, or fall back to defaults
-  const getServicesForStyle = (style: string) => {
-    const styleServices = vendorServices.filter(s => s.serviceStyle === style || s.service_style === style);
-    if (styleServices.length > 0) {
-      return styleServices.map(s => ({
-        id: s.id || s.serviceId,
-        serviceId: s.serviceId || s.service_id,
-        name: s.serviceName || s.service_name || s.name,
-        price: s.price || 0,
-        duration: s.duration || 30,
-        desc: s.description || '',
-        serviceStyle: s.serviceStyle || s.service_style || style,
-        icon: style === 'at_home' ? Home : style === 'outdoor' ? Home : Home,
-        color: style === 'at_home' ? 'green' : style === 'outdoor' ? 'green' : 'orange',
-      }));
-    }
-    return [];
-  };
+  const serviceOptions: WalkerServiceOption[] = useMemo(() => {
+    if (!vendorCatalog) return defaultServiceTypeOptions;
+    const rows = getWalkerRouterOfferingsForStyle(
+      { services: vendorCatalog.services, packages: vendorCatalog.packages },
+      bookingServiceStyle
+    );
+    if (rows.length === 0) return [];
+    return rows.map((r) => mapWalkerApiRowToOption(r, bookingServiceStyle));
+  }, [vendorCatalog, bookingServiceStyle, defaultServiceTypeOptions]);
 
-  // Use actual services or fallback to service type selection
-  const serviceOptions = vendorServices.length > 0 
-    ? getServicesForStyle(bookingServiceStyle) 
-    : defaultServiceTypeOptions;
+  const singleWalkOptions = useMemo(
+    () => serviceOptions.filter((o) => !o.isPackage),
+    [serviceOptions]
+  );
+  const bundleOptions = useMemo(
+    () => serviceOptions.filter((o) => o.isPackage),
+    [serviceOptions]
+  );
 
   const generateDates = () => {
     const dates = [];
@@ -258,9 +284,14 @@ export function WalkerBookingRouter({
       setLoading(true);
       // Load actual vendor walk services
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=walking`) as any;
-      if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
-        console.log('Loaded vendor services:', servicesResponse.services.length);
+      if (servicesResponse.success) {
+        setVendorCatalog({
+          services: Array.isArray(servicesResponse.services) ? servicesResponse.services : [],
+          packages: Array.isArray(servicesResponse.packages) ? servicesResponse.packages : [],
+        });
+        const n =
+          (servicesResponse.services?.length || 0) + (servicesResponse.packages?.length || 0);
+        console.log('Loaded vendor services + packages:', n);
       }
     } catch (error) {
       console.error('Error loading vendor services:', error);
@@ -395,6 +426,19 @@ export function WalkerBookingRouter({
   };
 
   const handleNext = () => {
+    if (step === 'service') {
+      const sel = serviceOptions.find((s) => s.id === selectedVendorServiceId);
+      if (sel?.isPackage) {
+        onNavigate?.('purchase-package', {
+          vendorId,
+          vendorServiceId: sel.id,
+          serviceType: 'walking',
+          serviceName: sel.name,
+          totalSessions: sel.totalSessions,
+        });
+        return;
+      }
+    }
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
@@ -484,7 +528,7 @@ export function WalkerBookingRouter({
     }
   };
 
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedVendorServiceId);
+  const selectedServiceOption = serviceOptions.find((s) => s.id === selectedVendorServiceId);
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const dashboardStats = [
@@ -601,69 +645,105 @@ export function WalkerBookingRouter({
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Walk Package</h2>
-            <div className="space-y-3">
-              {serviceOptions.map((service) => {
-                const Icon = service.icon;
-                const isSelected = selectedVendorServiceId === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => {
-                      setSelectedVendorServiceId(service.id);
-                      setSelectedVendorService({
-                        id: service.serviceId || service.id,
-                        serviceId: service.serviceId || service.id,
-                        name: service.name,
-                        price: service.price,
-                        duration: service.duration,
-                        serviceStyle: (service as { serviceStyle?: string }).serviceStyle ?? bookingServiceStyle,
-                      });
-                      const rowStyle = normalizeBookingStyle(
-                        (service as { serviceStyle?: string }).serviceStyle ??
-                          (service as { service_style?: string }).service_style
+            <h2 className="text-lg font-bold text-gray-900">Choose a walk or bundle</h2>
+            <p className="text-sm text-gray-500">Single sessions are priced per walk. Bundles are multi-session packages (total price shown).</p>
+            {[
+              { title: 'Single walks', list: singleWalkOptions },
+              { title: 'Walk bundles (packages)', list: bundleOptions },
+            ].map(({ title, list }) =>
+              list.length === 0 ? null : (
+                <div key={title} className="space-y-2">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">{title}</h3>
+                  <div className="space-y-3">
+                    {list.map((service) => {
+                      const Icon = service.isPackage ? Package : Home;
+                      const isSelected = selectedVendorServiceId === service.id;
+                      const colorBox =
+                        service.iconColor === 'blue'
+                          ? 'bg-blue-100 text-blue-600'
+                          : service.iconColor === 'purple'
+                            ? 'bg-purple-100 text-purple-700'
+                            : service.iconColor === 'green'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-orange-100 text-[#FF8C42]';
+                      return (
+                        <button
+                          key={service.id}
+                          onClick={() => {
+                            setSelectedVendorServiceId(service.id);
+                            setSelectedVendorService({
+                              id: service.serviceId || service.id,
+                              serviceId: service.serviceId || service.id,
+                              name: service.name,
+                              price: service.price,
+                              duration: service.duration,
+                              isPackage: service.isPackage,
+                              serviceStyle: service.serviceStyle || bookingServiceStyle,
+                            });
+                            const rowStyle = normalizeBookingStyle(service.serviceStyle);
+                            if (rowStyle) setBookingServiceStyle(rowStyle);
+                          }}
+                          className={`w-full p-4 rounded-xl border-2 transition-all ${
+                            isSelected
+                              ? 'border-[#FF8C42] bg-orange-50'
+                              : 'border-gray-200 bg-white hover:border-orange-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${colorBox}`}>
+                              <Icon className="w-7 h-7" />
+                            </div>
+                            <div className="flex-1 text-left min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-gray-900">{service.name}</h3>
+                                <span
+                                  className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                                    service.isPackage
+                                      ? 'bg-purple-100 text-purple-800'
+                                      : 'bg-slate-100 text-slate-700'
+                                  }`}
+                                >
+                                  {service.isPackage ? 'Package' : 'Service'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500 line-clamp-2">{service.desc || ' '}</p>
+                              {service.subPriceHint ? (
+                                <p className="text-xs text-gray-500 mt-0.5">{service.subPriceHint}</p>
+                              ) : null}
+                              <div className="flex items-center gap-2 mt-1">
+                                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                <span className="text-sm text-gray-500">
+                                  {service.isPackage
+                                    ? `${service.duration} min / session${service.totalSessions != null ? ` · ${service.totalSessions} sessions` : ''}`
+                                    : `${service.duration} mins`}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-lg text-gray-900">{service.priceLabel}</p>
+                              {isSelected && (
+                                <CheckCircle2 className="w-6 h-6 text-[#FF8C42] mt-1 ml-auto" />
+                              )}
+                            </div>
+                          </div>
+                        </button>
                       );
-                      if (rowStyle) setBookingServiceStyle(rowStyle);
-                    }}
-                    className={`w-full p-4 rounded-xl border-2 transition-all ${
-                      isSelected 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                        service.color === 'blue' ? 'bg-blue-100 text-blue-600' :
-                        service.color === 'green' ? 'bg-orange-100 text-[#FF8C42]' :
-                        'bg-purple-100 text-purple-600'
-                      }`}>
-                        <Icon className="w-7 h-7" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                        <p className="text-sm text-gray-500">{service.desc}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-sm text-gray-500">{service.duration} mins</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        {isSelected && (
-                          <CheckCircle2 className="w-6 h-6 text-[#FF8C42] mt-1 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <Button 
-              onClick={handleNext} 
+                    })}
+                  </div>
+                </div>
+              )
+            )}
+            {singleWalkOptions.length === 0 && bundleOptions.length === 0 && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                No published walks for this style. Try another location style or another walker.
+              </p>
+            )}
+            <Button
+              onClick={handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
               disabled={!selectedVendorServiceId}
             >
-              Continue
+              {selectedServiceOption?.isPackage ? 'Buy bundle' : 'Continue'}
             </Button>
           </div>
         )}
@@ -944,7 +1024,16 @@ export function WalkerBookingRouter({
             serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
             serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
-            serviceStyle={bookingServiceStyle}
+            serviceStyle={
+              (bookingServiceStyle === 'outdoor' ? 'at_home' : bookingServiceStyle) as
+                | 'at_home'
+                | 'at_center'
+                | 'at_vendor'
+                | 'tele'
+                | 'ecom'
+                | 'hybrid'
+                | 'product'
+            }
             category="walking"
             vendorId={vendorId || ''}
             vendorName={walker?.name || 'Walker Professional'}

@@ -171,6 +171,7 @@ export function MyBookings({
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  const [hasActivePackages, setHasActivePackages] = useState(false);
 
   useEffect(() => {
     console.log('[MyBookings] init', {
@@ -254,6 +255,16 @@ export function MyBookings({
         rawBookings = result;
       } else {
         rawBookings = result.bookings || result.data?.bookings || [];
+      }
+
+      try {
+        const pkgRes = await apiClient.get<any>(
+          `/customer/${encodeURIComponent(effectivePhone)}/packages`
+        );
+        const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
+        setHasActivePackages(pkgs.length > 0);
+      } catch {
+        setHasActivePackages(false);
       }
 
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
@@ -361,7 +372,14 @@ export function MyBookings({
           price: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
           status: b.status || 'pending',
           completionOTP: b.completion_otp || b.completionOTP,
-          isPackage: b.is_package || b.isPackage || false,
+          isPackage: Boolean(
+            b.is_package ||
+              b.isPackage ||
+              b.package_purchase_id ||
+              b.packagePurchaseId ||
+              b.is_package_session ||
+              b.isPackageSession
+          ),
           packagePurchaseId:
             b.package_purchase_id ||
             b.packagePurchaseId ||
@@ -571,6 +589,22 @@ export function MyBookings({
         onCloseToHome={onCloseToHome}
         headerColor="bg-[#FF8C42]"
       />
+
+      {hasActivePackages && (
+        <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
+          <button
+            type="button"
+            onClick={() => onNavigate?.('package-tracking')}
+            className="w-full text-left flex items-center justify-between gap-2 text-sm font-medium text-purple-900"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Package className="w-4 h-4 shrink-0" />
+              My packages
+            </span>
+            <ChevronRight className="w-4 h-4 text-purple-600 shrink-0" />
+          </button>
+        </div>
+      )}
 
       <div className="max-w-customer mx-auto">
         {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1); navigation gated by MEAL_PLAN_ORDERS_ENABLED */}
@@ -1025,14 +1059,17 @@ export function MyBookings({
                     </div>
                   )}
 
-                {booking.isPackage && booking.packageDetails && (
+                {booking.isPackage &&
+                  (booking.packageDetails || booking.packagePurchaseId) && (
                   <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-sm min-w-0">
                       <Package className="w-4 h-4 shrink-0 text-purple-600" />
                       <span className="text-purple-600">
-                        {booking.packageDetails.unlimited
-                          ? 'Unlimited package'
-                          : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`}
+                        {booking.packageDetails
+                          ? booking.packageDetails.unlimited
+                            ? 'Unlimited package'
+                            : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`
+                          : 'Package session'}
                       </span>
                     </div>
                     {(booking.packagePurchaseId ||

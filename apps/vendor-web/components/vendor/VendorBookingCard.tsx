@@ -102,19 +102,31 @@ export function VendorBookingCard({
             <span>{booking.serviceName}</span>
           </div>
           {(booking.packagePurchaseId || booking.package_purchase_id) && (
-            <div className="mb-1 flex flex-wrap items-center gap-1 text-xs text-purple-800">
-              <Package className="h-3.5 w-3.5 shrink-0" />
-              <span>
-                {booking.packageSessionNumber != null && booking.packageTotalSessions != null
-                  ? `Session ${booking.packageSessionNumber} of ${booking.packageTotalSessions}`
-                  : 'Package session'}
-                {booking.packageRemainingSessions != null && !booking.packageUnlimitedUsage ? (
-                  <span className="text-purple-600"> · {booking.packageRemainingSessions} left</span>
-                ) : null}
-                {booking.packageUnlimitedUsage ? (
-                  <span className="text-purple-600"> · Unlimited</span>
-                ) : null}
-              </span>
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-purple-800">
+              <div className="flex flex-wrap items-center gap-1 min-w-0">
+                <Package className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {booking.packageSessionNumber != null && booking.packageTotalSessions != null
+                    ? `Session ${booking.packageSessionNumber} of ${booking.packageTotalSessions}`
+                    : 'Package session'}
+                  {booking.packageRemainingSessions != null && !booking.packageUnlimitedUsage ? (
+                    <span className="text-purple-600"> · {booking.packageRemainingSessions} left</span>
+                  ) : null}
+                  {booking.packageUnlimitedUsage ? (
+                    <span className="text-purple-600"> · Unlimited</span>
+                  ) : null}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = booking.packagePurchaseId || booking.package_purchase_id;
+                  if (id) router.push(`/packages/${encodeURIComponent(String(id))}`);
+                }}
+                className="shrink-0 text-[11px] font-medium text-purple-700 underline hover:text-purple-900"
+              >
+                Open package
+              </button>
             </div>
           )}
           <div className="flex items-center gap-1 text-xs text-gray-500">
