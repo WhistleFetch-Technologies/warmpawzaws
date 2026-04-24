@@ -22,6 +22,8 @@ interface SettlementScheduleForm {
   timezone: string;
   settlementPeriodDays?: number;
   eventBridgeCronUtc?: string | null;
+  /** Default bus rule updated on Save (dev/stage/prod from server env). */
+  eventBridgeRuleName?: string | null;
 }
 
 export function SettlementScheduleSettings() {
@@ -50,6 +52,7 @@ export function SettlementScheduleSettings() {
           timezone: raw.timezone || 'Asia/Kolkata',
           settlementPeriodDays: raw.settlementPeriodDays,
           eventBridgeCronUtc: raw.eventBridgeCronUtc ?? null,
+          eventBridgeRuleName: raw.eventBridgeRuleName ?? null,
         });
       }
     } catch (error) {
@@ -77,6 +80,7 @@ export function SettlementScheduleSettings() {
           timezone: next.timezone || settings.timezone,
           settlementPeriodDays: next.settlementPeriodDays,
           eventBridgeCronUtc: next.eventBridgeCronUtc ?? null,
+          eventBridgeRuleName: next.eventBridgeRuleName ?? settings.eventBridgeRuleName ?? null,
         });
       }
       const eb = (data as any).data?.eventBridge ?? (data as any).eventBridge;
@@ -86,7 +90,7 @@ export function SettlementScheduleSettings() {
         toast.success('Settings saved. EventBridge sync skipped (rule name not configured on server).');
       } else if (eb?.synced === false) {
         toast.warning(
-          `Settings saved, but EventBridge was not updated: ${eb.error || 'unknown error'}. Check Lambda IAM and SETTLEMENT_CALCULATE_CRON_RULE_NAME.`
+          `Settings saved, but EventBridge was not updated: ${eb.error || 'unknown error'}. Check Lambda IAM (events:PutRule on the settlement rule) and ENVIRONMENT or SETTLEMENT_CALCULATE_CRON_RULE_NAME.`
         );
       } else {
         toast.success('Settlement schedule saved successfully');
@@ -194,6 +198,11 @@ export function SettlementScheduleSettings() {
             </p>
           )}
 
+          {settings.eventBridgeRuleName && (
+            <p className="text-xs text-gray-500 font-mono break-all">
+              EventBridge rule (this environment): {settings.eventBridgeRuleName}
+            </p>
+          )}
           {settings.eventBridgeCronUtc && (
             <p className="text-xs text-gray-500 font-mono break-all">
               Equivalent EventBridge UTC cron: {settings.eventBridgeCronUtc}

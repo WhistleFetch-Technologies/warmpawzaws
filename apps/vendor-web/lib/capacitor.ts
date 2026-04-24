@@ -13,3 +13,18 @@ export function isCapacitorNativeApp(): boolean {
     return false;
   }
 }
+
+/**
+ * Use Capawesome only when the native FilePicker module is actually linked.
+ * Otherwise `pickFiles()` throws UNIMPLEMENTED and programmatic `<input>.click()` fails on Android WebView.
+ */
+export function shouldUseCapawesomeFilePicker(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('FilePicker');
+  } catch {
+    return false;
+  }
+}

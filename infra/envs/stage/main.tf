@@ -127,6 +127,8 @@ module "lambda" {
   }
 
   common_env_vars = {
+    ENVIRONMENT                 = local.environment
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
     DB_HOST                     = module.rds.cluster_endpoint
     DB_NAME                     = module.rds.database_name
     DB_SECRET_ARN               = module.rds.secret_arn

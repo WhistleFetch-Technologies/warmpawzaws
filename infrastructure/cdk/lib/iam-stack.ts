@@ -266,6 +266,19 @@ export class IamStack extends Construct {
       })
     );
 
+    // EventBridge — update daily settlement cron rule (default bus) from Admin Finance
+    this.lambdaExecutionRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['events:PutRule', 'events:DescribeRule'],
+        resources: [
+          `arn:aws:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:rule/warmpawz-dev-settlement-calculate-daily`,
+          `arn:aws:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:rule/warmpawz-stage-settlement-calculate-daily`,
+          `arn:aws:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:rule/warmpawz-prod-settlement-calculate-daily`,
+        ],
+      })
+    );
+
     // CloudWatch Logs (already included in basic execution role, but explicit)
     this.lambdaExecutionRole.addToPolicy(
       new iam.PolicyStatement({

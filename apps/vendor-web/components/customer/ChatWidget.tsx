@@ -1,11 +1,25 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { MessageSquare, Send, X, Minus, Bot, Sparkles, GripHorizontal, User } from 'lucide-react';
+import {
+  MessageSquare,
+  Send,
+  X,
+  Minus,
+  Bot,
+  Sparkles,
+  GripHorizontal,
+  User,
+  Phone,
+  Headphones,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 
 const DRAG_OFFSET_STORAGE_KEY = 'warmpawz_vendor_chat_drag_offset';
+
+/** Vendor AI chat — human support line (tap-to-call on mobile). */
+const VENDOR_SUPPORT_PHONE_E164 = '+917349533635';
 
 interface ChatWidgetProps {
   userId?: string;
@@ -425,6 +439,35 @@ export function ChatWidget({ userId, userName, userType = 'vendor', defaultOpen 
                 </button>
               </div>
             </div>
+
+            {userType === 'vendor' && (
+              <div
+                className="border-b border-orange-100/80 bg-gradient-to-r from-orange-50/95 to-amber-50/90 px-3 py-2.5 sm:px-4"
+                data-chat-stop-drag
+              >
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 text-[#FF7A35] shadow-sm ring-1 ring-orange-100">
+                    <Headphones className="h-4 w-4" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-orange-900/80">
+                      Contact support
+                    </p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-gray-700">
+                      Contact us for any help and support via this number{' '}
+                      <a
+                        href={`tel:${VENDOR_SUPPORT_PHONE_E164.replace(/\s/g, '')}`}
+                        className="inline-flex items-center gap-1 font-semibold text-[#FF6B1A] underline decoration-orange-200 underline-offset-2 hover:text-[#e55f14]"
+                      >
+                        <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        {VENDOR_SUPPORT_PHONE_E164}
+                      </a>
+                      .
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div
               className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-gradient-to-b from-stone-50 to-gray-50/90 p-4"

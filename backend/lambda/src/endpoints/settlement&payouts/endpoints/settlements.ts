@@ -343,6 +343,52 @@ async function persistVendorBankDetailsForVendor(
   return created[0];
 }
 
+/**
+ * Move pending settlements → processing and vendor_earnings → paid_out up to `amount` INR,
+ * so GET /vendor/:id/settlements (gross pending − open payouts) stays consistent after a payout row is created.
+ * Used for Razorpay success and for queued/manual payout paths (tier_scheduled, platform_manual, razorpay_fallback).
+ */
+async function allocateVendorLedgerForPayoutAmount(vendorId: string, amount: number): Promise<void> {
+  let remainingToAllocate = Math.max(0, amount);
+  if (remainingToAllocate <= 0) return;
+
+  const settlementRows = await query(
+    `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as { id: string; amt?: string }[] }));
+
+  for (const row of settlementRows.rows || []) {
+    if (remainingToAllocate <= 0) break;
+    const amt = parseFloat(String(row.amt || '0'));
+    if (amt <= 0) continue;
+    if (amt <= remainingToAllocate) {
+      remainingToAllocate -= amt;
+      await query(
+        `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
+        [row.id]
+      ).catch(() => {});
+    }
+  }
+
+  if (remainingToAllocate <= 0) return;
+
+  const toMark = await query(
+    `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as { id: string; amount?: string }[] }));
+
+  let allocated = 0;
+  for (const row of toMark.rows || []) {
+    const amt = parseFloat(String(row.amount || '0'));
+    if (amt <= 0) continue;
+    if (allocated + amt > remainingToAllocate) break;
+    allocated += amt;
+    await query(`UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`, [row.id]).catch(
+      () => {}
+    );
+  }
+}
+
 export function registerSettlementEndpoints(app: Hono) {
   /**
    * GET /settlements
@@ -1105,6 +1151,7 @@ export function registerSettlementEndpoints(app: Hono) {
 
       // Tier policy: lower tiers (or tier.features) queue for finance without calling Razorpay Payouts API.
       if (!tryAutomatedRazorpay) {
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
         return await respondQueued(
           `Payout request recorded. Your ${tierDisplay} tier uses scheduled payouts: Warmpawz finance will process this to your verified bank as per your tier cycle (typically after the ${tierPayoutDays}-day hold). You will be notified when it is sent.`,
           'tier_scheduled',
@@ -1113,6 +1160,7 @@ export function registerSettlementEndpoints(app: Hono) {
 
       const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
       if (!sourceAccount) {
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
         return await respondQueued(
           'Payout request recorded. Instant bank transfer is not enabled yet; your request is queued and Warmpawz finance will send it to your verified bank. You will be notified when it is sent.',
           'platform_manual',
@@ -1171,44 +1219,7 @@ export function registerSettlementEndpoints(app: Hono) {
           });
         }
 
-        let remainingToAllocate = actualPayoutAmount;
-
-        if (settlementsPending > 0 && remainingToAllocate > 0) {
-          const settlementRows = await query(
-            `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          for (const row of settlementRows.rows) {
-            if (remainingToAllocate <= 0) break;
-            const amt = parseFloat(row.amt || '0');
-            if (amt <= 0) continue;
-            if (amt <= remainingToAllocate) {
-              remainingToAllocate -= amt;
-              await query(
-                `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
-                [row.id]
-              ).catch(() => { });
-            }
-          }
-        }
-
-        if (earningsPending > 0 && remainingToAllocate > 0) {
-          const toMark = await query(
-            `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          let allocated = 0;
-          for (const row of toMark.rows) {
-            const amt = parseFloat(row.amount || '0');
-            if (amt <= 0) continue;
-            if (allocated + amt > remainingToAllocate) break;
-            allocated += amt;
-            await query(
-              `UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`,
-              [row.id]
-            ).catch(() => { });
-          }
-        }
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
 
         return c.json({
           success: true,
@@ -1228,6 +1239,7 @@ export function registerSettlementEndpoints(app: Hono) {
           });
         }
         if (queueForAdmin) {
+          await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
           return await respondQueued(
             'Payout request recorded. Razorpay could not start an instant transfer for this request; it has been queued for Warmpawz finance. You will be notified when the funds are sent to your verified bank account.',
             'razorpay_fallback_manual',

@@ -37,6 +37,7 @@ import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
 import {
   putSettlementCalculateDailyCron,
+  resolveSettlementCalculateCronRuleName,
   scheduleTimeAndZoneToUtcCron,
 } from '../../../utils/settlement-schedule-eventbridge';
 
@@ -3524,6 +3525,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         timezone,
         settlementPeriodDays,
         eventBridgeCronUtc,
+        /** Resolved from ENVIRONMENT / NODE_ENV / SETTLEMENT_CALCULATE_CRON_RULE_NAME — same rule Save updates. */
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
         // Legacy fields (optional) for older clients
         enabled: saved.enabled !== false,
         scheduleType: saved.scheduleType || 'daily',
@@ -3604,6 +3607,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ...toStore,
         settlementPeriodDays,
         eventBridgeCronUtc: scheduleExpression,
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
         lastProcessedAt: prevSaved.lastProcessedAt ?? null,
         nextProcessAt: null,
       };

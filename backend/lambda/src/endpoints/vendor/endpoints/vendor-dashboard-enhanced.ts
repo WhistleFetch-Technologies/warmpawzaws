@@ -1180,7 +1180,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
              COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
              COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending' OR settlement_status = 'pending'), 0) as pending_amount,
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
              COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
