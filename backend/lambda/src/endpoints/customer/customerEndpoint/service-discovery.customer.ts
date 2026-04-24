@@ -27,6 +27,11 @@ import { discountCalculationService } from '../../../lib/services/discount-calcu
 import { CATEGORY_ROLES } from '../constants';
 import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../constants/helper';
 import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
+import {
+  seedFinitePackagesMissingSessionsForScope,
+  type SqlClient,
+} from '../../../utils/package-session-sync';
+import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -2970,11 +2975,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           const customerId = await resolveCustomerIdFromPhone(customerPhone);
           if (customerId) {
+            await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, {
+              customerId,
+              vendorId: resolvedVendorId,
+            });
             const purchases = await query(
               `SELECT id, package_id, package_snapshot FROM package_purchases
                WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
-                 AND (remaining_sessions > 0 OR unlimited_usage = true)
-                 AND (expires_at IS NULL OR expires_at > NOW())`,
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (${sqlPackagePurchaseActiveForListing('package_purchases')})`,
               [customerId, resolvedVendorId]
             );
             for (const pp of purchases.rows || []) {
@@ -3436,11 +3445,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           const customerId = await resolveCustomerIdFromPhone(customerPhone);
           if (customerId) {
+            await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
             const activePackages = await query(
               `SELECT DISTINCT vendor_id FROM package_purchases
                WHERE customer_id = $1 AND status = 'active'
-                 AND (remaining_sessions > 0 OR unlimited_usage = true)
-                 AND (expires_at IS NULL OR expires_at > NOW())`,
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (${sqlPackagePurchaseActiveForListing('package_purchases')})`,
               [customerId]
             );
             (activePackages.rows || []).forEach((r: any) => {

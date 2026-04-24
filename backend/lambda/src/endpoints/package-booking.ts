@@ -19,8 +19,64 @@ import { Hono } from 'hono';
 import { query, insert, update, select } from '../database/rds-connection';
 import { resolvePostgresCustomerIdFromAuthHeaders } from './customer/customerEndpoint/customer-password';
 import { resolveVendorsTableIdFromAuthHeaders } from './vendor/vendor-auth-password';
+import {
+  seedPackageScheduledSessionsIfMissing,
+  seedFinitePackagesMissingSessionsForScope,
+  seedFinitePackagesMissingSessionsForVendor,
+  reconcileRemainingSessionsForFinitePackage,
+  pickNextPendingSessionNumber,
+  pickNextUnlimitedPackageSessionNumber,
+  linkPackageScheduledSessionToBooking,
+  type SqlClient,
+} from '../utils/package-session-sync';
+import {
+  sqlPackagePurchaseActiveForListing,
+  sqlPackagePurchaseComputedStatus,
+  sqlPackagePurchaseHasBookableSlot,
+} from '../utils/package-session-eligibility';
+import {
+  isServicePackageUnlimited,
+  resolveFiniteSessionCountFromServicePackage,
+  resolveServicePackageDisplayName,
+} from '../utils/service-package-sessions';
 
-async function buildPackageSessionsResponse(packagePurchaseId: string) {
+function mapSessionRow(s: any) {
+  const st = String(s.status || '');
+  const bst = s.booking_status != null ? String(s.booking_status) : '';
+  let displayStatus = st;
+  if (st === 'scheduled' && bst === 'in_progress') {
+    displayStatus = 'in_progress';
+  } else if (st === 'scheduled' && bst === 'completed') {
+    displayStatus = 'completed';
+  }
+  return {
+    id: s.id,
+    session_number: s.session_number,
+    sessionNumber: s.session_number,
+    status: st,
+    display_status: displayStatus,
+    scheduled_date: s.scheduled_date,
+    scheduledDate: s.scheduled_date,
+    scheduled_time: s.scheduled_time,
+    scheduledTime: s.scheduled_time,
+    booking_id: s.booking_id,
+    bookingId: s.booking_id,
+    booking_status: bst || undefined,
+    booking_date: s.booking_date,
+    bookingDate: s.booking_date,
+    booking_time: s.booking_time,
+    bookingTime: s.booking_time,
+    completed_at: s.completed_at,
+    completedAt: s.completed_at,
+  };
+}
+
+/** Standard read model for customer, vendor, and admin UIs. */
+export async function buildPackageSessionsResponse(packagePurchaseId: string) {
+  const db = { query } as SqlClient;
+  await seedPackageScheduledSessionsIfMissing(db, packagePurchaseId);
+  await reconcileRemainingSessionsForFinitePackage(db, packagePurchaseId);
+
   const result = await query(
     `
         SELECT 
@@ -50,12 +106,16 @@ async function buildPackageSessionsResponse(packagePurchaseId: string) {
   const pkg = packageResult.rows[0];
   if (!pkg) return null;
 
-  const sessions = result.rows;
-  const completedCount = sessions.filter((s: any) => s.status === 'completed').length;
+  const rawSessions = result.rows;
+  const sessions = rawSessions.map(mapSessionRow);
+  const completedCount = sessions.filter((s: any) => s.display_status === 'completed' || s.status === 'completed').length;
+  const inProgressCount = sessions.filter((s: any) => s.display_status === 'in_progress' || s.status === 'in_progress').length;
   const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
   const pendingCount = sessions.filter((s: any) => s.status === 'pending').length;
-  const totalSessions = pkg?.total_sessions != null ? Number(pkg.total_sessions) : sessions.length;
+  const totalSessions = pkg?.total_sessions != null ? Number(pkg.total_sessions) : rawSessions.length;
   const denom = totalSessions > 0 ? totalSessions : 1;
+  const remainingSessions =
+    pkg?.remaining_sessions != null ? Number(pkg.remaining_sessions) : Math.max(0, totalSessions - completedCount);
 
   return {
     success: true,
@@ -64,9 +124,10 @@ async function buildPackageSessionsResponse(packagePurchaseId: string) {
     summary: {
       total: totalSessions,
       completed: completedCount,
+      in_progress: inProgressCount,
       scheduled: scheduledCount,
       pending: pendingCount,
-      remaining: pkg?.remaining_sessions != null ? Number(pkg.remaining_sessions) : pendingCount,
+      remaining: remainingSessions,
       progressPercent: Math.round((completedCount / denom) * 100),
     },
   };
@@ -114,6 +175,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
       const vendorId = c.req.query('vendorId');
       const serviceType = c.req.query('serviceType');
 
+      await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, {
+        customerId,
+        ...(vendorId ? { vendorId } : {}),
+      });
+
       let packageQuery = `
         SELECT 
           pp.*,
@@ -121,17 +187,13 @@ export function registerPackageBookingEndpoints(app: Hono) {
           v.phone as vendor_phone,
           v.city as vendor_city,
           (pp.total_sessions - pp.remaining_sessions) as sessions_used,
-          CASE 
-            WHEN pp.expires_at IS NOT NULL AND pp.expires_at < NOW() THEN 'expired'
-            WHEN pp.remaining_sessions <= 0 AND pp.unlimited_usage = false THEN 'exhausted'
-            ELSE pp.status
-          END as computed_status
+          ${sqlPackagePurchaseComputedStatus('pp')} as computed_status
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
         WHERE pp.customer_id = $1
         AND pp.status = 'active'
         AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        AND (${sqlPackagePurchaseActiveForListing('pp')})
       `;
 
       const params: any[] = [customerId];
@@ -242,13 +304,17 @@ export function registerPackageBookingEndpoints(app: Hono) {
         console.warn('[PACKAGE-BOOKING] Subscription check failed, proceeding with package:', subError);
       }
 
-      // Verify package is active and has sessions
+      const db = { query } as SqlClient;
+
+      await seedPackageScheduledSessionsIfMissing(db, packagePurchaseId);
+
+      // Verify package is active and has a bookable session slot (pending slot or unlimited)
       const packageResult = await query(`
         SELECT * FROM package_purchases
         WHERE id = $1 AND customer_id = $2
         AND status = 'active'
         AND (expires_at IS NULL OR expires_at > NOW())
-        AND (remaining_sessions > 0 OR unlimited_usage = true)
+        AND (${sqlPackagePurchaseHasBookableSlot('package_purchases')})
       `, [packagePurchaseId, customerId]);
 
       if (packageResult.rows.length === 0) {
@@ -259,9 +325,19 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const pkg = packageResult.rows[0];
 
-      // Calculate next session number
-      const sessionsUsed = pkg.total_sessions - pkg.remaining_sessions;
-      const nextSessionNumber = sessionsUsed + 1;
+      let nextSessionNumber: number;
+      if (pkg.unlimited_usage) {
+        nextSessionNumber = await pickNextUnlimitedPackageSessionNumber(db, packagePurchaseId);
+      } else {
+        const slot = await pickNextPendingSessionNumber(db, packagePurchaseId);
+        if (slot == null) {
+          return c.json(
+            { error: 'No package session slots available', code: 'NO_SESSION_SLOTS' },
+            400
+          );
+        }
+        nextSessionNumber = slot;
+      }
 
       // Check for slot conflicts
       const conflictCheck = await query(`
@@ -309,42 +385,22 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const booking = bookingResult.rows[0];
 
-      // Deduct session from package
       if (!pkg.unlimited_usage) {
-        await update('package_purchases', 
-          { id: packagePurchaseId },
-          { 
-            remaining_sessions: pkg.remaining_sessions - 1,
-            updated_at: new Date().toISOString()
-          }
-        );
+        const linked = await linkPackageScheduledSessionToBooking(db, {
+          packagePurchaseId,
+          sessionNumber: nextSessionNumber,
+          bookingId: booking.id,
+          bookingDate: String(scheduledDate),
+          bookingTime: String(scheduledTime),
+        });
+        if (!linked) {
+          await query(`DELETE FROM bookings WHERE id = $1::uuid`, [booking.id]);
+          return c.json(
+            { error: 'Could not reserve package session slot', code: 'PACKAGE_SESSION_LINK_FAILED' },
+            409
+          );
+        }
       }
-
-      // Log package usage
-      await insert('package_usage_log', {
-        package_purchase_id: packagePurchaseId,
-        booking_id: booking.id,
-        session_number: nextSessionNumber,
-        action: 'session_used',
-        sessions_before: pkg.remaining_sessions,
-        sessions_after: pkg.unlimited_usage ? pkg.remaining_sessions : pkg.remaining_sessions - 1,
-        created_at: new Date().toISOString()
-      });
-
-      // Update or create scheduled session record
-      await query(`
-        INSERT INTO package_scheduled_sessions (
-          package_purchase_id, session_number, scheduled_date, scheduled_time,
-          booking_id, status
-        ) VALUES ($1, $2, $3, $4, $5, 'scheduled')
-        ON CONFLICT (package_purchase_id, session_number) 
-        DO UPDATE SET 
-          scheduled_date = EXCLUDED.scheduled_date,
-          scheduled_time = EXCLUDED.scheduled_time,
-          booking_id = EXCLUDED.booking_id,
-          status = 'scheduled',
-          updated_at = NOW()
-      `, [packagePurchaseId, nextSessionNumber, scheduledDate, scheduledTime, booking.id]);
 
       // Update customer provider history
       await query(`
@@ -369,11 +425,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
           status: booking.status,
           isPackageSession: true,
           sessionNumber: nextSessionNumber,
-          remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions - 1
+          remainingSessions: pkg.unlimited_usage ? 'unlimited' : Number(pkg.remaining_sessions ?? 0)
         },
         package: {
           id: packagePurchaseId,
-          remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions - 1,
+          remainingSessions: pkg.unlimited_usage ? 'unlimited' : Number(pkg.remaining_sessions ?? 0),
           totalSessions: pkg.total_sessions
         },
         message: `Booking created using package session ${nextSessionNumber}/${pkg.total_sessions}`
@@ -426,17 +482,21 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       // Calculate savings for each package
       const packagesWithSavings = packagesResult.rows.map((pkg: any) => {
-        const regularPrice = (trialBooking?.total_amount || pkg.price / pkg.total_sessions) * pkg.total_sessions;
+        const ts = resolveFiniteSessionCountFromServicePackage(pkg);
+        const denom = ts > 0 ? ts : 1;
+        const regularPrice = (trialBooking?.total_amount || pkg.price / denom) * denom;
         const savings = regularPrice - pkg.price;
         const savingsPercent = Math.round((savings / regularPrice) * 100);
 
         return {
           ...pkg,
-          pricePerSession: Math.round(pkg.price / pkg.total_sessions),
+          total_sessions: ts,
+          totalSessions: ts,
+          pricePerSession: Math.round(Number(pkg.price) / denom),
           regularPrice,
           savings: savings > 0 ? savings : 0,
           savingsPercent: savingsPercent > 0 ? savingsPercent : 0,
-          isRecommended: pkg.total_sessions >= 5 && pkg.total_sessions <= 10
+          isRecommended: ts >= 5 && ts <= 10
         };
       });
 
@@ -490,6 +550,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const pkg = packageResult.rows[0];
 
+      const unlimitedPurchase = isServicePackageUnlimited(pkg);
+      const finiteSessions = resolveFiniteSessionCountFromServicePackage(pkg);
+      const totalSessionsForPurchase = unlimitedPurchase ? 0 : finiteSessions;
+      const packageDisplayName = resolveServicePackageDisplayName(pkg);
+
       // Get trial booking details if provided
       let trialBooking = null;
       let staffId = null;
@@ -533,8 +598,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
         RETURNING *
       `, [
         purchaseId, packageId, customerId, pkg.vendor_id,
-        pkg.name, pkg.service_type || 'general', pkg.price,
-        pkg.total_sessions, pkg.unlimited_usage || false,
+        packageDisplayName, pkg.service_type || 'general', pkg.price,
+        totalSessionsForPurchase, unlimitedPurchase,
         preferSameProvider ? pkg.vendor_id : null,
         preferSameProvider ? staffId : null,
         preferSameProvider,
@@ -551,21 +616,20 @@ export function registerPackageBookingEndpoints(app: Hono) {
         );
       }
 
-      // Create scheduled session placeholders
-      const sessionsToCreate = [];
-      for (let i = 1; i <= pkg.total_sessions; i++) {
-        const schedule = sessionSchedule.find((s: any) => s.sessionNumber === i);
-        sessionsToCreate.push({
-          package_purchase_id: purchase.id,
-          session_number: i,
-          scheduled_date: schedule?.date || null,
-          scheduled_time: schedule?.time || null,
-          status: schedule ? 'scheduled' : 'pending'
-        });
-      }
-
-      for (const session of sessionsToCreate) {
-        await insert('package_scheduled_sessions', session);
+      const db = { query } as SqlClient;
+      await seedPackageScheduledSessionsIfMissing(db, purchase.id);
+      for (const sched of sessionSchedule || []) {
+        const sn = Number((sched as any).sessionNumber);
+        if (!Number.isFinite(sn) || sn < 1) continue;
+        await query(
+          `UPDATE package_scheduled_sessions
+           SET scheduled_date = $1::date,
+               scheduled_time = $2::time,
+               status = 'scheduled',
+               updated_at = NOW()
+           WHERE package_purchase_id = $3::uuid AND session_number = $4`,
+          [(sched as any).date || null, (sched as any).time || null, purchase.id, sn]
+        );
       }
 
       return c.json({
@@ -581,7 +645,9 @@ export function registerPackageBookingEndpoints(app: Hono) {
           preferSameProvider: purchase.auto_assign_same_provider
         },
         sessionsScheduled: sessionSchedule.length,
-        message: `Package purchased! ${pkg.total_sessions} sessions available.`
+        message: unlimitedPurchase
+          ? 'Package purchased! Unlimited sessions for this plan.'
+          : `Package purchased! ${finiteSessions} sessions available.`
       });
     } catch (error: any) {
       console.error('Error converting trial to package:', error);
@@ -682,6 +748,61 @@ export function registerPackageBookingEndpoints(app: Hono) {
   });
 
   /**
+   * GET /admin/package-purchases/lookup/sessions
+   * Resolve package purchase by id or by latest row for customer+vendor; same JSON as sessions read model.
+   */
+  app.get('/admin/package-purchases/lookup/sessions', async (c) => {
+    try {
+      const packagePurchaseId = c.req.query('packagePurchaseId')?.trim();
+      const customerId = c.req.query('customerId')?.trim();
+      const vendorId = c.req.query('vendorId')?.trim();
+      let id = packagePurchaseId || '';
+      if (!id && customerId && vendorId) {
+        const r = await query(
+          `SELECT id FROM package_purchases
+           WHERE customer_id = $1::uuid AND vendor_id = $2::uuid
+           ORDER BY created_at DESC NULLS LAST
+           LIMIT 1`,
+          [customerId, vendorId]
+        );
+        id = r.rows?.[0]?.id || '';
+      }
+      if (!id) {
+        return c.json(
+          { error: 'Provide packagePurchaseId or both customerId and vendorId' },
+          400
+        );
+      }
+      const body = await buildPackageSessionsResponse(id);
+      if (!body) {
+        return c.json({ error: 'Package not found' }, 404);
+      }
+      return c.json(body);
+    } catch (error: any) {
+      console.error('Error in admin package session lookup:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/package-purchases/:packagePurchaseId/sessions
+   * Read-only session list (same payload as customer/vendor); requires admin auth via /admin/* middleware.
+   */
+  app.get('/admin/package-purchases/:packagePurchaseId/sessions', async (c) => {
+    try {
+      const { packagePurchaseId } = c.req.param();
+      const body = await buildPackageSessionsResponse(packagePurchaseId);
+      if (!body) {
+        return c.json({ error: 'Package not found' }, 404);
+      }
+      return c.json(body);
+    } catch (error: any) {
+      console.error('Error fetching admin package sessions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /packages/:packagePurchaseId/sessions
    * Get all sessions for a package purchase.
    * When Authorization is sent, customer or vendor must own the row; unauthenticated calls remain allowed for backward compatibility.
@@ -760,6 +881,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const result = await query(providerQuery, params);
 
+      await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
+
       // Check for active packages with each provider
       const providersWithPackages = await Promise.all(
         result.rows.map(async (provider: any) => {
@@ -769,7 +892,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             WHERE customer_id = $1 AND vendor_id = $2
             AND status = 'active'
             AND (expires_at IS NULL OR expires_at > NOW())
-            AND (remaining_sessions > 0 OR unlimited_usage = true)
+            AND (${sqlPackagePurchaseActiveForListing('package_purchases')})
             LIMIT 1
           `, [customerId, provider.vendor_id]);
 
@@ -802,6 +925,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
+      await seedFinitePackagesMissingSessionsForVendor({ query } as SqlClient, vendorId);
+
       const result = await query(`
         SELECT 
           pp.*,
@@ -827,7 +952,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
         WHERE pp.vendor_id = $1
         AND pp.status = 'active'
         AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        AND (${sqlPackagePurchaseActiveForListing('pp')})
         ORDER BY pp.expires_at ASC NULLS LAST
       `, [vendorId]);
 
@@ -864,13 +989,17 @@ export function registerPackageBookingEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Verify package exists and is active
+      const pdb = { query } as SqlClient;
+
+      await seedPackageScheduledSessionsIfMissing(pdb, packagePurchaseId);
+
+      // Verify package exists and is active (bookable = unlimited or pending slot)
       const packageResult = await query(`
         SELECT * FROM package_purchases
         WHERE id = $1
         AND status = 'active'
         AND (expires_at IS NULL OR expires_at > NOW())
-        AND (remaining_sessions > 0 OR unlimited_usage = true)
+        AND (${sqlPackagePurchaseHasBookableSlot('package_purchases')})
       `, [packagePurchaseId]);
 
       if (packageResult.rows.length === 0) {
@@ -880,8 +1009,16 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
 
       const pkg = packageResult.rows[0];
-      const sessionsUsed = pkg.total_sessions - pkg.remaining_sessions;
-      const nextSessionNumber = sessionsUsed + 1;
+      let nextSessionNumber: number;
+      if (pkg.unlimited_usage) {
+        nextSessionNumber = await pickNextUnlimitedPackageSessionNumber(pdb, packagePurchaseId);
+      } else {
+        const slot = await pickNextPendingSessionNumber(pdb, packagePurchaseId);
+        if (slot == null) {
+          return c.json({ error: 'No package session slots available' }, 400);
+        }
+        nextSessionNumber = slot;
+      }
 
       // Parse scheduled start time
       const scheduledDate = new Date(scheduledStartTime);
@@ -913,16 +1050,6 @@ export function registerPackageBookingEndpoints(app: Hono) {
       ]);
 
       const session = sessionResult.rows[0];
-
-      // Decrement remaining sessions (if not unlimited)
-      if (!pkg.unlimited_usage) {
-        await query(`
-          UPDATE package_purchases
-          SET remaining_sessions = remaining_sessions - 1,
-              updated_at = NOW()
-          WHERE id = $1
-        `, [packagePurchaseId]);
-      }
 
       return c.json({
         success: true,

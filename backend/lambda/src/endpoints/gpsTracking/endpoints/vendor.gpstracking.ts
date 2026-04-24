@@ -17,6 +17,11 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { select, update, query, insert } from '../../../database/rds-connection';
+import {
+  markPackageSessionInProgressForBooking,
+  completePackageSessionForBooking,
+  type SqlClient,
+} from '../../../utils/package-session-sync';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import {
   parseVendorCancellationReason,
@@ -1412,6 +1417,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         } catch (e: any) {
           console.warn('[START-SESSION] idempotent GPS row sync:', e?.message || e);
         }
+        try {
+          const db: SqlClient = { query } as SqlClient;
+          await markPackageSessionInProgressForBooking(db, bookingId);
+        } catch (pssErr: any) {
+          console.warn('[START-SESSION] package_scheduled_sessions in_progress sync:', pssErr?.message);
+        }
         return c.json({
           success: true,
           alreadyStarted: true,
@@ -1576,6 +1587,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       }
 
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await markPackageSessionInProgressForBooking(db, bookingId);
+      } catch (pssErr: any) {
+        console.warn('[START-SESSION] package_scheduled_sessions in_progress sync:', pssErr?.message);
+      }
+
       return c.json({
         success: true,
         booking: updated[0],
@@ -1677,6 +1695,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         }
       );
 
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await completePackageSessionForBooking(db, bookingId);
+      } catch (pssErr: any) {
+        console.warn('[END-SESSION] package session completion sync:', pssErr?.message);
+      }
 
       return c.json({
         success: true,
@@ -1765,6 +1789,18 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           status: 'in_progress',
           started_at: new Date().toISOString()
         });
+      }
+
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        if (mappedAction === OtpAction.START) {
+          await markPackageSessionInProgressForBooking(db, bookingId);
+        }
+        if (mappedAction === OtpAction.COMPLETE || mappedAction === OtpAction.END) {
+          await completePackageSessionForBooking(db, bookingId);
+        }
+      } catch (pssErr: any) {
+        console.warn('[OTP-VERIFY] package session sync:', pssErr?.message);
       }
 
       return c.json({

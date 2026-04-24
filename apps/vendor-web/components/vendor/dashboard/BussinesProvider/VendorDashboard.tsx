@@ -434,6 +434,21 @@ export function VendorDashboard({
                 // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
                 isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
                 rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
+                packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+                packageSessionNumber:
+                  b.packageSessionNumber != null
+                    ? Number(b.packageSessionNumber)
+                    : b.package_session_number != null
+                      ? Number(b.package_session_number)
+                      : undefined,
+                packageTotalSessions:
+                  b.packageTotalSessions != null
+                    ? Number(b.packageTotalSessions)
+                    : b.package_total_sessions != null
+                      ? Number(b.package_total_sessions)
+                      : b.total_sessions != null
+                        ? Number(b.total_sessions)
+                        : undefined,
               }));
               setTodaySchedule(transformedBookings);
             }
@@ -473,6 +488,21 @@ export function VendorDashboard({
               // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
               isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
               rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
+              packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+              packageSessionNumber:
+                b.packageSessionNumber != null
+                  ? Number(b.packageSessionNumber)
+                  : b.package_session_number != null
+                    ? Number(b.package_session_number)
+                    : undefined,
+              packageTotalSessions:
+                b.packageTotalSessions != null
+                  ? Number(b.packageTotalSessions)
+                  : b.package_total_sessions != null
+                    ? Number(b.package_total_sessions)
+                    : b.total_sessions != null
+                      ? Number(b.total_sessions)
+                      : undefined,
             }));
             setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
           })
@@ -616,9 +646,13 @@ export function VendorDashboard({
     setOtpError(null);
 
     try {
+      const sessionNum = selectedAppointment.packageSessionNumber;
       const data = await apiClient.post(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
         otp,
-        action: 'complete'
+        action: 'complete',
+        ...(sessionNum != null && Number.isFinite(Number(sessionNum))
+          ? { sessionNumber: Number(sessionNum) }
+          : {}),
       }) as any;
 
       setShowOtpModal(false);

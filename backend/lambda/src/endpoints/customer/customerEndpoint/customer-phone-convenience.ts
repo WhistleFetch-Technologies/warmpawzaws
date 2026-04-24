@@ -41,6 +41,14 @@ import {
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
+import {
+  seedFinitePackagesMissingSessionsForScope,
+  type SqlClient,
+} from '../../../utils/package-session-sync';
+import {
+  sqlPackagePurchaseActiveForListing,
+  sqlPackagePurchaseComputedStatus,
+} from '../../../utils/package-session-eligibility';
 
 /** First image URL from products.images JSONB (array of strings or { url } objects). */
 function firstProductImageUrl(images: unknown): string | undefined {
@@ -1345,23 +1353,21 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ packages: [], success: true });
       }
 
+      await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
+
       let packageQuery = `
         SELECT 
           pp.*,
           v.business_name as vendor_name,
           v.phone as vendor_phone,
           (pp.total_sessions - pp.remaining_sessions) as sessions_used,
-          CASE 
-            WHEN pp.expires_at IS NOT NULL AND pp.expires_at < NOW() THEN 'expired'
-            WHEN pp.remaining_sessions <= 0 AND pp.unlimited_usage = false THEN 'exhausted'
-            ELSE pp.status
-          END as computed_status
+          ${sqlPackagePurchaseComputedStatus('pp')} as computed_status
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
         WHERE pp.customer_id = $1
         AND pp.status = 'active'
         AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        AND (${sqlPackagePurchaseActiveForListing('pp')})
       `;
 
       const params: any[] = [customerId];

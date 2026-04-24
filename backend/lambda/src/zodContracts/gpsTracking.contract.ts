@@ -88,6 +88,8 @@ export const endSessionRequestSchema = z.object({
 
 export const otpVerifyRequestSchema = z.object({
     otp: bookingServiceOtpSchema,
+    /** Package-linked bookings: pass k for session k (defaults from booking row server-side if omitted). */
+    sessionNumber: z.coerce.number().int().positive().optional(),
     action: z
       .enum([
         'start',

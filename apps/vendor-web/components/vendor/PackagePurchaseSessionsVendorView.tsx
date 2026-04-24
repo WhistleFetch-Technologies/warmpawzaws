@@ -13,6 +13,8 @@ type SessionRow = {
   id?: string;
   session_number?: number;
   sessionNumber?: number;
+  display_status?: string;
+  displayStatus?: string;
   status?: string;
   scheduled_date?: string;
   scheduledDate?: string;
@@ -127,7 +129,13 @@ export function PackagePurchaseSessionsVendorView({
               <ul className="space-y-2">
                 {sessions.map((s, idx) => {
                   const n = s.session_number ?? s.sessionNumber ?? idx + 1;
-                  const st = (s.status || s.booking_status || 'pending').toString();
+                  const st = (
+                    s.display_status ||
+                    s.displayStatus ||
+                    s.status ||
+                    s.booking_status ||
+                    'pending'
+                  ).toString();
                   const date =
                     s.scheduled_date || s.scheduledDate || s.booking_date || '';
                   const time = s.scheduled_time || s.scheduledTime || s.booking_time || '';
@@ -158,7 +166,11 @@ export function PackagePurchaseSessionsVendorView({
                           className={
                             st === 'completed'
                               ? 'border-green-200 bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-700'
+                              : st === 'scheduled'
+                                ? 'border-blue-200 bg-blue-100 text-blue-800'
+                                : st === 'in_progress'
+                                  ? 'border-purple-200 bg-purple-100 text-purple-800'
+                                  : 'bg-gray-100 text-gray-700'
                           }
                         >
                           {st === 'completed' ? (
