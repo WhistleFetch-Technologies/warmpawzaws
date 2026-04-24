@@ -9,3 +9,4 @@
  */
 
 export { PackageTrackingDashboard } from './PackageTrackingDashboard';
+export { PackagePurchaseSessionsView } from './PackagePurchaseSessionsView';

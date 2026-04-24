@@ -19,6 +19,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Package, Clock, Calendar, CheckCircle2, AlertTriangle,
   ChevronRight, Star, RefreshCw, Gift, Zap, History, Play, Plus, MessageSquare
@@ -108,6 +109,69 @@ interface SessionRecord {
 
 type TabType = 'active' | 'history' | 'expired';
 
+/** Normalize GET /customer/:phone/packages and GET /customer/:id/packages/active rows into dashboard model. */
+function mapApiPackageRowToCustomerPackage(row: any): CustomerPackage {
+  const unlimited = row.isUnlimited === true || row.unlimited_usage === true || row.remainingSessions === 'unlimited';
+  const totalNum = Number(row.totalSessions ?? row.total_sessions ?? 0) || 0;
+  const used = Number(row.sessionsUsed ?? row.sessions_used ?? 0);
+  const remRaw = row.remainingSessions ?? row.remaining_sessions;
+  const remNum = unlimited ? 0 : Number(remRaw ?? Math.max(0, totalNum - used));
+  const included: PackageService[] = Array.isArray(row.includedServices)
+    ? row.includedServices.map((s: any, i: number) => ({
+        id: String(s.id || `inc-${i}`),
+        serviceId: String(s.id || s.vendor_service_id || ''),
+        name: String(s.name || s.serviceName || 'Service'),
+        usedCount: 0,
+        maxCount: 1,
+      }))
+    : [];
+  const next = row.nextSession;
+  const nextSession =
+    next && (next.scheduled_date || next.scheduledDate)
+      ? {
+          scheduledDate: String(next.scheduled_date || next.scheduledDate || ''),
+          scheduledTime: String(next.scheduled_time || next.scheduledTime || ''),
+          serviceName: String(next.service_name || next.serviceName || 'Session'),
+        }
+      : undefined;
+
+  return {
+    id: String(row.id),
+    packageId: String(row.packageId || row.package_id || row.id),
+    packageName: String(row.packageName || row.package_name || 'Package'),
+    packageType: (row.packageType || row.package_type || 'appointment') as CustomerPackage['packageType'],
+    vendorId: String(row.vendorId || row.vendor_id || ''),
+    vendorName: String(row.vendorName || row.vendor_name || ''),
+    usageType: unlimited ? 'unlimited' : 'sessions',
+    totalSessions: unlimited ? 'unlimited' : totalNum,
+    usedSessions: used,
+    remainingSessions: unlimited ? 'unlimited' : remNum,
+    purchasedAt: row.purchasedAt || row.created_at || new Date().toISOString(),
+    expiresAt: row.expiresAt || row.expires_at || null,
+    validityDays: null,
+    daysRemaining: null,
+    includedServices:
+      included.length > 0
+        ? included
+        : [
+            {
+              id: 'sessions',
+              serviceId: '',
+              name: 'Sessions',
+              usedCount: used,
+              maxCount: unlimited ? 'unlimited' : totalNum,
+            },
+          ],
+    status: (row.status || row.computed_status || 'active') as CustomerPackage['status'],
+    isExpiringSoon: false,
+    isRecurring: false,
+    originalPrice: 0,
+    paidPrice: 0,
+    discount: 0,
+    nextSession,
+  };
+}
+
 export function PackageTrackingDashboard({
   phone,
   customerId,
@@ -115,6 +179,7 @@ export function PackageTrackingDashboard({
   onNavigate,
   onOpenChat,
 }: PackageTrackingDashboardProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [packages, setPackages] = useState<CustomerPackage[]>([]);
@@ -128,40 +193,57 @@ export function PackageTrackingDashboard({
   const loadPackages = async () => {
     try {
       setLoading(true);
-      
-      const response = await apiClient.get<any>(
-        `/customer/${phone}/packages/all`
-      );
 
-      if (response.success && response.packages) {
-        // Sort: active first, then by expiry
-        const sortedPackages = response.packages.sort((a: CustomerPackage, b: CustomerPackage) => {
-          if (a.status === 'active' && b.status !== 'active') return -1;
-          if (a.status !== 'active' && b.status === 'active') return 1;
-          
-          // Then by expiry date
-          if (a.expiresAt && b.expiresAt) {
-            return new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime();
-          }
-          return 0;
-        });
-        
-        setPackages(sortedPackages);
+      const byPhone = await apiClient
+        .get<any>(`/customer/${encodeURIComponent(phone)}/packages`)
+        .catch(() => null);
+      let merged: any[] = Array.isArray(byPhone?.packages) ? [...byPhone.packages] : [];
+
+      const uuid =
+        customerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)
+          ? customerId
+          : null;
+      if (uuid) {
+        const active = await apiClient
+          .get<any>(`/customer/${encodeURIComponent(uuid)}/packages/active`)
+          .catch(() => null);
+        const extra: any[] = Array.isArray(active?.packages) ? active.packages : [];
+        const seen = new Set(merged.map((p: any) => String(p.id ?? p.packagePurchaseId ?? '')));
+        for (const p of extra) {
+          const id = String(p.id ?? '');
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          merged.push({
+            id: p.id,
+            packageName: p.package_name || p.packageName,
+            vendorId: p.vendor_id || p.vendorId,
+            vendorName: p.vendor_name || p.vendorName,
+            totalSessions: p.total_sessions ?? p.totalSessions,
+            remainingSessions: p.unlimited_usage ? 'unlimited' : p.remaining_sessions ?? p.remainingSessions,
+            sessionsUsed: p.sessions_used ?? p.sessionsUsed,
+            expiresAt: p.expires_at || p.expiresAt,
+            isUnlimited: p.unlimited_usage,
+            packageType: p.package_type || p.packageType,
+            status: p.computed_status || p.status,
+            includedServices: [],
+            nextSession: p.nextSession,
+          });
+        }
       }
+
+      const mapped = merged.map(mapApiPackageRowToCustomerPackage);
+      mapped.sort((a, b) => {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (a.status !== 'active' && b.status === 'active') return 1;
+        if (a.expiresAt && b.expiresAt) {
+          return new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime();
+        }
+        return 0;
+      });
+      setPackages(mapped);
     } catch (error) {
       console.error('Error loading packages:', error);
-      // Try alternative endpoint
-      try {
-        const altResponse = await apiClient.get<any>(
-          `/packages/customer/${customerId || phone}?includeHistory=true`
-        );
-        if (altResponse.packages) {
-          setPackages(altResponse.packages);
-        }
-      } catch (err) {
-        console.error('Fallback also failed:', err);
-        setPackages([]);
-      }
+      setPackages([]);
     } finally {
       setLoading(false);
     }
@@ -354,7 +436,18 @@ export function PackageTrackingDashboard({
           </div>
           
           {isActive && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/packages/${encodeURIComponent(pkg.id)}`);
+                }}
+                className="border-purple-300 text-purple-800 hover:bg-purple-50"
+              >
+                Track
+              </Button>
               <Button
                 size="sm"
                 variant="outline"

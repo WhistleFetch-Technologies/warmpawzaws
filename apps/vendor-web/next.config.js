@@ -12,7 +12,13 @@ const nextConfig = {
   ...(process.env.NODE_ENV === 'production' && process.env.ENABLE_STATIC_EXPORT !== 'false'
     ? { output: 'export' }
     : {}),
-  distDir: 'dist',
+  // Prod: `dist` for static export + deploy-to-s3.js. Dev must use `.next` here — writing dev
+  // chunks into `dist` overlaps with export output and causes 404s on `/_next/static/chunks/*`
+  // (page stuck on “Checking session…”). Same pattern as apps/customer-web/next.config.js.
+  distDir:
+    process.env.NODE_ENV === 'production'
+      ? 'dist'
+      : process.env.NEXT_DEV_DIST_DIR || '.next',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,

@@ -70,10 +70,14 @@ interface Booking {
   status: 'pending' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
   completionOTP?: string;
   isPackage: boolean;
+  packagePurchaseId?: string;
   packageDetails?: {
-    totalSessions: number;
-    completedSessions: number;
-    frequency: string;
+    totalSessions?: number;
+    completedSessions?: number;
+    frequency?: string;
+    unlimited?: boolean;
+    remainingSessions?: number | string;
+    packagePurchaseId?: string;
   };
   occurrences?: BookingOccurrence[];
   createdAt: string;
@@ -358,6 +362,11 @@ export function MyBookings({
           status: b.status || 'pending',
           completionOTP: b.completion_otp || b.completionOTP,
           isPackage: b.is_package || b.isPackage || false,
+          packagePurchaseId:
+            b.package_purchase_id ||
+            b.packagePurchaseId ||
+            b.package_details?.packagePurchaseId ||
+            b.packageDetails?.packagePurchaseId,
           packageDetails: b.package_details || b.packageDetails,
           occurrences: b.occurrences,
           createdAt: b.created_at || b.createdAt,
@@ -1017,24 +1026,30 @@ export function MyBookings({
                   )}
 
                 {booking.isPackage && booking.packageDetails && (
-                  <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Package className="w-4 h-4 text-purple-600" />
+                  <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm min-w-0">
+                      <Package className="w-4 h-4 shrink-0 text-purple-600" />
                       <span className="text-purple-600">
-                        {booking.packageDetails.completedSessions}/{booking.packageDetails.totalSessions} sessions completed
+                        {booking.packageDetails.unlimited
+                          ? 'Unlimited package'
+                          : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`}
                       </span>
                     </div>
-                    {/* ✅ View Package button to track multi-visit packages */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Navigate to package tracking - could use a callback prop or router
-                        window.location.href = `/packages/${booking.bookingId}`;
-                      }}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
-                    >
-                      Track Package
-                    </button>
+                    {(booking.packagePurchaseId ||
+                      booking.packageDetails?.packagePurchaseId) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const pid =
+                            booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId;
+                          if (pid) router.push(`/packages/${encodeURIComponent(String(pid))}`);
+                        }}
+                        className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
+                      >
+                        Track package
+                      </button>
+                    )}
                   </div>
                 )}
 

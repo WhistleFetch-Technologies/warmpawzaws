@@ -40,7 +40,8 @@ async function selectCustomerIdByPhoneLast10(last10: string): Promise<string | n
  * Customer-web UAT login uses opaque `Bearer uat-token-customer-{10digits}-{timestamp}` (not a JWT).
  * Those must resolve by phone when `X-UAT-Mode: true` or `UAT_MODE=true`.
  */
-async function resolvePostgresCustomerIdFromAuthHeaders(
+/** Exported for package/session routes that must verify `package_purchases.customer_id`. */
+export async function resolvePostgresCustomerIdFromAuthHeaders(
   headers: Record<string, string | undefined>
 ): Promise<string | null> {
   const authRaw = headers['authorization'] || headers['Authorization'];
@@ -269,7 +270,7 @@ class ChangePasswordHandler extends BaseHandler {
       }
 
       const customers = await query(
-        `SELECT id, password_hash, phone FROM customers WHERE id = $1::uuid OR phone = $1`,
+        `SELECT id, password_hash, phone FROM customers WHERE id = $1::uuid OR phone = $1::text`,
         [customerIdResolved]
       );
 

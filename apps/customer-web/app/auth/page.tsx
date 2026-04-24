@@ -35,6 +35,48 @@ const UAT_VALID_OTPS = ['123456', '12345678'] as const;
 /** Top padding under notch / status bar (requires viewport-fit=cover in root layout). */
 const authOrangeHeaderStyle = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
 
+/** Brand shell: subtle same-orange gradient, clips pseudo highlights. */
+const authShellClass =
+  'min-h-screen flex justify-center overflow-hidden bg-gradient-to-b from-[#FF9A56] via-[#FF8C42] to-[#E86820]';
+const authColumnClass =
+  'w-full max-w-md min-h-screen flex flex-col overflow-hidden bg-gradient-to-b from-[#FF9A56] via-[#FF8C42] to-[#E86820]';
+/** Very soft circular highlights; children need relative z-10 to sit above ::after. */
+const authHeaderClass =
+  'relative z-0 isolate overflow-hidden px-6 pb-20 flex flex-col items-center before:pointer-events-none before:absolute before:-top-32 before:left-1/2 before:-translate-x-1/2 before:h-[19rem] before:w-[19rem] before:rounded-full before:bg-white/20 before:blur-3xl before:opacity-90 after:pointer-events-none after:absolute after:top-1/2 after:-right-12 after:h-48 after:w-48 after:rounded-full after:bg-amber-100/35 after:blur-3xl after:opacity-80';
+const authHeroH1Class =
+  'text-2xl font-bold text-black italic text-center relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.4),0_2px_14px_rgba(0,0,0,0.1)]';
+const authHeroH2Class =
+  'text-2xl font-bold text-black italic text-center relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.4),0_2px_14px_rgba(0,0,0,0.1)]';
+const authHeroTitleClass =
+  'text-3xl font-extrabold text-black tracking-wide relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.35),0_2px_16px_rgba(0,0,0,0.1)]';
+const authHeroTaglineClass =
+  'mt-3 text-center text-lg font-bold text-black tracking-wide relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.3),0_1px_10px_rgba(0,0,0,0.08)]';
+const authLogoRingClass =
+  'relative z-10 w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl ring-1 ring-white/40 mb-6 p-2';
+const authCardClass =
+  'bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 ring-1 ring-black/5 shadow-[0_-10px_40px_-4px_rgba(0,0,0,0.1),0_8px_32px_rgba(0,0,0,0.06)] pb-[max(1.5rem,env(safe-area-inset-bottom))]';
+const authFieldClass =
+  'w-full py-4 px-4 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
+const authFieldInGroupClass =
+  'w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
+const authInputGroupClass =
+  'flex items-stretch border-2 border-gray-200/90 rounded-2xl overflow-hidden transition-all duration-200 focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 bg-[#FFFBF7] focus-within:bg-white';
+const authOtpInnerClass =
+  'min-w-0 flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none bg-transparent transition-colors duration-200';
+const authPrimaryButtonClass =
+  'w-full py-3.5 text-white text-lg font-semibold rounded-full border border-white/25 bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-lg shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-xl hover:shadow-[#C85A10]/40 hover:brightness-105 active:scale-[0.98] active:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+
+/** Inline actions: brand orange, no underline until hover/focus; matches primary CTA palette. */
+const authTextLinkCoreClass =
+  'text-[#FF8C42] no-underline underline-offset-2 decoration-2 transition-colors hover:text-[#E86820] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40 focus-visible:ring-offset-2 focus-visible:text-[#E86820] focus-visible:underline';
+const authTextLinkClass = `${authTextLinkCoreClass} font-medium rounded-sm`;
+/** “New user?” CTA: soft pill behind the same link behavior; Forgot password stays plain text. */
+const authSignupPillLinkClass =
+  `${authTextLinkCoreClass} font-medium inline-flex justify-center rounded-full px-4 py-2 bg-[#FF8C42]/10 hover:bg-[#FF8C42]/15`;
+/** Terms / Privacy inside gray copy: readable, tappable, same focus ring. */
+const authTermsLinkClass =
+  `${authTextLinkCoreClass} font-semibold rounded-sm py-0.5`;
+
 function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
   if (typeof window === 'undefined') return;
   if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
@@ -219,7 +261,7 @@ function AuthPageContent() {
     const user = loginUsername.trim();
     const pass = loginPassword.trim();
     if (!user || !pass) {
-      setError('Enter username and password');
+      setError('Enter phone number and password');
       return;
     }
     setLoading(true);
@@ -350,7 +392,7 @@ function AuthPageContent() {
   const submitForgotPasswordRequest = async () => {
     const u = forgotUsername.trim();
     if (!u) {
-      setError('Enter the username or email you use to log in');
+      setError('Enter the phone number you use to log in');
       return;
     }
     setLoading(true);
@@ -665,28 +707,28 @@ function AuthPageContent() {
   if (otpSent) {
     return (
       <Fragment>
-      <div className="min-h-screen flex justify-center bg-[#FF8C42]">
+      <div className={authShellClass}>
         {/* Centered Container */}
-        <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
+        <div className={authColumnClass}>
           {/* Orange Header Section */}
-          <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderStyle}>
+          <div className={authHeaderClass} style={authOrangeHeaderStyle}>
             {/* Warmpawz Logo */}
-            <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
+            <div className={authLogoRingClass}>
               <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
             </div>
 
             {/* Title */}
-            <h1 className="text-2xl font-bold text-black italic text-center">
+            <h1 className={authHeroH1Class}>
               Verify Your
             </h1>
-            <h2 className="text-2xl font-bold text-black italic text-center">
+            <h2 className={authHeroH2Class}>
               Number
             </h2>
           </div>
 
           {/* White Card Section */}
-          <div className="flex-1 -mt-8 relative">
-            <div className="bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+          <div className="flex-1 -mt-8 relative overflow-hidden">
+            <div className={authCardClass}>
               {/* Subtitle */}
               <div className="text-center mb-8">
                 <p className="text-gray-600 text-sm mb-1">Enter the OTP sent to</p>
@@ -716,7 +758,7 @@ function AuthPageContent() {
                 <label className="block text-gray-700 font-medium mb-2">Verification Code</label>
 
                 {/* 6-digit OTP Input */}
-                <div className="flex items-center border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+                <div className={authInputGroupClass}>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -724,7 +766,7 @@ function AuthPageContent() {
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                     placeholder="Enter 6-digit code"
-                    className="flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none"
+                    className={authOtpInnerClass}
                     autoFocus
                   />
                 </div>
@@ -733,7 +775,7 @@ function AuthPageContent() {
                 <button
                   onClick={verifyOtp}
                   disabled={loading || otp.length !== 6}
-                  className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all shadow-lg shadow-[#FF8C42]/30"
+                  className={authPrimaryButtonClass}
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -758,7 +800,8 @@ function AuthPageContent() {
                     <button
                       onClick={sendOtp}
                       disabled={loading}
-                      className="text-[#FF8C42] font-medium text-sm underline hover:text-[#FF6B9D] disabled:opacity-50"
+                      type="button"
+                      className={`text-sm disabled:opacity-50 disabled:no-underline ${authTextLinkClass}`}
                     >
                       Resend Code
                     </button>
@@ -772,14 +815,15 @@ function AuthPageContent() {
                     <button
                       type="button"
                       onClick={() => setHelpChatOpen(true)}
-                      className="text-[#FF8C42] hover:underline font-medium"
+                      className={`text-sm ${authTextLinkClass}`}
                     >
                       Get Help
                     </button>
                   </p>
                   <button
+                    type="button"
                     onClick={() => { setOtpSent(false); setOtp(''); setError(null); }}
-                    className="text-blue-600 text-sm hover:underline"
+                    className={`text-sm ${authTextLinkClass}`}
                   >
                     &lt; Change phone number
                   </button>
@@ -791,7 +835,7 @@ function AuthPageContent() {
                 <button
                   type="button"
                   onClick={() => openLegal('customer_terms_of_service')}
-                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                  className={`${authTermsLinkClass} align-baseline`}
                 >
                   Customer Terms of Service
                 </button>
@@ -799,7 +843,7 @@ function AuthPageContent() {
                 <button
                   type="button"
                   onClick={() => openLegal('privacy_policy')}
-                  className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium"
+                  className={`${authTermsLinkClass} align-baseline`}
                 >
                   Privacy Policy
                 </button>
@@ -823,24 +867,27 @@ function AuthPageContent() {
   // PHONE NUMBER ENTRY SCREEN
   return (
     <Fragment>
-    <div className="min-h-screen flex justify-center bg-[#FF8C42]">
+    <div className={authShellClass}>
       {/* Centered Container */}
-      <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
+      <div className={authColumnClass}>
         {/* Orange Header Section */}
-        <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderStyle}>
+        <div className={authHeaderClass} style={authOrangeHeaderStyle}>
           {/* Warmpawz Logo */}
-          <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
+          <div className={authLogoRingClass}>
             <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Welcome Text */}
-          <h1 className="text-2xl font-bold text-black italic text-center">Welcome to</h1>
-          <h2 className="text-3xl font-extrabold text-black tracking-wide">WARMPAWZ!</h2>
+          <h1 className={authHeroH1Class}>Welcome to</h1>
+          <h2 className={authHeroTitleClass}>WARMPAWZ!</h2>
+          <p className={authHeroTaglineClass}>
+            Pet Care Reimagined !!
+          </p>
         </div>
 
         {/* White Card Section */}
-        <div className="flex-1 -mt-8 relative">
-          <div className="bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+        <div className="flex-1 -mt-8 relative overflow-hidden">
+          <div className={authCardClass}>
             {/* Subtitle */}
             <p className="text-center text-gray-600 mb-8 text-base leading-relaxed">
               {authMode === 'login' ? (
@@ -852,7 +899,7 @@ function AuthPageContent() {
                   </>
                 ) : (
                   <>
-                    Log in with your username (usually your 10-digit mobile number)<br />
+                    Log in with your phone number (your 10-digit mobile number)<br />
                     and the password you created after signup.
                   </>
                 )
@@ -890,27 +937,27 @@ function AuthPageContent() {
               </div>
             )}
 
-            {/* Login (username + password) or Sign up (phone OTP) */}
+            {/* Login (phone + password) or Sign up (phone OTP) */}
             <div className="space-y-4">
               {authMode === 'login' ? (
                 forgotOpen ? (
                   <>
                     {forgotStep === 1 && (
                       <>
-                        <label className="block text-gray-700 font-medium mb-2">Username or email</label>
+                        <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
                         <input
                           type="text"
                           autoComplete="username"
                           value={forgotUsername}
                           onChange={(e) => setForgotUsername(e.target.value)}
-                          placeholder="Same as when you log in"
-                          className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                          placeholder="Same phone number you use to log in"
+                          className={authFieldClass}
                         />
                         <button
                           type="button"
                           onClick={submitForgotPasswordRequest}
                           disabled={loading || !forgotUsername.trim()}
-                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                          className={`${authPrimaryButtonClass} mt-2`}
                         >
                           {loading ? 'Sending…' : 'Send code'}
                         </button>
@@ -939,13 +986,13 @@ function AuthPageContent() {
                           value={forgotOtp}
                           onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                           placeholder="••••••"
-                          className="w-full py-4 px-4 text-lg tracking-widest border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                          className={authFieldClass}
                         />
                         <button
                           type="button"
                           onClick={submitForgotPasswordVerifyOtp}
                           disabled={loading || forgotOtp.length !== 6}
-                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                          className={`${authPrimaryButtonClass} mt-2`}
                         >
                           {loading ? 'Checking…' : 'Continue'}
                         </button>
@@ -972,7 +1019,7 @@ function AuthPageContent() {
                             value={forgotNewPassword}
                             onChange={(e) => setForgotNewPassword(e.target.value)}
                             placeholder="At least 8 characters"
-                            className="w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                            className={authFieldInGroupClass}
                           />
                           <button
                             type="button"
@@ -994,7 +1041,7 @@ function AuthPageContent() {
                           value={forgotConfirmPassword}
                           onChange={(e) => setForgotConfirmPassword(e.target.value)}
                           placeholder="Re-enter password"
-                          className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                          className={authFieldClass}
                         />
                         <button
                           type="button"
@@ -1004,7 +1051,7 @@ function AuthPageContent() {
                             forgotNewPassword.length < 8 ||
                             forgotNewPassword !== forgotConfirmPassword
                           }
-                          className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                          className={`${authPrimaryButtonClass} mt-2`}
                         >
                           {loading ? 'Updating…' : 'Update password'}
                         </button>
@@ -1023,14 +1070,14 @@ function AuthPageContent() {
                   </>
                 ) : (
                 <>
-                  <label className="block text-gray-700 font-medium mb-2">Username</label>
+                  <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
                   <input
                     type="text"
                     autoComplete="username"
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder="e.g. 9876543210"
-                    className="w-full py-4 px-4 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    className={authFieldClass}
                   />
                   <label className="block text-gray-700 font-medium mb-2">Password</label>
                   <div className="relative">
@@ -1040,7 +1087,7 @@ function AuthPageContent() {
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="Your password"
-                      className="w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                      className={authFieldInGroupClass}
                     />
                     <button
                       type="button"
@@ -1058,7 +1105,7 @@ function AuthPageContent() {
                   <button
                     type="button"
                     onClick={openForgotPassword}
-                    className="w-full text-right text-sm text-[#FF8C42] font-medium hover:underline pt-1"
+                    className={`w-full text-right text-sm pt-1 ${authTextLinkClass}`}
                   >
                     Forgot password?
                   </button>
@@ -1066,7 +1113,7 @@ function AuthPageContent() {
                     type="button"
                     onClick={passwordLogin}
                     disabled={loading || !loginUsername.trim() || !loginPassword.trim()}
-                    className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30 mt-2"
+                    className={`${authPrimaryButtonClass} mt-2`}
                   >
                     {loading ? 'Signing in…' : 'Log in'}
                   </button>
@@ -1077,7 +1124,7 @@ function AuthPageContent() {
                       setShowLoginPassword(false);
                       setError(null);
                     }}
-                    className="w-full text-center text-sm text-[#FF8C42] font-medium hover:underline pt-2"
+                    className={`w-full text-center text-sm pt-2 ${authSignupPillLinkClass}`}
                   >
                     New user? Sign up with phone (OTP)
                   </button>
@@ -1088,7 +1135,7 @@ function AuthPageContent() {
               <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
 
               {/* Phone Input with Country Code Selector */}
-              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+              <div className={authInputGroupClass}>
                 <CountryCodeSelector
                   selectedCode={countryCode}
                   onSelect={setCountryCode}
@@ -1101,7 +1148,7 @@ function AuthPageContent() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                   placeholder="74493 38923"
-                  className="flex-1 py-4 px-4 text-lg outline-none"
+                  className="min-w-0 flex-1 py-4 px-4 text-lg outline-none bg-transparent transition-colors duration-200"
                   autoFocus
                 />
               </div>
@@ -1145,13 +1192,13 @@ function AuthPageContent() {
                         }}
                         placeholder="Enter referral code"
                         maxLength={20}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm uppercase focus:border-[#FF8C42] focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/20"
+                        className="flex-1 px-4 py-3 border-2 border-gray-200/90 rounded-xl text-sm uppercase bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:outline-none focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white"
                       />
                       {referralCode && !referralApplied && (
                         <button
                           type="button"
                           onClick={() => setReferralApplied(true)}
-                          className="px-4 py-3 bg-[#FF8C42] text-white rounded-xl text-sm font-medium hover:bg-[#FF7A29] transition-colors"
+                          className="px-4 py-2.5 text-sm font-medium rounded-full border border-white/25 text-white bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-md shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-lg hover:brightness-105 active:brightness-95"
                         >
                           Apply
                         </button>
@@ -1173,7 +1220,7 @@ function AuthPageContent() {
               <button
                 onClick={sendOtp}
                 disabled={loading || phone.length !== 10}
-                className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all shadow-lg shadow-[#FF8C42]/30 mt-6"
+                className={`${authPrimaryButtonClass} mt-6`}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -1207,7 +1254,7 @@ function AuthPageContent() {
               <button
                 type="button"
                 onClick={() => openLegal('customer_terms_of_service')}
-                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+                className={`${authTermsLinkClass} align-baseline`}
               >
                 Customer Terms of Service
               </button>
@@ -1215,7 +1262,7 @@ function AuthPageContent() {
               <button
                 type="button"
                 onClick={() => openLegal('privacy_policy')}
-                className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors"
+                className={`${authTermsLinkClass} align-baseline`}
               >
                 Privacy Policy
               </button>
@@ -1226,7 +1273,7 @@ function AuthPageContent() {
               <button
                 type="button"
                 onClick={() => setHelpChatOpen(true)}
-                className="text-[#FF8C42] text-sm font-medium hover:text-[#FF6B9D] hover:underline transition-colors"
+                className={`text-sm ${authTextLinkClass}`}
               >
                 Need Help?
               </button>

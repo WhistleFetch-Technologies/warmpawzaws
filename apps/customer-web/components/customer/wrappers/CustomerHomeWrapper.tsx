@@ -117,6 +117,8 @@ import { ReturnRequestPage } from '../ReturnRequestPage';
 import { RewardsLoyaltyPage } from '../RewardsLoyaltyPage';
 import { ReferralSystemPage } from '../ReferralSystemPage';
 import { PackageBookingPage } from '../PackageBookingPage';
+import { PackageTrackingDashboard } from '../packages/PackageTrackingDashboard';
+import { PackagePurchaseSessionsView } from '../packages/PackagePurchaseSessionsView';
 import { EmergencyBookingPage } from '../EmergencyBookingPage';
 import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
 import { MedicalRecordsPage } from '../MedicalRecordsPage';
@@ -262,6 +264,7 @@ type ScreenType =
   | 'rewards-loyalty'
   | 'referral-system'
   | 'package-booking'
+  | 'package-tracking'
   | 'emergency-booking'
   | 'check-in-out'
   | 'medical-records'
@@ -393,6 +396,8 @@ export function CustomerHomeWrapper({
   >('walker');
   const [diagnosticsPackageHint, setDiagnosticsPackageHint] = useState<{ name?: string; testLabels?: string[] } | null>(null);
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
+  /** When set with `package-tracking`, shows single-purchase session view instead of the packages list. */
+  const [packageTrackingPurchaseId, setPackageTrackingPurchaseId] = useState<string | null>(null);
   /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
   const [screenBeforePets, setScreenBeforePets] = useState<ScreenType | null>(null);
   /** Pet Sitting hub: back returns here when opened from another in-app screen (not a full `handleBack` reset). */
@@ -749,6 +754,12 @@ export function CustomerHomeWrapper({
       setPreviousScreen(currentScreen);
       setCurrentScreen('package-booking');
     }
+    else if (service === 'package-tracking') {
+      setPreviousScreen(currentScreen);
+      const pid = data?.packagePurchaseId ?? data?.package_purchase_id;
+      setPackageTrackingPurchaseId(pid != null && String(pid).trim() !== '' ? String(pid) : null);
+      setCurrentScreen('package-tracking');
+    }
     else if (service === 'services') setCurrentScreen('services');
     else if (service === 'help' || service === 'support_help') setCurrentScreen('support_help');
     else if (service === 'offers' || service === 'promotions') {
@@ -850,6 +861,12 @@ export function CustomerHomeWrapper({
       setPreviousScreen(currentScreen);
       setVetServiceData((prev: any) => ({ ...prev, ...data }));
       setCurrentScreen('package-booking');
+    }
+    else if (screen === 'package-tracking') {
+      setPreviousScreen(currentScreen);
+      const pid = data?.packagePurchaseId ?? data?.package_purchase_id;
+      setPackageTrackingPurchaseId(pid != null && String(pid).trim() !== '' ? String(pid) : null);
+      setCurrentScreen('package-tracking');
     }
     else {
       // ✅ FIX: Fallback - try to navigate to the screen directly
@@ -3348,6 +3365,46 @@ export function CustomerHomeWrapper({
         onCloseToHome={handleBack}
       />
     );
+
+  // Package tracking (list or single purchase sessions)
+  if (currentScreen === 'package-tracking') {
+    return (
+      <CustomerScreenWrapper
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        {packageTrackingPurchaseId ? (
+          <PackagePurchaseSessionsView
+            packagePurchaseId={packageTrackingPurchaseId}
+            phone={phone}
+            onBack={() => {
+              setPackageTrackingPurchaseId(null);
+              setCurrentScreen(previousScreen || 'home');
+              setPreviousScreen(null);
+            }}
+          />
+        ) : (
+          <PackageTrackingDashboard
+            phone={phone}
+            onBack={() => {
+              setPackageTrackingPurchaseId(null);
+              setCurrentScreen(previousScreen || 'home');
+              setPreviousScreen(null);
+            }}
+            onNavigate={(s, navData) => {
+              if (s === 'package-tracking' && (navData as any)?.packagePurchaseId) {
+                setPackageTrackingPurchaseId(String((navData as any).packagePurchaseId));
+              } else {
+                handleNavigateToService(s, navData);
+              }
+            }}
+          />
+        )}
+      </CustomerScreenWrapper>
+    );
+  }
 
   // Package Booking
   if (currentScreen === 'package-booking')
