@@ -16,7 +16,8 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../../../database/rds-connection';
+import { select, insert, update, query, withTransaction } from '../../../database/rds-connection';
+import type { PoolClient } from 'pg';
 import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
 import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getSnsClient } from '../../../utils/sns-client';
@@ -37,6 +38,36 @@ import {
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
+
+/** Namespace class for `pg_try_advisory_lock` / `pg_advisory_unlock` (vendor payout request). */
+const VENDOR_PAYOUT_REQUEST_LOCK_NS = 8842911;
+
+function vendorIdToAdvisoryInt32(vendorId: string): number {
+  let h = 0;
+  for (let i = 0; i < vendorId.length; i++) {
+    h = ((h << 5) - h + vendorId.charCodeAt(i)) | 0;
+  }
+  const m = Math.abs(h) % 2147483646;
+  return m <= 0 ? 1 : m;
+}
+
+/**
+ * Atomically move a payout to processing for Razorpay create.
+ * Allows pending | scheduled | failed → processing (failed retry must keep working).
+ */
+async function claimPayoutForProcessing(
+  payoutId: string,
+  client?: PoolClient
+): Promise<Record<string, unknown> | null> {
+  const sql = `UPDATE payouts
+     SET payout_status = 'processing', updated_at = NOW()
+     WHERE id = $1::uuid
+       AND payout_status IN ('pending','scheduled','failed')
+     RETURNING *`;
+  const r = client ? await client.query(sql, [payoutId]) : await query(sql, [payoutId]);
+  const row = r.rows?.[0] as Record<string, unknown> | undefined;
+  return row ?? null;
+}
 
 /** `payouts.payment_ids` is NOT NULL — copy from `settlements.payment_ids` or use []. */
 function coercePaymentIdsForPayoutRow(raw: unknown): string[] {
@@ -883,29 +914,36 @@ export function registerSettlementEndpoints(app: Hono) {
           const periodStart = new Date(periodEnd);
           periodStart.setDate(periodStart.getDate() - 7); // fallback for display
 
-          // Create settlement record (only base columns for backward compatibility; penalty already applied to net_amount)
-          const settlementRecord = await insert('settlements', {
-            vendor_id: vendorId,
-            total_amount: settlement.totalAmount,
-            commission_amount: settlement.commissionAmount,
-            net_amount: settlement.netAmount,
-            settlement_status: rules.autoPayout ? 'processing' : 'pending',
-            settlement_period_start: periodStart.toISOString().split('T')[0],
-            settlement_period_end: periodEnd.toISOString().split('T')[0],
-            payment_ids: settlement.bookingIds,
+          // Create settlement + mark bookings settled in one transaction (same-run idempotency if insert succeeds)
+          const settlementRow = await withTransaction(async (client) => {
+            const ins = await client.query(
+              `INSERT INTO settlements (
+                 vendor_id, total_amount, commission_amount, net_amount,
+                 settlement_status, settlement_period_start, settlement_period_end, payment_ids
+               ) VALUES ($1::uuid, $2, $3, $4, $5, $6::date, $7::date, $8::uuid[])
+               RETURNING *`,
+              [
+                vendorId,
+                settlement.totalAmount,
+                settlement.commissionAmount,
+                settlement.netAmount,
+                rules.autoPayout ? 'processing' : 'pending',
+                periodStart.toISOString().split('T')[0],
+                periodEnd.toISOString().split('T')[0],
+                settlement.bookingIds,
+              ]
+            );
+            await client.query(`UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1::uuid[])`, [
+              settlement.bookingIds,
+            ]);
+            return ins.rows[0];
           });
 
-          // Mark bookings as settled (only settled_at for backward compatibility; settlement_status may not exist on bookings)
-          await query(
-            `UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1)`,
-            [settlement.bookingIds]
-          );
-
-          settlements.push(settlementRecord[0]);
+          settlements.push(settlementRow);
 
           // If auto-payout, create payout
           if (rules.autoPayout) {
-            await createPayout(settlementRecord[0].id, vendorId, settlement.netAmount);
+            await createPayout(settlementRow.id, vendorId, settlement.netAmount);
           }
 
           // Notify vendor
@@ -922,7 +960,7 @@ export function registerSettlementEndpoints(app: Hono) {
                 priority: 'normal',
                 data: {
                   eventType: 'settlement_created',
-                  settlementId: settlementRecord[0].id,
+                  settlementId: settlementRow.id,
                   vendorId: vendorId,
                   amount: settlement.netAmount,
                   totalAmount: settlement.totalAmount,
@@ -1094,19 +1132,47 @@ export function registerSettlementEndpoints(app: Hono) {
         }
       }
 
-      // Create payout record (pending until Razorpay confirms or admin processes)
-      const payoutInsert = await insert('payouts', {
-        vendor_id: vendorId,
-        amount: actualPayoutAmount,
-        payout_status: 'pending',
-        bank_account_number: bank.account_number,
-        ifsc_code: bank.ifsc_code,
-        account_holder_name: bank.account_holder_name,
-        payment_ids: [],
-      }).catch(() => null);
-      const payoutId = payoutInsert?.[0]?.id;
+      const vendorLockKey = vendorIdToAdvisoryInt32(vendorId);
+      const lockRow = await query(`SELECT pg_try_advisory_lock($1::integer, $2::integer) AS ok`, [
+        VENDOR_PAYOUT_REQUEST_LOCK_NS,
+        vendorLockKey,
+      ]).catch(() => ({ rows: [{ ok: false }] }));
+      if (!lockRow.rows?.[0]?.ok) {
+        return c.json(
+          {
+            success: false,
+            error: 'Another payout request is in progress for this account. Please try again shortly.',
+          },
+          409
+        );
+      }
 
-      const tierRow = await loadVendorTierPayoutRow(vendorId);
+      let payoutId: string | undefined;
+      try {
+        const inflight = await query(
+          `SELECT id FROM payouts WHERE vendor_id = $1::uuid AND payout_status IN ('pending','scheduled','processing') LIMIT 1`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        if ((inflight.rows?.length ?? 0) > 0) {
+          return c.json(
+            { success: false, error: 'You already have a payout in progress. Wait for it to complete or fail before requesting again.' },
+            409
+          );
+        }
+
+        // Create payout record (pending until Razorpay confirms or admin processes)
+        const payoutInsert = await insert('payouts', {
+          vendor_id: vendorId,
+          amount: actualPayoutAmount,
+          payout_status: 'pending',
+          bank_account_number: bank.account_number,
+          ifsc_code: bank.ifsc_code,
+          account_holder_name: bank.account_holder_name,
+          payment_ids: [],
+        }).catch(() => null);
+        payoutId = payoutInsert?.[0]?.id;
+
+        const tierRow = await loadVendorTierPayoutRow(vendorId);
       const tryAutomatedRazorpay = tierRowAllowsAutomatedPayout(tierRow);
       const tierDisplay =
         String(tierRow?.display_name || tierRow?.tier_name || 'your plan').trim() || 'your plan';
@@ -1247,6 +1313,12 @@ export function registerSettlementEndpoints(app: Hono) {
         }
         return c.json({ success: false, error: safeFail }, 500);
       }
+      } finally {
+        await query(`SELECT pg_advisory_unlock($1::integer, $2::integer)`, [
+          VENDOR_PAYOUT_REQUEST_LOCK_NS,
+          vendorLockKey,
+        ]).catch(() => {});
+      }
     } catch (error: any) {
       console.error('Error requesting settlement:', error);
       return c.json({ success: false, error: error.message }, 500);
@@ -1330,23 +1402,95 @@ export function registerSettlementEndpoints(app: Hono) {
         payoutPaymentIds = coercePaymentIdsForPayoutRow((sidRes as { rows?: { payment_ids?: unknown }[] }).rows?.[0]?.payment_ids);
       }
 
-      // Create payout record
-      const payout = await insert('payouts', {
-        vendor_id: vendorId,
-        amount: amount,
-        settlement_id: settlementId,
-        bank_account_number: bank.account_number,
-        ifsc_code: bank.ifsc_code,
-        account_holder_name: bank.account_holder_name,
-        payout_status: 'processing',
-        payment_ids: payoutPaymentIds,
+      type ClaimOutcome =
+        | { type: 'already_sent'; row: Record<string, unknown> }
+        | { type: 'claimed'; row: Record<string, unknown> }
+        | { type: 'claim_lost' }
+        | { type: 'blocked'; reason: string };
+
+      const claimedRow: ClaimOutcome = await withTransaction(async (client) => {
+        await client.query(`SELECT 1 FROM settlements WHERE id = $1::uuid FOR UPDATE`, [settlementId]);
+
+        const existing = await client.query(
+          `SELECT id, payout_status, razorpay_payout_id FROM payouts
+           WHERE settlement_id = $1::uuid
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [settlementId]
+        );
+        const ex = existing.rows?.[0] as
+          | { id: string; payout_status?: string; razorpay_payout_id?: string | null }
+          | undefined;
+        const st = String(ex?.payout_status || '');
+
+        if (st === 'processing' && ex?.razorpay_payout_id) {
+          return { type: 'already_sent' as const, row: ex as Record<string, unknown> };
+        }
+        if (st === 'processing' && !ex?.razorpay_payout_id) {
+          return { type: 'claimed' as const, row: ex as Record<string, unknown> };
+        }
+        if (st === 'completed' || st === 'cancelled') {
+          return { type: 'blocked' as const, reason: `settlement has payout in terminal state: ${st}` };
+        }
+
+        let payoutId: string;
+        if (ex && ['pending', 'scheduled', 'failed'].includes(st)) {
+          payoutId = ex.id;
+        } else {
+          const ins = await client.query(
+            `INSERT INTO payouts (
+               vendor_id, amount, settlement_id, bank_account_number, ifsc_code, account_holder_name,
+               payout_status, payment_ids, currency
+             ) VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, 'pending', $7::uuid[], 'INR')
+             RETURNING *`,
+            [
+              vendorId,
+              amount,
+              settlementId,
+              bank.account_number,
+              bank.ifsc_code,
+              bank.account_holder_name,
+              payoutPaymentIds,
+            ]
+          );
+          payoutId = (ins.rows[0] as { id: string }).id;
+        }
+
+        const claimed = await claimPayoutForProcessing(payoutId, client);
+        if (!claimed) {
+          return { type: 'claim_lost' as const };
+        }
+        return { type: 'claimed' as const, row: claimed };
       });
+
+      if (claimedRow.type === 'already_sent') {
+        return c.json(
+          {
+            success: true,
+            message: 'Payout already initiated for this settlement',
+            payout: claimedRow.row,
+            razorpayPayoutId: claimedRow.row.razorpay_payout_id,
+          },
+          200
+        );
+      }
+      if (claimedRow.type === 'blocked') {
+        return c.json({ success: false, error: claimedRow.reason }, 409);
+      }
+      if (claimedRow.type === 'claim_lost') {
+        return c.json(
+          { success: false, error: 'Payout is already being processed or completed for this settlement' },
+          409
+        );
+      }
+
+      const payoutRow = claimedRow.row;
 
       // Process via Razorpay (composite payout: source account + beneficiary fund_account)
       try {
         const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
         if (!sourceAccount) {
-          await update('payouts', { id: payout[0].id }, { payout_status: 'failed', failure_reason: 'Razorpay payout source account not configured' });
+          await update('payouts', { id: payoutRow.id as string }, { payout_status: 'failed', failure_reason: 'Razorpay payout source account not configured' });
           return c.json({
             success: false,
             error:
@@ -1372,7 +1516,7 @@ export function registerSettlementEndpoints(app: Hono) {
           mode: 'IMPS',
           purpose: 'payout',
           queue_if_low_balance: true,
-          reference_id: `PAYOUT-${payout[0].id}`.slice(0, 40),
+          reference_id: `PAYOUT-${String(payoutRow.id)}`.slice(0, 40),
           fund_account: {
             account_type: 'bank_account',
             bank_account: {
@@ -1388,11 +1532,11 @@ export function registerSettlementEndpoints(app: Hono) {
               reference_id: `vendor-${vendorId}`.slice(0, 40),
             },
           },
-        }, String(payout[0].id));
+        }, String(payoutRow.id));
 
         // Update payout with Razorpay ID
         await update('payouts',
-          { id: payout[0].id },
+          { id: payoutRow.id as string },
           {
             razorpay_payout_id: payoutResponse.id,
             payout_status: 'processing',
@@ -1401,14 +1545,14 @@ export function registerSettlementEndpoints(app: Hono) {
 
         return c.json({
           success: true,
-          payout: payout[0],
+          payout: payoutRow,
           razorpayPayoutId: payoutResponse.id,
           message: 'Payout initiated successfully',
         });
       } catch (razorpayError: any) {
         // Update payout as failed
         await update('payouts',
-          { id: payout[0].id },
+          { id: payoutRow.id as string },
           {
             payout_status: 'failed',
             failure_reason: razorpayError.message,
@@ -1429,125 +1573,176 @@ export function registerSettlementEndpoints(app: Hono) {
    */
   app.post("/settlements/process-payouts", async (c) => {
     try {
-      // Get all pending settlements
-      const pendingSettlements = await query(`
-        SELECT s.*, v.id as vendor_id, v.business_name
-        FROM settlements s
-        INNER JOIN vendors v ON s.vendor_id = v.id
-        WHERE s.status = 'pending'
-        ORDER BY s.created_at ASC
-      `).catch(() => ({ rows: [] }));
+      const results = {
+        processed: 0,
+        failed: 0,
+        errors: [] as string[],
+        skipped: 0,
+      };
 
-      if (pendingSettlements.rows.length === 0) {
+      while (true) {
+        type BatchTx =
+          | { done: true }
+          | {
+              done: false;
+              settlement: Record<string, unknown>;
+              bank: Record<string, unknown>;
+              netAmount: number;
+              payoutRow: Record<string, unknown>;
+            };
+
+        let txOut: BatchTx;
+        try {
+          txOut = await withTransaction(async (client) => {
+          const sres = await client.query(
+            `
+            SELECT s.*, v.id as vendor_id, v.business_name
+            FROM settlements s
+            INNER JOIN vendors v ON s.vendor_id = v.id
+            WHERE (s.settlement_status = 'pending' OR s.status = 'pending')
+              AND EXISTS (SELECT 1 FROM vendor_bank_details vbd WHERE vbd.vendor_id = v.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM payouts p
+                WHERE p.settlement_id = s.id
+                  AND p.payout_status IN ('pending', 'processing')
+              )
+            ORDER BY s.created_at ASC
+            FOR UPDATE OF s SKIP LOCKED
+            LIMIT 1
+            `
+          );
+          if (sres.rows.length === 0) {
+            return { done: true as const };
+          }
+          const settlement = sres.rows[0] as Record<string, unknown>;
+          const vendorId = String(settlement.vendor_id);
+
+          const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+          if (bankDetails.length === 0) {
+            throw new Error('BANK_ROW_MISSING_AFTER_FILTER');
+          }
+          const bank = bankDetails[0] as Record<string, unknown>;
+          const netAmount = parseFloat(
+            String(settlement.net_amount ?? settlement.netAmount ?? '0')
+          );
+
+          const payIds = coercePaymentIdsForPayoutRow(settlement.payment_ids);
+          const ins = await client.query(
+            `INSERT INTO payouts (
+               vendor_id, amount, settlement_id, bank_account_number, ifsc_code, account_holder_name,
+               payout_status, payment_ids
+             ) VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, 'pending', $7::uuid[])
+             RETURNING *`,
+            [
+              vendorId,
+              netAmount,
+              settlement.id,
+              bank.account_number,
+              bank.ifsc_code,
+              bank.account_holder_name,
+              payIds,
+            ]
+          );
+          const newId = (ins.rows[0] as { id: string }).id;
+          const claimed = await claimPayoutForProcessing(newId, client);
+          if (!claimed) {
+            throw new Error('CLAIM_LOST_AFTER_INSERT');
+          }
+
+          return {
+            done: false as const,
+            settlement,
+            bank,
+            netAmount,
+            payoutRow: claimed,
+          };
+        });
+        } catch (txErr: unknown) {
+          const msg = txErr instanceof Error ? txErr.message : String(txErr);
+          if (msg.includes('BANK_ROW_MISSING') || msg.includes('CLAIM_LOST')) {
+            results.skipped += 1;
+            continue;
+          }
+          throw txErr;
+        }
+
+        if (txOut.done) {
+          break;
+        }
+
+        const { settlement, bank, netAmount, payoutRow } = txOut;
+        const settlementId = String(settlement.id);
+        const payoutId = String(payoutRow.id);
+
+        try {
+          const razorpayClient = getRazorpayClient();
+          const payoutResponse = await razorpayClient.payouts.create({
+            account_number: bank.account_number,
+            fund_account: {
+              account_type: 'bank_account',
+              bank_account: {
+                name: bank.account_holder_name,
+                ifsc: bank.ifsc_code,
+                account_number: bank.account_number,
+              },
+            },
+            amount: Math.round(netAmount * 100),
+            currency: 'INR',
+            mode: 'IMPS',
+            purpose: 'payout',
+            queue_if_low_balance: true,
+            reference_id: `PAYOUT-${payoutId}`.slice(0, 40),
+          }, payoutId);
+
+          await update(
+            'payouts',
+            { id: payoutId },
+            {
+              razorpay_payout_id: payoutResponse.id,
+              payout_status: 'processing',
+              updated_at: new Date().toISOString(),
+            }
+          );
+
+          await update('settlements', { id: settlementId }, {
+            status: 'processing',
+            payout_reference: payoutResponse.id,
+            updated_at: new Date().toISOString(),
+          } as Record<string, unknown>);
+
+          results.processed++;
+        } catch (razorpayError: any) {
+          await update(
+            'payouts',
+            { id: payoutId },
+            {
+              payout_status: 'failed',
+              failure_reason: razorpayError.message,
+              updated_at: new Date().toISOString(),
+            }
+          );
+
+          await update('settlements', { id: settlementId }, {
+            status: 'failed',
+            failure_reason: razorpayError.message,
+            updated_at: new Date().toISOString(),
+          } as Record<string, unknown>);
+
+          results.failed++;
+          results.errors.push(`Settlement ${settlementId}: ${razorpayError.message}`);
+        }
+      }
+
+      const totalTouched = results.processed + results.failed + results.skipped;
+      if (totalTouched === 0 && results.errors.length === 0) {
         return c.json({
           success: true,
           message: 'No pending settlements to process',
           processed: 0,
           failed: 0,
+          skipped: 0,
+          errors: [] as string[],
         });
-      }
-
-      const results = {
-        processed: 0,
-        failed: 0,
-        errors: [] as string[],
-      };
-
-      // Process each settlement
-      for (const settlement of pendingSettlements.rows) {
-        try {
-          // Get vendor bank details
-          const bankDetails = await select('vendor_bank_details', { vendor_id: settlement.vendor_id });
-          if (bankDetails.length === 0) {
-            results.failed++;
-            results.errors.push(`Vendor ${settlement.vendor_id} has no bank details`);
-            continue;
-          }
-
-          const bank = bankDetails[0];
-          const netAmount = parseFloat(settlement.net_amount || settlement.netAmount || '0');
-
-          // Create payout record
-          const payout = await insert('payouts', {
-            vendor_id: settlement.vendor_id,
-            amount: netAmount,
-            settlement_id: settlement.id,
-            bank_account_number: bank.account_number,
-            ifsc_code: bank.ifsc_code,
-            account_holder_name: bank.account_holder_name,
-            payout_status: 'processing',
-            created_at: new Date().toISOString(),
-            payment_ids: coercePaymentIdsForPayoutRow(settlement.payment_ids),
-          });
-
-          // Process via Razorpay
-          try {
-            const razorpayClient = await getRazorpayClient();
-            const payoutResponse = await razorpayClient.payouts.create({
-              account_number: bank.account_number,
-              fund_account: {
-                account_type: 'bank_account',
-                bank_account: {
-                  name: bank.account_holder_name,
-                  ifsc: bank.ifsc_code,
-                  account_number: bank.account_number,
-                },
-              },
-              amount: Math.round(netAmount * 100), // Convert to paise
-              currency: 'INR',
-              mode: 'IMPS',
-              purpose: 'payout',
-              queue_if_low_balance: true,
-              reference_id: `PAYOUT-${payout[0].id}`.slice(0, 40),
-            });
-
-            // Update payout and settlement
-            await update('payouts',
-              { id: payout[0].id },
-              {
-                razorpay_payout_id: payoutResponse.id,
-                payout_status: 'processing',
-                updated_at: new Date().toISOString(),
-              }
-            );
-
-            await update('settlements',
-              { id: settlement.id },
-              {
-                status: 'processing',
-                payout_reference: payoutResponse.id,
-                updated_at: new Date().toISOString(),
-              }
-            );
-
-            results.processed++;
-          } catch (razorpayError: any) {
-            // Update payout as failed
-            await update('payouts',
-              { id: payout[0].id },
-              {
-                payout_status: 'failed',
-                failure_reason: razorpayError.message,
-                updated_at: new Date().toISOString(),
-              }
-            );
-
-            await update('settlements',
-              { id: settlement.id },
-              {
-                status: 'failed',
-                failure_reason: razorpayError.message,
-                updated_at: new Date().toISOString(),
-              }
-            );
-
-            results.failed++;
-            results.errors.push(`Settlement ${settlement.id}: ${razorpayError.message}`);
-          }
-        } catch (error: any) {
-          results.failed++;
-          results.errors.push(`Settlement ${settlement.id}: ${error.message}`);
-        }
       }
 
       return c.json({
@@ -1555,6 +1750,7 @@ export function registerSettlementEndpoints(app: Hono) {
         message: `Processed ${results.processed} payouts, ${results.failed} failed`,
         processed: results.processed,
         failed: results.failed,
+        skipped: results.skipped,
         errors: results.errors,
       });
     } catch (error: any) {
@@ -1781,17 +1977,46 @@ export function registerSettlementEndpoints(app: Hono) {
     const payIdsRes = await query(`SELECT payment_ids FROM settlements WHERE id = $1::uuid LIMIT 1`, [settlementId]).catch(() => ({ rows: [] }));
     const payoutPaymentIds = coercePaymentIdsForPayoutRow((payIdsRes as { rows?: { payment_ids?: unknown }[] }).rows?.[0]?.payment_ids);
 
-    const payoutRecord = await insert('payouts', {
-      vendor_id: vendorId,
-      amount: amount,
-      settlement_id: settlementId,
-      bank_account_number: accountNumber,
-      ifsc_code: ifscCode,
-      account_holder_name: accountHolder,
-      payout_status: 'pending',
-      payment_ids: payoutPaymentIds,
-    });
-    const payoutId = payoutRecord[0]?.id;
+    const existingOpen = await query(
+      `SELECT id, payout_status, razorpay_payout_id FROM payouts
+       WHERE settlement_id = $1::uuid AND payout_status IN ('pending','processing')
+       ORDER BY created_at DESC LIMIT 1`,
+      [settlementId]
+    ).catch(() => ({ rows: [] }));
+    const exRow = existingOpen.rows?.[0] as
+      | { id: string; payout_status?: string; razorpay_payout_id?: string | null }
+      | undefined;
+    const rzPresent = exRow?.razorpay_payout_id != null && String(exRow.razorpay_payout_id).trim() !== '';
+
+    let payoutId: string | undefined;
+    if (exRow) {
+      if (exRow.payout_status === 'processing' && rzPresent) {
+        return;
+      }
+      if (exRow.payout_status === 'processing' && !rzPresent) {
+        payoutId = exRow.id;
+      } else {
+        const claimed = await claimPayoutForProcessing(exRow.id);
+        if (!claimed) return;
+        payoutId = exRow.id;
+      }
+    } else {
+      const payoutRecord = await insert('payouts', {
+        vendor_id: vendorId,
+        amount: amount,
+        settlement_id: settlementId,
+        bank_account_number: accountNumber,
+        ifsc_code: ifscCode,
+        account_holder_name: accountHolder,
+        payout_status: 'pending',
+        payment_ids: payoutPaymentIds,
+      });
+      payoutId = payoutRecord[0]?.id;
+      if (!payoutId) return;
+      const claimedNew = await claimPayoutForProcessing(payoutId);
+      if (!claimedNew) return;
+    }
+
     if (!payoutId) return;
 
     const payoutSourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
