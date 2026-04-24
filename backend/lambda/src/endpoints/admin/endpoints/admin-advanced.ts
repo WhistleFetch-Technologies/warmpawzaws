@@ -35,6 +35,40 @@ import {
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
+import {
+  putSettlementCalculateDailyCron,
+  scheduleTimeAndZoneToUtcCron,
+} from '../../../utils/settlement-schedule-eventbridge';
+
+/** Keep Fee / payout_rules consumers aligned when admin saves minimum from Schedule Settings. */
+async function mergeMinimumPayoutIntoPlatformPayoutRules(minimumPayout: number): Promise<void> {
+  const defaults = { minimumPayout: 1000, autoPayout: true, defaultCommission: 10 };
+  const existing = await query(
+    `SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:settings:payout_rules' LIMIT 1`
+  ).then((r: any) => r.rows || []);
+  const prev = existing[0]?.setting_value;
+  const parsed =
+    typeof prev === 'string'
+      ? JSON.parse(prev)
+      : prev && typeof prev === 'object'
+        ? prev
+        : {};
+  const merged = { ...defaults, ...parsed, minimumPayout: Number(minimumPayout) };
+  if (existing.length > 0) {
+    await update('platform_settings', { id: existing[0].id }, {
+      setting_value: merged,
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    await insert('platform_settings', {
+      setting_key: 'admin:settings:payout_rules',
+      setting_value: merged,
+      setting_type: 'object',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+}
 
 /** Email from Bearer JWT for RBAC checks when Cognito `sub` ≠ `admins.id` (unsafe decode; token already verified by middleware). */
 function rbacCallerEmailHint(c: Context): string | undefined {
@@ -3475,15 +3509,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
       const saved = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : {};
+      const scheduleTime = saved.scheduleTime || '09:00';
+      const minPayoutAmount = saved.minPayoutAmount ?? 100;
+      const timezone = saved.timezone || 'Asia/Kolkata';
+      let eventBridgeCronUtc: string | null = null;
+      try {
+        eventBridgeCronUtc = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch {
+        eventBridgeCronUtc = null;
+      }
       const settings = {
-        enabled: saved.enabled !== false,
-        scheduleType: saved.scheduleType || 'weekly',
-        scheduleDay: saved.scheduleDay ?? 1,
-        scheduleTime: saved.scheduleTime || '09:00',
+        scheduleTime,
+        minPayoutAmount,
+        timezone,
         settlementPeriodDays,
+        eventBridgeCronUtc,
+        // Legacy fields (optional) for older clients
+        enabled: saved.enabled !== false,
+        scheduleType: saved.scheduleType || 'daily',
+        scheduleDay: saved.scheduleDay ?? 1,
         autoProcess: saved.autoProcess !== false,
-        minPayoutAmount: saved.minPayoutAmount ?? 100,
-        timezone: saved.timezone || 'Asia/Kolkata',
         lastProcessedAt: saved.lastProcessedAt ?? null,
         nextProcessAt: saved.nextProcessAt ?? null,
       };
@@ -3497,17 +3542,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/settlement-schedule', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { enabled, scheduleType, scheduleDay, scheduleTime, autoProcess, minPayoutAmount, timezone } = body;
-      // Do not persist settlementPeriodDays - it is read-only from default tier (single source of truth)
+      const storedRow = await query(
+        `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1`
+      ).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
+      const prevSaved = storedRow ? (typeof storedRow === 'string' ? JSON.parse(storedRow) : storedRow) : {};
+
+      const scheduleTime =
+        typeof body.scheduleTime === 'string' && body.scheduleTime.trim()
+          ? body.scheduleTime.trim()
+          : (prevSaved.scheduleTime || '09:00');
+      const minPayoutAmount =
+        body.minPayoutAmount != null && Number.isFinite(Number(body.minPayoutAmount))
+          ? Number(body.minPayoutAmount)
+          : (prevSaved.minPayoutAmount ?? 100);
+      const timezone =
+        typeof body.timezone === 'string' && body.timezone.trim()
+          ? body.timezone.trim()
+          : (prevSaved.timezone || 'Asia/Kolkata');
+
       const toStore = {
-        enabled: enabled !== false,
-        scheduleType: scheduleType || 'weekly',
-        scheduleDay: scheduleDay ?? 1,
-        scheduleTime: scheduleTime || '09:00',
-        autoProcess: autoProcess !== false,
-        minPayoutAmount: minPayoutAmount ?? 100,
-        timezone: timezone || 'Asia/Kolkata',
+        enabled: true,
+        scheduleType: 'daily',
+        scheduleDay: 1,
+        scheduleTime,
+        autoProcess: body.autoProcess !== undefined ? body.autoProcess !== false : prevSaved.autoProcess !== false,
+        minPayoutAmount,
+        timezone,
       };
+
       const existing = await query(`
         SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows);
@@ -3522,12 +3584,30 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           updated_at: new Date().toISOString(),
         });
       }
+
+      await mergeMinimumPayoutIntoPlatformPayoutRules(minPayoutAmount);
+
+      let scheduleExpression: string;
+      try {
+        scheduleExpression = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch (cronErr: unknown) {
+        const msg = cronErr instanceof Error ? cronErr.message : String(cronErr);
+        return c.json({ success: false, error: `Invalid schedule: ${msg}` }, 400);
+      }
+      const eventBridge = await putSettlementCalculateDailyCron(scheduleExpression);
+
       const defaultTier = await query(`
         SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
       `).then((r: any) => r.rows?.[0]).catch(() => null);
       const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
-      const settings = { ...toStore, settlementPeriodDays, lastProcessedAt: null, nextProcessAt: null };
-      return c.json({ success: true, settings });
+      const settings = {
+        ...toStore,
+        settlementPeriodDays,
+        eventBridgeCronUtc: scheduleExpression,
+        lastProcessedAt: prevSaved.lastProcessedAt ?? null,
+        nextProcessAt: null,
+      };
+      return c.json({ success: true, settings, eventBridge });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Failed to save settlement schedule', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);

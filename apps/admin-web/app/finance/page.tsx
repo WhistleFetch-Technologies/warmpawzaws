@@ -370,7 +370,7 @@ function FinanceManagementContent() {
 											Settlement Schedule
 										</h3>
 										<p className="text-sm text-gray-500">
-											Configure automatic payout processing schedule
+											Daily EventBridge run time, timezone, minimum payout for calculation, and manual Process Now
 										</p>
 									</div>
 									<Button
@@ -419,8 +419,8 @@ function FinanceManagementContent() {
 											<div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
 												<p className="text-sm font-medium text-yellow-900 mb-2">Important Notes</p>
 												<ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-													<li>Schedule changes take effect on the next scheduled run</li>
-													<li>Manual "Process Now" runs calculation immediately but does not auto-process payouts</li>
+													<li>Saving Schedule Settings updates the daily EventBridge rule (when the rule exists and Lambda has permission)</li>
+													<li>Manual &quot;Process Now&quot; runs calculation immediately; bank transfer is still from Payout Management</li>
 													<li>Payout processing must be done manually from Payout Management</li>
 													<li>Timezone settings affect when scheduled runs execute</li>
 												</ul>

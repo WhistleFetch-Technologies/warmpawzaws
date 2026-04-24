@@ -652,13 +652,29 @@ export function registerSettlementEndpoints(app: Hono) {
       try {
         // Non-period settings from platform (min payout, auto, default commission). Period = tier only (single source of truth).
         const settings = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
-        const rules = settings.length > 0
+        let rules = settings.length > 0
           ? (settings[0].setting_value as any)
           : {
             minimumPayout: 1000,
             autoPayout: true,
             defaultCommission: 10,
           };
+
+        const schedSetting = await select('platform_settings', { setting_key: 'admin:finance:settlement-schedule' });
+        const schedRaw = schedSetting[0]?.setting_value as string | Record<string, unknown> | undefined;
+        const sch =
+          typeof schedRaw === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(schedRaw) as Record<string, unknown>;
+                } catch {
+                  return null;
+                }
+              })()
+            : (schedRaw as Record<string, unknown> | null) ?? null;
+        if (sch && sch.minPayoutAmount != null && Number.isFinite(Number(sch.minPayoutAmount))) {
+          rules = { ...rules, minimumPayout: Number(sch.minPayoutAmount) };
+        }
 
         // Single source of truth: eligibility by vendor tier payout_period_days (vendor_tiers)
         // Each booking is eligible when completed_at < NOW() - (that vendor's tier payout_period_days)
