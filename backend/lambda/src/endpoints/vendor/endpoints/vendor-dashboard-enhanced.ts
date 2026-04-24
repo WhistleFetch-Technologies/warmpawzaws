@@ -52,6 +52,43 @@ function buildDailyBreakdownLast7Days(
   return out;
 }
 
+const VENDOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Vendor ids to include when reading vendor_earnings — matches GET /vendor/bookings/:id center logic
+ * so clinic/center earnings stored under sibling vendor rows still appear for the logged-in account.
+ */
+async function expandVendorIdsForEarningsContext(paramVendorId: string): Promise<string[]> {
+  const trimmed = (paramVendorId || '').trim();
+  if (!VENDOR_UUID_RE.test(trimmed)) return [];
+  const ids = new Set<string>([trimmed]);
+  let resolved = trimmed;
+  try {
+    resolved = await resolveVendorId(trimmed);
+    if (VENDOR_UUID_RE.test(resolved)) ids.add(resolved);
+  } catch {
+    /* keep trimmed only */
+  }
+  try {
+    const cr = await query(
+      `SELECT center_id FROM vendors WHERE id = $1::uuid OR id = $2::uuid LIMIT 1`,
+      [resolved, trimmed]
+    ).catch(() => ({ rows: [] as { center_id?: string }[] }));
+    const cid = cr.rows?.[0]?.center_id;
+    if (cid) {
+      const sib = await query(`SELECT id FROM vendors WHERE center_id = $1::uuid`, [cid]).catch(() => ({
+        rows: [] as { id: string }[],
+      }));
+      for (const row of sib.rows || []) {
+        if (row?.id && VENDOR_UUID_RE.test(String(row.id))) ids.add(String(row.id));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...ids];
+}
+
 export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   /**
    * GET /vendor/dashboard/:vendorId
@@ -308,13 +345,15 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       let earningsFromTable = { earnings: '0', pending_settlement: '0' };
       if (hasVendorEarnings) {
+        let veIds = await expandVendorIdsForEarningsContext(paramVendorId);
+        if (veIds.length === 0) veIds = [resolvedVendorId];
         const veRes = await query(
           `SELECT 
              COALESCE(SUM(amount), 0) as earnings,
              COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_settlement
            FROM vendor_earnings
-           WHERE vendor_id = $1`,
-          [resolvedVendorId]
+           WHERE vendor_id = ANY($1::uuid[])`,
+          [veIds]
         ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
         earningsFromTable = veRes.rows[0] || earningsFromTable;
       }
@@ -606,7 +645,11 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const vendorId = await resolveVendorId(paramVendorId);
-      console.log(`💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
+      let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
+      if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
+      console.log(
+        `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForEarnings.length}), period: ${period}`
+      );
 
       // Calculate date range
       const now = new Date();
@@ -630,25 +673,25 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           break;
       }
 
-      // Get vendor_earnings records (use resolved vendor id)
+      // Get vendor_earnings records (center-aware: align with GET /vendor/bookings/:id sibling vendors)
       const earningsQuery = period === 'lifetime'
         ? `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
            FROM vendor_earnings ve
            LEFT JOIN bookings b ON ve.booking_id = b.id
            LEFT JOIN services s ON b.service_id = s.id
-           WHERE ve.vendor_id = $1
+           WHERE ve.vendor_id = ANY($1::uuid[])
            ORDER BY ve.realized_at DESC`
         : `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
            FROM vendor_earnings ve
            LEFT JOIN bookings b ON ve.booking_id = b.id
            LEFT JOIN services s ON b.service_id = s.id
-           WHERE ve.vendor_id = $1
+           WHERE ve.vendor_id = ANY($1::uuid[])
              AND ve.realized_at >= $2
            ORDER BY ve.realized_at DESC`;
 
       const earningsResult = await query(
         earningsQuery,
-        period === 'lifetime' ? [vendorId] : [vendorId, startDate.toISOString()]
+        period === 'lifetime' ? [vendorIdsForEarnings] : [vendorIdsForEarnings, startDate.toISOString()]
       ).catch(() => ({ rows: [] }));
 
       const earnings = earningsResult.rows || [];
@@ -783,7 +826,11 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const vendorId = await resolveVendorId(paramVendorId);
-      console.log(`💳 [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}, limit: ${limit}`);
+      let vendorIdsForTx = await expandVendorIdsForEarningsContext(paramVendorId);
+      if (vendorIdsForTx.length === 0) vendorIdsForTx = [vendorId];
+      console.log(
+        `💳 [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForTx.length}), period: ${period}, limit: ${limit}`
+      );
 
       // Calculate date range
       const now = new Date();
@@ -830,14 +877,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           LEFT JOIN services s ON b.service_id = s.id
           LEFT JOIN vendor_services vs ON b.service_id = vs.id
           LEFT JOIN customers c ON b.customer_id = c.id
-          WHERE ve.vendor_id = $1
-            ${period !== 'lifetime' ? 'AND ve.realized_at >= $3' : ''}
+          WHERE ve.vendor_id = ANY($1::uuid[])
+            ${period !== 'lifetime' ? 'AND ve.realized_at >= $2' : ''}
           ORDER BY ve.realized_at DESC
-          LIMIT $2
+          LIMIT $${period === 'lifetime' ? '2' : '3'}
         `;
         const veResult = await query(
           veQuery,
-          period === 'lifetime' ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
+          period === 'lifetime'
+            ? [vendorIdsForTx, limit]
+            : [vendorIdsForTx, startDate.toISOString(), limit]
         ).catch(() => ({ rows: [] }));
         const veRows = veResult.rows || [];
         transactions = veRows.map((t: any) => {
@@ -1091,6 +1140,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendorId = await resolveVendorId(paramVendorId);
       // Bookings/settlements may still reference the identity UUID while the app sends vendors.id (or vice versa).
       const vendorIdSet = new Set<string>([vendorId, paramVendorId.trim()].filter(Boolean));
+      const expandedCenter = await expandVendorIdsForEarningsContext(paramVendorId);
+      for (const x of expandedCenter) vendorIdSet.add(x);
       const vendorIds = [...vendorIdSet];
       const vendorIdArraySql = `ANY($1::uuid[])`;
       let whereClause = `s.vendor_id = ${vendorIdArraySql}`;
