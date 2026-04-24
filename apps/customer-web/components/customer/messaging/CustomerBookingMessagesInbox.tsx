@@ -44,38 +44,48 @@ export function CustomerBookingMessagesInbox({
     };
   }, [isModal]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await apiClient.get<{ customer?: { id?: string } }>(
-          `/customer/by-phone?phone=${encodeURIComponent(phone)}`
-        );
-        if (!cancelled && r?.customer?.id) setCustomerUuid(r.customer.id);
-      } catch {
-        /* optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [phone]);
-
-  const loadList = useCallback(async () => {
+  const refreshInbox = useCallback(async (resolvedCustomerId?: string) => {
+    const p = phone.replace(/\D/g, '');
+    const cid = resolvedCustomerId ?? customerUuid;
+    if (!p && !cid) {
+      setRows([]);
+      return;
+    }
     const q = new URLSearchParams();
-    if (customerUuid) q.set('customerId', customerUuid);
-    const digits = phone.replace(/\D/g, '');
-    if (digits) q.set('phone', digits);
+    if (cid) q.set('customerId', cid);
+    if (p) q.set('phone', p);
     const res = await apiClient.get<{ conversations?: ConvRow[] }>(`/chat/conversations?${q.toString()}`);
     setRows(Array.isArray(res?.conversations) ? res.conversations : []);
   }, [phone, customerUuid]);
 
+  // Resolve customer first, then load once per phone — so `customerId` and `phone` are sent together (avoids list missing rows that key only on `customer_id` in the DB).
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
+      setRows([]);
+      let resolvedId: string | undefined;
       try {
-        await loadList();
+        const r = await apiClient.get<{ customer?: { id?: string } }>(
+          `/customer/by-phone?phone=${encodeURIComponent(phone)}`
+        );
+        resolvedId = r?.customer?.id;
+        if (alive && resolvedId) setCustomerUuid(resolvedId);
+        else if (alive) setCustomerUuid(undefined);
+      } catch {
+        if (alive) setCustomerUuid(undefined);
+      }
+      try {
+        if (!alive) return;
+        const p = phone.replace(/\D/g, '');
+        const q = new URLSearchParams();
+        if (resolvedId) q.set('customerId', resolvedId);
+        if (p) q.set('phone', p);
+        const res = await apiClient.get<{ conversations?: ConvRow[] }>(`/chat/conversations?${q.toString()}`);
+        if (alive) setRows(Array.isArray(res?.conversations) ? res.conversations : []);
+      } catch (e) {
+        console.error('[Messages inbox] Failed to load conversations', e);
+        if (alive) setRows([]);
       } finally {
         if (alive) setLoading(false);
       }
@@ -83,7 +93,12 @@ export function CustomerBookingMessagesInbox({
     return () => {
       alive = false;
     };
-  }, [loadList]);
+  }, [phone]);
+
+  const onThreadClosedRefresh = useCallback(() => {
+    setActive(null);
+    void refreshInbox();
+  }, [refreshInbox]);
 
   const openThread = (row: ConvRow) => {
     const bookingId = (row.booking_id || row.id || '').toString();
@@ -162,10 +177,7 @@ export function CustomerBookingMessagesInbox({
             userName="You"
             otherUserName={active.title}
             userType="customer"
-            onClose={() => {
-              setActive(null);
-              void loadList();
-            }}
+            onClose={onThreadClosedRefresh}
           />
         </div>
       </div>

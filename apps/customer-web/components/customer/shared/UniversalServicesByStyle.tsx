@@ -1210,7 +1210,7 @@ export function UniversalServicesByStyle({
         </div>
 
         {/* Fixed bottom CTA — sits above app bottom nav (same offset as boarding / vet profiles). */}
-        <div className="cw-fixed-above-customer-tabbar fixed bottom-0 left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
+        <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
           {selectedServices.size > 0 && (
             <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
               <div className="flex items-center justify-between">

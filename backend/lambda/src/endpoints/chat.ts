@@ -27,7 +27,8 @@ import { getDiscoveryRules } from '../lib/rule-engine';
 export function registerChatEndpoints(app: Hono) {
   /**
    * GET /chat/conversations
-   * Get all chat conversations for the authenticated user
+   * Get all chat conversations for the authenticated user (query: customerId and/or phone).
+   * Phone matching is normalized (digits only, last-10) so +91/91/0 prefixes do not break matching.
    */
   app.get("/chat/conversations", async (c) => {
     try {
@@ -36,11 +37,16 @@ export function registerChatEndpoints(app: Hono) {
 
       console.log(`💬 [CHAT] Fetching conversations for customer: ${customerId || customerPhone}`);
 
-      // Get conversations based on bookings with chat messages
+      const idParam = customerId && isValidUUID(String(customerId).trim()) ? String(customerId).trim() : null;
+      const phoneDigits = customerPhone
+        ? String(customerPhone).replace(/\D/g, '') || null
+        : null;
+
+      // Get conversations: match by customer_id or normalized phone (booking row or linked customers phone)
       const conversationsResult = await query(`
         SELECT DISTINCT ON (b.id)
           b.id as id,
-          CASE 
+          CASE
             WHEN b.vendor_id IS NOT NULL THEN 'vendor'
             ELSE 'support'
           END as participant_type,
@@ -54,27 +60,48 @@ export function registerChatEndpoints(app: Hono) {
           COALESCE(vs.service_name, b.service_type, 'Service') as booking_service,
           false as is_online
         FROM bookings b
+        LEFT JOIN customers cust ON cust.id = b.customer_id
         LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN vendor_services vs ON b.service_id = vs.id
         LEFT JOIN LATERAL (
-          SELECT message, created_at 
-          FROM chat_messages 
-          WHERE booking_id = b.id 
-          ORDER BY created_at DESC 
+          SELECT message, created_at
+          FROM chat_messages
+          WHERE booking_id = b.id
+          ORDER BY created_at DESC
           LIMIT 1
         ) cm ON true
         LEFT JOIN LATERAL (
           SELECT COUNT(*)::int as count
           FROM chat_messages
-          WHERE booking_id = b.id 
+          WHERE booking_id = b.id
             AND is_read = false
             AND sender_type != 'customer'
         ) unread ON true
-        WHERE (b.customer_id = $1 OR b.customer_phone = $2)
-          AND EXISTS (SELECT 1 FROM chat_messages WHERE booking_id = b.id)
+        WHERE EXISTS (SELECT 1 FROM chat_messages WHERE booking_id = b.id)
+          AND (
+            ($1::uuid IS NOT NULL AND b.customer_id = $1::uuid)
+            OR (
+              $2::text IS NOT NULL AND length($2::text) >= 8
+              AND (
+                regexp_replace(COALESCE(b.customer_phone, ''), '[^0-9]', '', 'g') = $2
+                OR right(regexp_replace(COALESCE(b.customer_phone, ''), '[^0-9]', '', 'g'), 10) = right($2, 10)
+                OR regexp_replace(COALESCE(cust.phone, ''), '[^0-9]', '', 'g') = $2
+                OR right(regexp_replace(COALESCE(cust.phone, ''), '[^0-9]', '', 'g'), 10) = right($2, 10)
+                OR EXISTS (
+                  SELECT 1 FROM chat_messages cm0
+                  WHERE cm0.booking_id = b.id
+                    AND lower(trim(cm0.sender_type::text)) = 'customer'
+                    AND (
+                      regexp_replace(COALESCE(cm0.sender_phone, ''), '[^0-9]', '', 'g') = $2
+                      OR right(regexp_replace(COALESCE(cm0.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right($2, 10)
+                    )
+                )
+              )
+            )
+          )
         ORDER BY b.id, cm.created_at DESC NULLS LAST
         LIMIT 50
-      `, [customerId || null, customerPhone || null]).catch(() => ({ rows: [] }));
+      `, [idParam, phoneDigits]).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,
@@ -188,6 +215,75 @@ export function registerChatEndpoints(app: Hono) {
       return c.json({ success: true, conversations });
     } catch (error: any) {
       console.error('Error fetching vendor conversations:', error);
+      return c.json({ success: true, conversations: [] });
+    }
+  });
+
+  /**
+   * GET /chat/customer/:customerId/conversations
+   * Inbox for the customer app: all bookings (with provider) that have chat history, for this customer UUID.
+   * Mirrors /chat/vendor/:id/conversations so the customer list matches the vendor’s thread list.
+   */
+  app.get("/chat/customer/:customerId/conversations", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      if (!customerId || !isValidUUID(customerId)) {
+        return c.json({ success: true, conversations: [] });
+      }
+      const conversationsResult = await query(
+        `SELECT
+          b.id as id,
+          b.id as booking_id,
+          COALESCE(v.business_name, v.owner_name, 'Provider') as participant_name,
+          v.photo_url as participant_avatar,
+          last_msg.message as last_message,
+          last_msg.created_at as last_message_time,
+          COALESCE(unread_cnt.cnt, 0)::int as unread_count,
+          COALESCE(vs.service_name, b.service_type, 'Service') as booking_service,
+          false as is_online
+         FROM bookings b
+         INNER JOIN (SELECT DISTINCT booking_id FROM chat_messages) has_msg ON has_msg.booking_id = b.id
+         INNER JOIN (SELECT id, phone FROM customers WHERE id = $1::uuid LIMIT 1) me ON (true)
+         LEFT JOIN LATERAL (
+           SELECT message, created_at FROM chat_messages WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
+         ) last_msg ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*)::int as cnt FROM chat_messages
+           WHERE booking_id = b.id AND is_read = false AND sender_type != 'customer'
+         ) unread_cnt ON true
+         LEFT JOIN vendors v ON b.vendor_id = v.id
+         LEFT JOIN vendor_services vs ON b.service_id = vs.id
+         WHERE
+           b.customer_id = me.id
+           OR (
+             length(regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g')) >= 8
+             AND (
+               regexp_replace(COALESCE(b.customer_phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g')
+               OR right(regexp_replace(COALESCE(b.customer_phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g'), 10)
+             )
+           )
+           OR EXISTS (
+             SELECT 1 FROM chat_messages m2
+             WHERE m2.booking_id = b.id
+               AND lower(trim(m2.sender_type::text)) = 'customer'
+               AND (
+                 regexp_replace(COALESCE(m2.sender_phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g')
+                 OR right(regexp_replace(COALESCE(m2.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g'), 10)
+               )
+             )
+         ORDER BY last_msg.created_at DESC NULLS LAST
+         LIMIT 100`,
+        [customerId]
+      ).catch((e: any) => {
+        console.error('Customer conversations query error:', e);
+        return { rows: [] };
+      });
+      return c.json({
+        success: true,
+        conversations: conversationsResult.rows || [],
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer conversations:', error);
       return c.json({ success: true, conversations: [] });
     }
   });

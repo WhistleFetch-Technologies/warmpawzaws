@@ -123,6 +123,9 @@ export type VendorProfileFromProblemContext = {
   serviceStyle: ServiceStyle;
   problemCategory?: string;
   roleIds?: string[];
+  /** Specialization / problem tile id (e.g. barking) for routing when API role slugs vary. */
+  problemId?: string;
+  problemTitle?: string;
 };
 
 interface ProblemGridFlowRouterProps {
@@ -681,7 +684,8 @@ export function ProblemGridFlowRouter({
         <div className="space-y-3">
           {visibleVendors.map((vendor) => {
             const expanded = expandedVendorId === vendor.vendorId;
-            const headerInteractive = Boolean(onVendorProfile) ? expanded : true;
+            // Always allow header tap to expand/collapse; chevron uses stopPropagation to open profile only.
+            const headerInteractive = true;
             return (
               <Card
                 key={vendor.vendorId}
@@ -746,6 +750,8 @@ export function ProblemGridFlowRouter({
                                   serviceStyle: selectedServiceStyle,
                                   problemCategory: selectedProblem?.category,
                                   roleIds: selectedProblem?.linkedServiceRoles,
+                                  problemId: selectedProblem?.id,
+                                  problemTitle: selectedProblem?.name,
                                 });
                               }}
                             >
