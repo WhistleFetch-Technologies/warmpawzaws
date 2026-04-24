@@ -7,7 +7,6 @@
  * - Service selection (Overnight, Daycare)
  * - Date range selection (check-in/check-out)
  * - Pet selection
- * - Room selection (if available)
  * - Payment integration (UniversalPaymentPage)
  * - Confirmation
  */
@@ -104,10 +103,11 @@ function matchPresetToVendorServiceRowId(
   return undefined;
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'room' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'datetime' | 'pet' | 'payment' | 'confirmation';
 
 /** Matches server pet-sitting pricing (bookings-enhanced). */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+const BOARDING_NIGHT_MINUTES = 24 * 60;
 
 interface TimeSlot {
   time: string;
@@ -119,16 +119,6 @@ interface Pet {
   name: string;
   species: string;
   breed: string;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  description?: string;
-  capacity: number;
-  pricePerNight: number;
-  available: boolean;
-  amenities?: string[];
 }
 
 export function BoardingBookingRouter({ 
@@ -185,9 +175,7 @@ export function BoardingBookingRouter({
   const [checkInTime, setCheckInTime] = useState('09:00');
   const [checkOutTime, setCheckOutTime] = useState('10:00');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
@@ -358,7 +346,6 @@ export function BoardingBookingRouter({
     loadCustomerData();
     if (vendorId) {
       loadVendorServices();
-      loadRooms();
     }
   }, [phone, vendorId, apiCategory]);
 
@@ -443,36 +430,6 @@ export function BoardingBookingRouter({
       console.error('Error loading vendor services:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadRooms = async () => {
-    if (!vendorId) return;
-    if (isPetSitting) {
-      setRooms([]);
-      return;
-    }
-
-    try {
-      const roomsResponse = await apiClient.get(`/vendor/${vendorId}/rooms`) as any;
-      if (roomsResponse.success && roomsResponse.rooms) {
-        setRooms(roomsResponse.rooms.map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          description: r.description,
-          capacity: r.capacity || 1,
-          pricePerNight: r.pricePerNight || r.price_per_night || 0,
-          available: r.isAvailable ?? true,
-          amenities: r.amenities || [],
-        })));
-      }
-    } catch (error) {
-      console.error('Error loading rooms:', error);
-      // Use default rooms
-      setRooms([
-        { id: 'standard', name: 'Standard Room', capacity: 1, pricePerNight: 800, available: true },
-        { id: 'deluxe', name: 'Deluxe Suite', capacity: 2, pricePerNight: 1500, available: true },
-      ]);
     }
   };
 
@@ -597,6 +554,13 @@ export function BoardingBookingRouter({
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
+  /** Boarding: list price = per 24h; match server (ceil of stay length in minutes / 24h, min 1). */
+  const getBoardingBilledUnits = () => {
+    const mins = getBilledMinutes();
+    if (mins < 1) return 0;
+    return Math.max(1, Math.ceil(mins / BOARDING_NIGHT_MINUTES));
+  };
+
   const calculateTotalPrice = () => {
     const opt = selectedServiceOption;
     const unitPrice = Number(opt?.price ?? price ?? 0);
@@ -613,26 +577,20 @@ export function BoardingBookingRouter({
       return Math.max(proportional, floor);
     }
 
-    const nights = calculateNights();
-    const basePrice = selectedRoom?.pricePerNight || price || 0;
-    return nights * basePrice;
+    const units = getBoardingBilledUnits();
+    if (units < 1) return unitPrice;
+    return Math.round(units * unitPrice);
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'room', 'payment', 'confirmation'];
+    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
-    
-    // Skip room selection if no rooms available
-    if (step === 'pet' && rooms.length === 0) {
+
+    if (step === 'pet') {
       handleCreateBookingForPayment();
       return;
     }
-    
-    if (step === 'room') {
-      handleCreateBookingForPayment();
-      return;
-    }
-    
+
     if (currentIdx < steps.length - 1) {
       setStep(steps[currentIdx + 1]);
     }
@@ -654,6 +612,12 @@ export function BoardingBookingRouter({
             ? 'This visit could not be priced. Pick another check-in date or a different sitting service.'
             : 'Stay must be at least 15 minutes. Adjust check-in and check-out date & time.'
         );
+        return;
+      }
+    } else {
+      const bm = getBilledMinutes();
+      if (bm < 1) {
+        toast.error('Set check-in and check-out date and time to calculate your stay.');
         return;
       }
     }
@@ -761,13 +725,12 @@ export function BoardingBookingRouter({
         checkOutDate,
         checkInTime,
         checkOutTime,
-        roomId: selectedRoom?.id,
         numberOfNights:
           isPetSitting && sittingSameDay
             ? 0
             : isPetSitting
               ? Math.max(1, Math.ceil(getBilledMinutes() / 1440))
-              : Math.max(1, calculateNights()),
+              : getBoardingBilledUnits(),
       };
 
       if (isPetSitting) {
@@ -825,7 +788,7 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'room', 'payment', 'confirmation'];
+    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
     if (currentIdx > 0) {
@@ -842,11 +805,9 @@ export function BoardingBookingRouter({
   };
 
   const renderStepIndicator = () => {
-    const stepLabels = rooms.length > 0 
-      ? ['Service', 'Dates', 'Pet', 'Room', 'Payment']
-      : ['Service', 'Dates', 'Pet', 'Payment'];
+    const stepLabels = ['Service', 'Dates', 'Pet', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, room: 3, payment: rooms.length > 0 ? 4 : 3, confirmation: 5
+      service: 0, datetime: 1, pet: 2, payment: 3, confirmation: 4
     };
     const currentIdx = currentStepMap[step];
 
@@ -934,10 +895,8 @@ export function BoardingBookingRouter({
     { value: dateSummaryValue, label: 'Dates' },
     { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
   ];
-  const stepLabels = rooms.length > 0
-    ? ['Service', 'Dates', 'Pet', 'Room', 'Payment']
-    : ['Service', 'Dates', 'Pet', 'Payment'];
-  const stepIdx = ['service', 'datetime', 'pet', 'room', 'payment'].indexOf(step);
+  const stepLabels = ['Service', 'Dates', 'Pet', 'Payment'];
+  const stepIdx = ['service', 'datetime', 'pet', 'payment'].indexOf(step);
   const stepIndicators = stepLabels.map((label, idx) => ({
     label,
     isCompleted: idx < stepIdx,
@@ -1241,8 +1200,8 @@ export function BoardingBookingRouter({
                       </p>
                     ) : (
                       <p className="text-xs text-gray-500">
-                        Choose when you plan to drop off and pick up your pet. These times are saved with your
-                        booking.
+                        Price is based on your full stay (check-in to check-out). The package rate is per 24
+                        hours; we bill the number of 24-hour units your stay covers (minimum one unit).
                       </p>
                     )}
                     <div>
@@ -1320,18 +1279,19 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {!isPetSitting && checkInDate && checkOutDate && (
+                {!isPetSitting && checkInDate && checkOutDate && getBilledMinutes() >= 1 && (
                   <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-600">Duration</p>
+                        <p className="text-sm text-gray-600">Stay length & price</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {calculateNights()} night(s)
+                          {Math.floor(getBilledMinutes() / 60)}h {getBilledMinutes() % 60}m
                         </p>
                         <p className="mt-1 text-xs text-gray-600">
-                          Check-in {formatTime12Hour(checkInTime)} · Check-out{' '}
-                          {formatTime12Hour(checkOutTime)}
+                          {getBoardingBilledUnits()} × 24h @ ₹{Number(selectedServiceOption?.price ?? price ?? 0)} / 24h · Check-in{' '}
+                          {formatTime12Hour(checkInTime)} · Check-out {formatTime12Hour(checkOutTime)}
                         </p>
+                        <p className="text-sm font-semibold text-[#FF8C42] mt-1">₹{calculateTotalPrice()} total</p>
                       </div>
                       <Calendar className="h-8 w-8 text-orange-500" />
                     </div>
@@ -1346,7 +1306,8 @@ export function BoardingBookingRouter({
               disabled={
                 !checkInDate ||
                 !checkOutDate ||
-                (isPetSitting && getBilledMinutes() < 15)
+                (isPetSitting && getBilledMinutes() < 15) ||
+                (!isPetSitting && getBilledMinutes() < 1)
               }
             >
               Continue
@@ -1425,58 +1386,7 @@ export function BoardingBookingRouter({
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedPet}
             >
-              {selectedPet
-                ? isPetSitting && rooms.length === 0
-                  ? 'Continue to payment'
-                  : 'Continue'
-                : 'Select a Pet to Continue'}
-            </Button>
-          </div>
-        )}
-
-        {/* Room Selection */}
-        {step === 'room' && rooms.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Room</h2>
-            <div className="space-y-3">
-              {rooms.map((room) => (
-                <button
-                  key={room.id}
-                  onClick={() => room.available && setSelectedRoom(room)}
-                  disabled={!room.available}
-                  className={`w-full p-4 rounded-xl border-2 transition-all ${
-                    selectedRoom?.id === room.id 
-                      ? 'border-[#FF8C42] bg-orange-50' 
-                      : room.available
-                        ? 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                        : 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-orange-100 flex items-center justify-center">
-                      <Building2 className="w-7 h-7 text-orange-600" />
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{room.name}</h3>
-                      <p className="text-sm text-gray-500">{room.description || `Capacity: ${room.capacity} pet(s)`}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg text-gray-900">₹{room.pricePerNight}</p>
-                      <p className="text-xs text-gray-500">/night</p>
-                      {selectedRoom?.id === room.id && (
-                        <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedRoom && rooms.some(r => r.available)}
-            >
-              Continue to Payment
+              {selectedPet ? 'Continue to payment' : 'Select a Pet to Continue'}
             </Button>
           </div>
         )}

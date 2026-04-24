@@ -187,6 +187,17 @@ function computePetSittingPriceRupees(
   return Math.max(proportional, floor);
 }
 
+const BOARDING_NIGHT_MINUTES = 24 * 60;
+
+/** List price = per 24h (night) for boarding packages; bill ceil(stay/24h) units. */
+function computeBoardingStayPriceRupees(unitPricePerNight: number, billedMinutes: number): number {
+  const up = Number.isFinite(unitPricePerNight) ? Math.max(0, unitPricePerNight) : 0;
+  const mins = Math.max(0, billedMinutes);
+  if (mins < 1) return 0;
+  const units = Math.max(1, Math.ceil(mins / BOARDING_NIGHT_MINUTES));
+  return Math.round(units * up);
+}
+
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -602,6 +613,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     let petSittingServerBilledMinutes: number | null = null;
     let petSittingServerTotalRupee: number | null = null;
+    let boardingServerBilledMinutes: number | null = null;
+    let boardingServerTotalRupee: number | null = null;
 
     if (
       service &&
@@ -637,6 +650,38 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petSittingServerTotalRupee = computePetSittingPriceRupees(unitPrice, baseMins, billed);
       console.log(
         `[BOOKING] Pet sitting priced on server: ${billed} min → ₹${petSittingServerTotalRupee} (list ₹${unitPrice} per ${baseMins} min, ${PET_SITTING_BILLING_SLOT_MINUTES}-min slots)`
+      );
+    } else if (
+      service &&
+      isBoardingFlow &&
+      (!selectedServices || selectedServices.length === 0) &&
+      reqCheckOutDate &&
+      reqCheckOutTime
+    ) {
+      const billed = computePetSittingBilledMinutes(
+        bookingDate,
+        bookingTime,
+        reqCheckOutDate,
+        reqCheckOutTime
+      );
+      if (billed < 1) {
+        return this.error(
+          'Boarding stay length is invalid. Adjust check-in and check-out date and time.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      const unitPrice = Number(
+        service.custom_price != null && String(service.custom_price).trim() !== ''
+          ? service.custom_price
+          : service.price ?? 0
+      );
+      boardingServerBilledMinutes = billed;
+      boardingServerTotalRupee = computeBoardingStayPriceRupees(unitPrice, billed);
+      console.log(
+        `[BOOKING] Boarding priced on server: ${billed} min → ₹${boardingServerTotalRupee} (list ₹${unitPrice} per 24h)`
       );
     }
 
@@ -908,7 +953,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let subscriptionId: string | null = null;
         let isSubscriptionBooking = false;
         let finalAmount =
-          petSittingServerTotalRupee != null ? petSittingServerTotalRupee : (amount || 0);
+          boardingServerTotalRupee != null
+            ? boardingServerTotalRupee
+            : petSittingServerTotalRupee != null
+              ? petSittingServerTotalRupee
+              : (amount || 0);
         // ✅ Package booking: when packagePurchaseId provided, use package credit (0 payment)
         let isPackageBooking = false;
         let packagePurchaseIdToUse: string | null = null;
@@ -1015,11 +1064,15 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const calculatedBasePrice =
           totalSelectedServicesAmount > 0
             ? totalSelectedServicesAmount
-            : petSittingServerTotalRupee != null
-              ? petSittingServerTotalRupee
-              : (amount || 0);
+            : boardingServerTotalRupee != null
+              ? boardingServerTotalRupee
+              : petSittingServerTotalRupee != null
+                ? petSittingServerTotalRupee
+                : (amount || 0);
         const listedServerPrice =
-          (!selectedServices || selectedServices.length === 0) && petSittingServerTotalRupee == null
+          (!selectedServices || selectedServices.length === 0) &&
+          petSittingServerTotalRupee == null &&
+          boardingServerTotalRupee == null
             ? Number((service as any)?.custom_price ?? (service as any)?.price ?? 0) || 0
             : 0;
         const grossPayableBeforeWallet =
@@ -1230,7 +1283,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             ? JSON.stringify(selectedServices) 
             : null,
           total_duration_minutes:
-            petSittingServerBilledMinutes != null ? petSittingServerBilledMinutes : totalDurationMinutes || null,
+            boardingServerBilledMinutes != null
+              ? boardingServerBilledMinutes
+              : petSittingServerBilledMinutes != null
+                ? petSittingServerBilledMinutes
+                : totalDurationMinutes || null,
           duration_minutes: bookingDuration,
           customer_phone: customerPhone || null,
           // address_id, delivery_latitude, delivery_longitude may not exist in prod
@@ -2152,6 +2209,7 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petType: petInfo?.species || null,
       petAge: petInfo?.age || null,
       petPhoto: petInfo?.photo_url || null,
+      basePrice: parseFloat(String(booking.base_price ?? booking.basePrice ?? '0')) || 0,
       amount: parseFloat(booking.total_amount || '0'),
       price: parseFloat(booking.total_amount || '0'),
       totalAmount: parseFloat(booking.total_amount || '0'),

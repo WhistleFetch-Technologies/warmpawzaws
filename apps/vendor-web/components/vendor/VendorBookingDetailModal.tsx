@@ -34,6 +34,14 @@ export function VendorBookingDetailModal({
   const [copiedOtp, setCopiedOtp] = useState(false);
   const [showPrescriptionHistory, setShowPrescriptionHistory] = useState(false);
 
+  /** Pre-tax / pre-fee service line (stay duration, etc.) — not GST or platform fee. */
+  const vendorServiceLineAmount = (b: Record<string, unknown> | null | undefined) => {
+    if (!b) return 0;
+    const fromBase = parseFloat(String(b.base_price ?? b.basePrice ?? ''));
+    if (Number.isFinite(fromBase) && fromBase > 0) return fromBase;
+    return parseFloat(String(b.totalAmount ?? b.total_amount ?? b.price ?? 0)) || 0;
+  };
+
   useEffect(() => {
     loadBookingDetails();
   }, [bookingId]);
@@ -373,7 +381,13 @@ export function VendorBookingDetailModal({
                       <span className="font-semibold text-gray-800">
                         {booking.totalDurationMinutes ? `Total duration: ${booking.totalDurationMinutes} min` : 'Total'}
                       </span>
-                      <span className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0) * (s.quantity || 1), 0)}</span>
+                      <span className="font-bold text-[#FF8C42]">
+                        ₹
+                        {booking.selectedServices.reduce(
+                          (sum: number, s: any) => sum + (s.price || 0) * (s.quantity || 1),
+                          0
+                        ) || vendorServiceLineAmount(booking)}
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -392,7 +406,7 @@ export function VendorBookingDetailModal({
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                      <p className="font-bold text-[#FF8C42]">₹{vendorServiceLineAmount(booking)}</p>
                     </div>
                   </div>
                 )}
