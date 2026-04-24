@@ -270,7 +270,7 @@ class ChangePasswordHandler extends BaseHandler {
       }
 
       const customers = await query(
-        `SELECT id, password_hash, phone FROM customers WHERE id = $1::uuid OR phone = $1`,
+        `SELECT id, password_hash, phone FROM customers WHERE id = $1::uuid OR phone = $1::text`,
         [customerIdResolved]
       );
 
