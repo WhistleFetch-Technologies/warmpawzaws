@@ -1254,6 +1254,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
+      const walkerCategoryDiscoveryOr =
+        !sittingDiscoveryRelaxed &&
+        catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
+          ? ` OR (
+              vs.service_style = 'at_home'
+              AND (
+                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
+                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
+                OR (
+                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
+                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
+                )
+              )
+              AND (
+                TRIM(COALESCE(vs.category, '')) = ''
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
+              )
+            )`
+          : '';
+
       // 3) Helpers
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
@@ -1293,6 +1314,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
+            ${walkerCategoryDiscoveryOr}
           )
         `
             : '';
@@ -1346,9 +1368,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Enrichment
       const enrichVendor = async (vendor: any) => {
-        if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
-          return null;
-        }
+        // Load matching published services first. Do NOT drop by role_config here: primary
+        // role (e.g. veterinarian) often omits at_home in serviceStyles even when the same
+        // account publishes a custom dog-walk (at_home). vendor_services is source of truth.
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
         if (services.length === 0) return null;
 
@@ -1483,6 +1505,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
+                ${walkerCategoryDiscoveryOr}
               )`
           : '';
 
@@ -3102,6 +3125,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'sitter' ||
           catLower === 'sitter_solo' ||
           catLower === 'pet_sitting';
+        const walkerBookingCategoryRequest =
+          catLower === 'walker' ||
+          catLower === 'walking' ||
+          catLower === 'dog_walker' ||
+          catLower === 'pet_walker';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -3118,6 +3146,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                     OR (LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) LIKE '%sitter%' AND LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) NOT LIKE '%babysitter%')
                     OR (r_sit.id IS NULL AND LOWER(COALESCE(v_sit.vendor_type, '')) LIKE '%sitter%')
                   )
+              )
+            )
+          )`;
+        } else if (walkerBookingCategoryRequest) {
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            OR (
+              vs.service_style = 'at_home'
+              AND (
+                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
+                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
+                OR (
+                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
+                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
+                )
+              )
+              AND (
+                TRIM(COALESCE(vs.category, '')) = ''
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
               )
             )
           )`;
@@ -4846,6 +4893,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
           : '';
 
+      const walkerCategoryDiscoveryOrByStyle =
+        catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
+          ? ` OR (
+              vs.service_style = 'at_home'
+              AND (
+                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
+                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
+                OR (
+                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
+                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
+                )
+              )
+              AND (
+                TRIM(COALESCE(vs.category, '')) = ''
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
+              )
+            )`
+          : '';
+
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
       // ────────────────────────────────────────────────────────
@@ -4877,6 +4943,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
+            ${walkerCategoryDiscoveryOrByStyle}
           )
         ` : '';
         const sql = `
@@ -4922,14 +4989,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       /**
        * Turn a raw vendor row into a fully enriched provider object.
-       * Returns null when the vendor should be excluded:
-       *   • role config forbids the requested style
-       *   • zero matching services
+       * Returns null when the vendor has zero matching published services.
+       * (No role_config gate: cross-persona add-ons e.g. vet + dog walk at_home — see discover-services.)
        */
       const enrichVendor = async (vendor: any) => {
-        if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
-          return null;
-        }
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
 
         if (services.length === 0) return null;
@@ -5056,6 +5119,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
+                ${walkerCategoryDiscoveryOrByStyle}
               )` : ``}
           )
           AND ${sqlVendorAvailabilityOrNotConfigured('v', '$1')}

@@ -356,6 +356,20 @@ export function resolveVendorVisibleBookingAmount(
   const fromSelected = sumSelectedServicesVendorAmount(booking);
   if (fromSelected != null && fromSelected > 0) return fromSelected;
 
+  // Stay-based bookings (boarding, pet sitting, etc.): list price is per unit, but
+  // `base_price` holds the line total for the actual stay/duration. Prefer it for vendors.
+  const hasStay =
+    (booking?.check_out_date != null && String(booking.check_out_date).trim() !== '') ||
+    (booking?.checkOutDate != null && String(booking.checkOutDate).trim() !== '');
+  const hasTimedVisit =
+    booking?.total_duration_minutes != null && Number(booking.total_duration_minutes) > 0;
+  if (hasStay || hasTimedVisit) {
+    const sub = parseFloat(String(booking?.base_price ?? booking?.basePrice ?? ''));
+    if (Number.isFinite(sub) && sub > 0) {
+      return Math.round(sub * 100) / 100;
+    }
+  }
+
   const fromVendorRow = vendorSvcConfiguredAmount(ctx?.vendorSvc);
   if (fromVendorRow != null) return fromVendorRow;
 
