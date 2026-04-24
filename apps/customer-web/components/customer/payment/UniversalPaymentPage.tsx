@@ -23,6 +23,7 @@ import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import {
   digitsToRazorpayContactE164,
+  RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
   getWarmpawzRazorpayStandardDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
@@ -2309,6 +2310,9 @@ export function UniversalPaymentPage({
       if (validPrefillVpa) {
         razorpayPrefill.vpa = upiVpaTrimmed;
         razorpayPrefill.method = 'upi';
+      } else if (e164Contact && !razorpayPrefill.email) {
+        // Matches wallet/shop flows: Razorpay often drops UPI on mobile/live without any prefill.email.
+        razorpayPrefill.email = RAZORPAY_PREFILL_EMAIL_FALLBACK;
       }
 
       const processRazorpaySuccess = async (response: any) => {
@@ -2577,7 +2581,7 @@ export function UniversalPaymentPage({
       if (Object.keys(razorpayPrefill).length > 0) {
         options.prefill = razorpayPrefill;
       }
-      if (validPrefillVpa || (e164Contact && prefillEmail)) {
+      if (validPrefillVpa || (e164Contact && razorpayPrefill.email)) {
         options.method = 'upi';
       }
 
@@ -2599,6 +2603,9 @@ export function UniversalPaymentPage({
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
           theme: { color: '#FF8C42' },
+          // Keep parity with web `new Razorpay(options)` — bare payload hid UPI in prod (react-native-razorpay).
+          ...(!validPrefillVpa ? { config: getWarmpawzRazorpayStandardDisplayConfig() } : {}),
+          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email) ? { method: 'upi' as const } : {}),
         };
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();

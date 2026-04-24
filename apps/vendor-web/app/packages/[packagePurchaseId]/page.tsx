@@ -1,14 +1,10 @@
-import { PackagePurchaseSessionsPageClient } from './PackagePurchaseSessionsPageClient';
+import PackagePurchaseSessionsClient from './PackagePurchaseSessionsClient';
 
-/**
- * `output: 'export'` requires a non-empty `generateStaticParams` (Next only treats it as present when
- * `prerenderRoutes.length > 0`). Real session ids are resolved in the client from the URL on navigation.
- * Optional: add CloudFront/S3 404 → index for deep links to `/packages/:id` if not pre-rendered.
- */
+/** Non-empty list required for `output: 'export'` (Next treats `[]` as missing). Real IDs load client-side. */
 export async function generateStaticParams() {
-  return [{ packagePurchaseId: 'index' }];
+  return [{ packagePurchaseId: '__' }];
 }
 
 export default function VendorPackageSessionsPage() {
-  return <PackagePurchaseSessionsPageClient />;
+  return <PackagePurchaseSessionsClient />;
 }

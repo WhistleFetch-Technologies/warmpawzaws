@@ -36,6 +36,11 @@ import {
 } from '../../../utils/customer-notification-settings';
 import { presignProductImagesJsonb } from '../../../utils/s3-media-presign';
 import { bookingUsesDedicatedEndSessionOtp } from '../../../lib/booking-dedicated-end-otp';
+import {
+  packageFieldsFromBookingRow,
+  SQL_PACKAGE_PURCHASE_JOIN,
+  SQL_PACKAGE_PURCHASE_SELECT,
+} from '../../../utils/customer-booking-package-fields';
 
 /** First image URL from products.images JSONB (array of strings or { url } objects). */
 function firstProductImageUrl(images: unknown): string | undefined {
@@ -417,9 +422,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      // Build query
+      // Build query (join package_purchases for same packageDetails / isPackage as customer/:id/bookings)
       let bookingQuery = `
         SELECT b.*,
+               ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
                v.business_name as vendor_name,
                v.phone as vendor_phone,
                v.city as vendor_city,
@@ -427,6 +433,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
                s.category as service_category
         FROM bookings b
         LEFT JOIN vendors v ON b.vendor_id = v.id
+        ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
         WHERE b.customer_id = $1
       `;
@@ -495,7 +502,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
               }
             }
           }
-          return { ...b, completion_otp };
+          return { ...b, completion_otp, ...packageFieldsFromBookingRow(b) };
         })
       );
 
