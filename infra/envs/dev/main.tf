@@ -223,6 +223,7 @@ module "lambda" {
   common_env_vars = merge(
     {
     ENVIRONMENT                 = local.environment
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
     UAT_MODE                    = "true"

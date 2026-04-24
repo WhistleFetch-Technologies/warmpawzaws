@@ -86,12 +86,29 @@ export type CapawesomePickResult = {
  * Open the native file picker.
  * (Capawesome v8) Uses `limit` 0/1, then filters with the HTML `accept` string.
  */
+async function pickOnce(
+  wantMultiple: boolean,
+  readData: boolean
+): Promise<Awaited<ReturnType<typeof FilePicker.pickFiles>>> {
+  return FilePicker.pickFiles({
+    limit: wantMultiple ? 0 : 1,
+    readData,
+  });
+}
+
 export async function pickFilesWithCapawesome(
   options: CapawesomePickOptions
 ): Promise<CapawesomePickResult> {
   if (Capacitor.getPlatform() === 'android') {
     try {
-      await FilePicker.requestPermissions();
+      const status = await FilePicker.checkPermissions();
+      const needRead =
+        status.readExternalStorage === 'prompt' || status.readExternalStorage === 'denied';
+      if (needRead) {
+        await FilePicker.requestPermissions({ permissions: ['readExternalStorage'] });
+      } else {
+        await FilePicker.requestPermissions();
+      }
     } catch {
       // Permission may already be granted; plugin is Android-only
     }
@@ -101,10 +118,21 @@ export async function pickFilesWithCapawesome(
 
   // v8: when `limit` is set, `types` can be ignored by the plugin. Prefer a broad native sheet,
   // then filter with `fileMatchesAccept` to match the HTML `accept` attribute.
-  const result = await FilePicker.pickFiles({
-    limit: wantMultiple ? 0 : 1,
-    readData: false,
-  });
+  let result: Awaited<ReturnType<typeof FilePicker.pickFiles>>;
+  try {
+    result = await pickOnce(wantMultiple, false);
+  } catch (firstErr) {
+    // Some devices return no `path` until readData; single-file retry avoids empty reads.
+    if (!wantMultiple) {
+      try {
+        result = await pickOnce(false, true);
+      } catch {
+        throw firstErr;
+      }
+    } else {
+      throw firstErr;
+    }
+  }
 
   if (!result.files || result.files.length === 0) {
     return { files: [], rejectedByAccept: false };

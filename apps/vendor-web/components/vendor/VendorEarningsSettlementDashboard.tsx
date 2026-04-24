@@ -22,6 +22,10 @@ import {
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 
 interface VendorEarningsSettlementDashboardProps {
   vendorId: string;
@@ -69,6 +73,7 @@ interface Analytics {
   commissionSaved: number;
   pendingAmount: number;
   processingAmount: number;
+  minPayoutRequestAmount: number;
 }
 
 interface Settlement {
@@ -297,15 +302,25 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       
       const stats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
       const summary = settlementsRes?.summary || {};
-      
+      /** Net requestable payout (POST /settlements/request subtracts queued/processing payouts from gross) */
+      const pendingAvailable =
+        summary.availableForPayout ??
+        summary.available_for_payout ??
+        summary.pending_amount ??
+        summary.pendingAmount ??
+        0;
+
       setAnalytics({
         totalRevenue: stats.totalEarnings || stats.earnings || 0,
         periodRevenue: stats.thisMonthEarnings || stats.earnings || 0,
         periodCount: stats.completedServices || stats.completedBookings || 0,
         avgSettlement: stats.averageBookingValue || 0,
         commissionSaved: summary.commission_saved || 0,
-        pendingAmount: summary.pending_amount ?? summary.pendingAmount ?? 0,
-        processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0
+        pendingAmount: Number(pendingAvailable) || 0,
+        processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0,
+        minPayoutRequestAmount:
+          Number(summary.minPayoutRequestAmount ?? summary.min_payout_request_amount) ||
+          VENDOR_MIN_PAYOUT_REQUEST_RS,
       });
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
@@ -315,13 +330,15 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const loadSettlements = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=20`).catch(() => null);
-      const list =
-        response?.settlements ??
-        response?.data?.settlements;
+      if (!response) {
+        setSettlements([]);
+        setPayoutHistory([]);
+        return;
+      }
+      const root = response.data ?? response;
+      const list = root?.settlements ?? response?.settlements;
       setSettlements(Array.isArray(list) ? list : []);
-      const payouts =
-        response?.payouts ??
-        response?.data?.payouts;
+      const payouts = root?.payouts ?? response?.payouts;
       setPayoutHistory(Array.isArray(payouts) ? payouts : []);
     } catch (error) {
       console.error('Failed to fetch settlements:', error);
@@ -394,13 +411,16 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   };
 
   const handleRequestPayout = async () => {
-    // Align with backend: available = settlements pending + vendor_earnings pending
-    const availableAmount = Math.max(
-      analytics?.pendingAmount ?? 0,
-      earnings?.pendingSettlement ?? 0
-    );
+    // Single source: settlements summary.availableForPayout (loaded into analytics.pendingAmount)
+    const availableAmount = Math.max(0, Number(analytics?.pendingAmount ?? 0));
+    const minReq =
+      Number(analytics?.minPayoutRequestAmount) || VENDOR_MIN_PAYOUT_REQUEST_RS;
     if (availableAmount <= 0) {
       toast.error('No amount available for payout');
+      return;
+    }
+    if (availableAmount < minReq) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
       return;
     }
     if (!bankVerified || !bankAccount) {
@@ -553,11 +573,12 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
-  // Unified available-for-payout amount (settlements + vendor_earnings pending)
-  const availableForPayout = Math.max(
-    analytics?.pendingAmount ?? 0,
-    earnings?.pendingSettlement ?? 0
-  );
+  /** Net amount still requestable (gross pending minus payouts already queued/processing) */
+  const availableForPayout = Math.max(0, Number(analytics?.pendingAmount ?? 0));
+  const minPayoutRequestAmount =
+    Number(analytics?.minPayoutRequestAmount) || VENDOR_MIN_PAYOUT_REQUEST_RS;
+  const canRequestPayout =
+    availableForPayout > 0 && availableForPayout >= minPayoutRequestAmount;
 
   const getStatusColor = (status: string) => {
     switch (String(status || '').toLowerCase()) {
@@ -793,7 +814,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <PiggyBank className="w-4 h-4 text-orange-500" />
                   </div>
                   <p className="text-lg font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
-                  {availableForPayout > 0 && (
+                  <p className="text-[10px] text-amber-900/80 mt-1 leading-tight">
+                    {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                  </p>
+                  {canRequestPayout && (
                     <button
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}
@@ -971,8 +995,11 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <p className="text-sm text-orange-600">Pending Settlement</p>
                     <p className="text-3xl font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
                     <p className="text-xs text-orange-600 mt-1">Available for payout request</p>
+                    <p className="text-xs text-amber-900/85 mt-2 max-w-[220px] sm:max-w-none">
+                      {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                    </p>
                   </div>
-                  {availableForPayout > 0 && (
+                  {canRequestPayout && (
                     <Button 
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}

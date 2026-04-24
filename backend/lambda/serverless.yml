@@ -52,6 +52,9 @@ provider:
     # Dev: custom bus warmpawz-dev-events + route-actionoccurred-to-loyalty-queue-dev → loyalty-events-queue.
     # Prod: default bus + action-occurred-rule → loyalty-events-prod-queue.
     EVENT_BUS_NAME: ${self:custom.eventBridgeActionOccurredBus.${self:provider.stage}}
+
+    # Daily settlement cron rule on default bus (Admin → Finance → Schedule Settings saves PutRule).
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME: warmpawz-${self:provider.stage}-settlement-calculate-daily
     
     # S3 Configuration
     S3_UPLOADS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/uploadsBucket, 'warmpawz-dev-uploads'}
@@ -110,6 +113,14 @@ provider:
           Action:
             - events:PutEvents
           Resource: ${self:custom.eventBridgePutEventsResources.${self:provider.stage}}
+
+        # EventBridge — admin can update daily settlement cron (PutRule on default bus rule).
+        - Effect: Allow
+          Action:
+            - events:PutRule
+            - events:DescribeRule
+          Resource:
+            - arn:aws:events:${self:provider.region}:*:rule/warmpawz-${self:provider.stage}-settlement-calculate-daily
         
         # S3 Access for file uploads
         - Effect: Allow

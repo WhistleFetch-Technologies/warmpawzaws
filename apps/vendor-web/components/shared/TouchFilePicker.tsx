@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
-import { isCapacitorNativeApp } from '@/lib/capacitor';
+import { shouldUseCapawesomeFilePicker } from '@/lib/capacitor';
 import { pickFilesWithCapawesome } from '@/lib/capacitor-file-pick';
 
 export type TouchFilePickerProps = {
@@ -30,18 +30,67 @@ function mergeRefs<T>(node: T | null, refs: Array<React.Ref<T> | undefined>) {
   });
 }
 
-function useCapacitorNativeFilePicker(): boolean {
-  const [native, setNative] = React.useState(false);
+function useShouldUseCapawesomePicker(): boolean {
+  const [ok, setOk] = React.useState(false);
   React.useLayoutEffect(() => {
-    setNative(isCapacitorNativeApp());
+    setOk(shouldUseCapawesomeFilePicker());
   }, []);
-  return native;
+  return ok;
+}
+
+function fileInputProps(
+  inputId: string | undefined,
+  accept: string,
+  multiple: boolean | undefined,
+  disabled: boolean | undefined,
+  name: string | undefined,
+  capture: 'environment' | 'user' | undefined,
+  setInputRef: (node: HTMLInputElement | null) => void,
+  onFileChange: TouchFilePickerProps['onFileChange'],
+  inputClassName: string | undefined,
+  /** Full-size invisible overlay (browser / fallback). */
+  mode: 'overlay' | 'sr-only'
+) {
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target;
+    onFileChange(e);
+    queueMicrotask(() => {
+      el.value = '';
+    });
+  };
+  const base = {
+    id: inputId,
+    ref: setInputRef,
+    type: 'file' as const,
+    accept,
+    multiple,
+    disabled,
+    name,
+    ...(capture ? { capture } : {}),
+    onChange,
+  };
+  if (mode === 'sr-only') {
+    return {
+      ...base,
+      className: 'sr-only',
+      tabIndex: -1,
+      'aria-hidden': true as const,
+    };
+  }
+  return {
+    ...base,
+    className: cn(
+      'absolute inset-0 z-10 h-full w-full min-h-[44px] cursor-pointer opacity-0 disabled:cursor-not-allowed text-base',
+      inputClassName
+    ),
+    'aria-label': 'Choose file' as const,
+  };
 }
 
 /**
- * Mobile-safe file picker: the native `<input type="file">` receives the tap directly in browsers.
- * In **Capacitor** (Android WebView in particular), the HTML file input is unreliable; we use
- * `@capawesome/capacitor-file-picker` and forward the result to the same `onFileChange` API.
+ * Mobile-safe file picker: `<label>` + full-size `<input type="file">` so Android Chrome / WebView
+ * get a real activation target (better than synthetic `click()` alone).
+ * When Capawesome FilePicker is linked, uses it first; on failure switches to the HTML path.
  */
 export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePickerProps>(
   function TouchFilePicker(
@@ -69,7 +118,10 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       [ref]
     );
 
-    const useCapacitorFilePicker = useCapacitorNativeFilePicker();
+    const capawesomeAvailable = useShouldUseCapawesomePicker();
+    const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
+    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed;
+
     const picking = React.useRef(false);
 
     const runChangeWithFiles = React.useCallback(
@@ -114,14 +166,9 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
           }
           runChangeWithFiles(dt.files);
         } catch (err) {
-          console.error('[TouchFilePicker] Capacitor file pick failed, falling back to input.click()', err);
-          toast.error('Could not open the file chooser. Trying again…');
-          try {
-            innerRef.current?.click();
-          } catch (clickErr) {
-            console.error(clickErr);
-            toast.error('File upload is not available. Please try again or update the app.');
-          }
+          console.error('[TouchFilePicker] Native file pick failed; switching to HTML file input.', err);
+          setCapawesomeFailed(true);
+          toast.error('Please tap upload again to choose a file.');
         } finally {
           picking.current = false;
         }
@@ -129,7 +176,69 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       [accept, disabled, multiple, runChangeWithFiles]
     );
 
-    if (useCapacitorFilePicker) {
+    const visual = (
+      <div
+        className={cn(
+          'pointer-events-none relative z-0 flex h-full w-full min-h-[44px] flex-col items-center justify-center text-center',
+          innerClassName
+        )}
+      >
+        {children}
+      </div>
+    );
+
+    /** HTML `<input type="file">` path: label association helps Android open the system picker reliably. */
+    const htmlPicker = disabled ? (
+      <div
+        className={cn(
+          'relative touch-manipulation cursor-not-allowed opacity-50',
+          className
+        )}
+      >
+        <input
+          {...fileInputProps(
+            inputId,
+            accept,
+            multiple,
+            disabled,
+            name,
+            capture,
+            setInputRef,
+            onFileChange,
+            inputClassName,
+            'overlay'
+          )}
+          disabled
+        />
+        {visual}
+      </div>
+    ) : (
+      <label
+        className={cn(
+          'relative block touch-manipulation',
+          !disabled && 'cursor-pointer',
+          className
+        )}
+      >
+        <input
+          {...fileInputProps(
+            inputId,
+            accept,
+            multiple,
+            disabled,
+            name,
+            capture,
+            setInputRef,
+            onFileChange,
+            inputClassName,
+            'overlay'
+          )}
+        />
+        {visual}
+      </label>
+    );
+
+    if (useCapawesomePath) {
       return (
         <div
           className={cn(
@@ -140,24 +249,18 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
           )}
         >
           <input
-            id={inputId}
-            ref={setInputRef}
-            type="file"
-            accept={accept}
-            multiple={multiple}
-            disabled={disabled}
-            name={name}
-            {...(capture ? { capture } : {})}
-            onChange={(e) => {
-              const el = e.target;
-              onFileChange(e);
-              queueMicrotask(() => {
-                el.value = '';
-              });
-            }}
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden
+            {...fileInputProps(
+              inputId,
+              accept,
+              multiple,
+              disabled,
+              name,
+              capture,
+              setInputRef,
+              onFileChange,
+              inputClassName,
+              'sr-only'
+            )}
           />
           <div
             role="button"
@@ -167,10 +270,10 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
             onKeyDown={
               disabled
                 ? undefined
-                : (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      void handleCapacitorPick(e);
+                : (ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      void handleCapacitorPick(ev);
                     }
                   }
             }
@@ -189,39 +292,6 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       );
     }
 
-    return (
-      <div className={cn('relative touch-manipulation', className)}>
-        <input
-          id={inputId}
-          ref={setInputRef}
-          type="file"
-          accept={accept}
-          multiple={multiple}
-          disabled={disabled}
-          name={name}
-          {...(capture ? { capture } : {})}
-          onChange={(e) => {
-            const el = e.target;
-            onFileChange(e);
-            queueMicrotask(() => {
-              el.value = '';
-            });
-          }}
-          className={cn(
-            'absolute inset-0 z-10 h-full w-full min-h-[44px] cursor-pointer opacity-0 disabled:cursor-not-allowed',
-            inputClassName
-          )}
-          aria-label="Choose file"
-        />
-        <div
-          className={cn(
-            'pointer-events-none relative z-0 flex h-full w-full min-h-[44px] flex-col items-center justify-center text-center',
-            innerClassName
-          )}
-        >
-          {children}
-        </div>
-      </div>
-    );
+    return htmlPicker;
   }
 );

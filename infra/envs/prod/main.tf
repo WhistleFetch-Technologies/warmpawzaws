@@ -227,6 +227,7 @@ module "lambda" {
   common_env_vars = {
     UAT_MODE                    = "false"
     ENVIRONMENT                 = local.environment
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
     DB_HOST                     = module.rds.proxy_endpoint  # Use RDS Proxy endpoint
     DB_READER_HOST               = module.rds.proxy_endpoint  # Use proxy for reads too
     DB_NAME                     = module.rds.database_name

@@ -4,6 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
 
@@ -677,6 +681,7 @@ function BookingsSection({ vendorId }: { vendorId: string }) {
 function EarningsSection({ vendorId }: { vendorId: string }) {
   const router = useRouter();
   const [earnings, setEarnings] = useState<any>(null);
+  const [minPayoutRequestAmount, setMinPayoutRequestAmount] = useState(VENDOR_MIN_PAYOUT_REQUEST_RS);
   const [tierInfo, setTierInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
@@ -687,19 +692,34 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const loadEarnings = async () => {
     try {
-      const [dayRes, monthRes, totalRes, tierRes] = await Promise.all([
+      const [dayRes, monthRes, totalRes, tierRes, settlementsRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=day`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=month`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => ({})),
-        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null)
+        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=5`).catch(() => null),
       ]);
       const e = (r: any) => r?.earnings;
+      const sum = settlementsRes?.summary;
+      setMinPayoutRequestAmount(
+        Number(sum?.minPayoutRequestAmount ?? sum?.min_payout_request_amount) ||
+          VENDOR_MIN_PAYOUT_REQUEST_RS,
+      );
+      const netPending =
+        Number(
+          sum?.availableForPayout ??
+            sum?.available_for_payout ??
+            sum?.pendingAmount ??
+            sum?.pending_amount ??
+            NaN
+        );
+      const fallbackPending = e(totalRes)?.pendingSettlement ?? 0;
       setEarnings({
         today: e(dayRes)?.thisPeriod ?? e(dayRes)?.totalEarnings ?? 0,
         thisWeek: 0,
         thisMonth: e(monthRes)?.thisPeriod ?? e(monthRes)?.totalEarnings ?? 0,
         total: e(totalRes)?.totalEarnings ?? 0,
-        pending: e(totalRes)?.pendingSettlement ?? 0,
+        pending: Number.isFinite(netPending) ? netPending : fallbackPending,
         transactions: e(totalRes)?.transactions ?? []
       });
       
@@ -715,6 +735,10 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const handleRequestPayout = async () => {
     if (!earnings?.pending || earnings.pending <= 0) return;
+    if (earnings.pending < minPayoutRequestAmount) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
+      return;
+    }
     if (!confirm(`Request payout of ₹${earnings.pending.toLocaleString()}?`)) return;
     
     setRequestingPayout(true);
@@ -726,6 +750,8 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
             'Payout request submitted. You will be notified when it is processed.'
         );
         loadEarnings();
+      } else {
+        toast.error(response?.error || 'Failed to request payout');
       }
     } catch (err) {
       console.error('Error requesting payout:', err);
@@ -772,11 +798,14 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
         <div className="bg-blue-50 rounded-xl p-4">
           <p className="text-sm text-blue-600">Pending Payout</p>
           <p className="text-2xl font-bold text-blue-700">₹{(earnings?.pending || 0).toLocaleString()}</p>
+          <p className="text-xs text-amber-900/80 mt-1 leading-snug">{VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}</p>
           {(earnings?.pending || 0) > 0 && (
             <button
               onClick={handleRequestPayout}
-              disabled={requestingPayout}
-              className="mt-2 text-blue-600 text-sm font-medium hover:underline"
+              disabled={
+                requestingPayout || (earnings?.pending || 0) < minPayoutRequestAmount
+              }
+              className="mt-2 text-blue-600 text-sm font-medium hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {requestingPayout ? 'Requesting...' : 'Request Payout →'}
             </button>

@@ -35,6 +35,41 @@ import {
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
+import {
+  putSettlementCalculateDailyCron,
+  resolveSettlementCalculateCronRuleName,
+  scheduleTimeAndZoneToUtcCron,
+} from '../../../utils/settlement-schedule-eventbridge';
+
+/** Keep Fee / payout_rules consumers aligned when admin saves minimum from Schedule Settings. */
+async function mergeMinimumPayoutIntoPlatformPayoutRules(minimumPayout: number): Promise<void> {
+  const defaults = { minimumPayout: 1000, autoPayout: true, defaultCommission: 10 };
+  const existing = await query(
+    `SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:settings:payout_rules' LIMIT 1`
+  ).then((r: any) => r.rows || []);
+  const prev = existing[0]?.setting_value;
+  const parsed =
+    typeof prev === 'string'
+      ? JSON.parse(prev)
+      : prev && typeof prev === 'object'
+        ? prev
+        : {};
+  const merged = { ...defaults, ...parsed, minimumPayout: Number(minimumPayout) };
+  if (existing.length > 0) {
+    await update('platform_settings', { id: existing[0].id }, {
+      setting_value: merged,
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    await insert('platform_settings', {
+      setting_key: 'admin:settings:payout_rules',
+      setting_value: merged,
+      setting_type: 'object',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+}
 
 /** Email from Bearer JWT for RBAC checks when Cognito `sub` ≠ `admins.id` (unsafe decode; token already verified by middleware). */
 function rbacCallerEmailHint(c: Context): string | undefined {
@@ -3475,15 +3510,28 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
       const saved = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : {};
+      const scheduleTime = saved.scheduleTime || '09:00';
+      const minPayoutAmount = saved.minPayoutAmount ?? 100;
+      const timezone = saved.timezone || 'Asia/Kolkata';
+      let eventBridgeCronUtc: string | null = null;
+      try {
+        eventBridgeCronUtc = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch {
+        eventBridgeCronUtc = null;
+      }
       const settings = {
-        enabled: saved.enabled !== false,
-        scheduleType: saved.scheduleType || 'weekly',
-        scheduleDay: saved.scheduleDay ?? 1,
-        scheduleTime: saved.scheduleTime || '09:00',
+        scheduleTime,
+        minPayoutAmount,
+        timezone,
         settlementPeriodDays,
+        eventBridgeCronUtc,
+        /** Resolved from ENVIRONMENT / NODE_ENV / SETTLEMENT_CALCULATE_CRON_RULE_NAME — same rule Save updates. */
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
+        // Legacy fields (optional) for older clients
+        enabled: saved.enabled !== false,
+        scheduleType: saved.scheduleType || 'daily',
+        scheduleDay: saved.scheduleDay ?? 1,
         autoProcess: saved.autoProcess !== false,
-        minPayoutAmount: saved.minPayoutAmount ?? 100,
-        timezone: saved.timezone || 'Asia/Kolkata',
         lastProcessedAt: saved.lastProcessedAt ?? null,
         nextProcessAt: saved.nextProcessAt ?? null,
       };
@@ -3497,17 +3545,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/settlement-schedule', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { enabled, scheduleType, scheduleDay, scheduleTime, autoProcess, minPayoutAmount, timezone } = body;
-      // Do not persist settlementPeriodDays - it is read-only from default tier (single source of truth)
+      const storedRow = await query(
+        `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1`
+      ).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
+      const prevSaved = storedRow ? (typeof storedRow === 'string' ? JSON.parse(storedRow) : storedRow) : {};
+
+      const scheduleTime =
+        typeof body.scheduleTime === 'string' && body.scheduleTime.trim()
+          ? body.scheduleTime.trim()
+          : (prevSaved.scheduleTime || '09:00');
+      const minPayoutAmount =
+        body.minPayoutAmount != null && Number.isFinite(Number(body.minPayoutAmount))
+          ? Number(body.minPayoutAmount)
+          : (prevSaved.minPayoutAmount ?? 100);
+      const timezone =
+        typeof body.timezone === 'string' && body.timezone.trim()
+          ? body.timezone.trim()
+          : (prevSaved.timezone || 'Asia/Kolkata');
+
       const toStore = {
-        enabled: enabled !== false,
-        scheduleType: scheduleType || 'weekly',
-        scheduleDay: scheduleDay ?? 1,
-        scheduleTime: scheduleTime || '09:00',
-        autoProcess: autoProcess !== false,
-        minPayoutAmount: minPayoutAmount ?? 100,
-        timezone: timezone || 'Asia/Kolkata',
+        enabled: true,
+        scheduleType: 'daily',
+        scheduleDay: 1,
+        scheduleTime,
+        autoProcess: body.autoProcess !== undefined ? body.autoProcess !== false : prevSaved.autoProcess !== false,
+        minPayoutAmount,
+        timezone,
       };
+
       const existing = await query(`
         SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows);
@@ -3522,12 +3587,31 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           updated_at: new Date().toISOString(),
         });
       }
+
+      await mergeMinimumPayoutIntoPlatformPayoutRules(minPayoutAmount);
+
+      let scheduleExpression: string;
+      try {
+        scheduleExpression = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch (cronErr: unknown) {
+        const msg = cronErr instanceof Error ? cronErr.message : String(cronErr);
+        return c.json({ success: false, error: `Invalid schedule: ${msg}` }, 400);
+      }
+      const eventBridge = await putSettlementCalculateDailyCron(scheduleExpression);
+
       const defaultTier = await query(`
         SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
       `).then((r: any) => r.rows?.[0]).catch(() => null);
       const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
-      const settings = { ...toStore, settlementPeriodDays, lastProcessedAt: null, nextProcessAt: null };
-      return c.json({ success: true, settings });
+      const settings = {
+        ...toStore,
+        settlementPeriodDays,
+        eventBridgeCronUtc: scheduleExpression,
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
+        lastProcessedAt: prevSaved.lastProcessedAt ?? null,
+        nextProcessAt: null,
+      };
+      return c.json({ success: true, settings, eventBridge });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Failed to save settlement schedule', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -6326,6 +6410,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       try {
         payouts = await query(`
           SELECT p.*,
+                 (
+                   SELECT COUNT(*)::int FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_match_count,
+                 (
+                   SELECT SUM(s.total_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_total_amount,
+                 (
+                   SELECT SUM(s.commission_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_commission_amount,
+                 (
+                   SELECT SUM(s.net_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_net_amount,
                  COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
                  COALESCE(v.phone, vi.phone) as vendor_phone,
                  r.name as vendor_role,
@@ -6343,6 +6447,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         if (isVendorIdentityJoinUnsupportedError(msg)) {
           payouts = await query(`
             SELECT p.*,
+                   (
+                     SELECT COUNT(*)::int FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_match_count,
+                   (
+                     SELECT SUM(s.total_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_total_amount,
+                   (
+                     SELECT SUM(s.commission_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_commission_amount,
+                   (
+                     SELECT SUM(s.net_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_net_amount,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
                    COALESCE(v.phone, '') as vendor_phone,
                    r.name as vendor_role,
@@ -6358,25 +6482,60 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           throw viErr;
         }
       }
+      const parseMoney = (v: unknown): number | null => {
+        if (v == null || v === '') return null;
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : null;
+      };
       const rows = (payouts.rows || []).map((row: Record<string, unknown>) => {
-        const raw = row.payout_status ?? row.status ?? 'pending';
+        const {
+          settlement_total_amount,
+          settlement_commission_amount,
+          settlement_net_amount,
+          settlement_match_count,
+          ...rest
+        } = row as Record<string, unknown> & {
+          settlement_total_amount?: unknown;
+          settlement_commission_amount?: unknown;
+          settlement_net_amount?: unknown;
+          settlement_match_count?: unknown;
+        };
+        const raw = rest.payout_status ?? rest.status ?? 'pending';
         const status = (typeof raw === 'string' && raw.trim()) ? raw.trim().toLowerCase() : 'pending';
-        const periodVal = row.period ?? (row.created_at
-          ? new Date(row.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+        const periodVal = rest.period ?? (rest.created_at
+          ? new Date(rest.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
           : null);
-        const vendorName = row.vendor_name ?? row.business_name ?? 'Vendor';
-        const vendorPhone = row.vendor_phone ?? null;
+        const vendorName = rest.vendor_name ?? rest.business_name ?? 'Vendor';
+        const vendorPhone = rest.vendor_phone ?? null;
+        const payoutNet = parseMoney(rest.amount) ?? 0;
+        const matchCnt = parseInt(String(settlement_match_count ?? '0'), 10) || 0;
+        const stGross = parseMoney(settlement_total_amount);
+        const stComm = parseMoney(settlement_commission_amount);
+        const stNet = parseMoney(settlement_net_amount);
+        const hasSettlementBreakdown = matchCnt > 0;
+        const netFromSettlement = stNet != null ? stNet : payoutNet;
+        const commFromSettlement = stComm != null ? stComm : 0;
+        const grossFromSettlement =
+          stGross != null ? stGross : Math.round((netFromSettlement + commFromSettlement) * 100) / 100;
+        const grossAmount = hasSettlementBreakdown ? grossFromSettlement : payoutNet;
+        const commission = hasSettlementBreakdown ? commFromSettlement : (parseMoney(rest.commission) ?? 0);
+        const netAmount = hasSettlementBreakdown ? netFromSettlement : payoutNet;
         return {
-          ...row,
+          ...rest,
           vendor_name: vendorName,
           vendorName,
           vendor_phone: vendorPhone,
           vendorPhone,
-          vendor_role: row.vendor_role ?? null,
-          business_type: row.business_type ?? null,
+          vendor_role: rest.vendor_role ?? null,
+          business_type: rest.business_type ?? null,
           period: periodVal ?? '—',
           status,
           payout_status: status,
+          grossAmount,
+          gross_amount: grossAmount,
+          commission,
+          netAmount,
+          net_amount: netAmount,
           source: 'payout',
         };
       });
@@ -6449,8 +6608,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
         const periodFmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—';
         for (const s of pending.rows || []) {
-          const amt = parseFloat((s as any).net_amount ?? (s as any).total_amount ?? '0');
-          if (amt <= 0) continue;
+          const gross = parseFloat(String((s as any).total_amount ?? '0'));
+          const commission = parseFloat(String((s as any).commission_amount ?? '0'));
+          const net = parseFloat(String((s as any).net_amount ?? '0'));
+          if (net <= 0 && gross <= 0) continue;
           const vendorName = (s as any).vendor_name ?? 'Vendor';
           const rawSt = (s as any).settlement_status ?? (s as any).status ?? 'pending';
           const st = (typeof rawSt === 'string' && rawSt.trim()) ? rawSt.trim().toLowerCase() : 'pending';
@@ -6464,10 +6625,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             vendorPhone: (s as any).vendor_phone ?? null,
             vendor_role: (s as any).vendor_role ?? null,
             business_type: (s as any).business_type ?? null,
-            amount: amt,
-            net_amount: amt,
-            netAmount: amt,
-            commission: parseFloat((s as any).commission_amount ?? '0'),
+            amount: net,
+            grossAmount: gross,
+            gross_amount: gross,
+            net_amount: net,
+            netAmount: net,
+            commission,
             period: periodFmt((s as any).created_at),
             status: st === 'processing' ? 'processing' : 'pending',
             payout_status: st === 'processing' ? 'processing' : 'pending',
@@ -6903,7 +7066,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             email: `vendor-${vendorId}@payout.warmpawz.com`,
             contact: vendorPhone,
             type: 'vendor',
-            reference_id: `vendor-${vendorId}`,
+            // Razorpay: reference_id max 40 chars (vendor- + UUID = 43 without truncation)
+            reference_id: `vendor-${vendorId}`.slice(0, 40),
           },
         },
         queue_if_low_balance: true,

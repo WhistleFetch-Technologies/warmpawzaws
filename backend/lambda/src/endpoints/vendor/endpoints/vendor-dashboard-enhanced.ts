@@ -20,6 +20,7 @@ import { select, query } from '../../../database/rds-connection';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 function buildDailyBreakdownLast7Days(
@@ -1133,7 +1134,14 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           success: true,
           settlements: [],
           total: 0,
-          summary: { pending: 0, completed: 0, totalSettled: 0 },
+          summary: {
+            pending: 0,
+            completed: 0,
+            totalSettled: 0,
+            pendingAmount: 0,
+            availableForPayout: 0,
+            heldInOpenPayouts: 0,
+          },
         });
       }
 
@@ -1172,7 +1180,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
              COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
              COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending' OR settlement_status = 'pending'), 0) as pending_amount,
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
              COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
@@ -1200,6 +1208,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const totalPendingAmount = settlementsPending + earningsPending;
 
       const payoutRows = Array.isArray(payoutsResult) ? payoutsResult : payoutsResult.rows || [];
+      /** Same net as POST /settlements/request — money already in a queued/processing payout is not requestable again */
+      let heldInOpenPayouts = 0;
+      for (const pr of payoutRows) {
+        const st = String(pr.payout_status || pr.status || '').toLowerCase().trim();
+        if (st === 'pending' || st === 'scheduled' || st === 'processing') {
+          heldInOpenPayouts += parseFloat(pr.amount || '0');
+        }
+      }
+      const availableForPayout = Math.max(0, Math.round((totalPendingAmount - heldInOpenPayouts) * 100) / 100);
+
       const payouts = payoutRows.map((p: any) => ({
         id: p.id,
         amount: parseFloat(p.amount || '0'),
@@ -1253,7 +1271,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           processing: parseInt(summary.processing_count || '0'),
           completed: parseInt(summary.completed_count || '0'),
           totalSettled: parseFloat(summary.completed_amount ?? summary.total_settled ?? '0'),
+          /** Gross: pending settlements + pending vendor_earnings (ignores in-flight payout rows) */
           pendingAmount: totalPendingAmount,
+          /** Net amount vendor can request now — matches POST /settlements/request validation */
+          availableForPayout,
+          /** Minimum net available (INR) before POST /settlements/request is allowed */
+          minPayoutRequestAmount: MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
+          heldInOpenPayouts: Math.round(heldInOpenPayouts * 100) / 100,
           processingAmount: parseFloat(summary.processing_amount || '0'),
           completedAmount: parseFloat(summary.completed_amount || '0'),
           totalTierDeductions: parseFloat(summary.total_tier_deductions || '0'),

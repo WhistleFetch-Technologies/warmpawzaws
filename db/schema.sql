@@ -421,6 +421,8 @@ CREATE TABLE payouts (
     
     -- Razorpay Payout
     razorpay_payout_id TEXT,
+    payout_utr TEXT,
+    last_synced_at TIMESTAMPTZ,
     
     -- Settlement
     settlement_id UUID REFERENCES settlements(id),

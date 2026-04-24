@@ -3,6 +3,10 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -295,6 +299,7 @@ export function VendorBookingManagement({
   // Payouts State
   const [payoutsData, setPayoutsData] = useState<{
     availableForPayout: number;
+    minPayoutRequestAmount: number;
     pending: number;
     paidOut: number;
     bankAccount: {
@@ -813,15 +818,53 @@ export function VendorBookingManagement({
       
       // Extract summary totals
       const summary = settlementsSummary?.summary || settlementsData?.summary || {};
-      
-      // Map payout history
-      const payoutHistory = (settlementsData?.settlements || settlementsData?.data || []).slice(0, 5).map((s: any) => ({
-        id: s.id || s.settlementId,
-        date: s.date || s.createdAt || s.processedAt || new Date().toISOString().split('T')[0],
-        amount: s.amount || s.netAmount || s.payout || 0,
-        status: s.status || 'completed',
-        txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
-      }));
+      const settlementsPayload = settlementsData?.data ?? settlementsData;
+      const payoutRows = Array.isArray(settlementsPayload?.payouts) ? settlementsPayload.payouts : [];
+      const settlementRows = Array.isArray(settlementsPayload?.settlements)
+        ? settlementsPayload.settlements
+        : Array.isArray(settlementsData?.settlements)
+          ? settlementsData.settlements
+          : [];
+
+      // Bank "Payout History" must use `payouts` from GET /vendor/:id/settlements (actual transfers).
+      // Using only `settlements` stays empty when money flows via vendor_earnings + payouts with no per-row settlement UI rows.
+      const mapBankPayout = (p: any) => {
+        const id = String(p.id ?? '');
+        const when = p.processedAt || p.created_at || p.createdAt || new Date().toISOString();
+        return {
+          id,
+          date: typeof when === 'string' ? when : new Date(when).toISOString(),
+          amount: Number(p.amount ?? 0) || 0,
+          status: String(p.status || p.payout_status || 'pending').toLowerCase(),
+          txnId:
+            p.razorpayPayoutId ||
+            p.razorpay_payout_id ||
+            p.transactionId ||
+            `TXN${id.replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+        };
+      };
+      const mapSettlementRow = (s: any) => ({
+        id: String(s.id || s.settlementId || ''),
+        date:
+          s.date ||
+          s.createdAt ||
+          s.created_at ||
+          s.processedAt ||
+          s.completedAt ||
+          new Date().toISOString().split('T')[0],
+        amount: Number(s.amount ?? s.netAmount ?? s.payout ?? 0) || 0,
+        status: String(s.status || 'completed').toLowerCase(),
+        txnId:
+          s.transactionId ||
+          s.txnId ||
+          s.utr ||
+          s.payout_reference ||
+          `TXN${String(s.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+      });
+
+      let payoutHistory =
+        payoutRows.length > 0 ? payoutRows.slice(0, 10).map(mapBankPayout) : settlementRows.slice(0, 5).map(mapSettlementRow);
+      payoutHistory = payoutHistory.slice(0, 5);
       
       // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
       const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
@@ -841,10 +884,22 @@ export function VendorBookingManagement({
         policyData?.payoutSchedule ||
         `Earnings are held for ${payoutDays} days (per your tier) before becoming eligible for settlement. Minimum payout and schedule are set by Finance.`;
 
+      // Use ?? not || so 0 from API is kept (|| would fall through to pendingAmount and show a false "available").
       setPayoutsData({
-        availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
-        pending: summary.pending || summary.holdAmount || summary.onHold || 0,
-        paidOut: summary.paidOut || summary.totalPaidOut || summary.completed || 0,
+        availableForPayout: Number(
+          summary.availableForPayout ?? summary.available ?? summary.pendingAmount ?? 0,
+        ),
+        minPayoutRequestAmount: Number(
+          summary.minPayoutRequestAmount ?? summary.min_payout_request_amount,
+        ) || VENDOR_MIN_PAYOUT_REQUEST_RS,
+        pending: Number(summary.heldInOpenPayouts ?? summary.holdAmount ?? summary.onHold ?? 0),
+        paidOut: Number(
+          summary.paidOut ??
+            summary.totalPaidOut ??
+            summary.completedAmount ??
+            summary.totalSettled ??
+            0,
+        ),
         bankAccount: bankAccount ? {
           bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
           accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',
@@ -861,6 +916,7 @@ export function VendorBookingManagement({
       // Set empty data on error
       setPayoutsData({
         availableForPayout: 0,
+        minPayoutRequestAmount: VENDOR_MIN_PAYOUT_REQUEST_RS,
         pending: 0,
         paidOut: 0,
         bankAccount: null,
@@ -873,8 +929,14 @@ export function VendorBookingManagement({
   };
 
   const handleRequestPayout = async () => {
+    const minReq =
+      payoutsData?.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS;
     if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
       toast.error('No amount available for payout');
+      return;
+    }
+    if (payoutsData.availableForPayout < minReq) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
       return;
     }
     if (!payoutsData?.bankAccount?.verified) {
@@ -1774,10 +1836,18 @@ export function VendorBookingManagement({
                         ₹{(payoutsData?.availableForPayout || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-sm text-gray-600">Available for Payout</div>
+                      <p className="mt-2 text-xs text-amber-800/90 text-center px-1">
+                        {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                      </p>
                     </div>
                     <button 
                       onClick={handleRequestPayout}
-                      disabled={!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0}
+                      disabled={
+                        !payoutsData?.availableForPayout ||
+                        payoutsData.availableForPayout <= 0 ||
+                        payoutsData.availableForPayout <
+                          (payoutsData.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS)
+                      }
                       className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Request Payout

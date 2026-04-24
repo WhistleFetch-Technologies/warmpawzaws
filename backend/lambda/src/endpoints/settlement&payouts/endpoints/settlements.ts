@@ -29,6 +29,11 @@ import { isUATMode } from 'src/lib/utils/uat-mode';
 import { validateBody } from 'src/middleware/validation-middleware';
 import { processPayoutSchema } from 'src/zodContracts/settlement.contract';
 import { z } from 'zod';
+import { PayoutStatusSyncService } from '../../../utils/payments/payout-status-sync-service';
+import {
+  MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
+  MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE,
+} from '../../../lib/constants/vendor-payout';
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
@@ -336,6 +341,52 @@ async function persistVendorBankDetailsForVendor(
     ...detailsPayload,
   });
   return created[0];
+}
+
+/**
+ * Move pending settlements → processing and vendor_earnings → paid_out up to `amount` INR,
+ * so GET /vendor/:id/settlements (gross pending − open payouts) stays consistent after a payout row is created.
+ * Used for Razorpay success and for queued/manual payout paths (tier_scheduled, platform_manual, razorpay_fallback).
+ */
+async function allocateVendorLedgerForPayoutAmount(vendorId: string, amount: number): Promise<void> {
+  let remainingToAllocate = Math.max(0, amount);
+  if (remainingToAllocate <= 0) return;
+
+  const settlementRows = await query(
+    `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as { id: string; amt?: string }[] }));
+
+  for (const row of settlementRows.rows || []) {
+    if (remainingToAllocate <= 0) break;
+    const amt = parseFloat(String(row.amt || '0'));
+    if (amt <= 0) continue;
+    if (amt <= remainingToAllocate) {
+      remainingToAllocate -= amt;
+      await query(
+        `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
+        [row.id]
+      ).catch(() => {});
+    }
+  }
+
+  if (remainingToAllocate <= 0) return;
+
+  const toMark = await query(
+    `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as { id: string; amount?: string }[] }));
+
+  let allocated = 0;
+  for (const row of toMark.rows || []) {
+    const amt = parseFloat(String(row.amount || '0'));
+    if (amt <= 0) continue;
+    if (allocated + amt > remainingToAllocate) break;
+    allocated += amt;
+    await query(`UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`, [row.id]).catch(
+      () => {}
+    );
+  }
 }
 
 export function registerSettlementEndpoints(app: Hono) {
@@ -651,13 +702,29 @@ export function registerSettlementEndpoints(app: Hono) {
       try {
         // Non-period settings from platform (min payout, auto, default commission). Period = tier only (single source of truth).
         const settings = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
-        const rules = settings.length > 0
+        let rules = settings.length > 0
           ? (settings[0].setting_value as any)
           : {
             minimumPayout: 1000,
             autoPayout: true,
             defaultCommission: 10,
           };
+
+        const schedSetting = await select('platform_settings', { setting_key: 'admin:finance:settlement-schedule' });
+        const schedRaw = schedSetting[0]?.setting_value as string | Record<string, unknown> | undefined;
+        const sch =
+          typeof schedRaw === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(schedRaw) as Record<string, unknown>;
+                } catch {
+                  return null;
+                }
+              })()
+            : (schedRaw as Record<string, unknown> | null) ?? null;
+        if (sch && sch.minPayoutAmount != null && Number.isFinite(Number(sch.minPayoutAmount))) {
+          rules = { ...rules, minimumPayout: Number(sch.minPayoutAmount) };
+        }
 
         // Single source of truth: eligibility by vendor tier payout_period_days (vendor_tiers)
         // Each booking is eligible when completed_at < NOW() - (that vendor's tier payout_period_days)
@@ -999,6 +1066,12 @@ export function registerSettlementEndpoints(app: Hono) {
       const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || '0');
       const heldInOpenPayouts = parseFloat(payoutsHeldRes.rows[0]?.held || '0');
       const availableAmount = Math.max(0, settlementsPending + earningsPending - heldInOpenPayouts);
+      if (availableAmount < MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR) {
+        return c.json({ success: false, error: MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE }, 400);
+      }
+      if (requestAmount < MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR) {
+        return c.json({ success: false, error: MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE }, 400);
+      }
       if (requestAmount > availableAmount) {
         return c.json({ success: false, error: `Amount exceeds available (₹${availableAmount.toFixed(0)})` }, 400);
       }
@@ -1078,6 +1151,7 @@ export function registerSettlementEndpoints(app: Hono) {
 
       // Tier policy: lower tiers (or tier.features) queue for finance without calling Razorpay Payouts API.
       if (!tryAutomatedRazorpay) {
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
         return await respondQueued(
           `Payout request recorded. Your ${tierDisplay} tier uses scheduled payouts: Warmpawz finance will process this to your verified bank as per your tier cycle (typically after the ${tierPayoutDays}-day hold). You will be notified when it is sent.`,
           'tier_scheduled',
@@ -1086,6 +1160,7 @@ export function registerSettlementEndpoints(app: Hono) {
 
       const sourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
       if (!sourceAccount) {
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
         return await respondQueued(
           'Payout request recorded. Instant bank transfer is not enabled yet; your request is queued and Warmpawz finance will send it to your verified bank. You will be notified when it is sent.',
           'platform_manual',
@@ -1144,44 +1219,7 @@ export function registerSettlementEndpoints(app: Hono) {
           });
         }
 
-        let remainingToAllocate = actualPayoutAmount;
-
-        if (settlementsPending > 0 && remainingToAllocate > 0) {
-          const settlementRows = await query(
-            `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          for (const row of settlementRows.rows) {
-            if (remainingToAllocate <= 0) break;
-            const amt = parseFloat(row.amt || '0');
-            if (amt <= 0) continue;
-            if (amt <= remainingToAllocate) {
-              remainingToAllocate -= amt;
-              await query(
-                `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
-                [row.id]
-              ).catch(() => { });
-            }
-          }
-        }
-
-        if (earningsPending > 0 && remainingToAllocate > 0) {
-          const toMark = await query(
-            `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          let allocated = 0;
-          for (const row of toMark.rows) {
-            const amt = parseFloat(row.amount || '0');
-            if (amt <= 0) continue;
-            if (allocated + amt > remainingToAllocate) break;
-            allocated += amt;
-            await query(
-              `UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`,
-              [row.id]
-            ).catch(() => { });
-          }
-        }
+        await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
 
         return c.json({
           success: true,
@@ -1201,6 +1239,7 @@ export function registerSettlementEndpoints(app: Hono) {
           });
         }
         if (queueForAdmin) {
+          await allocateVendorLedgerForPayoutAmount(vendorId, actualPayoutAmount);
           return await respondQueued(
             'Payout request recorded. Razorpay could not start an instant transfer for this request; it has been queued for Warmpawz finance. You will be notified when the funds are sent to your verified bank account.',
             'razorpay_fallback_manual',
@@ -1238,6 +1277,32 @@ export function registerSettlementEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching payouts:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /payouts/sync-status
+   * Reconcile payout rows with Razorpay GET /v1/payouts/:id.
+   * Auth: INTERNAL_CRON_SECRET env must match x-internal-cron-secret header (401 otherwise).
+   */
+  app.post('/payouts/sync-status', async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    if (!cronSecret || hdr !== cronSecret) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+    try {
+      let limit = 100;
+      const body = await c.req.json().catch(() => ({}));
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(500, Math.max(1, n));
+      }
+      const result = await PayoutStatusSyncService.run(limit);
+      return c.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('[PayoutStatusSync] run failed:', error);
+      return c.json({ success: false, error: error?.message || 'Payout sync failed' }, 500);
     }
   });
 
@@ -1433,7 +1498,7 @@ export function registerSettlementEndpoints(app: Hono) {
               mode: 'IMPS',
               purpose: 'payout',
               queue_if_low_balance: true,
-              reference_id: `PAYOUT-${payout[0].id}`,
+              reference_id: `PAYOUT-${payout[0].id}`.slice(0, 40),
             });
 
             // Update payout and settlement
@@ -1753,7 +1818,7 @@ export function registerSettlementEndpoints(app: Hono) {
           email: `vendor-${vendorId}@payout.warmpawz.com`,
           contact: vendorPhone,
           type: 'vendor',
-          reference_id: `vendor-${vendorId}`,
+          reference_id: `vendor-${vendorId}`.slice(0, 40),
         },
       },
       queue_if_low_balance: true,

@@ -135,6 +135,8 @@ export class LambdaStack extends Construct {
         DYNAMODB_REPORTS_TABLE: props.dynamoDbStack.reportsTable.tableName,
         DYNAMODB_CHAT_MESSAGES_TABLE: props.dynamoDbStack.chatMessagesTable.tableName,
         DYNAMODB_AI_CONVERSATIONS_TABLE: props.dynamoDbStack.aiConversationsTable.tableName,
+        // EventBridge rule on default bus (same pattern as CLI); Admin Save updates PutRule schedule.
+        SETTLEMENT_CALCULATE_CRON_RULE_NAME: `warmpawz-${environment}-settlement-calculate-daily`,
         // CORS: from config/urls.json (no hardcoded URLs in Lambda code)
         ALLOWED_ORIGINS: (() => {
           try {
