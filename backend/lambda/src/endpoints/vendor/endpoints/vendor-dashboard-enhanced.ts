@@ -1089,8 +1089,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const vendorId = await resolveVendorId(paramVendorId);
-      let whereClause = 's.vendor_id = $1';
-      const params: any[] = [vendorId];
+      // Bookings/settlements may still reference the identity UUID while the app sends vendors.id (or vice versa).
+      const vendorIdSet = new Set<string>([vendorId, paramVendorId.trim()].filter(Boolean));
+      const vendorIds = [...vendorIdSet];
+      const vendorIdArraySql = `ANY($1::uuid[])`;
+      let whereClause = `s.vendor_id = ${vendorIdArraySql}`;
+      const params: any[] = [vendorIds];
 
       if (status && status !== 'all') {
         whereClause += ' AND s.status = $2';
@@ -1111,7 +1115,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Get summary - align with admin: pending_amount, completed_amount, processing_amount
       // Include vendor_earnings pending so "Available for payout" matches request validation
-      const [summaryResult, earningsPendingResult] = await Promise.all([
+      const [summaryResult, earningsPendingResult, payoutsResult] = await Promise.all([
         query(
           `SELECT 
              COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
@@ -1122,13 +1126,21 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
              COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
            FROM settlements
-           WHERE vendor_id = $1`,
-          [vendorId]
+           WHERE vendor_id = ${vendorIdArraySql}`,
+          [vendorIds]
         ).catch(() => ({ rows: [{}] })),
         query(
-          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
-          [vendorId]
+          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = ${vendorIdArraySql} AND status = 'pending'`,
+          [vendorIds]
         ).catch(() => ({ rows: [{ pending: '0' }] })),
+        query(
+          `SELECT *
+           FROM payouts
+           WHERE vendor_id = ${vendorIdArraySql}
+           ORDER BY created_at DESC
+           LIMIT 30`,
+          [vendorIds]
+        ).catch(() => ({ rows: [] })),
       ]);
 
       const summary = Array.isArray(summaryResult) ? summaryResult[0] : (summaryResult.rows || [{}])[0];
@@ -1136,8 +1148,21 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const settlementsPending = parseFloat(summary.pending_amount || '0');
       const totalPendingAmount = settlementsPending + earningsPending;
 
+      const payoutRows = Array.isArray(payoutsResult) ? payoutsResult : payoutsResult.rows || [];
+      const payouts = payoutRows.map((p: any) => ({
+        id: p.id,
+        amount: parseFloat(p.amount || '0'),
+        status: String(p.payout_status || p.status || '').trim() || 'unknown',
+        razorpayPayoutId: p.razorpay_payout_id || null,
+        settlementId: p.settlement_id || null,
+        failureReason: p.failure_reason || null,
+        createdAt: p.created_at,
+        processedAt: p.processed_at,
+      }));
+
       return c.json({
         success: true,
+        payouts,
         settlements: settlements.map((s: any) => {
           let breakup = null;
           try {
@@ -1148,18 +1173,24 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
           const grossAmount = parseFloat(s.total_amount ?? s.gross_amount ?? '0');
           const netAmount = parseFloat(s.vendor_amount ?? s.net_amount ?? '0');
+          const commissionAmt = parseFloat(s.commission_amount || '0');
+          const cr = parseFloat(String(s.commission_rate ?? '').trim() || 'NaN');
           return {
             id: s.id,
             bookingId: s.booking_id,
             serviceName: s.service_name || 'Service',
             bookingDate: s.booking_date,
             grossAmount,
-            commissionAmount: parseFloat(s.commission_amount || '0'),
+            commissionAmount: commissionAmt,
+            commission_amount: commissionAmt,
+            commissionRate: Number.isFinite(cr) && cr > 0 ? cr : undefined,
             tierDeduction: parseFloat(s.tier_deduction_amount || '0'),
             netAmount,
             amount: netAmount,
+            bookingCount: s.booking_id ? 1 : 0,
             status: s.status,
             razorpayTransferId: s.razorpay_transfer_id,
+            payout_reference: s.razorpay_transfer_id || s.utr || null,
             createdAt: s.created_at,
             completedAt: s.completed_at,
             hasBreakup: !!breakup,
