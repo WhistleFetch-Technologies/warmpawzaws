@@ -687,19 +687,30 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const loadEarnings = async () => {
     try {
-      const [dayRes, monthRes, totalRes, tierRes] = await Promise.all([
+      const [dayRes, monthRes, totalRes, tierRes, settlementsRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=day`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=month`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => ({})),
-        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null)
+        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=5`).catch(() => null),
       ]);
       const e = (r: any) => r?.earnings;
+      const sum = settlementsRes?.summary;
+      const netPending =
+        Number(
+          sum?.availableForPayout ??
+            sum?.available_for_payout ??
+            sum?.pendingAmount ??
+            sum?.pending_amount ??
+            NaN
+        );
+      const fallbackPending = e(totalRes)?.pendingSettlement ?? 0;
       setEarnings({
         today: e(dayRes)?.thisPeriod ?? e(dayRes)?.totalEarnings ?? 0,
         thisWeek: 0,
         thisMonth: e(monthRes)?.thisPeriod ?? e(monthRes)?.totalEarnings ?? 0,
         total: e(totalRes)?.totalEarnings ?? 0,
-        pending: e(totalRes)?.pendingSettlement ?? 0,
+        pending: Number.isFinite(netPending) ? netPending : fallbackPending,
         transactions: e(totalRes)?.transactions ?? []
       });
       

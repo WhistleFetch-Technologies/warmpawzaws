@@ -297,14 +297,21 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       
       const stats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
       const summary = settlementsRes?.summary || {};
-      
+      /** Net requestable payout (POST /settlements/request subtracts queued/processing payouts from gross) */
+      const pendingAvailable =
+        summary.availableForPayout ??
+        summary.available_for_payout ??
+        summary.pending_amount ??
+        summary.pendingAmount ??
+        0;
+
       setAnalytics({
         totalRevenue: stats.totalEarnings || stats.earnings || 0,
         periodRevenue: stats.thisMonthEarnings || stats.earnings || 0,
         periodCount: stats.completedServices || stats.completedBookings || 0,
         avgSettlement: stats.averageBookingValue || 0,
         commissionSaved: summary.commission_saved || 0,
-        pendingAmount: summary.pending_amount ?? summary.pendingAmount ?? 0,
+        pendingAmount: Number(pendingAvailable) || 0,
         processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0
       });
     } catch (error) {
@@ -315,13 +322,15 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const loadSettlements = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=20`).catch(() => null);
-      const list =
-        response?.settlements ??
-        response?.data?.settlements;
+      if (!response) {
+        setSettlements([]);
+        setPayoutHistory([]);
+        return;
+      }
+      const root = response.data ?? response;
+      const list = root?.settlements ?? response?.settlements;
       setSettlements(Array.isArray(list) ? list : []);
-      const payouts =
-        response?.payouts ??
-        response?.data?.payouts;
+      const payouts = root?.payouts ?? response?.payouts;
       setPayoutHistory(Array.isArray(payouts) ? payouts : []);
     } catch (error) {
       console.error('Failed to fetch settlements:', error);
@@ -394,11 +403,8 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   };
 
   const handleRequestPayout = async () => {
-    // Align with backend: available = settlements pending + vendor_earnings pending
-    const availableAmount = Math.max(
-      analytics?.pendingAmount ?? 0,
-      earnings?.pendingSettlement ?? 0
-    );
+    // Single source: settlements summary.availableForPayout (loaded into analytics.pendingAmount)
+    const availableAmount = Math.max(0, Number(analytics?.pendingAmount ?? 0));
     if (availableAmount <= 0) {
       toast.error('No amount available for payout');
       return;
@@ -553,11 +559,8 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
-  // Unified available-for-payout amount (settlements + vendor_earnings pending)
-  const availableForPayout = Math.max(
-    analytics?.pendingAmount ?? 0,
-    earnings?.pendingSettlement ?? 0
-  );
+  /** Net amount still requestable (gross pending minus payouts already queued/processing) */
+  const availableForPayout = Math.max(0, Number(analytics?.pendingAmount ?? 0));
 
   const getStatusColor = (status: string) => {
     switch (String(status || '').toLowerCase()) {

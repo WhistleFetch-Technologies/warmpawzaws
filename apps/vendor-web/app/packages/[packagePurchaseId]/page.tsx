@@ -1,20 +1,14 @@
-'use client';
+import { PackagePurchaseSessionsPageClient } from './PackagePurchaseSessionsPageClient';
 
-import { useParams } from 'next/navigation';
-import { PackagePurchaseSessionsVendorView } from '@/components/vendor/PackagePurchaseSessionsVendorView';
+/**
+ * `output: 'export'` requires a non-empty `generateStaticParams` (Next only treats it as present when
+ * `prerenderRoutes.length > 0`). Real session ids are resolved in the client from the URL on navigation.
+ * Optional: add CloudFront/S3 404 → index for deep links to `/packages/:id` if not pre-rendered.
+ */
+export async function generateStaticParams() {
+  return [{ packagePurchaseId: 'index' }];
+}
 
 export default function VendorPackageSessionsPage() {
-  const params = useParams();
-  const packagePurchaseId =
-    typeof params?.packagePurchaseId === 'string' ? params.packagePurchaseId : '';
-
-  if (!packagePurchaseId) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center p-6 text-sm text-gray-600">
-        Missing package id.
-      </div>
-    );
-  }
-
-  return <PackagePurchaseSessionsVendorView packagePurchaseId={packagePurchaseId} />;
+  return <PackagePurchaseSessionsPageClient />;
 }

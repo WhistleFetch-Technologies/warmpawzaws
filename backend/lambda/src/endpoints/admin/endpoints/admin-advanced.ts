@@ -6326,6 +6326,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       try {
         payouts = await query(`
           SELECT p.*,
+                 (
+                   SELECT COUNT(*)::int FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_match_count,
+                 (
+                   SELECT SUM(s.total_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_total_amount,
+                 (
+                   SELECT SUM(s.commission_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_commission_amount,
+                 (
+                   SELECT SUM(s.net_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_net_amount,
                  COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
                  COALESCE(v.phone, vi.phone) as vendor_phone,
                  r.name as vendor_role,
@@ -6343,6 +6363,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         if (isVendorIdentityJoinUnsupportedError(msg)) {
           payouts = await query(`
             SELECT p.*,
+                   (
+                     SELECT COUNT(*)::int FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_match_count,
+                   (
+                     SELECT SUM(s.total_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_total_amount,
+                   (
+                     SELECT SUM(s.commission_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_commission_amount,
+                   (
+                     SELECT SUM(s.net_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_net_amount,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
                    COALESCE(v.phone, '') as vendor_phone,
                    r.name as vendor_role,
@@ -6358,25 +6398,60 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           throw viErr;
         }
       }
+      const parseMoney = (v: unknown): number | null => {
+        if (v == null || v === '') return null;
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : null;
+      };
       const rows = (payouts.rows || []).map((row: Record<string, unknown>) => {
-        const raw = row.payout_status ?? row.status ?? 'pending';
+        const {
+          settlement_total_amount,
+          settlement_commission_amount,
+          settlement_net_amount,
+          settlement_match_count,
+          ...rest
+        } = row as Record<string, unknown> & {
+          settlement_total_amount?: unknown;
+          settlement_commission_amount?: unknown;
+          settlement_net_amount?: unknown;
+          settlement_match_count?: unknown;
+        };
+        const raw = rest.payout_status ?? rest.status ?? 'pending';
         const status = (typeof raw === 'string' && raw.trim()) ? raw.trim().toLowerCase() : 'pending';
-        const periodVal = row.period ?? (row.created_at
-          ? new Date(row.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+        const periodVal = rest.period ?? (rest.created_at
+          ? new Date(rest.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
           : null);
-        const vendorName = row.vendor_name ?? row.business_name ?? 'Vendor';
-        const vendorPhone = row.vendor_phone ?? null;
+        const vendorName = rest.vendor_name ?? rest.business_name ?? 'Vendor';
+        const vendorPhone = rest.vendor_phone ?? null;
+        const payoutNet = parseMoney(rest.amount) ?? 0;
+        const matchCnt = parseInt(String(settlement_match_count ?? '0'), 10) || 0;
+        const stGross = parseMoney(settlement_total_amount);
+        const stComm = parseMoney(settlement_commission_amount);
+        const stNet = parseMoney(settlement_net_amount);
+        const hasSettlementBreakdown = matchCnt > 0;
+        const netFromSettlement = stNet != null ? stNet : payoutNet;
+        const commFromSettlement = stComm != null ? stComm : 0;
+        const grossFromSettlement =
+          stGross != null ? stGross : Math.round((netFromSettlement + commFromSettlement) * 100) / 100;
+        const grossAmount = hasSettlementBreakdown ? grossFromSettlement : payoutNet;
+        const commission = hasSettlementBreakdown ? commFromSettlement : (parseMoney(rest.commission) ?? 0);
+        const netAmount = hasSettlementBreakdown ? netFromSettlement : payoutNet;
         return {
-          ...row,
+          ...rest,
           vendor_name: vendorName,
           vendorName,
           vendor_phone: vendorPhone,
           vendorPhone,
-          vendor_role: row.vendor_role ?? null,
-          business_type: row.business_type ?? null,
+          vendor_role: rest.vendor_role ?? null,
+          business_type: rest.business_type ?? null,
           period: periodVal ?? '—',
           status,
           payout_status: status,
+          grossAmount,
+          gross_amount: grossAmount,
+          commission,
+          netAmount,
+          net_amount: netAmount,
           source: 'payout',
         };
       });
@@ -6449,8 +6524,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
         const periodFmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—';
         for (const s of pending.rows || []) {
-          const amt = parseFloat((s as any).net_amount ?? (s as any).total_amount ?? '0');
-          if (amt <= 0) continue;
+          const gross = parseFloat(String((s as any).total_amount ?? '0'));
+          const commission = parseFloat(String((s as any).commission_amount ?? '0'));
+          const net = parseFloat(String((s as any).net_amount ?? '0'));
+          if (net <= 0 && gross <= 0) continue;
           const vendorName = (s as any).vendor_name ?? 'Vendor';
           const rawSt = (s as any).settlement_status ?? (s as any).status ?? 'pending';
           const st = (typeof rawSt === 'string' && rawSt.trim()) ? rawSt.trim().toLowerCase() : 'pending';
@@ -6464,10 +6541,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             vendorPhone: (s as any).vendor_phone ?? null,
             vendor_role: (s as any).vendor_role ?? null,
             business_type: (s as any).business_type ?? null,
-            amount: amt,
-            net_amount: amt,
-            netAmount: amt,
-            commission: parseFloat((s as any).commission_amount ?? '0'),
+            amount: net,
+            grossAmount: gross,
+            gross_amount: gross,
+            net_amount: net,
+            netAmount: net,
+            commission,
             period: periodFmt((s as any).created_at),
             status: st === 'processing' ? 'processing' : 'pending',
             payout_status: st === 'processing' ? 'processing' : 'pending',
@@ -6903,7 +6982,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             email: `vendor-${vendorId}@payout.warmpawz.com`,
             contact: vendorPhone,
             type: 'vendor',
-            reference_id: `vendor-${vendorId}`,
+            // Razorpay: reference_id max 40 chars (vendor- + UUID = 43 without truncation)
+            reference_id: `vendor-${vendorId}`.slice(0, 40),
           },
         },
         queue_if_low_balance: true,

@@ -813,15 +813,53 @@ export function VendorBookingManagement({
       
       // Extract summary totals
       const summary = settlementsSummary?.summary || settlementsData?.summary || {};
-      
-      // Map payout history
-      const payoutHistory = (settlementsData?.settlements || settlementsData?.data || []).slice(0, 5).map((s: any) => ({
-        id: s.id || s.settlementId,
-        date: s.date || s.createdAt || s.processedAt || new Date().toISOString().split('T')[0],
-        amount: s.amount || s.netAmount || s.payout || 0,
-        status: s.status || 'completed',
-        txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
-      }));
+      const settlementsPayload = settlementsData?.data ?? settlementsData;
+      const payoutRows = Array.isArray(settlementsPayload?.payouts) ? settlementsPayload.payouts : [];
+      const settlementRows = Array.isArray(settlementsPayload?.settlements)
+        ? settlementsPayload.settlements
+        : Array.isArray(settlementsData?.settlements)
+          ? settlementsData.settlements
+          : [];
+
+      // Bank "Payout History" must use `payouts` from GET /vendor/:id/settlements (actual transfers).
+      // Using only `settlements` stays empty when money flows via vendor_earnings + payouts with no per-row settlement UI rows.
+      const mapBankPayout = (p: any) => {
+        const id = String(p.id ?? '');
+        const when = p.processedAt || p.created_at || p.createdAt || new Date().toISOString();
+        return {
+          id,
+          date: typeof when === 'string' ? when : new Date(when).toISOString(),
+          amount: Number(p.amount ?? 0) || 0,
+          status: String(p.status || p.payout_status || 'pending').toLowerCase(),
+          txnId:
+            p.razorpayPayoutId ||
+            p.razorpay_payout_id ||
+            p.transactionId ||
+            `TXN${id.replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+        };
+      };
+      const mapSettlementRow = (s: any) => ({
+        id: String(s.id || s.settlementId || ''),
+        date:
+          s.date ||
+          s.createdAt ||
+          s.created_at ||
+          s.processedAt ||
+          s.completedAt ||
+          new Date().toISOString().split('T')[0],
+        amount: Number(s.amount ?? s.netAmount ?? s.payout ?? 0) || 0,
+        status: String(s.status || 'completed').toLowerCase(),
+        txnId:
+          s.transactionId ||
+          s.txnId ||
+          s.utr ||
+          s.payout_reference ||
+          `TXN${String(s.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+      });
+
+      let payoutHistory =
+        payoutRows.length > 0 ? payoutRows.slice(0, 10).map(mapBankPayout) : settlementRows.slice(0, 5).map(mapSettlementRow);
+      payoutHistory = payoutHistory.slice(0, 5);
       
       // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
       const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
@@ -841,10 +879,19 @@ export function VendorBookingManagement({
         policyData?.payoutSchedule ||
         `Earnings are held for ${payoutDays} days (per your tier) before becoming eligible for settlement. Minimum payout and schedule are set by Finance.`;
 
+      // Use ?? not || so 0 from API is kept (|| would fall through to pendingAmount and show a false "available").
       setPayoutsData({
-        availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
-        pending: summary.pending || summary.holdAmount || summary.onHold || 0,
-        paidOut: summary.paidOut || summary.totalPaidOut || summary.completed || 0,
+        availableForPayout: Number(
+          summary.availableForPayout ?? summary.available ?? summary.pendingAmount ?? 0,
+        ),
+        pending: Number(summary.heldInOpenPayouts ?? summary.holdAmount ?? summary.onHold ?? 0),
+        paidOut: Number(
+          summary.paidOut ??
+            summary.totalPaidOut ??
+            summary.completedAmount ??
+            summary.totalSettled ??
+            0,
+        ),
         bankAccount: bankAccount ? {
           bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
           accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',

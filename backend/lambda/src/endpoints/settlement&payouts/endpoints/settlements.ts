@@ -1433,7 +1433,7 @@ export function registerSettlementEndpoints(app: Hono) {
               mode: 'IMPS',
               purpose: 'payout',
               queue_if_low_balance: true,
-              reference_id: `PAYOUT-${payout[0].id}`,
+              reference_id: `PAYOUT-${payout[0].id}`.slice(0, 40),
             });
 
             // Update payout and settlement
@@ -1753,7 +1753,7 @@ export function registerSettlementEndpoints(app: Hono) {
           email: `vendor-${vendorId}@payout.warmpawz.com`,
           contact: vendorPhone,
           type: 'vendor',
-          reference_id: `vendor-${vendorId}`,
+          reference_id: `vendor-${vendorId}`.slice(0, 40),
         },
       },
       queue_if_low_balance: true,

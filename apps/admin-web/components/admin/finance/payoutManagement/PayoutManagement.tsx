@@ -32,6 +32,9 @@ interface Payout {
   vendorRole?: string | null;
   businessType?: string | null;
   amount: number;
+  /** Booking / settlement gross when known (else same as amount). */
+  grossAmount?: number;
+  gross_amount?: number;
   commission: number;
   tds: number;
   netAmount: number;
@@ -92,8 +95,16 @@ export function PayoutManagement() {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/payouts');
-      const raw = (data as any)?.data?.payouts ?? (data as any)?.payouts;
+      const raw =
+        (data as any)?.data?.payouts ??
+        (data as any)?.payouts ??
+        (data as any)?.result?.payouts;
       const list = Array.isArray(raw) ? raw : [];
+      const money = (v: unknown) => {
+        if (v == null || v === '') return 0;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
       setPayouts(list.map((p: any) => ({
         ...p,
         vendorName: p.vendorName ?? p.vendor_name ?? 'Vendor',
@@ -103,11 +114,13 @@ export function PayoutManagement() {
         vendorRole: p.vendor_role ?? p.vendorRole ?? null,
         businessType: p.business_type ?? p.businessType ?? null,
         period: p.period ?? (p.scheduled_at || p.created_at ? new Date(p.scheduled_at || p.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—'),
-        netAmount: p.netAmount ?? p.net_amount ?? p.amount ?? 0,
-        net_amount: p.net_amount ?? p.netAmount ?? p.amount ?? 0,
-        amount: p.amount ?? 0,
-        commission: p.commission ?? 0,
-        tds: p.tds ?? 0,
+        grossAmount: money(p.grossAmount ?? p.gross_amount ?? p.amount),
+        gross_amount: money(p.gross_amount ?? p.grossAmount ?? p.amount),
+        netAmount: money(p.netAmount ?? p.net_amount ?? p.amount),
+        net_amount: money(p.net_amount ?? p.netAmount ?? p.amount),
+        amount: money(p.amount),
+        commission: money(p.commission),
+        tds: money(p.tds),
         status: (() => {
           const v = p.status ?? p.payout_status;
           const s = (typeof v === 'string' && v.trim()) ? v.trim().toLowerCase() : 'pending';
@@ -202,11 +215,19 @@ export function PayoutManagement() {
 
   const handleEditPayout = (payout: Payout) => {
     setEditingPayout(payout);
+    const gross =
+      payout.grossAmount ??
+      (payout as any).gross_amount ??
+      payout.amount ??
+      0;
     setEditFormData({
-      amount: payout.amount ?? 0,
+      amount: gross,
       commission: payout.commission ?? 0,
       tds: payout.tds ?? 0,
-      netAmount: payout.netAmount ?? (payout.amount ?? 0) - (payout.commission ?? 0) - (payout.tds ?? 0),
+      netAmount:
+        payout.netAmount ??
+        (payout as any).net_amount ??
+        gross - (payout.commission ?? 0) - (payout.tds ?? 0),
     });
     setShowEditModal(true);
   };
@@ -438,7 +459,7 @@ export function PayoutManagement() {
                     </td>
                     <td className="px-6 py-4 text-gray-600">{payout.period ?? (payout as any).period ?? '-'}</td>
                     <td className="px-6 py-4 text-right text-gray-900">
-                      ₹{(Number(payout.amount ?? (payout as any).amount) || 0).toLocaleString()}
+                      ₹{(Number(payout.grossAmount ?? (payout as any).gross_amount ?? payout.amount ?? (payout as any).amount) || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-600">
                       ₹{(Number(payout.commission ?? (payout as any).commission) || 0).toLocaleString()}
@@ -567,7 +588,9 @@ export function PayoutManagement() {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Gross Amount</span>
-                    <span className="font-semibold">₹{(Number(selectedPayout.amount ?? (selectedPayout as any).amount) || 0).toLocaleString()}</span>
+                    <span className="font-semibold">
+                      ₹{(Number(selectedPayout.grossAmount ?? (selectedPayout as any).gross_amount ?? selectedPayout.amount ?? (selectedPayout as any).amount) || 0).toLocaleString()}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Commission</span>
