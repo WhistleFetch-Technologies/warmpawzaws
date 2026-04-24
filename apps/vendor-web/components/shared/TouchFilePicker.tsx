@@ -14,6 +14,8 @@ export type TouchFilePickerProps = {
   className?: string;
   /** Inner wrapper for children (default centers content for dashed dropzones). */
   innerClassName?: string;
+  /** Merged with the file input; use for `z-` overrides when a modal stacks above siblings. */
+  inputClassName?: string;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   children: React.ReactNode;
 };
@@ -40,6 +42,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       name,
       className,
       innerClassName,
+      inputClassName,
       onFileChange,
       children,
     },
@@ -73,7 +76,10 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
               el.value = '';
             });
           }}
-          className="absolute inset-0 z-[2] h-full w-full min-h-[44px] cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          className={cn(
+            'absolute inset-0 z-10 h-full w-full min-h-[44px] cursor-pointer opacity-0 disabled:cursor-not-allowed',
+            inputClassName
+          )}
           aria-label="Choose file"
         />
         <div

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface DoctorManagementProps {
   clinicId: string;
@@ -743,18 +744,17 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
                 )}
               </div>
               <div className="flex-1">
-                <label className="relative inline-flex cursor-pointer overflow-hidden rounded-lg">
-                  <div className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors inline-flex items-center gap-2 pointer-events-none">
+                <TouchFilePicker
+                  onFileChange={handlePhotoChange}
+                  accept="image/*"
+                  className="inline-block min-h-[2.75rem] min-w-[9rem] rounded-lg"
+                  innerClassName="items-center justify-center"
+                >
+                  <span className="inline-flex items-center gap-2 rounded-lg bg-[#FF8C42] px-4 py-2 text-white transition-colors hover:bg-[#FF7A29]">
                     <Upload className="w-4 h-4" />
                     Choose Photo
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
-                  />
-                </label>
+                  </span>
+                </TouchFilePicker>
               </div>
             </div>
           </div>

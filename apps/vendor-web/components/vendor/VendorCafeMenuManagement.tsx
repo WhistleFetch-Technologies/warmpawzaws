@@ -6,6 +6,7 @@ import { ArrowLeft, Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download, 
 import { toast } from 'sonner';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/components/ui/utils';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorCafeMenuManagementProps {
   vendorId: string;
@@ -352,30 +353,29 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   <Download className="w-4 h-4 mr-1" />
                   Template
                 </Button>
-                <div className="flex-1">
-                  <input
-                    id={`vendor-cafe-bulk-menu-${vendorId}`}
+                <div className="flex-1 min-h-[36px]">
+                  <TouchFilePicker
                     ref={bulkMenuFileRef}
-                    type="file"
-                    accept=".csv,.xlsx"
-                    onChange={(e) => {
+                    onFileChange={(e) => {
                       handleBulkUploadMenu(e);
                       e.target.value = '';
                     }}
-                    className="sr-only"
+                    accept=".csv,.xlsx"
                     disabled={uploadingMenu}
-                  />
-                  <label
-                    htmlFor={`vendor-cafe-bulk-menu-${vendorId}`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'flex w-full cursor-pointer text-xs',
-                      uploadingMenu && 'pointer-events-none opacity-50'
-                    )}
+                    className="w-full min-h-[36px]"
+                    innerClassName="items-center justify-center"
                   >
-                    <Upload className="mr-1 h-4 w-4" />
-                    {uploadingMenu ? 'Uploading...' : 'Upload'}
-                  </label>
+                    <span
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'flex w-full text-xs',
+                        uploadingMenu && 'opacity-50'
+                      )}
+                    >
+                      <Upload className="mr-1 h-4 w-4" />
+                      {uploadingMenu ? 'Uploading...' : 'Upload'}
+                    </span>
+                  </TouchFilePicker>
                 </div>
                 <Button
                   onClick={() => {

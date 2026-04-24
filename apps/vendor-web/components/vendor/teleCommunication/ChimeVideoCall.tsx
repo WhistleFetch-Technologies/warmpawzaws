@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Video, VideoOff, Phone, PhoneOff, Mic, MicOff,
   MessageSquare, Settings, Maximize2, Minimize2,
@@ -34,6 +34,7 @@ import {
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { AttendeeStatus, CallStatus, ChatDataMessage, ChatMessage, ChimeAttendeeData, ChimeMeetingData, ChimeVideoCallProps, TypingDataMessage } from './constants/interface';
 import {
   CALL_ENDED_TOPIC,
@@ -106,7 +107,6 @@ export function ChimeVideoCall({
   const lastTypingSentRef = useRef<number>(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const chimeChatFileInputId = useId().replace(/:/g, '');
   const [isChimeNativeWebView, setIsChimeNativeWebView] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const callRootRef = useRef<HTMLDivElement>(null);
@@ -1999,20 +1999,16 @@ export function ChimeVideoCall({
                   {uploadingFile ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
                 </button>
               ) : (
-                <label
-                  className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl bg-slate-700 text-white transition-colors hover:bg-slate-600 ${uploadingFile ? 'pointer-events-none opacity-50' : ''}`}
+                <TouchFilePicker
+                  ref={fileInputRef}
+                  onFileChange={handleFileUpload}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                  disabled={uploadingFile}
+                  className="h-12 w-12"
+                  innerClassName="flex h-full w-full items-center justify-center rounded-xl bg-slate-700 text-white transition-colors hover:bg-slate-600 disabled:opacity-50"
                 >
-                  <input
-                    id={chimeChatFileInputId}
-                    ref={fileInputRef}
-                    type="file"
-                    className="sr-only"
-                    onChange={handleFileUpload}
-                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                    disabled={uploadingFile}
-                  />
                   {uploadingFile ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
-                </label>
+                </TouchFilePicker>
               )}
               <input
                 type="text"

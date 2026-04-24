@@ -7,6 +7,7 @@ import {
   Check, AlertCircle, Image as ImageIcon, MapPin
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -688,18 +689,17 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                     </button>
                   </div>
                 ))}
-                <label className="relative w-24 h-24 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-colors overflow-hidden">
-                  <Upload className="w-6 h-6 text-slate-400 mb-1 pointer-events-none" />
-                  <span className="text-xs text-slate-500 pointer-events-none">Upload</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={uploadingImages}
-                    className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                  />
-                </label>
+                <TouchFilePicker
+                  onFileChange={handleImageUpload}
+                  accept="image/*"
+                  multiple
+                  disabled={uploadingImages}
+                  className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border-2 border-dashed border-slate-300 transition-colors hover:border-orange-500"
+                  innerClassName="flex w-full flex-col items-center justify-center p-1"
+                >
+                  <Upload className="mb-1 w-6 h-6 text-slate-400" />
+                  <span className="text-xs text-slate-500">Upload</span>
+                </TouchFilePicker>
               </div>
               {uploadingImages && (
                 <p className="text-sm text-slate-500">Uploading images...</p>

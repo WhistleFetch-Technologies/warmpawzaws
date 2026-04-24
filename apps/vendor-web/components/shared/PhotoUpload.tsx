@@ -18,6 +18,7 @@ import { Camera, Upload, X, Loader2, AlertCircle } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface PhotoUploadProps {
   photoUrl?: string;
@@ -48,8 +49,8 @@ export function PhotoUpload({
   className = '',
   disabled = false,
 }: PhotoUploadProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const fileInputId = React.useId().replace(/:/g, '');
+  const overlayFileRef = useRef<HTMLInputElement>(null);
+  const mainFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(photoUrl || null);
   const [dragActive, setDragActive] = useState(false);
@@ -139,12 +140,15 @@ export function PhotoUpload({
     }
   };
 
+  const clearFileInputs = () => {
+    if (overlayFileRef.current) overlayFileRef.current.value = '';
+    if (mainFileRef.current) mainFileRef.current.value = '';
+  };
+
   const handleRemove = () => {
     setPreview(null);
     setError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    clearFileInputs();
   };
 
   return (
@@ -180,8 +184,9 @@ export function PhotoUpload({
               />
               {!disabled && (
                 <button
+                  type="button"
                   onClick={handleRemove}
-                  className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
+                  className="absolute top-1 right-1 z-20 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
                   title="Remove photo"
                 >
                   <X className="w-3 h-3" />
@@ -197,20 +202,20 @@ export function PhotoUpload({
           {/* Upload Overlay */}
           {!disabled && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/10">
-              <label
-                htmlFor={fileInputId}
-                className={cn(
-                  'absolute bottom-2 right-2 cursor-pointer rounded-full bg-blue-500 p-2 text-white transition hover:bg-blue-600',
-                  (uploading || disabled) && 'pointer-events-none opacity-50'
-                )}
-                title="Upload photo"
+              <TouchFilePicker
+                ref={overlayFileRef}
+                onFileChange={handleFileInputChange}
+                accept={accept}
+                disabled={uploading || disabled}
+                className="absolute bottom-2 right-2 h-9 w-9 rounded-full"
+                innerClassName="items-center justify-center rounded-full bg-blue-500 text-white"
               >
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Camera className="h-4 w-4" />
                 )}
-              </label>
+              </TouchFilePicker>
             </div>
           )}
 
@@ -227,42 +232,40 @@ export function PhotoUpload({
 
         {/* Upload Controls */}
         <div className="flex-1">
-          <input
-            id={fileInputId}
-            ref={fileInputRef}
-            type="file"
-            accept={accept}
-            onChange={handleFileInputChange}
-            className="sr-only"
-            disabled={uploading || disabled}
-          />
-
           <div className="space-y-2">
-            <label
-              htmlFor={fileInputId}
-              className={cn(
-                buttonVariants({ variant: 'outline', size: 'sm' }),
-                'w-full cursor-pointer',
-                (uploading || disabled) && 'pointer-events-none opacity-50'
-              )}
+            <TouchFilePicker
+              ref={mainFileRef}
+              onFileChange={handleFileInputChange}
+              accept={accept}
+              disabled={uploading || disabled}
+              className="w-full min-h-[2.5rem] rounded-md"
+              innerClassName="flex w-full min-h-[2.5rem] items-center justify-center"
             >
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : preview ? (
-                <>
-                  <Camera className="mr-2 h-4 w-4" />
-                  Change Photo
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Photo
-                </>
-              )}
-            </label>
+              <span
+                className={cn(
+                  buttonVariants({ variant: 'outline', size: 'sm' }),
+                  'w-full',
+                  (uploading || disabled) && 'opacity-50'
+                )}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : preview ? (
+                  <>
+                    <Camera className="mr-2 h-4 w-4" />
+                    Change Photo
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Photo
+                  </>
+                )}
+              </span>
+            </TouchFilePicker>
 
             <p className="text-xs text-gray-500">
               Drag and drop an image here, or click to select
