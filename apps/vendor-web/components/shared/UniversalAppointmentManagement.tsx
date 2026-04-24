@@ -134,6 +134,13 @@ export function UniversalAppointmentManagement({
     appointments: 0,
     earnings: 0
   });
+  /** Bookings → Earnings tab: loaded from GET /vendor/:id/earnings (vendor_earnings), not sum of list rows */
+  const [tabEarnings, setTabEarnings] = useState<{
+    total: number;
+    pending: number;
+    txnCount: number;
+    loading: boolean;
+  }>({ total: 0, pending: 0, txnCount: 0, loading: false });
   
   // OTP Modal State
   const [showOTPModal, setShowOTPModal] = useState(false);
@@ -235,6 +242,39 @@ export function UniversalAppointmentManagement({
     loadBookings();
   }, [selectedDate, activeFilter, userId, userType]);
 
+  useEffect(() => {
+    if (activeTab !== 'earnings') return;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const vid =
+      userType === 'staff'
+        ? String(userData?.vendor_id || userData?.vendorId || '').trim() || userId
+        : userId;
+    if (!uuidRe.test(vid)) {
+      setTabEarnings({ total: 0, pending: 0, txnCount: 0, loading: false });
+      return;
+    }
+    let cancelled = false;
+    setTabEarnings((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const res = (await apiClient.get(`/vendor/${vid}/earnings?period=lifetime`)) as any;
+        if (cancelled) return;
+        const e = res?.earnings;
+        setTabEarnings({
+          total: Number(e?.totalEarnings ?? 0),
+          pending: Number(e?.pendingSettlement ?? 0),
+          txnCount: Array.isArray(e?.transactions) ? e.transactions.length : 0,
+          loading: false,
+        });
+      } catch {
+        if (!cancelled) setTabEarnings({ total: 0, pending: 0, txnCount: 0, loading: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, userId, userType, userData?.vendor_id, userData?.vendorId]);
+
   const loadBookings = async () => {
     try {
       setLoading(true);
@@ -299,7 +339,9 @@ export function UniversalAppointmentManagement({
           online: mappedBookings.filter((b: Booking) => b.communicationType === 'video').length,
           phone: mappedBookings.filter((b: Booking) => b.communicationType === 'call').length,
           appointments: mappedBookings.length,
-          earnings: mappedBookings.reduce((sum: number, b: Booking) => sum + b.price, 0)
+          earnings: mappedBookings
+            .filter((b: Booking) => String(b.status).toLowerCase() === 'completed')
+            .reduce((sum: number, b: Booking) => sum + Number(b.price || 0), 0),
         });
         
         // Generate time slots
@@ -1002,21 +1044,41 @@ export function UniversalAppointmentManagement({
           </>
         )}
 
-        {/* EARNINGS TAB */}
+        {/* EARNINGS TAB — uses vendor_earnings via API (center-aware); stats.earnings = completed-only sum from current list */}
         {activeTab === 'earnings' && (
           <div className="p-4">
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <h3 className="font-semibold text-gray-900 mb-4">Earnings Summary</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Earnings</span>
-                  <span className="font-bold text-lg text-gray-900">₹{stats.earnings.toLocaleString()}</span>
+              {tabEarnings.loading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="h-10 w-10 animate-spin text-[#FF8C42]" aria-hidden />
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Appointments</span>
-                  <span className="font-semibold text-gray-900">{stats.appointments}</span>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Total recorded earnings</span>
+                    <span className="font-bold text-lg text-gray-900 shrink-0">
+                      ₹{tabEarnings.total.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Pending settlement</span>
+                    <span className="font-semibold text-gray-900 shrink-0">
+                      ₹{tabEarnings.pending.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Earning records</span>
+                    <span className="font-semibold text-gray-900 shrink-0">{tabEarnings.txnCount}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 pt-3 border-t border-gray-100 leading-relaxed">
+                    Totals include all visits recorded for payout after completion (same source as Finance →
+                    Earnings). In the Bookings tab, &quot;Overview&quot; below shows only appointments loaded for
+                    the selected date and filters — completed revenue from that list: ₹
+                    {stats.earnings.toLocaleString()}.
+                  </p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
