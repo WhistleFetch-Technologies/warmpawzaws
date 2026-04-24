@@ -461,6 +461,11 @@ export function getRazorpayClient() {
       if (idempotencyKey) extraHeaders['X-Payout-Idempotency'] = idempotencyKey;
       return razorpayRequest('/payouts', 'POST', body, 20000, Object.keys(extraHeaders).length ? extraHeaders : undefined);
     },
+    /** Fetch payout by Razorpay payout id (e.g. pout_xxx). GET /v1/payouts/:id */
+    async fetch(payoutId: string) {
+      const id = encodeURIComponent(String(payoutId || '').trim());
+      return razorpayRequest(`/payouts/${id}`, 'GET', undefined, 20000);
+    },
   };
 
   const validateBankAccount = async (params: {

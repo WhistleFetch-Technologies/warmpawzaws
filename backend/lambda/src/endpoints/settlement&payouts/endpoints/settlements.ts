@@ -29,6 +29,7 @@ import { isUATMode } from 'src/lib/utils/uat-mode';
 import { validateBody } from 'src/middleware/validation-middleware';
 import { processPayoutSchema } from 'src/zodContracts/settlement.contract';
 import { z } from 'zod';
+import { PayoutStatusSyncService } from '../../../utils/payments/payout-status-sync-service';
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
@@ -1238,6 +1239,32 @@ export function registerSettlementEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching payouts:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /payouts/sync-status
+   * Reconcile payout rows with Razorpay GET /v1/payouts/:id.
+   * Auth: INTERNAL_CRON_SECRET env must match x-internal-cron-secret header (401 otherwise).
+   */
+  app.post('/payouts/sync-status', async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    if (!cronSecret || hdr !== cronSecret) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+    try {
+      let limit = 100;
+      const body = await c.req.json().catch(() => ({}));
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(500, Math.max(1, n));
+      }
+      const result = await PayoutStatusSyncService.run(limit);
+      return c.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('[PayoutStatusSync] run failed:', error);
+      return c.json({ success: false, error: error?.message || 'Payout sync failed' }, 500);
     }
   });
 
