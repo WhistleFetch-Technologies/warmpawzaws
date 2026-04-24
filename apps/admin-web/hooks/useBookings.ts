@@ -19,6 +19,11 @@ export interface Booking {
   total_amount: number;
   created_at: string;
   updated_at: string;
+  /** Enriched on list API when joined to package_purchases */
+  package_purchase_id?: string | null;
+  is_package_session?: boolean;
+  isPackage?: boolean;
+  packageDetails?: Record<string, unknown>;
 }
 
 // ============================================================================

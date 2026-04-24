@@ -3,6 +3,9 @@
  * Centralized functions for Razorpay payment processing
  */
 
+/** Razorpay often hides UPI (especially on mobile / live mode) when `prefill.email` is absent. */
+export const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
+
 /** E.164 contact for Razorpay `prefill.contact` (better UPI flows than raw digits-only strings). */
 /**
  * Razorpay Standard Checkout: custom display so UPI is not QR-only (shows collect / VPA where Razorpay still offers it).

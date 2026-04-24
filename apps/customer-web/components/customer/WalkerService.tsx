@@ -18,6 +18,12 @@ import { PromotionBanner } from './shared/PromotionBanner';
 import { WALKING_NEEDS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import {
+  mergeWalkerModalVendorOfferings,
+  firstServiceIdFromServicePackageRow,
+  vendorServiceRowDedupeKey,
+  rowQualifiesForWalkingModal,
+} from '@/lib/walker-vendor-offerings';
 
 export interface WalkerPendingWalkSession {
   serviceId: string;
@@ -115,53 +121,6 @@ function walkerProfilePhotoUrl(w: Record<string, unknown>): string | undefined {
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
   return undefined;
-}
-
-/** Matches WalkerBookingRouter `getServicesForStyle('at_home')` (serviceStyle / service_style). */
-const WALK_BOOKING_HOME_STYLES = new Set(['at_home', 'home_visit']);
-
-function walkerOfferingMatchesBookingHomeStyle(s: Record<string, any> | null | undefined): boolean {
-  if (!s) return false;
-  const st = (s.serviceStyle ?? s.service_style ?? '') as string;
-  const t = String(st).trim().toLowerCase();
-  if (!t) return true;
-  return WALK_BOOKING_HOME_STYLES.has(t);
-}
-
-function vendorServiceRowDedupeKey(r: Record<string, any> | null | undefined): string {
-  if (!r) return '';
-  if (r.id != null && String(r.id).trim() !== '') return `vs:${String(r.id).trim()}`;
-  const sid = (r.serviceId ?? r.service_id ?? '').toString().trim();
-  if (sid) return `vs_sid:${sid}`;
-  return '';
-}
-
-/** First linked catalog/service id on a `service_packages` row (for dedupe vs vendor_services). */
-function firstServiceIdFromServicePackageRow(r: Record<string, any> | null | undefined): string {
-  if (!r) return '';
-  const direct = (r.service_id ?? r.serviceId ?? '').toString().trim();
-  if (direct) return direct;
-  const ids = r.service_ids;
-  if (Array.isArray(ids) && ids.length > 0 && ids[0] != null) return String(ids[0]).trim();
-  if (typeof ids === 'string' && ids.trim()) {
-    try {
-      const parsed = JSON.parse(ids) as unknown;
-      if (Array.isArray(parsed) && parsed[0] != null) return String(parsed[0]).trim();
-    } catch {
-      return ids.trim();
-    }
-  }
-  return '';
-}
-
-/** Same vendor-services payload as walker booking: `services` + `packages`, filtered like at-home booking. */
-function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | null | undefined): any[] {
-  if (!svcRes || typeof svcRes !== 'object') return [];
-  const rawServices = Array.isArray(svcRes.services) ? svcRes.services : [];
-  const rawPackages = Array.isArray(svcRes.packages) ? svcRes.packages : [];
-  const walks = rawServices.filter((s: any) => walkerOfferingMatchesBookingHomeStyle(s));
-  const sessionPkgs = rawPackages.filter((s: any) => walkerOfferingMatchesBookingHomeStyle(s));
-  return [...walks, ...sessionPkgs];
 }
 
 /** Discover-services list card: show profile photo when API provides a URL; Dog placeholder on miss or load error. */
@@ -458,30 +417,63 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     setPackagesLoading(true);
     setWalkerPackagesList([]);
     try {
-      const phoneParam = phone
-        ? `&customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
-        : '';
-      const servicesUrl = `/customer/vendor/${encodeURIComponent(vid)}/services${phoneParam ? `?${phoneParam.replace(/^&/, '')}` : ''}`;
-      const [svcRes, spRes] = await Promise.allSettled([
-        apiClient.get(servicesUrl) as Promise<Record<string, any>>,
+      // Phone: backend uses for package inclusions; query shape must not drop rows on miss.
+      const phoneQuery =
+        phone && phone.trim()
+          ? `customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
+          : '';
+      const baseCustomerServices = `/customer/vendor/${encodeURIComponent(vid)}/services`;
+      const withWalkingCategory = phoneQuery
+        ? `${baseCustomerServices}?category=walking&${phoneQuery}`
+        : `${baseCustomerServices}?category=walking`;
+      const fullCatalog = phoneQuery ? `${baseCustomerServices}?${phoneQuery}` : baseCustomerServices;
+
+      /**
+       * `category=walking` in SQL only matches `vs.category` containing the substring "walking" (not "walk" or "General").
+       * Local DBs often differ from UAT, so we merge a second full-catalog call and keep walking-like rows in JS.
+       */
+      const [walkByCategoryRes, fullServicesRes, spRes] = await Promise.allSettled([
+        apiClient.get(withWalkingCategory) as Promise<Record<string, any>>,
+        apiClient.get(fullCatalog) as Promise<Record<string, any>>,
         apiClient.get(`/vendor/${encodeURIComponent(vid)}/packages`) as Promise<{ packages?: any[] }>,
       ]);
 
-      const vendorRows: any[] =
-        svcRes.status === 'fulfilled' ? mergeWalkerModalVendorOfferings(svcRes.value) : [];
+      const fromWalkingCategory: any[] =
+        walkByCategoryRes.status === 'fulfilled' ? mergeWalkerModalVendorOfferings(walkByCategoryRes.value) : [];
+      const fromFullFiltered: any[] =
+        fullServicesRes.status === 'fulfilled'
+          ? mergeWalkerModalVendorOfferings(fullServicesRes.value).filter((r) => rowQualifiesForWalkingModal(r))
+          : [];
+
+      const vendorRows: any[] = [];
+      const seen = new Set<string>();
+      for (let i = 0; i < fromWalkingCategory.length; i += 1) {
+        const r = fromWalkingCategory[i];
+        if (!r) continue;
+        const key = vendorServiceRowDedupeKey(r, i);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        vendorRows.push(r);
+      }
+      for (let j = 0; j < fromFullFiltered.length; j += 1) {
+        const r = fromFullFiltered[j];
+        if (!r) continue;
+        const key = vendorServiceRowDedupeKey(r, 1000 + j);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        vendorRows.push(r);
+      }
+
       const tableRows: any[] =
         spRes.status === 'fulfilled' && Array.isArray(spRes.value?.packages) ? spRes.value.packages : [];
 
-      const seen = new Set<string>();
       const merged: { kind: 'vendor_service' | 'service_package'; raw: any; dedupeKey: string }[] = [];
 
-      for (const r of vendorRows) {
+      for (let k = 0; k < vendorRows.length; k += 1) {
+        const r = vendorRows[k];
         if (!r) continue;
-        const key = vendorServiceRowDedupeKey(r);
-        if (key && !seen.has(key)) {
-          seen.add(key);
-          merged.push({ kind: 'vendor_service', raw: r, dedupeKey: key });
-        }
+        const key = vendorServiceRowDedupeKey(r, k);
+        if (key) merged.push({ kind: 'vendor_service', raw: r, dedupeKey: key });
       }
       for (const r of tableRows) {
         if (!r) continue;
@@ -513,6 +505,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       return;
     }
     const r = entry.raw;
+    const styleFromRow = String(r.serviceStyle ?? r.service_style ?? '').trim() || 'at_home';
     if (entry.kind === 'vendor_service') {
       const serviceUuid = (r.serviceId || r.service_id || '').toString().trim();
       const vsId = r.id != null ? String(r.id) : '';
@@ -520,7 +513,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         vendorId: vid,
         walker: buildWalkerPayload(walker),
         serviceType: 'walking',
-        serviceStyle: 'at_home',
+        serviceStyle: styleFromRow,
         serviceId: serviceUuid || vsId,
         serviceName: String(r.name || r.service_name || r.serviceName || 'Walk package').trim(),
         price: Number(r.price ?? r.custom_price ?? 0) || 0,
@@ -542,7 +535,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         vendorId: vid,
         walker: buildWalkerPayload(walker),
         serviceType: 'walking',
-        serviceStyle: 'at_home',
+        serviceStyle: styleFromRow,
         serviceId: firstSid || undefined,
         serviceName: String(r.name || r.package_name || r.packageName || 'Walk package').trim(),
         price: Number(r.price ?? r.package_price ?? r.packagePrice ?? 0) || 0,
@@ -992,13 +985,16 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           }
         }}
       >
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Walk options{packagesWalkerName ? ` — ${packagesWalkerName}` : ''}</DialogTitle>
-            <DialogDescription>
-              Single walks and bundles this walker has published.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-md max-h-[min(90dvh,48rem)] w-[calc(100%-1.5rem)] flex flex-col overflow-hidden p-0 gap-0 sm:max-w-md">
+          <div className="shrink-0 border-b border-gray-100 px-4 pt-5 pr-12 pb-3 sm:px-5">
+            <DialogHeader>
+              <DialogTitle>Walk options{packagesWalkerName ? ` — ${packagesWalkerName}` : ''}</DialogTitle>
+              <DialogDescription>
+                Single walks and bundles this walker has published.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] px-4 py-3 pb-5 sm:px-5">
           {packagesLoading ? (
             <div className="flex justify-center py-10">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" />
@@ -1041,10 +1037,27 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                     pkg.durationMinutes ??
                     pkg.duration_minutes ??
                     pkg.packageDetails?.sessionDuration;
+                  const isPackage =
+                    entry.kind === 'service_package' ||
+                    Boolean(
+                      pkg.isPackage ||
+                        pkg.is_package ||
+                        pkg.metadata?.isPackage ||
+                        pkg.metadata?.type === 'package'
+                    );
                   return (
                     <li key={entry.dedupeKey}>
                       <Card className="p-3 border-orange-100">
-                        <p className="font-semibold text-gray-900">{name}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-gray-900">{name}</p>
+                          <span
+                            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                              isPackage ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {isPackage ? 'Package' : 'Service'}
+                          </span>
+                        </div>
                         {desc ? <p className="text-sm text-gray-600 mt-1 line-clamp-3">{desc}</p> : null}
                         <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                           {price != null && price !== '' ? (
@@ -1070,6 +1083,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 })}
             </ul>
           )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
