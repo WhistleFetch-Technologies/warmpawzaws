@@ -2038,7 +2038,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             bookedByStaff[sid].add(time);
           }
 
-          // Generate 30-minute slots for each staff availability window
+          // Slots stepped by service duration + staff buffer/lead (same idea as vendor_availability_v2 grid)
           const slots: any[] = [];
           // ✅ CRITICAL FIX: Use IST time (already defined above) for past slot checks
           // Staff slot times are in IST, so we must compare with IST current time
@@ -2047,12 +2047,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           for (const staffSlot of staffSlotsResult.rows) {
             const [startHour, startMin] = staffSlot.start_time.split(':').map(Number);
             const [endHour, endMin] = staffSlot.end_time.split(':').map(Number);
+            const winStartMin = startHour * 60 + startMin;
+            const winEndMin = endHour * 60 + endMin;
+            const staffSetupGap = Math.max(
+              Number(staffSlot.buffer_time_minutes) || 0,
+              Number(staffSlot.lead_time_minutes) || 0
+            );
+            const stepMin = Math.max(5, totalDuration + staffSetupGap);
             const staffBookedTimes = bookedByStaff[staffSlot.staff_id] || new Set();
 
-            let currentHour = startHour;
-            let currentMin = startMin;
-
-            while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
+            let cur = winStartMin;
+            while (cur + totalDuration <= winEndMin) {
+              const currentHour = Math.floor(cur / 60);
+              const currentMin = cur % 60;
               const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
 
               // ✅ ENFORCE: Past booking window (scheduling policy min notice)
@@ -2062,7 +2069,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               if (isToday) {
                 // Build IST slot time: use todayIST as base (which is IST midnight)
                 // Then add slot hours/minutes to get IST slot time
-                const slotMinutesFromMidnight = currentHour * 60 + currentMin;
+                const slotMinutesFromMidnight = cur;
                 const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
                 // Slot is past if its IST time + buffer is before current IST time
                 isPast = (slotMinutesFromMidnight + minNoticeMinutes) <= currentISTMinutesFromMidnight;
@@ -2079,14 +2086,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 staffName: staffSlot.staff_name,
                 staffPhoto: staffSlot.staff_photo,
                 leadTimeMinutes: staffSlot.lead_time_minutes || 0,
-                bufferTimeMinutes: staffSlot.buffer_time_minutes || 15,
+                bufferTimeMinutes: staffSlot.buffer_time_minutes || 0,
+                slotDuration: stepMin,
               });
 
-              currentMin += 30;
-              if (currentMin >= 60) {
-                currentMin -= 60;
-                currentHour += 1;
-              }
+              cur += stepMin;
             }
           }
 
@@ -2230,7 +2234,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                   COALESCE(va.time_window_end, va.end_time) as time_window_end,
                   va.start_time, va.end_time,
                   va.service_styles, va.service_type,
-                  COALESCE(va.is_available, true) as is_available
+                  COALESCE(va.is_available, true) as is_available,
+                  va.lead_time_by_style,
+                  va.buffer_time,
+                  va.buffer_time_minutes,
+                  va.max_capacity
            FROM vendor_availability_v2 va
            WHERE va.vendor_id::text = ANY($1::text[])
              AND va.day_of_week = ANY($2::int[])
@@ -2256,7 +2264,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                     COALESCE(va.time_window_end, va.end_time) as time_window_end,
                     va.start_time, va.end_time,
                     va.service_styles, va.service_type,
-                    COALESCE(va.is_available, true) as is_available
+                    COALESCE(va.is_available, true) as is_available,
+                    va.lead_time_by_style,
+                    va.buffer_time,
+                    va.buffer_time_minutes,
+                    va.max_capacity
              FROM vendor_availability_v2 va
              WHERE va.vendor_id::text = ANY($1::text[])
                AND va.day_of_week = ANY($2::int[])
@@ -2321,6 +2333,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                       va.start_time, va.end_time,
                       va.service_styles, va.service_type,
                       COALESCE(va.is_available, true) as is_available,
+                      va.lead_time_by_style,
+                      va.buffer_time,
+                      va.buffer_time_minutes,
+                      va.max_capacity,
                       true as is_online, v.status, v.is_active
                FROM vendor_availability_v2 va
                JOIN vendors v ON va.vendor_id = v.id
@@ -2366,6 +2382,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                         va.start_time, va.end_time,
                         va.service_styles, va.service_type,
                         COALESCE(va.is_available, true) as is_available,
+                        va.lead_time_by_style,
+                        va.buffer_time,
+                        va.buffer_time_minutes,
+                        va.max_capacity,
                         true as is_online, v.status, v.is_active
                  FROM vendor_availability_v2 va
                  JOIN vendors v ON va.vendor_id = v.id
@@ -2417,7 +2437,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                           COALESCE(va.time_window_end, va.end_time) as time_window_end,
                           va.start_time, va.end_time,
                           va.service_styles, va.service_type,
-                          COALESCE(va.is_available, true) as is_available
+                          COALESCE(va.is_available, true) as is_available,
+                          va.lead_time_by_style,
+                          va.buffer_time,
+                          va.buffer_time_minutes,
+                          va.max_capacity
                    FROM vendor_availability_v2 va
                    WHERE va.vendor_id::text = ANY($1::text[])
                      AND va.day_of_week = ANY($2::int[])
@@ -2450,7 +2474,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                             COALESCE(va.time_window_end, va.end_time) as time_window_end,
                             va.start_time, va.end_time,
                             va.service_styles, va.service_type,
-                            COALESCE(va.is_available, true) as is_available
+                            COALESCE(va.is_available, true) as is_available,
+                            va.lead_time_by_style,
+                            va.buffer_time,
+                            va.buffer_time_minutes,
+                            va.max_capacity
                      FROM vendor_availability_v2 va
                      WHERE va.vendor_id::text = ANY($1::text[])
                        AND va.day_of_week = ANY($2::int[])
@@ -2712,16 +2740,39 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             console.log(`[SLOTS] Skipping record with missing time: startTime=${startTime}, endTime=${endTime}`);
             continue;
           }
-          // ✅ CRITICAL: slot_duration_minutes might not exist, use default 30
-          const slotDuration = 30; // Default slot duration
-          console.log(`[SLOTS]   slotDuration: ${slotDuration} minutes`);
-          // Use lead time per service style (at_home=travel, at_center=prep, tele=setup); fallback to buffer_time
+          // Lead/setup between appointments: per-style JSON first, then row buffer (never minNotice — that is advance-booking only)
           const leadByStyle = row.lead_time_by_style != null
             ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
             : {};
-          const bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && (leadByStyle[normalizedServiceStyle] != null || leadByStyle[serviceStyle] != null))
-            ? Number(leadByStyle[normalizedServiceStyle] ?? leadByStyle[serviceStyle])
-            : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+          /** Match vendor dashboard keys (at_home, at_center, tele) and common API aliases */
+          const pickLeadFromStyleJson = (o: Record<string, unknown>): number | null => {
+            if (!o || typeof o !== 'object') return null;
+            const tryKeys = [
+              normalizedServiceStyle,
+              serviceStyle,
+              serviceStyle === 'at_home' ? 'home_visit' : null,
+              'at_home',
+              'at_center',
+              'tele',
+            ].filter(Boolean) as string[];
+            for (const k of tryKeys) {
+              if (o[k] != null && o[k] !== '') {
+                const n = Number(o[k]);
+                if (Number.isFinite(n) && n >= 0) return n;
+              }
+            }
+            return null;
+          };
+          const leadFromStyle = pickLeadFromStyleJson(leadByStyle as Record<string, unknown>);
+          const setupMinutes =
+            leadFromStyle != null
+              ? leadFromStyle
+              : Math.max(0, Number(row.buffer_time ?? row.buffer_time_minutes) || 0);
+          const bufferMinutes = setupMinutes;
+          // Grid step: requested service length + vendor lead/setup (matches vendor dashboard intent)
+          const slotStepMinutes = Math.max(5, totalDuration + setupMinutes);
+          const slotDuration = slotStepMinutes;
+          console.log(`[SLOTS]   slotStepMinutes: ${slotStepMinutes} (service ${totalDuration} + setup ${setupMinutes})`);
           const maxCapacity = row.max_capacity != null && row.max_capacity !== '' ? parseInt(String(row.max_capacity), 10) : null;
 
           const winStart = timeToMinutes(startTime);
@@ -2732,16 +2783,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           let slotsGeneratedForThisRecord = 0;
           let slotsSkippedForThisRecord = 0;
 
-          while (currentMinutes + slotDuration <= winEnd) {
+          while (currentMinutes + totalDuration <= winEnd) {
             const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
-
-            // 0) Slot must fit in window: appointment (totalDuration) must end before window end
-            if (currentMinutes + totalDuration > winEnd) {
-              console.log(`[SLOTS]     Skipping ${timeStr}: slot would extend past window end (${currentMinutes + totalDuration} > ${winEnd})`);
-              currentMinutes += slotDuration;
-              slotsSkippedForThisRecord++;
-              continue;
-            }
 
             // 1) Past booking window - for today, include past slots but mark as unavailable
             // ✅ CRITICAL FIX: Compare slot time (IST) with current IST time using minutes-from-midnight
@@ -2760,43 +2803,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               console.log(`[SLOTS]     ✅ ${timeStr} is for future date (not today), skipping past check`);
             }
 
-            // 2) Break overlap
-            // ✅ FIX: Use slotDuration for break check (slot size), but also check if totalDuration would extend into break
-            const slotEndMin = currentMinutes + slotDuration;  // Slot end for break check
-            const serviceEndMin = currentMinutes + totalDuration;  // Service end if booked at this slot
+            // 2) Break overlap — treat proposed service interval [start, start+totalDuration)
+            const serviceEndMin = currentMinutes + totalDuration;
             const inBreak = breaks.some((brk: { startTime: string; endTime: string }) => {
               const bStart = timeToMinutes(brk.startTime);
               const bEnd = timeToMinutes(brk.endTime);
-              // Slot overlaps break if slot itself overlaps OR if service would extend into break
-              return (currentMinutes < bEnd && slotEndMin > bStart) || (currentMinutes < bEnd && serviceEndMin > bStart);
+              return currentMinutes < bEnd && serviceEndMin > bStart;
             });
             if (inBreak) {
-              currentMinutes += slotDuration;
+              currentMinutes += slotStepMinutes;
               continue;
             }
 
-            // 3) Overlap check with existing bookings
-            // ✅ ATOMIC SLOT RULE: Each slot is independent. A booking blocks ONLY the slot it starts at.
-            // Booking at 09:00 blocks ONLY 09:00. Slot 09:30 remains available regardless of service duration.
-            // This applies to ALL service types: tele, at_center, at_home, for ALL roles.
-            // Buffer time is informational only and does NOT block adjacent slots.
-            //
-            // ATOMIC OVERLAP FORMULA (uses slotDuration for BOTH sides):
-            //   Booking 09:00: bStart=540, bEnd=540+30=570
-            //   Slot 09:30: currentMinutes=570, slotEnd=570+30=600
-            //   Overlap: 570 < 570 && 600 > 540 = false && true = false ✅ (NO overlap)
-            const slotEnd = currentMinutes + slotDuration;
+            // 3) Overlap with existing bookings: block service time + vendor setup after each booking
+            const candidateEnd = currentMinutes + totalDuration;
             const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
               const bStart = timeToMinutes(b.booking_time);
+              const bDur = Math.max(15, Number(b.duration_minutes) || totalDuration);
+              const bBlockEnd = bStart + bDur + setupMinutes;
 
-              // ✅ ATOMIC: Use slotDuration (30 min) for booking end, NOT stored duration_minutes
-              // This ensures each booking blocks exactly ONE slot, regardless of service duration
-              const bEnd = bStart + slotDuration;  // ✅ ATOMIC: one slot = one booking
-
-              const overlaps = currentMinutes < bEnd && slotEnd > bStart;
+              const overlaps = currentMinutes < bBlockEnd && candidateEnd > bStart;
 
               if (overlaps) {
-                console.log(`[SLOTS] OVERLAP (atomic): slot ${timeStr} blocked by booking at ${b.booking_time}`);
+                console.log(`[SLOTS] OVERLAP: slot ${timeStr} blocked by booking at ${b.booking_time} (block until ${bBlockEnd}min)`);
               }
 
               return overlaps;
@@ -2857,10 +2886,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             slotsGenerated++;
             slotsGeneratedForThisRecord++;
             console.log(`[SLOTS]     ✅ Added slot: ${timeStr} (available: ${available}, booked: ${booked})`);
-            currentMinutes += slotDuration;
+            currentMinutes += slotStepMinutes;
           }
           console.log(`[SLOTS]   Record complete: Generated ${slotsGeneratedForThisRecord} slots, skipped ${slotsSkippedForThisRecord} slots`);
-          slotsSkipped += (Math.floor((winEnd - winStart) / slotDuration) - slotsGeneratedForThisRecord);
+          slotsSkipped += (Math.ceil((winEnd - winStart) / slotStepMinutes) - slotsGeneratedForThisRecord);
         }
 
         console.log(`[SLOTS] ========== SLOT GENERATION COMPLETE ==========`);
@@ -2889,8 +2918,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorOnline: true,
           availabilityMeta: {
             source: 'vendor_availability_v2',
-            slotDurationDefault: 30,
-            bufferMinutesDefault: 15,
+            requestedTotalDurationMinutes: totalDuration,
+            slotGridUsesServicePlusSetup: true,
             hadAvailability: hadAvailabilityRecords, // ✅ Flag: availability records existed
             allBooked, // ✅ Flag: all slots were booked/filtered
             totalSlots: sortedSlots.length,

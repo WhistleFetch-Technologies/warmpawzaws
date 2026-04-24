@@ -81,6 +81,23 @@ export function registerChatEndpoints(app: Hono) {
           AND (
             ($1::uuid IS NOT NULL AND b.customer_id = $1::uuid)
             OR (
+              $1::uuid IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM customers c_self
+                WHERE c_self.id = $1::uuid
+                  AND EXISTS (
+                    SELECT 1 FROM chat_messages msg_c
+                    WHERE msg_c.booking_id = b.id
+                      AND lower(coalesce(trim(msg_c.sender_type::text), '')) = 'customer'
+                      AND (
+                        regexp_replace(COALESCE(msg_c.sender_phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(c_self.phone, ''), '[^0-9]', '', 'g')
+                        OR right(regexp_replace(COALESCE(msg_c.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(COALESCE(c_self.phone, ''), '[^0-9]', '', 'g'), 10)
+                      )
+                  )
+              )
+            )
+            OR (
               $2::text IS NOT NULL AND length($2::text) >= 8
               AND (
                 regexp_replace(COALESCE(b.customer_phone, ''), '[^0-9]', '', 'g') = $2
@@ -90,10 +107,18 @@ export function registerChatEndpoints(app: Hono) {
                 OR EXISTS (
                   SELECT 1 FROM chat_messages cm0
                   WHERE cm0.booking_id = b.id
-                    AND lower(trim(cm0.sender_type::text)) = 'customer'
+                    AND lower(coalesce(trim(cm0.sender_type::text), '')) = 'customer'
                     AND (
                       regexp_replace(COALESCE(cm0.sender_phone, ''), '[^0-9]', '', 'g') = $2
                       OR right(regexp_replace(COALESCE(cm0.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right($2, 10)
+                    )
+                )
+                OR EXISTS (
+                  SELECT 1 FROM chat_messages cm1
+                  WHERE cm1.booking_id = b.id
+                    AND (
+                      regexp_replace(COALESCE(cm1.sender_phone, ''), '[^0-9]', '', 'g') = $2
+                      OR right(regexp_replace(COALESCE(cm1.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right($2, 10)
                     )
                 )
               )

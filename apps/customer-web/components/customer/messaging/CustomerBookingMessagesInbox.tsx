@@ -15,6 +15,73 @@ type ConvRow = {
   unread_count?: number;
 };
 
+const CHAT_FALLBACK_CHUNK = 6;
+
+type MsgRow = { content?: string; message?: string; timestamp?: string; created_at?: string; isRead?: boolean; senderType?: string; sender_type?: string };
+
+/**
+ * If /chat/conversations is empty (old API, strict SQL, or proxy issues), list threads by
+ * walking the customer's bookings and keeping those with chat_messages (same idea as checking each booking in the app).
+ */
+async function loadRowsWithBookingsFallback(
+  customerKey: string,
+  fromConversations: ConvRow[]
+): Promise<ConvRow[]> {
+  if (fromConversations.length > 0) return fromConversations;
+  if (!customerKey) return [];
+
+  const br = (await apiClient
+    .get<any>(`/customer/${encodeURIComponent(customerKey)}/bookings?limit=30`)
+    .catch(() => null)) as { bookings?: any[] } | null;
+  const bookings = Array.isArray(br?.bookings) ? br!.bookings : [];
+  if (bookings.length === 0) return [];
+
+  const out: ConvRow[] = [];
+  for (let i = 0; i < bookings.length; i += CHAT_FALLBACK_CHUNK) {
+    const slice = bookings.slice(i, i + CHAT_FALLBACK_CHUNK);
+    const part = await Promise.all(
+      slice.map(async (b: any) => {
+        const bid = (b.id || b.bookingId || '') as string;
+        if (!bid) return null;
+        try {
+          const m = (await apiClient.get<{ messages?: MsgRow[]; total?: number }>(`/chat/${bid}/messages`)) as any;
+          const msgs: MsgRow[] = Array.isArray(m?.messages) ? m.messages : [];
+          if (msgs.length === 0) return null;
+          const last = msgs[msgs.length - 1]!;
+          const text = (last?.content || last?.message || '').toString() || '—';
+          const time = (last?.timestamp || last?.created_at || '') as string;
+          const unread = msgs.filter((x) => {
+            if (x?.isRead === true) return false;
+            const st = (x?.senderType || x?.sender_type || '').toLowerCase();
+            return st !== 'customer';
+          }).length;
+          return {
+            booking_id: bid,
+            id: bid,
+            participant_name: (b.vendorName as string) || 'Provider',
+            booking_service: (b.serviceName || b.serviceType || b.list_svc_name || 'Booking') as string,
+            last_message: text,
+            last_message_time: time,
+            unread_count: unread,
+          } as ConvRow;
+        } catch {
+          return null;
+        }
+      })
+    );
+    for (const r of part) {
+      if (r) out.push(r);
+    }
+  }
+
+  out.sort((a, b) => {
+    const ta = new Date(a.last_message_time || 0).getTime();
+    const tb = new Date(b.last_message_time || 0).getTime();
+    return tb - ta;
+  });
+  return out;
+}
+
 export function CustomerBookingMessagesInbox({
   phone,
   onBack,
@@ -45,7 +112,9 @@ export function CustomerBookingMessagesInbox({
   }, [isModal]);
 
   const refreshInbox = useCallback(async (resolvedCustomerId?: string) => {
-    const p = phone.replace(/\D/g, '');
+    const fromStorage =
+      (typeof localStorage !== 'undefined' && (localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone'))) || '';
+    const p = (phone || fromStorage).replace(/\D/g, '');
     const cid = resolvedCustomerId ?? customerUuid;
     if (!p && !cid) {
       setRows([]);
@@ -55,7 +124,9 @@ export function CustomerBookingMessagesInbox({
     if (cid) q.set('customerId', cid);
     if (p) q.set('phone', p);
     const res = await apiClient.get<{ conversations?: ConvRow[] }>(`/chat/conversations?${q.toString()}`);
-    setRows(Array.isArray(res?.conversations) ? res.conversations : []);
+    const first = Array.isArray(res?.conversations) ? res.conversations : [];
+    const key = cid || p;
+    setRows(await loadRowsWithBookingsFallback(key, first));
   }, [phone, customerUuid]);
 
   // Resolve customer first, then load once per phone — so `customerId` and `phone` are sent together (avoids list missing rows that key only on `customer_id` in the DB).
@@ -69,7 +140,12 @@ export function CustomerBookingMessagesInbox({
         const r = await apiClient.get<{ customer?: { id?: string } }>(
           `/customer/by-phone?phone=${encodeURIComponent(phone)}`
         );
-        resolvedId = r?.customer?.id;
+        const anyR = r as any;
+        resolvedId =
+          anyR?.customer?.id ||
+          (typeof anyR?.id === 'string' ? anyR.id : undefined) ||
+          (typeof anyR?.customerId === 'string' ? anyR.customerId : undefined) ||
+          (typeof anyR?.data?.customer?.id === 'string' ? anyR.data.customer.id : undefined);
         if (alive && resolvedId) setCustomerUuid(resolvedId);
         else if (alive) setCustomerUuid(undefined);
       } catch {
@@ -77,15 +153,33 @@ export function CustomerBookingMessagesInbox({
       }
       try {
         if (!alive) return;
-        const p = phone.replace(/\D/g, '');
+        // Prefer session phone, then localStorage (matches API client / UAT when prop is empty).
+        const fromStorage =
+          (typeof localStorage !== 'undefined' && (localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone'))) || '';
+        const p = (phone || fromStorage).replace(/\D/g, '');
         const q = new URLSearchParams();
         if (resolvedId) q.set('customerId', resolvedId);
         if (p) q.set('phone', p);
         const res = await apiClient.get<{ conversations?: ConvRow[] }>(`/chat/conversations?${q.toString()}`);
-        if (alive) setRows(Array.isArray(res?.conversations) ? res.conversations : []);
+        const first = Array.isArray(res?.conversations) ? res.conversations : [];
+        const bookKey = resolvedId || p;
+        const merged = bookKey ? await loadRowsWithBookingsFallback(bookKey, first) : first;
+        if (alive) setRows(merged);
       } catch (e) {
         console.error('[Messages inbox] Failed to load conversations', e);
-        if (alive) setRows([]);
+        try {
+          const fromStorage2 =
+            (typeof localStorage !== 'undefined' && (localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone'))) || '';
+          const p2 = (phone || fromStorage2).replace(/\D/g, '');
+          const key2 = resolvedId || p2;
+          if (alive && key2) {
+            setRows(await loadRowsWithBookingsFallback(key2, []));
+          } else if (alive) {
+            setRows([]);
+          }
+        } catch {
+          if (alive) setRows([]);
+        }
       } finally {
         if (alive) setLoading(false);
       }

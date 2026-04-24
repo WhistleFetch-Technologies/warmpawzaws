@@ -465,8 +465,11 @@ export function CustomerHomeWrapper({
     }
   }, [pathname, openMessages]);
 
+  /** Clear embedded boarding profile only when leaving that context — not when opening `boarding-booking` from profile (back must restore profile). */
   useEffect(() => {
-    if (currentScreen !== 'pet-boarding-profile' && (embeddedBoardingProfileVendorId || embeddedBoardingProfileSlug)) {
+    if (currentScreen === 'pet-boarding-profile') return;
+    if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') return;
+    if (embeddedBoardingProfileVendorId || embeddedBoardingProfileSlug) {
       setEmbeddedBoardingProfileVendorId(null);
       setEmbeddedBoardingProfileSlug(null);
     }
