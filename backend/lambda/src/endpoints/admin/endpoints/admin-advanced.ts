@@ -6989,18 +6989,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!payoutId || !isValidUUID(payoutId)) {
         return c.json({ success: false, error: 'Invalid payout ID' }, 400);
       }
-      const payouts = await query(
-        `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+      const claimRes = await query(
+        `UPDATE payouts
+         SET payout_status = 'processing', updated_at = NOW()
+         WHERE id = $1::uuid
+           AND payout_status IN ('pending','scheduled','failed')
+         RETURNING *`,
         [payoutId]
       );
-      const payout = (payouts.rows || [])[0] as any;
+      const payout = (claimRes.rows || [])[0] as any;
       if (!payout) {
+        const cur = await query(
+          `SELECT payout_status, razorpay_payout_id FROM payouts WHERE id = $1::uuid LIMIT 1`,
+          [payoutId]
+        ).catch(() => ({ rows: [] }));
+        const st = String((cur.rows?.[0] as { payout_status?: string } | undefined)?.payout_status ?? '');
+        if (st === 'processing' || st === 'completed' || st === 'cancelled') {
+          return c.json(
+            {
+              success: false,
+              error:
+                st === 'completed'
+                  ? 'Payout is already completed.'
+                  : 'Payout is already processing or cannot be claimed again.',
+            },
+            409
+          );
+        }
         return c.json({ success: false, error: 'Payout not found' }, 404);
-      }
-      const status = payout.payout_status ?? payout.status ?? '';
-      const allowedForProcess = ['pending', 'scheduled', 'failed'];
-      if (!allowedForProcess.includes(status)) {
-        return c.json({ success: false, error: `Payout cannot be processed (status: ${status}). Use only for pending, scheduled, or failed (retry after fixing bank).` }, 400);
       }
       const vendorId = payout.vendor_id;
       const amount = parseFloat(payout.amount ?? '0');
