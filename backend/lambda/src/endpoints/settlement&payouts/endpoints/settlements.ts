@@ -30,6 +30,10 @@ import { validateBody } from 'src/middleware/validation-middleware';
 import { processPayoutSchema } from 'src/zodContracts/settlement.contract';
 import { z } from 'zod';
 import { PayoutStatusSyncService } from '../../../utils/payments/payout-status-sync-service';
+import {
+  MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
+  MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE,
+} from '../../../lib/constants/vendor-payout';
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
@@ -1016,6 +1020,12 @@ export function registerSettlementEndpoints(app: Hono) {
       const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || '0');
       const heldInOpenPayouts = parseFloat(payoutsHeldRes.rows[0]?.held || '0');
       const availableAmount = Math.max(0, settlementsPending + earningsPending - heldInOpenPayouts);
+      if (availableAmount < MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR) {
+        return c.json({ success: false, error: MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE }, 400);
+      }
+      if (requestAmount < MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR) {
+        return c.json({ success: false, error: MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE }, 400);
+      }
       if (requestAmount > availableAmount) {
         return c.json({ success: false, error: `Amount exceeds available (₹${availableAmount.toFixed(0)})` }, 400);
       }

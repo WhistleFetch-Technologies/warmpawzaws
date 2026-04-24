@@ -20,6 +20,7 @@ import { select, query } from '../../../database/rds-connection';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 function buildDailyBreakdownLast7Days(
@@ -1274,6 +1275,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           pendingAmount: totalPendingAmount,
           /** Net amount vendor can request now — matches POST /settlements/request validation */
           availableForPayout,
+          /** Minimum net available (INR) before POST /settlements/request is allowed */
+          minPayoutRequestAmount: MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
           heldInOpenPayouts: Math.round(heldInOpenPayouts * 100) / 100,
           processingAmount: parseFloat(summary.processing_amount || '0'),
           completedAmount: parseFloat(summary.completed_amount || '0'),

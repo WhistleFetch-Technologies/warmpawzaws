@@ -3,6 +3,10 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -295,6 +299,7 @@ export function VendorBookingManagement({
   // Payouts State
   const [payoutsData, setPayoutsData] = useState<{
     availableForPayout: number;
+    minPayoutRequestAmount: number;
     pending: number;
     paidOut: number;
     bankAccount: {
@@ -884,6 +889,9 @@ export function VendorBookingManagement({
         availableForPayout: Number(
           summary.availableForPayout ?? summary.available ?? summary.pendingAmount ?? 0,
         ),
+        minPayoutRequestAmount: Number(
+          summary.minPayoutRequestAmount ?? summary.min_payout_request_amount,
+        ) || VENDOR_MIN_PAYOUT_REQUEST_RS,
         pending: Number(summary.heldInOpenPayouts ?? summary.holdAmount ?? summary.onHold ?? 0),
         paidOut: Number(
           summary.paidOut ??
@@ -908,6 +916,7 @@ export function VendorBookingManagement({
       // Set empty data on error
       setPayoutsData({
         availableForPayout: 0,
+        minPayoutRequestAmount: VENDOR_MIN_PAYOUT_REQUEST_RS,
         pending: 0,
         paidOut: 0,
         bankAccount: null,
@@ -920,8 +929,14 @@ export function VendorBookingManagement({
   };
 
   const handleRequestPayout = async () => {
+    const minReq =
+      payoutsData?.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS;
     if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
       toast.error('No amount available for payout');
+      return;
+    }
+    if (payoutsData.availableForPayout < minReq) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
       return;
     }
     if (!payoutsData?.bankAccount?.verified) {
@@ -1821,10 +1836,18 @@ export function VendorBookingManagement({
                         ₹{(payoutsData?.availableForPayout || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-sm text-gray-600">Available for Payout</div>
+                      <p className="mt-2 text-xs text-amber-800/90 text-center px-1">
+                        {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                      </p>
                     </div>
                     <button 
                       onClick={handleRequestPayout}
-                      disabled={!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0}
+                      disabled={
+                        !payoutsData?.availableForPayout ||
+                        payoutsData.availableForPayout <= 0 ||
+                        payoutsData.availableForPayout <
+                          (payoutsData.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS)
+                      }
                       className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Request Payout
