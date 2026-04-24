@@ -20,6 +20,11 @@ import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getCompletedPayment, getTotalPaidForBooking, resolvePaymentPolicy } from '../utils/payment-policy';
+import {
+  markPackageSessionInProgressForBooking,
+  completePackageSessionForBooking,
+  type SqlClient,
+} from '../utils/package-session-sync';
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
@@ -33,15 +38,21 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
   app.post("/bookings/:bookingId/generate-otp", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { sessionNumber = 1, action = 'start' } = await c.req.json();
+      const bodyJson = await c.req.json().catch(() => ({}));
+      const bookingRows = await select('bookings', { id: bookingId });
+      const b0 = bookingRows[0] as any;
+      const fromBooking =
+        b0?.package_session_number != null ? Number(b0.package_session_number) : undefined;
+      const sessionNumber = Number(
+        bodyJson.sessionNumber ?? bodyJson.session_number ?? fromBooking ?? 1
+      );
+      const action = bodyJson.action ?? 'start';
 
-      // Get booking
-      const bookings = await select('bookings', { id: bookingId });
-      if (bookings.length === 0) {
+      if (!bookingRows.length) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      const booking = bookings[0];
+      const booking = bookingRows[0];
 
       // Generate OTP
       const otp = generateOTP();
@@ -94,7 +105,8 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
   app.post("/bookings/:bookingId/verify-otp", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { otp, action = 'start', sessionNumber = 1 } = await c.req.json();
+      const bodyJson = await c.req.json();
+      const { otp, action = 'start' } = bodyJson;
 
       if (!otp || otp.length !== 6) {
         return c.json({ error: 'Invalid OTP format' }, 400);
@@ -105,6 +117,11 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
+
+      const b = bookings[0] as any;
+      const sessionNumber = Number(
+        bodyJson.sessionNumber ?? bodyJson.session_number ?? b?.package_session_number ?? 1
+      );
 
       // Find OTP token
       const otpTokens = await query(
@@ -207,6 +224,14 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
 
       if (Object.keys(updateData).length > 0) {
         await update('bookings', { id: bookingId }, updateData);
+      }
+
+      const db: SqlClient = { query } as SqlClient;
+      if (action === 'start') {
+        await markPackageSessionInProgressForBooking(db, bookingId);
+      }
+      if (action === 'end') {
+        await completePackageSessionForBooking(db, bookingId);
       }
 
       return c.json({

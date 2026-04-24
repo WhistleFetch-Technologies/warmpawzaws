@@ -82,6 +82,7 @@ export function VendorServiceManagementComplete({
   
   // ✅ NEW: Check if trainer/walker/sitter who can create session packages even as solo (NOT groomer/vet)
   const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
+  const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
   // Solo groomer and solo vet: custom services YES, custom packages NO
   const isSoloGroomer = isSoloProvider && hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
   const isSoloVet = isSoloProvider && hasVendorRole(vendorData, ['veterinarian', 'vet', 'vet_solo']);
@@ -453,7 +454,17 @@ export function VendorServiceManagementComplete({
 
         {/* ✅ FIX: Platform Catalog Section - Show at top for easy access */}
         {/* ✅ FIX: Show Browse Catalog for any vendor with catalog, booking, OR services capability (post-migration canonical roles) */}
-        {((capabilities || {}).catalog || (capabilities || {}).booking || (capabilities || {}).services || CapabilityHelper.hasCapability(capabilities, 'services')) && (
+        {(
+          (capabilities || {}).catalog ||
+          (capabilities || {}).booking ||
+          (capabilities || {}).booking_create ||
+          (capabilities || {}).booking_view ||
+          (capabilities || {}).services ||
+          (capabilities || {}).gps_tracking ||
+          CapabilityHelper.hasCapability(capabilities, 'services') ||
+          CapabilityHelper.hasGpsTracking(capabilities) ||
+          isWalkerVendor
+        ) && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
               <div className="flex items-start justify-between mb-4">

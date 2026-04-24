@@ -148,7 +148,9 @@ export function BoardingBookingRouter({
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
-  
+  /** Plan chosen on vendor card/profile — no in-router service step; back must leave the flow, not a fake "service" screen. */
+  const beganWithPreselectedVendorServiceRef = useRef(Boolean(hasServiceContext));
+
   const initializedRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
@@ -788,11 +790,28 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
+    if (
+      beganWithPreselectedVendorServiceRef.current &&
+      (step === 'datetime' || step === 'service')
+    ) {
+      onBack();
+      return;
+    }
+    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'room', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
-    if (currentIdx > 0) {
-      setStep(steps[currentIdx - 1]);
+    if (currentIdx <= 0) {
+      onBack();
+      return;
+    }
+
+    let prevIdx = currentIdx - 1;
+    // Forward flow skips `room` when there are no rooms (pet → create booking → payment). Mirror that when going back.
+    if (rooms.length === 0 && steps[prevIdx] === 'room') {
+      prevIdx = currentIdx - 2;
+    }
+    if (prevIdx >= 0) {
+      setStep(steps[prevIdx]);
     } else {
       onBack();
     }

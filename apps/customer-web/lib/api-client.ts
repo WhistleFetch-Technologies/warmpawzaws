@@ -407,9 +407,20 @@ export class ApiClient {
     }
 
     // Same-origin proxy (see app/api/customer/articles/route.ts) — after all `path` mutations
+    // Local dev: /chat/* → /api/bff/chat/* (see app/api/bff/chat/[[...path]]/route.ts) so Next does not
+    // treat /chat/conversations as a missing page and 404.
+    const isLocalhostDev =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '[::1]' ||
+        (typeof window.location.hostname === 'string' && window.location.hostname.endsWith('.localhost')));
+
     const url =
       typeof window !== 'undefined' && path.startsWith('/api/customer/articles')
         ? path
+        : isLocalhostDev && path.startsWith('/chat/')
+        ? `/api/bff/chat/${path.slice(6)}`
         : `${base}${path}`;
     
     let token = this.getAuthToken();
@@ -431,6 +442,15 @@ export class ApiClient {
     // Setting Content-Type manually for FormData breaks the boundary parameter
     if (!(options.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Chat list + booking threads: server reads X-Customer-Phone when present (redundant with query).
+    if (typeof window !== 'undefined' && path.startsWith('/chat/')) {
+      const ph = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+      if (ph) {
+        const d = ph.replace(/\D/g, '');
+        if (d.length >= 8) headers['X-Customer-Phone'] = d;
+      }
     }
 
     if (token) {

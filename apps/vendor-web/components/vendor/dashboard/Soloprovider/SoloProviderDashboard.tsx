@@ -240,6 +240,21 @@ export function SoloProviderDashboard({
             // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
             isRescheduled: b.isRescheduled || b.rescheduled_at != null,
             rescheduledAt: b.rescheduled_at || null,
+            packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+            packageSessionNumber:
+              b.packageSessionNumber != null
+                ? Number(b.packageSessionNumber)
+                : b.package_session_number != null
+                  ? Number(b.package_session_number)
+                  : undefined,
+            packageTotalSessions:
+              b.packageTotalSessions != null
+                ? Number(b.packageTotalSessions)
+                : b.package_total_sessions != null
+                  ? Number(b.package_total_sessions)
+                  : b.total_sessions != null
+                    ? Number(b.total_sessions)
+                    : undefined,
           }));
           setTodaySchedule(transformedBookings);
         }
@@ -492,9 +507,13 @@ export function SoloProviderDashboard({
     setOtpError(null);
 
     try {
+      const sessionNum = (selectedAppointment as any).packageSessionNumber;
       const data = await apiClient.post<any>(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
         otp,
-        action: otpAction
+        action: otpAction,
+        ...(sessionNum != null && Number.isFinite(Number(sessionNum))
+          ? { sessionNumber: Number(sessionNum) }
+          : {}),
       });
 
       if (otpAction === 'start') {

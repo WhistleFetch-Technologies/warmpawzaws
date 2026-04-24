@@ -477,7 +477,7 @@ export function BoardingVendorProfileView({
         </div>
       </div>
 
-      <div className="cw-fixed-above-customer-tabbar fixed bottom-0 left-0 right-0 z-40 border-t bg-white px-5 py-3 sm:px-6">
+      <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t bg-white px-5 py-3 sm:px-6">
         <div className="mx-auto w-full max-w-xs sm:max-w-sm">
           {!plansPickerActive ? (
             <Button

@@ -278,7 +278,7 @@ export function VetBookingRouter({
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Load slots when date is selected and vendor is known
+  // Load slots when date is selected and vendor is known (refetch when service mix / duration changes)
   useEffect(() => {
     const effectiveVendorId = vendorId || doctorId;
     if (selectedDate && effectiveVendorId) {
@@ -286,7 +286,18 @@ export function VetBookingRouter({
     } else {
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, doctorId, selectedServiceType]);
+  }, [
+    selectedDate,
+    vendorId,
+    doctorId,
+    selectedServiceType,
+    allSelectedServices,
+    selectedVendorService?.duration,
+    selectedVendorService?.service_id,
+    selectedVendorService?.serviceId,
+    duration,
+    serviceId,
+  ]);
 
   const loadTimeSlots = async (date: string) => {
     const effectiveVendorId = vendorId || doctorId;
@@ -294,8 +305,30 @@ export function VetBookingRouter({
 
     try {
       setLoadingSlots(true);
+      const opt = getSelectedServiceOption();
+      const totalSlotDuration =
+        allSelectedServices.length > 0
+          ? Math.max(15, allSelectedServices.reduce((sum, s) => sum + (Number(s.duration) || 0), 0))
+          : Math.max(15, Number(opt?.duration ?? selectedVendorService?.duration ?? duration ?? 30));
+      const serviceIds =
+        allSelectedServices.length > 0
+          ? allSelectedServices.map((s: any) => s.serviceId || s.id).filter(Boolean).join(',')
+          : String(
+              opt?.serviceId ||
+                opt?.id ||
+                selectedVendorService?.service_id ||
+                selectedVendorService?.serviceId ||
+                serviceId ||
+                ''
+            ).trim();
+      const params = new URLSearchParams({
+        date,
+        serviceStyle: selectedServiceType,
+        totalDuration: String(totalSlotDuration),
+      });
+      if (serviceIds) params.set('serviceIds', serviceIds);
       const response = await apiClient.get(
-        `/customer/vendor/${effectiveVendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
+        `/customer/vendor/${effectiveVendorId}/available-slots?${params.toString()}`
       ) as any;
 
       if (response.success && response.slots) {

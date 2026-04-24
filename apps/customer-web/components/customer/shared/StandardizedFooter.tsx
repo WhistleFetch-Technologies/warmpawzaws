@@ -24,8 +24,8 @@ export function StandardizedFooter({
   const isActive = (tab: string) => currentTab === tab;
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)] ${maxWidth} mx-auto`} style={{ zIndex: 50 }}>
-      {/* Sticky CTAs use --customer-footer-offset in globals.css; keep py-3 + row height in mind if changing this footer */}
+    <div className={`cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white ${maxWidth} mx-auto`}>
+      {/* Sticky CTAs use --customer-footer-offset in globals.css; safe-area via .cw-customer-tabbar-fixed */}
       <div className="px-4 py-3 sm:px-6">
       <div className="flex items-center justify-around">
         {/* Home Tab */}

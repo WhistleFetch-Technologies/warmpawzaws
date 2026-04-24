@@ -40,6 +40,15 @@ import { computeHoursUntilBookingStart } from '../lib/utils/booking-start-wall-t
 import { hasCustomerPaidCapture } from '../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../utils/credit-customer-wallet';
 import {
+  seedPackageScheduledSessionsIfMissing,
+  pickNextPendingSessionNumber,
+  pickNextUnlimitedPackageSessionNumber,
+  linkPackageScheduledSessionToBooking,
+  markPackageSessionInProgressForBooking,
+  type SqlClient,
+} from '../utils/package-session-sync';
+import { sqlPackagePurchaseHasBookableSlot } from '../utils/package-session-eligibility';
+import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
@@ -636,34 +645,26 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // Ignore - buffer is informational only
         }
 
-        // ✅ ATOMIC SLOT OVERLAP CHECK
-        // Each slot is atomic (30 min). A booking blocks ONLY the slot it starts at.
-        // Booking at 09:00 blocks ONLY 09:00. New booking at 09:30 is allowed.
-        // This applies to ALL service types (tele, at_center, at_home) and ALL roles.
-        // Buffer time is informational only and does NOT block adjacent slots.
-        const SLOT_SIZE = 30; // Atomic slot size in minutes
-        
-        console.log(`[BOOKING] Checking overlap (ATOMIC): newBooking=${bookingTime} (${newBookingStartMinutes}min), slotSize=${SLOT_SIZE}min, serviceType=${serviceType}`);
+        console.log(
+          `[BOOKING] Checking overlap (duration-based): newBooking=${bookingTime} (${newBookingStartMinutes}-${newBookingEndMinutes}min), serviceType=${serviceType}`
+        );
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
-        
+
         const hasOverlap = existingBookings.some((existing: any) => {
           const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
-          
-          // ✅ ATOMIC: Use SLOT_SIZE (30 min) for BOTH existing and new booking
-          // NOT the stored duration_minutes, which may be longer than one slot
-          const existingEndMinutes = existingStartMinutes + SLOT_SIZE;
-          const newBookingEndMinutes = newBookingStartMinutes + SLOT_SIZE;
-          
-          // ATOMIC OVERLAP: (newStart < existingEnd) AND (newEnd > existingStart)
-          // Example: Existing 09:00 (end=09:30), New 09:30 (end=10:00)
-          //   570 < 570 && 600 > 540 = false && true = false → NO overlap ✅
-          const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
-          
+          const existingDuration = Math.max(15, Number(existing.duration_minutes) || 30);
+          const existingEndMinutes = existingStartMinutes + existingDuration;
+
+          const overlaps =
+            newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
+
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP (atomic): newBooking ${bookingTime} blocked by existing ${existing.booking_time}`);
+            console.log(
+              `[BOOKING] OVERLAP: newBooking ${bookingTime} blocked by existing ${existing.booking_time} (${existingStartMinutes}-${existingEndMinutes}min)`
+            );
           }
-          
+
           return overlaps;
         });
 
@@ -742,7 +743,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let isPackageBooking = false;
         let packagePurchaseIdToUse: string | null = null;
         let packageSessionNumberToUse: number | null = null;
-        let pkgForDeduction: { remaining_sessions: number; unlimited_usage: boolean } | null = null;
+        let packageMeta: { unlimited: boolean } | null = null;
 
         // ✅ CRITICAL FIX: Use SAVEPOINT so that if package_purchases table or columns don't exist,
         // the PostgreSQL transaction is not aborted.
@@ -760,21 +761,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             if (!tableCheck.rows[0]?.exists) {
               console.warn('[BOOKING] package_purchases table not found, skipping package booking');
             } else {
+              await seedPackageScheduledSessionsIfMissing(client as SqlClient, packagePurchaseId);
               const packageResult = await client.query(
                 `SELECT id, remaining_sessions, unlimited_usage, total_sessions
                  FROM package_purchases
                  WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
                    AND status = 'active'
                    AND (expires_at IS NULL OR expires_at > NOW())
-                   AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+                   AND (${sqlPackagePurchaseHasBookableSlot('package_purchases')})`,
                 [packagePurchaseId, customerId, vendorId]
               );
               if (packageResult.rows?.length > 0) {
                 const pkg = packageResult.rows[0];
-                const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
                 packagePurchaseIdToUse = pkg.id;
-                packageSessionNumberToUse = sessionsUsed + 1;
-                pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+                packageMeta = { unlimited: !!pkg.unlimited_usage };
+                if (pkg.unlimited_usage) {
+                  packageSessionNumberToUse = await pickNextUnlimitedPackageSessionNumber(
+                    client as SqlClient,
+                    pkg.id
+                  );
+                } else {
+                  const nextSlot = await pickNextPendingSessionNumber(client as SqlClient, pkg.id);
+                  if (nextSlot == null) {
+                    throw new Error('NO_PACKAGE_SESSION_SLOTS');
+                  }
+                  packageSessionNumberToUse = nextSlot;
+                }
                 isPackageBooking = true;
                 finalAmount = 0;
                 console.log(`[BOOKING] Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount 0.`);
@@ -783,6 +795,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             await client.query('RELEASE SAVEPOINT sp_package_check');
           } catch (error: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_package_check').catch(() => {});
+            if (error?.message === 'NO_PACKAGE_SESSION_SLOTS') {
+              throw error;
+            }
             console.warn('[BOOKING] Package check failed (table/column may not exist), skipping:', (error as any)?.message);
           }
         }
@@ -1178,43 +1193,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           );
         }
 
-        // ✅ Package booking: deduct session and log usage inside same transaction
-        if (packagePurchaseIdToUse && pkgForDeduction && insertedBooking?.id) {
-          // ✅ FIX: package_purchases table may not exist - gracefully skip package update
-          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
+        // ✅ Package booking: link discrete session row (remaining decremented on visit completion only)
+        if (
+          packagePurchaseIdToUse &&
+          packageSessionNumberToUse != null &&
+          insertedBooking?.id &&
+          packageMeta &&
+          !packageMeta.unlimited
+        ) {
           try {
-            await client.query('SAVEPOINT sp_package_purchases');
-            if (!pkgForDeduction.unlimited_usage) {
-              await client.query(
-                `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
-                [packagePurchaseIdToUse]
-              );
+            await client.query('SAVEPOINT sp_package_link');
+            await seedPackageScheduledSessionsIfMissing(client as SqlClient, packagePurchaseIdToUse);
+            const linked = await linkPackageScheduledSessionToBooking(client as SqlClient, {
+              packagePurchaseId: packagePurchaseIdToUse,
+              sessionNumber: packageSessionNumberToUse,
+              bookingId: insertedBooking.id,
+              bookingDate: String(insertedBooking.booking_date),
+              bookingTime: String(insertedBooking.booking_time),
+            });
+            if (!linked) {
+              throw new Error('PACKAGE_SESSION_LINK_FAILED');
             }
-            await client.query('RELEASE SAVEPOINT sp_package_purchases');
+            await client.query('RELEASE SAVEPOINT sp_package_link');
           } catch (error: any) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_package_purchases').catch(() => {});
-            console.warn('[BOOKING] package_purchases table not found or update failed, skipping package deduction:', error.message);
-          }
-          
-          // ✅ FIX: package_usage_log table may not exist - gracefully skip logging
-          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
-          try {
-            await client.query('SAVEPOINT sp_package_usage_log');
-            await client.query(
-              `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
-               VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
-              [
-                packagePurchaseIdToUse,
-                insertedBooking.id,
-                packageSessionNumberToUse,
-                pkgForDeduction.remaining_sessions,
-                pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
-              ]
-            );
-            await client.query('RELEASE SAVEPOINT sp_package_usage_log');
-          } catch (error: any) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_package_usage_log').catch(() => {});
-            console.warn('[BOOKING] package_usage_log table not found or insert failed, skipping usage log:', error.message);
+            await client.query('ROLLBACK TO SAVEPOINT sp_package_link').catch(() => {});
+            console.warn('[BOOKING] package_scheduled_sessions link failed:', error?.message);
+            throw error;
           }
         }
 
@@ -1418,6 +1422,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           'This time slot is already booked. Please select a different time.',
           409,
           'SLOT_CONFLICT',
+          undefined,
+          requestId
+        );
+      }
+
+      if (errorMessage === 'NO_PACKAGE_SESSION_SLOTS' || errorMessage === 'PACKAGE_SESSION_LINK_FAILED') {
+        return this.error(
+          'No package session slots are available for this purchase. Complete or reschedule an existing visit first.',
+          409,
+          'PACKAGE_SESSIONS_EXHAUSTED',
           undefined,
           requestId
         );
@@ -3360,6 +3374,13 @@ export function registerBookingOTPEndpoint(app: Hono) {
       );
 
       console.log(`✅ [BOOKING-OTP] OTP verified for booking ${bookingId}`);
+
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await markPackageSessionInProgressForBooking(db, bookingId);
+      } catch (pssErr: any) {
+        console.warn('[BOOKING-OTP] package_scheduled_sessions in_progress sync:', pssErr?.message);
+      }
 
       return c.json({
         success: true,

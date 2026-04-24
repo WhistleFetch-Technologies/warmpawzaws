@@ -160,6 +160,21 @@ function normalizeAddress(raw: any): Address {
   };
 }
 
+/** Minutes for slot API — backend uses this as service length for grid spacing */
+function serviceDurationMinutes(s: Service): number {
+  const raw = (s as any).duration ?? (s as any).duration_minutes ?? (s as any).custom_duration;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function servicesMatchingSelection(services: Service[], selected: Set<string>): Service[] {
+  if (!selected.size) return [];
+  const want = new Set([...selected].map((id) => String(id)));
+  return services.filter(
+    (s) => want.has(String(s.id)) || (s.serviceId && want.has(String(s.serviceId)))
+  );
+}
+
 export function UniversalProviderProfile({
   phone,
   provider,
@@ -215,13 +230,6 @@ export function UniversalProviderProfile({
   useEffect(() => {
     loadCustomerData();
   }, [phone]);
-
-  // Load time slots when date changes
-  useEffect(() => {
-    if (selectedDate && showBookingForm) {
-      loadTimeSlots(selectedDate);
-    }
-  }, [selectedDate, showBookingForm]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
@@ -294,8 +302,21 @@ export function UniversalProviderProfile({
 
     try {
       setLoadingSlots(true);
+      const selectedList = servicesMatchingSelection(provider.services, selectedServices);
+      const sumMinutes = selectedList.reduce((sum, s) => sum + serviceDurationMinutes(s), 0);
+      const totalDuration = Math.max(15, sumMinutes > 0 ? sumMinutes : 30);
+      const serviceIds = selectedList
+        .map((s) => s.serviceId || s.id)
+        .filter(Boolean)
+        .join(',');
+      const params = new URLSearchParams({
+        date,
+        serviceStyle,
+        totalDuration: String(totalDuration),
+      });
+      if (serviceIds) params.set('serviceIds', serviceIds);
       const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${serviceStyle}`
+        `/customer/vendor/${vendorId}/available-slots?${params.toString()}`
       ) as any;
 
       if (response.success && response.slots) {
@@ -320,6 +341,14 @@ export function UniversalProviderProfile({
       setLoadingSlots(false);
     }
   };
+
+  // Refetch slots when date / form / selection change (loadTimeSlots reads latest `provider` from closure)
+  useEffect(() => {
+    if (selectedDate && showBookingForm) {
+      void loadTimeSlots(selectedDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every `provider.services` array identity from parent
+  }, [selectedDate, showBookingForm, selectedServices, serviceStyle]);
 
   const loadReviews = async () => {
     const vendorId = provider.vendorId || provider.providerId;

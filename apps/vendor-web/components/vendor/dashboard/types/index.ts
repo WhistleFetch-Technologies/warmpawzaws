@@ -81,6 +81,10 @@ export interface ScheduleItem {
     isFollowUp?: boolean;
     isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
     rescheduledAt?: string | null; // Timestamp when booking was rescheduled
+    /** Package session tracking (from enriched vendor bookings API) */
+    packagePurchaseId?: string;
+    packageSessionNumber?: number;
+    packageTotalSessions?: number;
 }
 
 export interface WatchlistItem {

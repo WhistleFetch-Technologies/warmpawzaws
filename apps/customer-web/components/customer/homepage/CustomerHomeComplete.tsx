@@ -1704,9 +1704,10 @@ export function CustomerHomeComplete({
   }));
 
 
+  /** When shell uses CustomerScreenWrapper, avoid nested min-h-screen vs padded min-dvh (iOS overflow / tab bar glitches). */
   const containerClassName = hideHeaderFooter
-    ? 'min-h-screen bg-gray-50'
-    : 'min-h-screen bg-gray-50 w-full max-w-customer mx-auto';
+    ? 'min-h-screen min-h-[100dvh] bg-gray-50'
+    : 'min-h-0 bg-gray-50 w-full max-w-customer mx-auto';
 
   return (
     <div className={containerClassName}>
@@ -1854,7 +1855,9 @@ export function CustomerHomeComplete({
       )}
 
       {/* Main Scrollable Content */}
-      <div className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-24'}`}>
+      <div
+        className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-6'}`}
+      >
         {/* ✅ Attention Section - Active Bookings with Tracking */}
         {activeBookings.length > 0 && (
           <div className="px-6 mb-4">
@@ -2132,9 +2135,9 @@ export function CustomerHomeComplete({
                 <button
                   type="button"
                   key={service.screen || index}
-                  type="button"
-                  onClick={() => handleNavigation(service.screen)}
-                  className="flex flex-col items-center gap-1 group"
+                  className={`flex flex-col items-center gap-1 group ${
+                    isComingSoonTile ? 'cursor-default' : ''
+                  }`}
                   aria-label={
                     isComingSoonTile
                       ? `${displayLabel}, coming soon in your area`
@@ -2147,9 +2150,6 @@ export function CustomerHomeComplete({
                     }
                     handleNavigation(service.screen);
                   }}
-                  className={`flex flex-col items-center gap-1 group ${
-                    isComingSoonTile ? 'cursor-default' : ''
-                  }`}
                 >
                   <div
                     className={`relative w-11 h-11 ${service.color} rounded-xl flex items-center justify-center transition-transform shadow-sm ${
@@ -2811,7 +2811,7 @@ export function CustomerHomeComplete({
       {/* AI Assistant Floating Action Button (draggable; tap opens chat) */}
       {!hideHeaderFooter && (
         <div
-          className="fixed bottom-24 right-6 z-40 pointer-events-none"
+          className="fixed right-6 z-40 pointer-events-none bottom-[var(--customer-floater-bottom)]"
           style={{ transform: `translate(${aiFabDragOffset.x}px, ${aiFabDragOffset.y}px)` }}
         >
           <button
@@ -2839,7 +2839,7 @@ export function CustomerHomeComplete({
       {onOpenCategoryMapper && !hideHeaderFooter && (
         <button
           onClick={onOpenCategoryMapper}
-          className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto"
+          className="fixed left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-customer mx-auto bottom-[var(--customer-floater-bottom)]"
           title="Open Category Mapper"
         >
           <Settings className="w-7 h-7 text-white" />
@@ -2873,7 +2873,7 @@ export function CustomerHomeComplete({
 
       {/* ✅ Live Tracking Widget - Shows when vendor is on the way */}
       {showTrackingWidget && trackingBooking && (
-        <div className="fixed bottom-20 left-4 right-4 z-50 max-w-md mx-auto">
+        <div className="fixed left-4 right-4 z-40 max-w-md mx-auto bottom-[calc(var(--customer-tabbed-nav-offset)+0.5rem)]">
           <LiveTrackingWidget
             bookingId={showTrackingWidget}
             onClose={() => {
@@ -2927,7 +2927,7 @@ export function CustomerHomeComplete({
           window.open(`tel:${phone}`, '_self');
         }}
         onNavigate={handleNavigation}
-        className={hideHeaderFooter ? 'bottom-6' : 'bottom-24'} // Adjust position based on footer
+        className={hideHeaderFooter ? 'bottom-6' : ''}
       />
 
       {/* ✅ NEW: Vendor On The Way Popup - Shows when vendor is en-route or has arrived */}

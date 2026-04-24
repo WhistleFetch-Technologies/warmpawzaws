@@ -467,12 +467,12 @@ export function PolicyAcceptanceModal({
               <Separator className="my-4" />
 
               {/* Acceptance Checkbox */}
-              <div className="flex items-start gap-3 p-4 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="flex items-start gap-3 p-4 bg-orange-100 rounded-xl border border-orange-300">
                 <Checkbox
                   id="accept-policies"
                   checked={accepted}
                   onCheckedChange={(checked) => setAccepted(checked as boolean)}
-                  className="mt-0.5"
+                  className="mt-0.5 bg-white"
                 />
                 <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer leading-relaxed">
                   I have read and agree to the cancellation, reschedule, no-show, and refund policies. 

@@ -20,6 +20,11 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
+import {
+  seedFinitePackagesMissingSessionsForScope,
+  type SqlClient,
+} from '../utils/package-session-sync';
+import { sqlPackagePurchaseHasBookableSlot } from '../utils/package-session-eligibility';
 
 export function registerPackageEndpoints(app: Hono) {
   /**
@@ -173,6 +178,12 @@ export function registerPackageEndpoints(app: Hono) {
         });
       }
 
+      const dbClient: SqlClient = { query };
+      await seedFinitePackagesMissingSessionsForScope(dbClient, {
+        customerId,
+        vendorId,
+      });
+
       // Build query with optional service_style filter
       // This ensures:
       // - at_center packages only for clinic bookings
@@ -189,7 +200,7 @@ export function registerPackageEndpoints(app: Hono) {
         AND pp.vendor_id = $2
         AND pp.status = 'active'
         AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        AND (${sqlPackagePurchaseHasBookableSlot('pp')})
       `;
       
       const params: any[] = [customerId, vendorId];

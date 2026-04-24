@@ -81,6 +81,8 @@
   --customer-sticky-cta-scroll-padding: calc(var(--customer-footer-offset) + 5.75rem);
   /** Scroll content cleared only past the tab bar (no extra fixed CTA) */
   --customer-tabbar-content-pad: calc(var(--customer-footer-offset) + 1.25rem);
+  /** Floaters (FAB, trackers): sit above tab shell + small gap — use instead of raw bottom-24 on home */
+  --customer-floater-bottom: calc(var(--customer-tabbed-nav-offset) + 0.75rem);
 }
 
 /* Base Styles */
@@ -322,6 +324,17 @@ body {
 
 /* Sonner (sonner@2.x): global safe-area offsets for all toasts — requires viewport-fit=cover in layout */
 @layer utilities {
+  /**
+   * iOS: legacy WebKit needs constant() before env() for safe-area; tab bar uses both insets.
+   * translateZ(0) promotes a compositor layer — reduces fixed bar flicker/disappear during scroll.
+   */
+  .cw-customer-tabbar-fixed {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    padding-bottom: constant(safe-area-inset-bottom);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   .cw-fixed-above-customer-tabbar {
     bottom: var(--customer-footer-offset);
   }

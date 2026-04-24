@@ -304,6 +304,7 @@ type ScreenType =
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'
+  | 'behaviorist-provider-profile'
   | 'instant-connecting';
 
 function customerBoardingProfileVendorIdFromNavigateData(data: unknown): string | undefined {
@@ -418,6 +419,8 @@ export function CustomerHomeWrapper({
   const [groomingHomeProfileVendorId, setGroomingHomeProfileVendorId] = useState<string | null>(null);
   const [trainingCenterProfileVendorId, setTrainingCenterProfileVendorId] = useState<string | null>(null);
   const [trainingHomeProfileVendorId, setTrainingHomeProfileVendorId] = useState<string | null>(null);
+  /** Problem-grid discovery chevron → full behaviourist profile (HomeServiceProviderProfile). */
+  const [behavioristProfileVendorId, setBehavioristProfileVendorId] = useState<string | null>(null);
   /**
    * When true, `training_center` / `training_home` was opened with `embedVendorId` (e.g. hub chevron).
    * Back from embedded profile must return to the Training hub, not the empty by-style list.
@@ -462,8 +465,11 @@ export function CustomerHomeWrapper({
     }
   }, [pathname, openMessages]);
 
+  /** Clear embedded boarding profile only when leaving that context — not when opening `boarding-booking` from profile (back must restore profile). */
   useEffect(() => {
-    if (currentScreen !== 'pet-boarding-profile' && (embeddedBoardingProfileVendorId || embeddedBoardingProfileSlug)) {
+    if (currentScreen === 'pet-boarding-profile') return;
+    if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') return;
+    if (embeddedBoardingProfileVendorId || embeddedBoardingProfileSlug) {
       setEmbeddedBoardingProfileVendorId(null);
       setEmbeddedBoardingProfileSlug(null);
     }
@@ -876,17 +882,68 @@ export function CustomerHomeWrapper({
   };
 
   const handleProblemGridVendorProfile = (ctx: VendorProfileFromProblemContext) => {
+    const { vendorId, vendorName, serviceStyle } = ctx;
+    if (!vendorId || String(vendorId).trim() === '') {
+      toast.error('Profile unavailable — missing vendor id.');
+      return;
+    }
+
+    const category = String(ctx.problemCategory || selectedProblem?.category || '').toLowerCase();
+    const hubRole = String(selectedProblem?.roleId || '').toLowerCase();
+    const allRoleSlugs = [
+      ...(Array.isArray(ctx.roleIds) ? ctx.roleIds : []),
+      selectedProblem?.roleId,
+    ]
+      .filter((x): x is string => x != null && String(x).trim() !== '')
+      .map((x) => String(x).toLowerCase());
     const roleRaw = ctx.roleIds?.find(Boolean) || selectedProblem?.roleId;
     const role = String(roleRaw || '').toLowerCase();
-    const { vendorId, vendorName, serviceStyle } = ctx;
+
+    /** Problem-grid tiles that are behavioral (same ids as BEHAVIORAL_ISSUES; do not include training-only ids like aggression). */
+    const behavioralSpecializationIds = new Set([
+      'barking',
+      'destructive',
+      'fear_phobia',
+      'resource_guarding',
+      'separation_anxiety',
+      'separation',
+    ]);
+    const problemTileId = String(selectedProblem?.id || '').toLowerCase();
+    const ctxProblemTile = String(ctx.problemId || '').toLowerCase();
+    const categoryIsBehavior =
+      category === 'behavior' || category === 'behavioral' || category === 'sub_behavior';
+    const openedFromTrainerHub =
+      hubRole === 'trainer' ||
+      hubRole === 'training' ||
+      (hubRole === 'pet_trainer' && !categoryIsBehavior);
+    const openedFromBehaviorHub = hubRole === 'behaviorist' || hubRole === 'behaviourist';
+    const anySlugMatches = (set: Set<string>) => allRoleSlugs.some((r) => set.has(r));
+    const anySlugMatchesBehaviorRole = allRoleSlugs.some((r) =>
+      /behav|behaviorist|behaviourist|pet_behavior|behaviorist_solo|behaviorist_center/.test(r),
+    );
+
+    const looksBehavioralFlow =
+      openedFromBehaviorHub ||
+      (!openedFromTrainerHub &&
+        (behavioralSpecializationIds.has(problemTileId) ||
+          behavioralSpecializationIds.has(ctxProblemTile) ||
+          categoryIsBehavior ||
+          anySlugMatchesBehaviorRole));
+
+    if (looksBehavioralFlow) {
+      setReturnToProblemGridFromStyleHub(true);
+      setBehavioristProfileVendorId(String(vendorId));
+      setCurrentScreen('behaviorist-provider-profile');
+      return;
+    }
 
     const vetRoles = new Set(['veterinarian', 'vet', 'veterinary']);
     const groomingRoles = new Set(['groomer', 'grooming']);
-    const trainingRoles = new Set(['trainer', 'training']);
+    const trainingRoles = new Set(['trainer', 'training', 'pet_trainer', 'dog_trainer']);
     const walkerRoles = new Set(['dog_walker', 'walker', 'walking']);
     const boardingRoles = new Set(['boarding', 'pet_boarding', 'petboarding']);
 
-    if (vetRoles.has(role)) {
+    if (anySlugMatches(vetRoles) || vetRoles.has(role)) {
       if (serviceStyle === 'at_center') {
         handleVetNavigate('vet-clinic-profile', {
           id: vendorId,
@@ -901,7 +958,7 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (groomingRoles.has(role)) {
+    if (anySlugMatches(groomingRoles) || groomingRoles.has(role)) {
       setReturnToProblemGridFromStyleHub(true);
       if (serviceStyle === 'at_center') {
         setGroomingCenterProfileVendorId(vendorId);
@@ -913,7 +970,7 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (trainingRoles.has(role)) {
+    if (anySlugMatches(trainingRoles) || trainingRoles.has(role)) {
       setReturnToProblemGridFromStyleHub(true);
       if (serviceStyle === 'at_center') {
         setTrainingCenterProfileVendorId(vendorId);
@@ -925,7 +982,7 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (walkerRoles.has(role)) {
+    if (anySlugMatches(walkerRoles) || walkerRoles.has(role)) {
       setWalkerServiceData({
         vendorId,
         walker: { name: vendorName },
@@ -935,10 +992,26 @@ export function CustomerHomeWrapper({
       return;
     }
 
-    if (boardingRoles.has(role)) {
+    if (anySlugMatches(boardingRoles) || boardingRoles.has(role)) {
       setProblemFlowBoardingVendorId(vendorId);
       setProblemFlowBoardingSlug('all');
       setCurrentScreen('pet-boarding-profile');
+      return;
+    }
+
+    const behavioristRoles = new Set([
+      'behaviorist',
+      'behaviourist',
+      'pet_behaviourist',
+      'pet_behaviorist',
+      'pet_behavior',
+      'behaviorist_solo',
+      'behaviorist_center',
+    ]);
+    if (anySlugMatches(behavioristRoles) || behavioristRoles.has(role)) {
+      setReturnToProblemGridFromStyleHub(true);
+      setBehavioristProfileVendorId(String(vendorId));
+      setCurrentScreen('behaviorist-provider-profile');
       return;
     }
 
@@ -1284,12 +1357,25 @@ export function CustomerHomeWrapper({
                 toast.info('Emergency care is coming soon on the app.');
                 return;
               }
+              const categoryStored = data?.category ?? data?.problem?.category;
+              const rawCategory = String(categoryStored ?? '').toLowerCase();
+              const isBehaviorCategory =
+                rawCategory === 'behavioral' ||
+                rawCategory === 'behavior' ||
+                rawCategory === 'sub_behavior';
+              let roleIdForFlow = String(data?.roleId ?? data?.problem?.roleId ?? '').trim();
+              if (isBehaviorCategory && roleIdForFlow && !/behav/i.test(roleIdForFlow)) {
+                roleIdForFlow = 'behaviorist';
+              }
+              if (isBehaviorCategory && !roleIdForFlow) {
+                roleIdForFlow = 'behaviorist';
+              }
               // ✅ Route through ProblemGridFlowRouter; use allowedServiceStyles from specialization so only allowed styles show
               setSelectedProblem({
                 id: data?.problemId,
                 title: data?.problemTitle || 'Service',
-                roleId: data?.roleId,
-                category: data?.category ?? data?.problem?.category,
+                roleId: roleIdForFlow || data?.roleId,
+                category: categoryStored ?? (isBehaviorCategory ? 'behavioral' : undefined),
                 allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
                   (data?.problem?.allowedServiceStyles ??
                     (data?.allowedServiceStyles
@@ -1298,9 +1384,9 @@ export function CustomerHomeWrapper({
                         : [data.allowedServiceStyles]
                       : null)) as string[] | null,
                   {
-                    roleId: data?.roleId,
+                    roleId: roleIdForFlow || data?.roleId,
                     specializationId: data?.problemId,
-                    categoryHint: data?.category ?? data?.problem?.category,
+                    categoryHint: categoryStored ?? (isBehaviorCategory ? 'behavioral' : undefined),
                   }
                 ),
               });
@@ -1515,6 +1601,39 @@ export function CustomerHomeWrapper({
           setCurrentScreen('walker-booking');
         }}
         onNavigate={(screen, data) => handleWalkerNavigate(screen, data)}
+      />
+    );
+  }
+  if (currentScreen === 'behaviorist-provider-profile' && behavioristProfileVendorId) {
+    const vid = behavioristProfileVendorId;
+    return (
+      <HomeServiceProviderProfile
+        phone={phone}
+        vendorId={vid}
+        serviceType="behaviourist"
+        config={SERVICE_CONFIGS.behaviourist}
+        onBack={() => {
+          setBehavioristProfileVendorId(null);
+          if (returnToProblemGridFromStyleHub) {
+            setReturnToProblemGridFromStyleHub(false);
+            setCurrentScreen('problem_grid_flow');
+            return;
+          }
+          setCurrentScreen('behaviorist');
+        }}
+        onSelectService={() => {
+          setBehavioristProfileVendorId(null);
+          setSelectedHomeServiceType('behaviourist');
+          setSelectedVendorId(vid);
+          setCurrentScreen('universal-home-booking');
+        }}
+        onNavigate={(screen) => {
+          if (screen === 'chat') {
+            openMessages();
+            return;
+          }
+          handleBottomNav(screen);
+        }}
       />
     );
   }
@@ -3633,7 +3752,23 @@ export function CustomerHomeWrapper({
               categoryHint: selectedProblem.category,
             }
           ) as ('at_home' | 'at_center' | 'tele')[],
-          linkedServiceRoles: selectedProblem.roleId ? [selectedProblem.roleId] : ['veterinarian', 'groomer', 'trainer'],
+          linkedServiceRoles: (() => {
+            const base = selectedProblem.roleId ? [selectedProblem.roleId] : [];
+            const c = String(selectedProblem.category || '').toLowerCase();
+            if (c === 'behavioral' || c === 'behavior' || c === 'sub_behavior') {
+              return [
+                ...new Set([
+                  ...base,
+                  'behaviourist',
+                  'behaviorist',
+                  'pet_behaviourist',
+                  'pet_behaviorist',
+                  'pet_behavior',
+                ]),
+              ];
+            }
+            return base.length ? base : ['veterinarian', 'groomer', 'trainer'];
+          })(),
           category: selectedProblem.category || selectedProblem.roleId || 'general',
         }}
         customerId={phone}

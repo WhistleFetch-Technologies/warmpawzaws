@@ -543,7 +543,7 @@ export function GroomingServicesByStyle({
     };
 
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
         <ServiceDashboardHeader
           className="!z-0 isolation-auto"
@@ -557,7 +557,7 @@ export function GroomingServicesByStyle({
           headerColor="bg-[#FF8C42]"
           bottomEdge="flat"
         />
-        <div className="relative z-0">
+        <div className="relative z-0 mx-auto max-w-md">
         {hasPhotos ? (
           <div className="relative w-full -mt-3 sm:-mt-3">
             <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
@@ -581,7 +581,7 @@ export function GroomingServicesByStyle({
           </div>
         )}
 
-        <div className="px-4 pb-32">
+        <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar-sticky-cta">
           {/* Salon Header Info - Grooming-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -957,8 +957,8 @@ export function GroomingServicesByStyle({
           </div>
         </div>
 
-        {/* Fixed Bottom Service Selection Summary & Book Button */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg max-w-md mx-auto">
+        {/* Fixed bottom CTA — above app tab bar (globals --customer-footer-offset); do not use bottom-0 or it hides behind BottomNavigation z-50 */}
+        <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
           {selectedServices.size > 0 && (
             <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
               <div className="flex items-center justify-between">
@@ -988,10 +988,10 @@ export function GroomingServicesByStyle({
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
+          </div>
+        </div>
         </div>
       </div>
-        </div>
-    </div>
   );
 }
 
@@ -1055,7 +1055,7 @@ export function GroomingServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 pb-24">
+      <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
