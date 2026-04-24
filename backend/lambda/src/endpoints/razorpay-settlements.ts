@@ -673,10 +673,18 @@ class ProcessSettlementHandler extends BaseHandler {
           results.push({ id: sid, success: true, payoutId });
         } catch (rpErr: any) {
           const rawMsg = rpErr?.message ?? rpErr?.error?.description ?? 'Razorpay payout failed';
+          const rawLower = String(rawMsg).toLowerCase();
           const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
-          const msg = isNotFound
+          const isInvalidRzpXAccount =
+            rawLower.includes('razorpayx account number is invalid') ||
+            (rawLower.includes('account number is invalid') && rawLower.includes('razorpay'));
+          let msg = isNotFound
             ? 'Razorpay Payouts is not available for this merchant (RazorpayX/Banking). Enable Payouts in the Razorpay Dashboard, use API keys from the same account where the payout source customer id lives, allowlist your Lambda egress IPs if Razorpay requires it, and complete RazorpayX business activation.'
             : String(rawMsg);
+          if (isInvalidRzpXAccount) {
+            msg =
+              `${rawMsg} — The payout source must be RazorpayX’s Banking customer identifier from the dashboard (not your company’s beneficiary bank account number). Copy it from RazorpayX → Banking / Payouts account section, then set payoutSourceAccountNumber or razorpayXAccountNumber in Admin → Payment gateways or in Secrets Manager warmpawz/{env}/razorpay.`;
+          }
           console.error('[ProcessSettlement] Razorpay error:', rawMsg);
           if (payoutId) {
             await query(
@@ -692,7 +700,7 @@ class ProcessSettlementHandler extends BaseHandler {
             id: sid,
             success: false,
             error: msg,
-            ...(String(rawMsg) !== String(msg) ? { razorpayMessage: String(rawMsg).slice(0, 500) } : {}),
+            razorpayMessage: String(rawMsg).slice(0, 500),
           });
         }
       } catch (err: any) {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -955,16 +956,17 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <label className="block text-sm font-medium text-slate-700 mb-1">Meal image (one photo)</label>
                 <p className="text-xs text-slate-500 mb-2">Shown to customers on meal lists. JPEG, PNG, or WebP up to 10MB.</p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-medium cursor-pointer border border-slate-200">
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      disabled={uploadingMealImage}
-                      onChange={handleMealImageFile}
-                    />
-                    {uploadingMealImage ? 'Uploading…' : formData.mealImageUrl ? 'Replace image' : 'Upload image'}
-                  </label>
+                  <TouchFilePicker
+                    onFileChange={handleMealImageFile}
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    disabled={uploadingMealImage}
+                    className="inline-block min-h-[2.5rem] min-w-[7rem] rounded-lg"
+                    innerClassName="items-center justify-center"
+                  >
+                    <span className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800">
+                      {uploadingMealImage ? 'Uploading…' : formData.mealImageUrl ? 'Replace image' : 'Upload image'}
+                    </span>
+                  </TouchFilePicker>
                   {formData.mealImageUrl ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}

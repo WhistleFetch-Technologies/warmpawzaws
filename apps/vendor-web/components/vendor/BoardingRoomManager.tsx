@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface BoardingRoomManagerProps {
   vendorId: string;
@@ -556,19 +557,18 @@ export function BoardingRoomManager({
               <label className="block text-sm font-medium mb-2">
                 Photos & Videos {!editingRoom && '*'}
               </label>
-              <div className="relative overflow-hidden border-2 border-dashed rounded-lg p-6 text-center">
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileUpload(file, editingRoom?.id || null);
-                  }}
-                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                  id="media-upload"
-                  disabled={uploadingMedia}
-                />
-                <div className="pointer-events-none flex flex-col items-center">
+              <TouchFilePicker
+                onFileChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file, editingRoom?.id || null);
+                }}
+                accept="image/*,video/*"
+                disabled={uploadingMedia}
+                className="relative min-h-[8rem] overflow-hidden rounded-lg border-2 border-dashed p-6 text-center"
+                innerClassName="flex w-full flex-col items-center"
+                inputId="media-upload"
+              >
+                <div className="flex flex-col items-center">
                   <Upload className="w-8 h-8 text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600">
                     {uploadingMedia ? 'Uploading...' : 'Click to upload photos or videos'}
@@ -576,7 +576,6 @@ export function BoardingRoomManager({
                   <p className="text-xs text-gray-500 mt-1">Max 50MB per file</p>
                 </div>
 
-                {/* Show uploaded media count */}
                 {(photos.length > 0 || videos.length > 0) && (
                   <div className="mt-4 flex items-center justify-center gap-4 text-sm">
                     {photos.length > 0 && (
@@ -591,7 +590,7 @@ export function BoardingRoomManager({
                     )}
                   </div>
                 )}
-              </div>
+              </TouchFilePicker>
             </div>
 
             {/* Actions */}

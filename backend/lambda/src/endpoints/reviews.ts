@@ -217,8 +217,8 @@ export function registerReviewEndpoints(app: Hono) {
 
       const reviews = await query(
         `SELECT r.*, 
-                c.name as customer_name,
-                c.profile_photo as customer_photo,
+                c.full_name as customer_name,
+                c.profile_photo_url as customer_photo,
                 sv.name as service_name,
                 b.booking_date
          FROM reviews r
@@ -281,8 +281,8 @@ export function registerReviewEndpoints(app: Hono) {
 
       const reviews = await query(
         `SELECT r.*, 
-                c.name as customer_name,
-                c.profile_photo as customer_photo,
+                c.full_name as customer_name,
+                c.profile_photo_url as customer_photo,
                 sv.name as service_name,
                 b.booking_date
          FROM reviews r

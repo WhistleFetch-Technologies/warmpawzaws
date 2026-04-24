@@ -6,6 +6,7 @@ import { Camera, Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorGalleryManagementProps {
   vendorId: string;
@@ -194,20 +195,19 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
                 </div>
 
                 {photos.length < MAX_PHOTOS && (
-                  <label className="relative flex cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-dashed border-gray-300 p-6 hover:bg-gray-50">
+                  <TouchFilePicker
+                    onFileChange={handleFileSelect}
+                    accept="image/*"
+                    multiple
+                    disabled={uploading}
+                    className="flex flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-dashed border-gray-300 p-6 transition-colors hover:bg-gray-50"
+                    innerClassName="flex w-full flex-col items-center justify-center gap-2 text-center"
+                  >
                     <ImageIcon className="h-8 w-8 text-gray-400" />
                     <span className="text-sm text-gray-600">
                       {uploading ? 'Uploading…' : `Add photos (${photos.length}/${MAX_PHOTOS})`}
                     </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={uploading}
-                      onChange={handleFileSelect}
-                      className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                    />
-                  </label>
+                  </TouchFilePicker>
                 )}
 
                 {photos.length >= MAX_PHOTOS && (

@@ -111,6 +111,18 @@ interface Transaction {
   created_at: string;
 }
 
+/** Bank payout rows from GET /vendor/:id/settlements (`payouts` table). */
+interface VendorPayoutHistoryRow {
+  id: string;
+  amount: number;
+  status: string;
+  razorpayPayoutId?: string | null;
+  settlementId?: string | null;
+  failureReason?: string | null;
+  createdAt?: string;
+  processedAt?: string | null;
+}
+
 export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp }: VendorEarningsSettlementDashboardProps) {
   const router = useRouter();
   const handleBack = onBackProp ?? (() => router.push('/'));
@@ -123,6 +135,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const [tierInfo, setTierInfo] = useState<TierInfo | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [payoutHistory, setPayoutHistory] = useState<VendorPayoutHistoryRow[]>([]);
   const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
@@ -302,11 +315,18 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const loadSettlements = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=20`).catch(() => null);
-      const list = response?.settlements;
+      const list =
+        response?.settlements ??
+        response?.data?.settlements;
       setSettlements(Array.isArray(list) ? list : []);
+      const payouts =
+        response?.payouts ??
+        response?.data?.payouts;
+      setPayoutHistory(Array.isArray(payouts) ? payouts : []);
     } catch (error) {
       console.error('Failed to fetch settlements:', error);
       setSettlements([]);
+      setPayoutHistory([]);
     }
   };
 
@@ -540,12 +560,21 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   );
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-700';
-      case 'processing': return 'bg-blue-100 text-blue-700';
-      case 'pending': return 'bg-yellow-100 text-yellow-700';
-      case 'failed': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
+    switch (String(status || '').toLowerCase()) {
+      case 'completed':
+      case 'processed':
+        return 'bg-green-100 text-green-700';
+      case 'processing':
+      case 'scheduled':
+        return 'bg-blue-100 text-blue-700';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'failed':
+      case 'cancelled':
+      case 'canceled':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
     }
   };
 
@@ -1066,7 +1095,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                                 </span>
                               </div>
                               <p className="text-sm text-gray-500 mt-1">
-                                {settlement.bookingCount || settlement.bookingIds?.length || 0} bookings
+                                {settlement.bookingCount ??
+                                  settlement.bookingIds?.length ??
+                                  (settlement.bookingId ? 1 : 0)}{' '}
+                                bookings
                               </p>
                               {settlement.payout_reference && (
                                 <p className="text-xs text-gray-400 mt-1">Ref: {settlement.payout_reference}</p>
@@ -1082,7 +1114,14 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                               </div>
                               <div>
                                 <p className="text-sm text-gray-500">Commission ({typeof settlement.commissionRate === 'number' && settlement.commissionRate > 1 ? (settlement.commissionRate || 0).toFixed(0) : ((settlement.commissionRate ?? 0.15) * 100).toFixed(0)}%)</p>
-                                <p className="font-medium text-red-600">-₹{(settlement.commission_amount || 0).toLocaleString()}</p>
+                                <p className="font-medium text-red-600">
+                                  -₹
+                                  {(
+                                    settlement.commissionAmount ??
+                                    (settlement as { commission_amount?: number }).commission_amount ??
+                                    0
+                                  ).toLocaleString()}
+                                </p>
                               </div>
                               <div>
                                 <p className="text-sm text-gray-500">Net Payout</p>
@@ -1113,6 +1152,40 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8">
+                <h3 className="font-semibold text-gray-900 mb-4">Bank payout history</h3>
+                {payoutHistory.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl text-gray-500 text-sm">
+                    No bank transfers yet. When Warmpawz sends money to your account, each transfer appears here.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {payoutHistory.map((p) => {
+                      const when = p.processedAt || p.createdAt;
+                      return (
+                        <div key={p.id} className="bg-gray-50 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">₹{p.amount.toLocaleString()}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {when ? new Date(when).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                            </p>
+                            {p.razorpayPayoutId ? (
+                              <p className="text-xs text-gray-400 mt-1">Razorpay: {p.razorpayPayoutId}</p>
+                            ) : null}
+                            {p.failureReason ? (
+                              <p className="text-xs text-red-600 mt-1">{p.failureReason}</p>
+                            ) : null}
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(p.status)}`}>
+                            {p.status}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

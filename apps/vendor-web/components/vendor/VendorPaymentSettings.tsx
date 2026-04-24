@@ -7,6 +7,7 @@ import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorPaymentSettingsProps {
   vendorId: string;
@@ -432,13 +433,10 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Cancelled Cheque</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <div className="inline-block">
-                      <input
-                        id={`vendor-pay-cheque-${vendorId}`}
+                    <div className="inline-block min-h-[36px] min-w-[88px]">
+                      <TouchFilePicker
                         ref={cancelledChequeInputRef}
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
+                        onFileChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
@@ -450,39 +448,37 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           }
                           e.target.value = '';
                         }}
-                        className="sr-only"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         disabled={uploadingDoc}
-                      />
-                      <label
-                        htmlFor={`vendor-pay-cheque-${vendorId}`}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'cursor-pointer',
-                          uploadingDoc && 'pointer-events-none opacity-50'
-                        )}
+                        className="inline-block min-h-[36px] min-w-[88px]"
+                        innerClassName="items-center justify-center"
                       >
-                        {uploadingDoc ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Upload className="mr-1 h-4 w-4" />
-                            Upload
-                          </>
-                        )}
-                      </label>
+                        <span
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            uploadingDoc && 'opacity-50'
+                          )}
+                        >
+                          {uploadingDoc ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="mr-1 h-4 w-4" />
+                              Upload
+                            </>
+                          )}
+                        </span>
+                      </TouchFilePicker>
                     </div>
                   </div>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Bank Statement</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <div className="inline-block">
-                      <input
-                        id={`vendor-pay-stmt-${vendorId}`}
+                    <div className="inline-block min-h-[36px] min-w-[88px]">
+                      <TouchFilePicker
                         ref={bankStatementInputRef}
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
+                        onFileChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
@@ -494,26 +490,27 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                           }
                           e.target.value = '';
                         }}
-                        className="sr-only"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         disabled={uploadingDoc}
-                      />
-                      <label
-                        htmlFor={`vendor-pay-stmt-${vendorId}`}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'cursor-pointer',
-                          uploadingDoc && 'pointer-events-none opacity-50'
-                        )}
+                        className="inline-block min-h-[36px] min-w-[88px]"
+                        innerClassName="items-center justify-center"
                       >
-                        {uploadingDoc ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Upload className="mr-1 h-4 w-4" />
-                            Upload
-                          </>
-                        )}
-                      </label>
+                        <span
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            uploadingDoc && 'opacity-50'
+                          )}
+                        >
+                          {uploadingDoc ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="mr-1 h-4 w-4" />
+                              Upload
+                            </>
+                          )}
+                        </span>
+                      </TouchFilePicker>
                     </div>
                   </div>
                 </div>

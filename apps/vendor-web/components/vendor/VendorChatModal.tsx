@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useId } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // ============================================================================
 // TYPES
@@ -155,7 +156,6 @@ export function VendorChatModal({
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const chatFileInputId = useId().replace(/:/g, '');
   const [isNativeWebView, setIsNativeWebView] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -766,22 +766,20 @@ export function VendorChatModal({
                   )}
                 </button>
               ) : (
-                <label className="flex shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 sm:p-3">
-                  <input
-                    id={chatFileInputId}
-                    ref={fileInputRef}
-                    type="file"
-                    className="sr-only"
-                    onChange={handleFileUpload}
-                    accept="image/*,.pdf,.doc,.docx"
-                    disabled={uploading}
-                  />
+                <TouchFilePicker
+                  ref={fileInputRef}
+                  onFileChange={handleFileUpload}
+                  accept="image/*,.pdf,.doc,.docx"
+                  disabled={uploading}
+                  className="flex h-9 w-9 shrink-0 touch-manipulation rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 sm:h-11 sm:w-11"
+                  innerClassName="flex h-full w-full items-center justify-center"
+                >
                   {uploading ? (
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                   ) : (
                     <Paperclip className="h-5 w-5" />
                   )}
-                </label>
+                </TouchFilePicker>
               )}
 
               {/* Message Input */}

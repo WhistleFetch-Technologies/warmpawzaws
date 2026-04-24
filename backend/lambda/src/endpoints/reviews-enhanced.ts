@@ -95,6 +95,7 @@ class CreateReviewHandler extends BaseHandler {
         comment: review || null,
         service_type: serviceStyle || 'at_center',
         is_published: true,
+        is_approved: true,
         created_at: new Date(),
         updated_at: new Date(),
       });
