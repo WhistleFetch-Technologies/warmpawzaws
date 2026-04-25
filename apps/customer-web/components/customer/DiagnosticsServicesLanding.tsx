@@ -30,6 +30,7 @@ import {
   Stethoscope
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { toast } from 'sonner';
@@ -209,11 +210,12 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         apiClient.get<any>('/customer/diagnostic-packages')
       ]);
 
-      if (vendorsRes.status === 'rejected') {
-        setDiscoveryError('Could not load labs. Check your connection and try again.');
-      }
-
       const vendorsData = vendorsRes.status === 'fulfilled' ? vendorsRes.value : null;
+      if (vendorsRes.status === 'rejected') {
+        setDiscoveryError(
+          formatCustomerApiFailure(vendorsRes.reason, 'Could not load labs')
+        );
+      }
       if (
         vendorsData &&
         typeof vendorsData === 'object' &&
@@ -225,6 +227,10 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           'Could not load labs.';
         setDiscoveryError(msg);
       }
+
+      const labsDiscoveryFailed =
+        vendorsRes.status === 'rejected' ||
+        !!(vendorsData && typeof vendorsData === 'object' && vendorsData.success === false);
 
       const vendorsList = Array.isArray(vendorsData?.vendors) ? vendorsData.vendors : [];
 
@@ -301,11 +307,14 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         ]);
       }
 
-      // Process packages
-      if (packagesRes.status === 'fulfilled' && packagesRes.value?.packages) {
+      // Process packages (do not show demo packages when lab discovery failed—avoids false "Book" flows)
+      if (
+        packagesRes.status === 'fulfilled' &&
+        Array.isArray(packagesRes.value?.packages) &&
+        packagesRes.value.packages.length > 0
+      ) {
         setPopularPackages(packagesRes.value.packages);
-      } else {
-        // Fallback mock packages
+      } else if (!labsDiscoveryFailed) {
         setPopularPackages([
           {
             id: 'pkg-1',
@@ -338,12 +347,14 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             turnaroundHours: 12
           }
         ]);
+      } else {
+        setPopularPackages([]);
       }
     } catch (error) {
       console.error('Error loading diagnostics data:', error);
       setFeaturedCenters([]);
       setStats(EMPTY_DIAGNOSTICS_STATS);
-      setDiscoveryError('Could not load diagnostic labs. Check your connection and try again.');
+      setDiscoveryError(formatCustomerApiFailure(error, 'Could not load diagnostic labs'));
       setTestCategories([]);
     } finally {
       setLoading(false);
@@ -540,6 +551,14 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             <Package className="w-5 h-5 text-teal-600" />
             <h2 className="text-lg font-semibold">Health Packages</h2>
           </div>
+
+          {popularPackages.length === 0 && (
+            <p className="text-sm text-gray-500 mb-3">
+              {discoveryError
+                ? 'Curated packages appear after labs load successfully. Refresh the page or try again in a moment.'
+                : 'No featured health packages in this region yet.'}
+            </p>
+          )}
 
           {labsForPackageBooking.length > 1 && (
             <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">

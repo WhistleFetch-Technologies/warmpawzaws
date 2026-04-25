@@ -831,12 +831,12 @@ export function UniversalProviderProfile({
                         }`}
                         onClick={() => toggleService(service.id)}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900">{service.name}</h4>
+                        <div className="flex w-full min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1 pr-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-medium text-gray-900 break-words">{service.name}</h4>
                               {service.popular && (
-                                <Badge className="bg-amber-100 text-amber-700 text-xs">Popular</Badge>
+                                <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
                               )}
                             </div>
                             {service.description?.trim() && (
@@ -848,19 +848,21 @@ export function UniversalProviderProfile({
                                 />
                               </div>
                             )}
-                            <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              <span className="flex min-w-0 items-center gap-1">
+                                <Clock className="h-3 w-3 shrink-0" />
                                 {service.duration} mins
                               </span>
                               {service.categoryName && (
-                                <span>{service.categoryName}</span>
+                                <span className="min-w-0 break-words">{service.categoryName}</span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="font-bold text-gray-900">{formatPriceWithSymbol(service.price)}</p>
+                          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                            <div className="min-w-0 text-right">
+                              <p className="font-bold tabular-nums text-[#FF8C42]">
+                                {formatPriceWithSymbol(service.price)}
+                              </p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 

@@ -41,6 +41,71 @@ interface Prescription {
   instructions?: string;
 }
 
+/** Set to true to re-enable the header "Order" control (UX / business toggle). */
+const PHARMACY_ORDER_BUTTON_ENABLED = false;
+
+function isUserShareCancel(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  const n = (err as { name?: string })?.name;
+  return n === 'AbortError';
+}
+
+function buildPrescriptionShareText(p: Prescription): string {
+  const title = p.title || 'Prescription';
+  const lines: string[] = [title, ''];
+  const diagnosis = p.content_data?.diagnosis || p.diagnosis;
+  if (diagnosis) {
+    lines.push(`Diagnosis: ${diagnosis}`);
+  }
+  const meds = p.content_data?.medications;
+  if (Array.isArray(meds) && meds.length > 0) {
+    lines.push('Medications:');
+    meds.forEach((m: { name?: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }, i: number) => {
+      const row = [
+        `${i + 1}. ${m.name || 'Medication'}`,
+        m.dosage && `Dosage: ${m.dosage}`,
+        m.frequency && `Frequency: ${m.frequency}`,
+        m.duration && `Duration: ${m.duration}`,
+        m.instructions && `Note: ${m.instructions}`,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      lines.push(row);
+    });
+  } else if (p.medication_name) {
+    lines.push(`Medication: ${p.medication_name}`);
+  }
+  const notes = p.content_data?.notes || p.instructions;
+  if (notes) lines.push(`Notes: ${notes}`);
+  return lines.join('\n');
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* continue */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function PrescriptionHistoryModal({
   bookingId,
   petId,
@@ -322,6 +387,99 @@ export function PrescriptionHistoryModal({
     return prescription.prescription_date || prescription.record_date || prescription.created_at;
   };
 
+  const shareSelectedPrescription = async (p: Prescription) => {
+    const shareTitle = p.title || 'Prescription';
+    const bodyText = buildPrescriptionShareText(p);
+    const fileUrl = p.file_url?.trim();
+
+    const runShare = async (data: ShareData): Promise<'ok' | 'cancel' | 'unavailable'> => {
+      if (typeof navigator === 'undefined' || !navigator.share) return 'unavailable';
+      try {
+        await navigator.share(data);
+        return 'ok';
+      } catch (err) {
+        if (isUserShareCancel(err)) return 'cancel';
+        return 'unavailable';
+      }
+    };
+
+    if (fileUrl) {
+      const blurb = p.description || 'Medical prescription from Warmpawz';
+      const r1 = await runShare({ title: shareTitle, text: blurb, url: fileUrl });
+      if (r1 === 'ok') {
+        toast.success('Shared');
+        return;
+      }
+      if (r1 === 'cancel') return;
+      const textWithUrl = `${bodyText}\n\n${fileUrl}`;
+      const r2 = await runShare({ title: shareTitle, text: textWithUrl });
+      if (r2 === 'ok') {
+        toast.success('Shared');
+        return;
+      }
+      if (r2 === 'cancel') return;
+      if (await copyTextToClipboard(textWithUrl)) {
+        toast.success('Link and details copied — paste into any app to share');
+        return;
+      }
+      toast.error('Could not open share. Try again or use the full document view.');
+      return;
+    }
+
+    if (bodyText.replace(/\s/g, '').length < 2) {
+      toast.error('Nothing to share for this prescription');
+      return;
+    }
+
+    const r3 = await runShare({ title: shareTitle, text: bodyText });
+    if (r3 === 'ok') {
+      toast.success('Shared');
+      return;
+    }
+    if (r3 === 'cancel') return;
+    if (await copyTextToClipboard(bodyText)) {
+      toast.success('Prescription text copied — paste into WhatsApp or another app');
+      return;
+    }
+    toast.error('Could not share. Try copying from the screen or use another device.');
+  };
+
+  /** Kept for when PHARMACY_ORDER_BUTTON_ENABLED is true; do not remove. */
+  const openPharmacyOrderFromViewer = async () => {
+    if (!selectedPrescription) return;
+    try {
+      let medications: any[] = [];
+      if (selectedPrescription.content_data?.medications) {
+        medications = Array.isArray(selectedPrescription.content_data.medications)
+          ? selectedPrescription.content_data.medications
+          : [];
+      }
+      if (onOrderMedicine) {
+        onOrderMedicine(selectedPrescription.id, bookingId, medications);
+        setShowViewer(false);
+        onClose();
+        toast.success('Opening pharmacy order...');
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('orderMedicineFromPrescription', {
+            detail: {
+              prescriptionId: selectedPrescription.id,
+              bookingId,
+              medications,
+              fileUrl: selectedPrescription.file_url,
+            },
+          })
+        );
+        setShowViewer(false);
+        onClose();
+        toast.success('Opening pharmacy order...');
+      }
+    } catch (error: unknown) {
+      console.error('Error ordering medicine:', error);
+      toast.error('Failed to open pharmacy order. Please try again.');
+    }
+  };
+
   // Sort prescriptions by date (latest first)
   const sortedPrescriptions = [...prescriptions].sort((a, b) => {
     const dateA = new Date(getPrescriptionDate(a)).getTime();
@@ -583,29 +741,8 @@ export function PrescriptionHistoryModal({
                   </button>
                 )}
                 <button
-                  onClick={async () => {
-                    try {
-                      const fileUrl = selectedPrescription.file_url;
-                      if (!fileUrl) {
-                        toast.error('No file URL available to share');
-                        return;
-                      }
-                      if (navigator.share) {
-                        await navigator.share({
-                          title: selectedPrescription.title || 'Prescription',
-                          text: selectedPrescription.description || 'Medical prescription',
-                          url: fileUrl,
-                        });
-                        toast.success('Prescription shared successfully');
-                      } else {
-                        await navigator.clipboard.writeText(fileUrl);
-                        toast.success('Prescription URL copied to clipboard');
-                      }
-                    } catch (error) {
-                      console.error('Error sharing prescription:', error);
-                      toast.error('Failed to share prescription');
-                    }
-                  }}
+                  type="button"
+                  onClick={() => shareSelectedPrescription(selectedPrescription)}
                   className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
                   title="Share"
                 >
@@ -643,46 +780,20 @@ export function PrescriptionHistoryModal({
                   </button>
                 )}
                 
-                {/* ✅ FIX: Pharmacy Order Button - Show for all prescriptions */}
+                {/* Pharmacy order: implementation in openPharmacyOrderFromViewer; toggle PHARMACY_ORDER_BUTTON_ENABLED to re-enable */}
                 {(selectedPrescription.content_data || selectedPrescription.file_url) && (
                   <button
-                    onClick={async () => {
-                      try {
-                        // Extract medications from content_data if available
-                        let medications: any[] = [];
-                        if (selectedPrescription.content_data?.medications) {
-                          medications = Array.isArray(selectedPrescription.content_data.medications)
-                            ? selectedPrescription.content_data.medications
-                            : [];
-                        }
-                        
-                        // If onOrderMedicine callback is provided, use it
-                        if (onOrderMedicine) {
-                          onOrderMedicine(selectedPrescription.id, bookingId, medications);
-                          setShowViewer(false);
-                          onClose(); // Close prescription modal
-                          toast.success('Opening pharmacy order...');
-                        } else {
-                          // Fallback: Navigate to pharmacy order flow via window event
-                          window.dispatchEvent(new CustomEvent('orderMedicineFromPrescription', {
-                            detail: {
-                              prescriptionId: selectedPrescription.id,
-                              bookingId,
-                              medications,
-                              fileUrl: selectedPrescription.file_url,
-                            }
-                          }));
-                          setShowViewer(false);
-                          onClose();
-                          toast.success('Opening pharmacy order...');
-                        }
-                      } catch (error: any) {
-                        console.error('Error ordering medicine:', error);
-                        toast.error('Failed to open pharmacy order. Please try again.');
-                      }
+                    type="button"
+                    disabled={!PHARMACY_ORDER_BUTTON_ENABLED}
+                    onClick={() => {
+                      if (PHARMACY_ORDER_BUTTON_ENABLED) void openPharmacyOrderFromViewer();
                     }}
-                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center gap-1.5"
-                    title="Order Medicine from Pharmacy"
+                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-100"
+                    title={
+                      PHARMACY_ORDER_BUTTON_ENABLED
+                        ? 'Order Medicine from Pharmacy'
+                        : 'Pharmacy order coming soon'
+                    }
                   >
                     <ShoppingCart className="w-4 h-4" />
                     <span className="text-xs font-medium">Order</span>

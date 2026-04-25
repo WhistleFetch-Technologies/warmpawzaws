@@ -1254,6 +1254,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      /**
+       * Nutrition: catalog/custom rows may leave vs.category empty while vendors.role is pet_nutritionist / nutritionist
+       * (mirrors boardingRoleUncategorizedOr so experts still appear in discovery).
+       */
+      const nutritionDiscoverySearch =
+        catTextExact.some(
+          (c) =>
+            ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
+            c.includes('nutritionist') ||
+            c === 'pet nutrition' ||
+            (c.length >= 8 && c.startsWith('nutrition'))
+        ) ||
+        (roleId &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(roleId).toLowerCase().replace(/-/g, '_')
+          ));
+
       /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
       const walkerCategoryDiscoveryOr =
         !sittingDiscoveryRelaxed &&
@@ -1306,6 +1323,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(_vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const nutritionUncatSql =
+          !sitterRoleBypass &&
+          nutritionDiscoverySearch &&
+          _vendorRoleName &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(_vendorRoleName).toLowerCase()
+          )
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -1314,6 +1340,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
+            ${nutritionUncatSql}
             ${walkerCategoryDiscoveryOr}
           )
         `
@@ -1488,6 +1515,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
           : '';
 
+      const nutritionRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && nutritionDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
+          : '';
+
       const vendorServiceCategorySql =
         catTextExact.length + catUUIDs.length > 0
           ? sittingDiscoveryRelaxed
@@ -1505,6 +1537,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
+                ${nutritionRoleUncategorizedOr}
                 ${walkerCategoryDiscoveryOr}
               )`
           : '';
@@ -4888,9 +4921,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      const nutritionDiscoverySearchByStyle =
+        catTextExact.some(
+          (c) =>
+            ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
+            c.includes('nutritionist') ||
+            c === 'pet nutrition' ||
+            (c.length >= 8 && c.startsWith('nutrition'))
+        ) ||
+        (roleId &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(roleId).toLowerCase().replace(/-/g, '_')
+          ));
+
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
+          : '';
+
+      const nutritionRoleUncategorizedOrByStyle =
+        nutritionDiscoverySearchByStyle
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
 
       const walkerCategoryDiscoveryOrByStyle =
@@ -4937,12 +4988,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const nutritionUncatSqlByStyle =
+          nutritionDiscoverySearchByStyle &&
+          vendorRoleName &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(vendorRoleName).toLowerCase()
+          )
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const categoryFilterSql = (catTextExact.length + catUUIDs.length > 0) ? `
           AND (
             ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
+            ${nutritionUncatSqlByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
           )
         ` : '';
@@ -5119,6 +5179,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
+                ${nutritionRoleUncategorizedOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
               )` : ``}
           )

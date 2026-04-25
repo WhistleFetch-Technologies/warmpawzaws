@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -178,9 +179,9 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     } catch (err: any) {
       console.error('Error loading tests:', err);
       const msg =
-        err?.message?.includes('403')
+        err?.message?.includes('403') || err?.statusCode === 403 || err?.status === 403
           ? 'This lab is not set up for online test booking.'
-          : err?.message || 'Failed to load diagnostic tests. Check your connection and try again.';
+          : formatCustomerApiFailure(err, 'Could not load tests for this lab');
       setError(msg);
       toast.error(msg);
     } finally {

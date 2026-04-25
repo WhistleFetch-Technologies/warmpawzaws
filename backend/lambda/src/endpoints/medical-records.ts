@@ -962,37 +962,53 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Presigned URLs will be generated on-demand when viewing the file
       // This prevents ExpiredToken errors when temporary credentials expire before the presigned URL
 
+      // RDS NOT NULL on created_by; use booking-scoped UUIDs. Role "system" for customer uploads
+      // satisfies legacy CHECK (vendor|staff|admin|system) where "customer" is not allowed.
+      const createdBy =
+        uploadedBy === 'vendor'
+          ? booking.vendor_id
+          : booking.customer_id;
+      const createdByRole =
+        uploadedBy === 'vendor' ? 'vendor' : 'system';
+
+      if (!createdBy) {
+        return c.json(
+          { error: 'Cannot determine creator for this booking (missing customer or vendor id)' },
+          400
+        );
+      }
+
       // Create medical record entry
       // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
       let record;
+      const recordBase = {
+        pet_id: booking.pet_id,
+        customer_id: booking.customer_id,
+        vendor_id: booking.vendor_id,
+        booking_id: bookingId,
+        file_url: fileKey,
+        record_date: recordDate,
+        created_at: new Date().toISOString(),
+        created_by: createdBy,
+        created_by_role: createdByRole,
+      };
+
       try {
         record = await insert('medical_records', {
-          pet_id: booking.pet_id,
-          customer_id: booking.customer_id,
-          vendor_id: booking.vendor_id,
-          booking_id: bookingId,
+          ...recordBase,
           record_type: 'prescription',
           title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
           description: context || `Handwritten prescription uploaded by ${uploadedBy}`,
-          file_url: fileKey, // Store S3 key, not presigned URL
-          record_date: recordDate, // Mandatory date field
-          created_at: new Date().toISOString(),
         });
       } catch (constraintError: any) {
         // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
         if (constraintError.message && constraintError.message.includes('record_type_check')) {
           console.warn('[Medical Records] Constraint doesn\'t allow "prescription", using "treatment" as fallback');
           record = await insert('medical_records', {
-            pet_id: booking.pet_id,
-            customer_id: booking.customer_id,
-            vendor_id: booking.vendor_id,
-            booking_id: bookingId,
+            ...recordBase,
             record_type: 'treatment', // Fallback value that works with older constraints
             title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
             description: context || `Handwritten prescription uploaded by ${uploadedBy} [Type: Prescription]`,
-            file_url: fileKey, // Store S3 key, not presigned URL
-            record_date: recordDate,
-            created_at: new Date().toISOString(),
           });
         } else {
           throw constraintError;

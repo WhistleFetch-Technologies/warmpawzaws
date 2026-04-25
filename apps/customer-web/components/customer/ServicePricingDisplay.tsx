@@ -51,9 +51,9 @@ export function ServicePricingDisplay({
     : finalVendorPrice;
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
-      {/* Price Display */}
-      <div className="flex items-center gap-2">
+    <div className={`flex min-w-0 max-w-full flex-col gap-1 ${className}`}>
+      {/* Price Display — flex-wrap so strike + sale price never push past narrow columns */}
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
         {hasVendorDiscount && (
           <>
             {/* Original Price - Strikethrough */}
