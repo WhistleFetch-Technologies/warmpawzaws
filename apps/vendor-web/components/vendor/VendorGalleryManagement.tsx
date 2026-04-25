@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
 
 interface VendorGalleryManagementProps {
   vendorId: string;
@@ -59,7 +60,9 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     e.target.value = '';
 
     const valid = files.filter((file) => {
-      if (!file.type.startsWith('image/')) {
+      // Use same rules as @capacitor/camera + Capawesome: Android often yields application/octet-stream
+      // or empty MIME; match by extension for image/* (see fileMatchesAccept).
+      if (!fileMatchesAccept(file, 'image/*')) {
         toast.error(`${file.name} is not an image`);
         return false;
       }
