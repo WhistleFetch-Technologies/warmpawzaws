@@ -430,6 +430,7 @@ CREATE TABLE payouts (
     -- Metadata
     payment_ids UUID[] NOT NULL, -- Array of payment IDs included in this payout
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     processed_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     failure_reason TEXT

@@ -814,7 +814,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column px-6 py-8">
+    <div className="vendor-root-scroll min-h-0 bg-gradient-to-b from-orange-50 to-white vendor-app-column overscroll-y-contain px-6 py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">

@@ -40,81 +40,73 @@ export interface RazorpayConfig {
   razorpayXAccountNumber?: string;
 }
 
-/**
- * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback).
- *
- * AWS Secrets Manager (recommended for production):
- * - Secret name: warmpawz/{STAGE}/razorpay (e.g. warmpawz/dev/razorpay)
- * - Value (JSON): { "keyId": "rzp_...", "keySecret": "...", "webhookSecret": "..." }
- * - Lambda must have IAM permission secretsmanager:GetSecretValue for this secret.
- * - If Lambda runs in a VPC, ensure NAT Gateway or VPC endpoint for Secrets Manager.
- */
-export async function getRazorpayConfig(): Promise<RazorpayConfig> {
+function razorpayKeyIdPrefix(keyId: string): string {
+  const s = String(keyId || '');
+  return s.length <= 12 ? s : `${s.slice(0, 12)}…`;
+}
 
-  // try database first 
-  try {
-    const integrations = await select('platform_integrations', {
-      integration_name: 'razorpay',
-    });
+/** True when this Lambda deployment is production (`ENVIRONMENT` / `STAGE`). */
+function isRazorpayProdDeployment(): boolean {
+  const e = String(process.env.ENVIRONMENT || process.env.STAGE || '').toLowerCase();
+  return e === 'prod' || e === 'production';
+}
 
-    if (integrations.length > 0 && integrations[0].integration_config) {
-      const config = integrations[0].integration_config as any;
-      if (config.keyId && config.keySecret) {
-        console.log('[RAZORPAY-CONFIG] Loaded from database');
-        const xAccount = pickPayoutSourceAccountFromRecord(config);
-        console.log('[RAZORPAY-CONFIG] Loaded from database', config);
-        return {
-          keyId: config.keyId,
-          keySecret: config.keySecret,
-          webhookSecret: config.webhookSecret || '',
-          razorpayXAccountNumber: xAccount || undefined,
-        };
-      }
-    }
-  } catch (error: any) {
-    console.warn('[RAZORPAY-CONFIG] Failed to load from database, trying env vars:', error.message);
-  }
+async function loadRazorpayFromDatabase(): Promise<RazorpayConfig | null> {
+  const integrations = await select('platform_integrations', {
+    integration_name: 'razorpay',
+  });
 
-  //try secrets manager second
-  try {
-    const secretConfig = await Promise.race([
-      getSecretJson<{
-        keyId: string;
-        keySecret: string;
-        webhookSecret?: string;
-        payoutSourceAccountNumber?: string;
-        razorpayXAccountNumber?: string;
-        xAccountNumber?: string;
-      }>('razorpay'),
-      new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000) // 5s timeout
-      )
-    ]).catch((error) => {
-      // If timeout, return null to trigger fallback
-      if (error.message === 'Secrets Manager timeout') {
-        console.warn('[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback');
-        return null;
-      }
-      throw error;
-    });
-
-    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
-      console.log('[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager');
-      const xAccount = pickPayoutSourceAccountFromRecord(secretConfig as Record<string, unknown>);
+  if (integrations.length > 0 && integrations[0].integration_config) {
+    const config = integrations[0].integration_config as Record<string, unknown>;
+    const keyId = config.keyId as string | undefined;
+    const keySecret = config.keySecret as string | undefined;
+    if (keyId && keySecret) {
+      const xAccount = pickPayoutSourceAccountFromRecord(config);
       return {
-        keyId: secretConfig.keyId,
-        keySecret: secretConfig.keySecret,
-        webhookSecret: secretConfig.webhookSecret || '',
+        keyId,
+        keySecret,
+        webhookSecret: String(config.webhookSecret || ''),
         razorpayXAccountNumber: xAccount || undefined,
       };
     }
-  } catch (error: any) {
-    console.warn('[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:', error.message);
   }
+  return null;
+}
 
+async function loadRazorpayFromSecretsManager(): Promise<RazorpayConfig | null> {
+  const secretConfig = await Promise.race([
+    getSecretJson<{
+      keyId: string;
+      keySecret: string;
+      webhookSecret?: string;
+      payoutSourceAccountNumber?: string;
+      razorpayXAccountNumber?: string;
+      xAccountNumber?: string;
+    }>('razorpay'),
+    new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000)
+    ),
+  ]).catch((error: any) => {
+    if (error?.message === 'Secrets Manager timeout') {
+      console.warn('[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback');
+      return null;
+    }
+    throw error;
+  });
 
+  if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
+    const xAccount = pickPayoutSourceAccountFromRecord(secretConfig as Record<string, unknown>);
+    return {
+      keyId: secretConfig.keyId,
+      keySecret: secretConfig.keySecret,
+      webhookSecret: secretConfig.webhookSecret || '',
+      razorpayXAccountNumber: xAccount || undefined,
+    };
+  }
+  return null;
+}
 
-  // Try environment variables
+function loadRazorpayFromEnv(): RazorpayConfig | null {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -123,13 +115,71 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
     const xFromEnv =
       process.env.RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER?.trim() ||
       process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-    console.log('[RAZORPAY-CONFIG] Loaded from environment variables');
     return {
       keyId,
       keySecret,
       webhookSecret: webhookSecret || '',
       razorpayXAccountNumber: xFromEnv || undefined,
     };
+  }
+  return null;
+}
+
+/**
+ * Get Razorpay configuration.
+ *
+ * **Production (`ENVIRONMENT=prod`):** Secrets Manager first, then env, then DB.
+ * Stops `platform_integrations` (often still on test keys from Admin) from overriding
+ * `warmpawz/prod/razorpay` live keys and payout source.
+ *
+ * **Non‑prod:** DB first (Admin sandbox), then Secrets Manager, then env.
+ *
+ * Secret JSON: `warmpawz/{stage}/razorpay` — `{ "keyId", "keySecret", "webhookSecret?", "payoutSourceAccountNumber?" }`
+ */
+export async function getRazorpayConfig(): Promise<RazorpayConfig> {
+  const prod = isRazorpayProdDeployment();
+  let dbCfg: RazorpayConfig | null = null;
+
+  try {
+    dbCfg = await loadRazorpayFromDatabase();
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from database:', error.message);
+  }
+
+  const logPick = (source: string, cfg: RazorpayConfig): RazorpayConfig => {
+    const x = cfg.razorpayXAccountNumber?.trim();
+    console.log(
+      `[RAZORPAY-CONFIG] Using ${source} (keyId=${razorpayKeyIdPrefix(cfg.keyId)}, hasPayoutSource=${Boolean(x)})`
+    );
+    return cfg;
+  };
+
+  // Non‑prod: keep legacy order (Admin / DB first); skip Secrets when DB already has keys.
+  if (!prod && dbCfg) {
+    return logPick('database', dbCfg);
+  }
+
+  let secretCfg: RazorpayConfig | null = null;
+  try {
+    secretCfg = await loadRazorpayFromSecretsManager();
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from Secrets Manager:', error.message);
+  }
+
+  const envCfg = loadRazorpayFromEnv();
+
+  if (prod) {
+    if (secretCfg) return logPick('AWS Secrets Manager (prod priority)', secretCfg);
+    if (envCfg) return logPick('environment variables (prod fallback)', envCfg);
+    if (dbCfg) {
+      console.warn(
+        '[RAZORPAY-CONFIG] Prod: no Razorpay secret or env keys; falling back to database (prefer live keys in Secrets Manager warmpawz/prod/razorpay).'
+      );
+      return logPick('database (prod last resort)', dbCfg);
+    }
+  } else {
+    if (secretCfg) return logPick('AWS Secrets Manager', secretCfg);
+    if (envCfg) return logPick('environment variables', envCfg);
   }
 
   throw new Error('Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.');
