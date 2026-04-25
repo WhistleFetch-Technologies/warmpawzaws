@@ -91,6 +91,12 @@ export default function AdminHomePage() {
       // Initialize session (clears on hard refresh)
       const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
       initializeSession();
+
+      const pendingSessionMsg = sessionStorage.getItem('_warmpawz_admin_session_msg');
+      if (pendingSessionMsg) {
+        sessionStorage.removeItem('_warmpawz_admin_session_msg');
+        setError(pendingSessionMsg);
+      }
       
       const storedToken = localStorage.getItem('adminAuthToken');
       if (storedToken && !isTokenExpired(storedToken)) {
@@ -192,8 +198,13 @@ export default function AdminHomePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('adminAuthToken');
+    localStorage.removeItem('adminIdToken');
+    localStorage.removeItem('adminRefreshToken');
     localStorage.removeItem('adminEmail');
+    localStorage.removeItem('adminId');
+    localStorage.removeItem('adminName');
     localStorage.removeItem('adminPermissions');
+    sessionStorage.removeItem('_warmpawz_admin_has_session');
     setIsAuthenticated(false);
   };
 

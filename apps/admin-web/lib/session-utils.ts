@@ -107,8 +107,11 @@ export function clearAdminSession(): void {
   if (typeof window === 'undefined') return;
   
   localStorage.removeItem('adminAuthToken');
+  localStorage.removeItem('adminIdToken');
+  localStorage.removeItem('adminRefreshToken');
   localStorage.removeItem('adminId');
   localStorage.removeItem('adminEmail');
+  localStorage.removeItem('adminName');
   localStorage.removeItem('adminUser');
   localStorage.removeItem('adminPermissions');
 }
@@ -130,6 +133,24 @@ export function isTokenExpired(token: string | null): boolean {
     return payload.exp < now;
   } catch (error) {
     return true;
+  }
+}
+
+/**
+ * True when a JWT access token will expire within `bufferSeconds` (default 5 minutes).
+ * Non-JWT strings (e.g. uat-token-*) return false so callers skip proactive refresh.
+ */
+export function isJwtExpiringWithin(token: string | null, bufferSeconds: number = 300): boolean {
+  if (!token || token.startsWith('uat-token-')) return false;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1]));
+    if (!payload.exp || typeof payload.exp !== 'number') return false;
+    const now = Math.floor(Date.now() / 1000);
+    return payload.exp - now < bufferSeconds;
+  } catch {
+    return false;
   }
 }
 
@@ -156,9 +177,10 @@ export function initializeSession(): void {
   }
   
   const token = localStorage.getItem('adminAuthToken');
-  
-  if (token && isTokenExpired(token)) {
-    console.log('[Session] Token expired - clearing admin session');
+  const hasRefresh = !!localStorage.getItem('adminRefreshToken');
+
+  if (token && isTokenExpired(token) && !hasRefresh) {
+    console.log('[Session] Token expired and no refresh token - clearing admin session');
     clearAdminSession();
   }
 }
