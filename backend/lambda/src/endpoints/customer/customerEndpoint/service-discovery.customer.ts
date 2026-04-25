@@ -112,11 +112,13 @@ function sqlVendorServiceDiscoverable(vsAlias = 'vs', allowNullEnabled = false):
 }
 
 /**
- * Vendor has usable vendor_availability_v2 for the requested styles, OR has no VA2 rows yet
- * (services-first onboarding — show provider once services are live; slots API still enforces booking).
- * `styleParam` must match the query param index for acceptableStyles (e.g. '$1').
+ * Vendor has at least one active vendor_availability_v2 row, OR has no VA2 schedule yet.
+ * We do NOT filter VA2 rows by service_type: many clinics only save one style on the calendar
+ * (e.g. at_center) while legitimately offering tele/at_home via vendor_services. The parent query
+ * already requires matching enabled vendor_services for the requested style; the slots API still
+ * enforces per-style capacity when booking.
  */
-function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v', styleParam: string): string {
+function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v'): string {
   return `(
     EXISTS (
       SELECT 1
@@ -124,7 +126,6 @@ function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v', styleParam: string):
       WHERE
         (va.vendor_id = ${vAlias}.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone))
         AND COALESCE(va.is_available, true) = true
-        AND (va.service_type IS NULL OR va.service_type = ANY(${styleParam}::text[]))
     )
     OR NOT EXISTS (
       SELECT 1
@@ -897,14 +898,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const roleId = c.req.query('roleId');
       const serviceStyle = c.req.query('serviceStyle');
 
-      // Build vendor query: strict discovery — advance availability (VA2), profile, published services
+      // Build vendor query: same eligibility as by-style (geocode optional; distance is cosmetic without coords)
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
-          AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
           AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
           AND EXISTS (
             SELECT 1 FROM vendor_services vs 
@@ -912,11 +912,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND vs.is_enabled = true 
               AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
           )
-          AND EXISTS (
-            SELECT 1 FROM vendor_availability_v2 va
-            WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-              AND (va.is_available IS NULL OR va.is_available = true)
-          )
+          AND ${sqlVendorAvailabilityOrNotConfigured('v')}
       `;
 
       const params: any[] = [];
@@ -1237,6 +1233,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
       const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
       const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
+      const isVetCategoryDiscovery = catTextExact.some((c) =>
+        ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
+      );
 
       /** Solo sitters often lack vendor_availability_v2 rows; still show them if they have published at_home services. */
       const sittingDiscoveryRelaxed =
@@ -1306,6 +1305,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(_vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const vetCategoryEmptyForFetch =
+          !sitterRoleBypass && isVetCategoryDiscovery
+            ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+            : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -1315,6 +1318,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
             ${walkerCategoryDiscoveryOr}
+            ${vetCategoryEmptyForFetch}
           )
         `
             : '';
@@ -1471,7 +1475,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const availabilityRequiredSql = sittingDiscoveryRelaxed
         ? ''
         : `
-          AND ${sqlVendorAvailabilityOrNotConfigured('v', '$1')}`;
+          AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
        * Service catalog seeds pet-sitting rows with category `boarding` (not `sitting`).
@@ -1486,6 +1490,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const boardingRoleUncategorizedOr =
         !sittingDiscoveryRelaxed && boardingDiscoverySearch
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
+          : '';
+
+      const vetCategoryEmptyOr =
+        !sittingDiscoveryRelaxed && isVetCategoryDiscovery
+          ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
           : '';
 
       const vendorServiceCategorySql =
@@ -1506,6 +1515,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
                 ${walkerCategoryDiscoveryOr}
+                ${vetCategoryEmptyOr}
               )`
           : '';
 
@@ -4882,6 +4892,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
       const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
       const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
+      const isVetCategoryDiscoveryByStyle = catTextExact.some((c) =>
+        ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
+      );
 
       const boardingDiscoverySearchByStyle =
         catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
@@ -4912,6 +4925,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             )`
           : '';
 
+      const vetCategoryEmptyOrByStyle = isVetCategoryDiscoveryByStyle
+        ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+        : '';
+
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
       // ────────────────────────────────────────────────────────
@@ -4937,6 +4954,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
+          ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+          : '';
         const categoryFilterSql = (catTextExact.length + catUUIDs.length > 0) ? `
           AND (
             ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
@@ -4944,6 +4964,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
+            ${vetCategoryEmptyForFetchByStyle}
           )
         ` : '';
         const sql = `
@@ -5120,9 +5141,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
+                ${vetCategoryEmptyOrByStyle}
               )` : ``}
           )
-          AND ${sqlVendorAvailabilityOrNotConfigured('v', '$1')}
+          AND ${sqlVendorAvailabilityOrNotConfigured('v')}
       `;
 
       const vendorParams: any[] =
