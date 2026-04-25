@@ -5,6 +5,7 @@ import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSideb
 import { AdminRouteGuard } from "@/components/admin/layout/AdminRouteGuard";
 import { Breadcrumbs } from "@/components/admin/shared/Breadcrumbs";
 import { GlobalSearch } from "@/components/admin/shared/GlobalSearch";
+import { AdminCopilotPanel } from "@/components/admin/copilot/AdminCopilotPanel";
 import { useRouter, usePathname } from "next/navigation";
 
 export function AdminLayout({
@@ -34,6 +35,7 @@ export function AdminLayout({
 
 	return (
 		<div className="flex min-h-screen bg-gray-50">
+			<AdminCopilotPanel />
 			<UnifiedAdminSidebar
 				activeView={activeView}
 				onNavigate={handleNavigate}

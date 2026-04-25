@@ -650,6 +650,32 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Proactive admin alerts snapshot (polling). Omit `since` on first call to receive serverTime only.
+   */
+  async postAdminAiCopilotChat(body: {
+    message: string;
+    pathname?: string;
+    conversationId?: string;
+  }): Promise<{
+    success: boolean;
+    conversationId?: string;
+    response?: string;
+    intent?: string;
+    confidence?: number;
+    suggestedActions?: string[];
+    requiresAgent?: boolean;
+    usedBedrock?: boolean;
+    requestId?: string;
+    error?: string;
+    code?: string;
+  }> {
+    return this.request('/admin/ai-copilot/chat', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   /** Get current API base URL (for FormData/fetch when apiClient methods don't apply) */
   getBaseUrl(): string {
     return this.baseUrl || getApiBaseUrl();

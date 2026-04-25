@@ -1097,10 +1097,19 @@ OUTPUT FORMAT (JSON only):
       } catch (err: unknown) {
         if ((err as Error)?.message === BEDROCK_GUARDRAIL_BLOCKED) {
           logErrorSafe('ai-chatbot-symptoms', { name: 'Guardrail', message: 'blocked' });
+          analysis = {
+            response:
+              'We could not complete automated triage for this wording due to safety filters. Try shorter, neutral phrasing (signs and duration only), or speak with a veterinarian.',
+            possibleCauses: [],
+            urgency: 'routine',
+            recommendations: ['Consult with a veterinarian'],
+            shouldSeeVet: true,
+            vetBookingSuggested: false,
+          };
         } else {
           logErrorSafe('ai-chatbot-symptoms-bedrock', err);
+          analysis = parseSymptomsBedrockCompletion('');
         }
-        analysis = parseSymptomsBedrockCompletion('');
       }
 
       analysis.vetBookingSuggested =

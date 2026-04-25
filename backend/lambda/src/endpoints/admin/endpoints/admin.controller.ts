@@ -34,7 +34,6 @@ import {
 	SQL_PACKAGE_PURCHASE_JOIN,
 	SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
-
 // ============================================================================
 // ADMIN HANDLERS
 // ============================================================================

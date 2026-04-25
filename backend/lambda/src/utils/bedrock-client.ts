@@ -225,33 +225,58 @@ export async function invokeBedrock(
     const command = new InvokeModelCommand(commandInput);
 
     const response = await client.send(command);
-    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body)) as Record<string, unknown>;
+
+    /** Guardrail-only or intervened bodies often omit `output` — treat as blocked so callers can message safely. */
+    const guardrailAction = responseBody['amazon-bedrock-guardrailAction'];
+    if (guardrailAction != null && String(guardrailAction).trim() !== '' && String(guardrailAction).toUpperCase() !== 'NONE') {
+      logErrorSafe('BedrockInvoke', { name: 'Guardrail', message: String(guardrailAction) });
+      throw new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
 
     if (isLegacyAnthropicCompletionModel(modelId)) {
       if (typeof responseBody.completion === 'string') {
         return responseBody.completion;
       }
     } else if (isAmazonNovaModel(modelId)) {
-      const blocks = responseBody.output?.message?.content;
-      if (Array.isArray(blocks)) {
-        const textBlock = blocks.find((b: any) => typeof b?.text === 'string');
-        if (textBlock?.text) {
-          return textBlock.text;
+      const blocks = (responseBody.output as Record<string, unknown> | undefined)?.message as
+        | { content?: unknown }
+        | undefined;
+      const arr = blocks?.content;
+      if (Array.isArray(arr)) {
+        /** Nova may return multiple blocks (reasoning stub + text); concatenate every `text` string. */
+        const parts: string[] = [];
+        for (const b of arr) {
+          if (b && typeof b === 'object' && typeof (b as { text?: unknown }).text === 'string') {
+            parts.push(String((b as { text: string }).text));
+          }
         }
+        const joined = parts.join('\n').trim();
+        if (joined) return joined;
       }
     } else if (modelId.toLowerCase().includes('titan')) {
       if (responseBody.results && responseBody.results.length > 0 && responseBody.results[0].outputText) {
         return responseBody.results[0].outputText;
       }
     } else {
-      if (responseBody.content && responseBody.content.length > 0) {
-        const first = responseBody.content[0];
-        if (typeof first?.text === 'string') {
-          return first.text;
+      if (responseBody.content && Array.isArray(responseBody.content) && responseBody.content.length > 0) {
+        const texts: string[] = [];
+        for (const block of responseBody.content as { text?: unknown }[]) {
+          if (block && typeof block.text === 'string') {
+            texts.push(block.text);
+          }
         }
+        const joined = texts.join('\n').trim();
+        if (joined) return joined;
       }
     }
 
+    logErrorSafe('BedrockInvoke', {
+      name: 'InvalidResponseShape',
+      modelId,
+      topKeys: Object.keys(responseBody).slice(0, 12),
+      stopReason: (responseBody as { stopReason?: unknown }).stopReason,
+    });
     throw new Error('Invalid response format from Bedrock');
   } catch (error: unknown) {
     const e = error as { message?: string; name?: string };

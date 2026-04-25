@@ -402,7 +402,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
-           AND b.status NOT IN ('cancelled')
+           AND b.status != 'pending_payment'
+           AND b.status != 'cancelled'
          ORDER BY b.booking_date ASC, b.booking_time ASC`
         : `SELECT b.*,
                 COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
@@ -416,7 +417,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
            AND b.booking_date >= $3
-           AND b.status NOT IN ('cancelled')
+           AND b.status != 'pending_payment'
+           AND b.status != 'cancelled'
          ORDER BY b.booking_date ASC, b.booking_time ASC`;
       const bookingsParams = vendorIds.length === 1 ? [resolvedVendorId, startDateStr] : [vendorIds[0], vendorIds[1], startDateStr];
       const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));

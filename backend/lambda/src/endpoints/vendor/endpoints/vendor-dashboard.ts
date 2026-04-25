@@ -174,8 +174,9 @@ class VendorDashboardHandler extends BaseHandler {
       }
     }
 
-    // ✅ SQL: Get bookings for vendor
-    const bookings = await select('bookings', { vendor_id: vendorId });
+    // ✅ SQL: Get bookings for vendor (exclude unpaid holds — same as enhanced dashboard)
+    const bookingsRaw = await select('bookings', { vendor_id: vendorId });
+    const bookings = bookingsRaw.filter((b: any) => b.status !== 'pending_payment');
 
     // Calculate stats
     const today = new Date().toISOString().split('T')[0];

@@ -40,6 +40,7 @@ export const ALL_ADMIN_PERMISSION_IDS = [
   'admin.ecommerce',
   'admin.platform_settings',
   'admin.roles',
+  'admin.ai_copilot',
   'admin.full_access',
 ] as const;
 

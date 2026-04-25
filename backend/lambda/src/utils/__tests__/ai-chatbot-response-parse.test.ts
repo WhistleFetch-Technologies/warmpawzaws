@@ -2,7 +2,7 @@ import {
   parseChatBedrockCompletion,
   parseSymptomsBedrockCompletion,
   parseBookingAssistBedrockCompletion,
-} from '../ai-chatbot-response-parse';
+} from '../ai/ai-chatbot-response-parse';
 
 describe('parseChatBedrockCompletion', () => {
   it('parses allowlisted JSON fields and ignores extra keys', () => {
@@ -52,6 +52,21 @@ describe('parseSymptomsBedrockCompletion', () => {
       '{"response":"X","urgency":"routine","vetBookingSuggested":true}'
     );
     expect(p.vetBookingSuggested).toBe(true);
+  });
+
+  it('parses JSON wrapped in markdown code fence', () => {
+    const p = parseSymptomsBedrockCompletion(
+      '```json\n{"response":"Ear itch","possibleCauses":["allergy"],"urgency":"routine","recommendations":["Monitor"],"shouldSeeVet":true}\n```'
+    );
+    expect(p.response).toBe('Ear itch');
+    expect(p.possibleCauses).toEqual(['allergy']);
+  });
+
+  it('uses generic vet guidance when JSON response field is empty', () => {
+    const p = parseSymptomsBedrockCompletion(
+      '{"response":"","possibleCauses":["x"],"urgency":"routine","recommendations":[]}'
+    );
+    expect(p.response).toBe('Please consult a veterinarian for guidance.');
   });
 });
 
