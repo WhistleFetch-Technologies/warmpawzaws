@@ -40,7 +40,8 @@ async function pickedToWebFile(
   throw new Error('No data available for the picked file');
 }
 
-function fileMatchesAccept(file: File, accept: string | undefined): boolean {
+/** Exported for @capacitor/camera path so picks match the same `accept` rules as Capawesome. */
+export function fileMatchesAccept(file: File, accept: string | undefined): boolean {
   if (!accept || accept === '' || accept === '*/*') {
     return true;
   }

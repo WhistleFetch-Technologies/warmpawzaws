@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const webpack = require('webpack');
 
 // Fallback API base URL for local dev (when NEXT_PUBLIC_API_BASE_URL not set)
 let defaultApiUrl = '';
@@ -90,8 +91,8 @@ const nextConfig = {
     // This ensures Next.js can find dependencies from the linked @warmpawz/ui package
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');
     
+    // Do not prepend project root here — it breaks `@/` path alias resolution (webpack treats `@/…` oddly).
     config.resolve.modules = [
-      path.resolve(__dirname),
       path.resolve(__dirname, 'node_modules'),
       uiNodeModulesPath,
       ...(config.resolve.modules || []),
@@ -100,6 +101,14 @@ const nextConfig = {
     if (!config.resolve.alias) {
       config.resolve.alias = {};
     }
+    // Tsconfig `paths` `@/*` is not applied to webpack in this Windows/Next combo; rewrite `@/…` explicitly.
+    if (!config.plugins) config.plugins = [];
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(/^@\//, (resource) => {
+        const rel = resource.request.slice(2);
+        resource.request = path.resolve(__dirname, rel);
+      })
+    );
     
     // Custom splitChunks with fixed names breaks Next dev chunk URLs; keep defaults in dev.
     if (!isServer && !dev) {
