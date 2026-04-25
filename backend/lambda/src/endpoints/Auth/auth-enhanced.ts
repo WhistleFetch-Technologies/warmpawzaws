@@ -426,18 +426,14 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     // ============================================================================
     // OTP VERIFICATION LOGIC
     // ============================================================================
-    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
-    // This ensures PROD (UAT_MODE=false) never accepts fixed OTP 123456
+    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable.
+    // Production never accepts fixed bypass OTPs; only UAT may use 123456 / UAT_DEV_PASSWORD_BYPASS.
     const isUATMode = process.env.UAT_MODE === 'true';
-
-    // Production bypass configuration (for testing/admin access in production)
-    // In production mode, ANY phone number can verify with OTP 000000 (6 zeros)
-    const PRODUCTION_BYPASS_OTP = '000000';
 
     try {
       let isValid = false;
 
-      // Normalize phone number for bypass check (extract last 10 digits)
+      // Last-10-digit form for DB lookups (vendor/customer/referral) — same as before bypass removal
       const phoneDigits = phone.replace(/\D/g, '');
       const normalizedPhone = phoneDigits.length > 10
         ? phoneDigits.slice(-10)
@@ -446,42 +442,9 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           : phoneDigits;
 
       // ============================================================================
-      // PRODUCTION BYPASS: Allow ANY phone number with OTP 000000 in production only
-      // ============================================================================
-      // This bypass works ONLY in production mode (when UAT_MODE !== 'true')
-      // It allows ANY phone number to verify with OTP 000000 for testing/admin purposes
-      if (!isUATMode && otp === PRODUCTION_BYPASS_OTP) {
-        isValid = true;
-        console.log(`[AUTH] Production Bypass: OTP 000000 accepted for phone ${phone} (normalized: ${normalizedPhone})`);
-
-        // Try to mark any existing OTP tokens as used (non-blocking, with timeout)
-        Promise.race([
-          (async () => {
-            try {
-              const records = await select('otp_tokens', {
-                phone: normalizedPhone,
-                is_used: false,
-              });
-              if (records.length > 0) {
-                await query(
-                  'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-                  [records[0].id]
-                );
-                console.log(`[AUTH] Production Bypass: Marked existing OTP as used`);
-              }
-            } catch (e) {
-              console.warn('[AUTH] Production Bypass: Could not mark existing OTP as used:', e);
-            }
-          })(),
-          new Promise((resolve) => setTimeout(resolve, 2000)) // 2 second timeout
-        ]).catch((e) => {
-          console.warn('[AUTH] Production Bypass: OTP cleanup timeout or error:', e);
-        });
-      }
-      // ============================================================================
       // UAT MODE: Allow fixed OTP 123456 for any phone number in UAT mode
       // ============================================================================
-      else if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
+      if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
         isValid = true;
         console.log(`[AUTH] UAT Mode: Fixed OTP accepted for ${phone} (123456 or UAT bypass)`);
         Promise.race([
@@ -549,8 +512,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         return this.error('Invalid or expired OTP', 401, 'UNAUTHORIZED', undefined, context.requestId);
       }
 
-      // Note: normalizedPhone is already computed above for OTP verification
-      // Reuse it for database lookups (already in scope)
+      // normalizedPhone (last-10 style) is computed above for vendor/customer/referral lookups
 
 
       let role = body.role || 'customer';

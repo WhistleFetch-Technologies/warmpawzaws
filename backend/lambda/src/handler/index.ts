@@ -34,6 +34,7 @@ import { registerRoleSeedingEndpoints } from '../endpoints/role-seeding';
 import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboarding-form-management';
 import { registerVendorDashboardEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard';
 import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
+import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
@@ -417,6 +418,17 @@ app.post('/system/run-pending-migrations', async (c) => {
 // Require authentication for admin endpoints
 app.use('/admin/*', requireAdmin());
 
+const adminAiCopilotRlMaxRaw = parseInt(process.env.ADMIN_AI_COPILOT_RL_MAX || '20', 10);
+const adminAiCopilotRlMax = Number.isFinite(adminAiCopilotRlMaxRaw) ? Math.max(5, adminAiCopilotRlMaxRaw) : 20;
+app.use(
+  '/admin/ai-copilot/*',
+  slidingWindowRateLimit({
+    windowMs: 60_000,
+    maxRequests: adminAiCopilotRlMax,
+    keyPrefix: 'admin-ai-copilot',
+  })
+);
+
 // Rate limiting for sensitive endpoints
 app.use('/auth/*', rateLimitAuth());
 app.use('/otp/*', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'otp' }));
@@ -554,6 +566,7 @@ registerSpecializedServiceFlows(app);
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
+registerAdminAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);
