@@ -23,7 +23,10 @@ interface SearchResult {
 }
 
 function mapSearchApiToResults(response: any): SearchResult[] {
-  const vendors = (response.vendors || []).map((v: any) => ({
+  const vendorsRaw = response.vendors ?? response.data?.vendors ?? [];
+  const servicesRaw = response.services ?? response.data?.services ?? [];
+
+  const vendors = (vendorsRaw || []).map((v: any) => ({
     id: v.id,
     type: 'vendor' as const,
     name: v.businessName ?? v.business_name ?? '',
@@ -40,7 +43,7 @@ function mapSearchApiToResults(response: any): SearchResult[] {
     imageUrl: v.profile_image ?? v.photoUrl,
   }));
 
-  const services = (response.services || []).map((s: any) => ({
+  const services = (servicesRaw || []).map((s: any) => ({
     id: s.id,
     type: 'service' as const,
     name: s.serviceName ?? s.service_name ?? '',
@@ -137,6 +140,7 @@ function SearchContent() {
     { id: 'cafe', label: 'Pet Cafe', icon: '☕' },
     { id: 'resort', label: 'Resort', icon: '🏝️' },
     { id: 'pharmacy', label: 'Pharmacy', icon: '💊' },
+    { id: 'nutritionist', label: 'Nutritionist', icon: '🥗' },
   ];
 
   useEffect(() => {

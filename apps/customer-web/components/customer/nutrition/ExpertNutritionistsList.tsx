@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, MapPin, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 
 interface ExpertNutritionistsListProps {
@@ -39,9 +40,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   const fetchNutritionists = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist&serviceStyle=at_center`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const nutritionistList = data.vendors || data.services || [];
+      const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
     } catch (error: any) {
       console.error('Error loading nutritionists:', error);

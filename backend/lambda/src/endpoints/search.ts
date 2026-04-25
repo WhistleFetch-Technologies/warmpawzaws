@@ -70,6 +70,16 @@ function expandCategoryTermsAnyCase(slug: string | undefined): string[] | undefi
   return Array.from(out);
 }
 
+/** Whitespace-separated query → tokens (cap avoids huge SQL from pasted text). */
+function searchTokens(searchQuery: string, maxTokens = 6): string[] {
+  const raw = String(searchQuery || '')
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return raw.slice(0, maxTokens);
+}
+
 // ============================================================================
 // SEARCH HANDLERS
 // ============================================================================
@@ -218,7 +228,7 @@ class UniversalSearchHandler extends BaseHandler {
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
             AND vs.is_enabled = true 
-            AND vs.publish_status = 'published'
+            AND vs.publish_status IN ('published', 'auto_published')
         )
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
@@ -229,14 +239,28 @@ class UniversalSearchHandler extends BaseHandler {
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Keyword narrows vendors whenever q is present (with or without hub category).
-    if (searchQuery) {
+    const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
+
+    // Keyword: each token must match vendor fields OR any listable published service on that vendor.
+    for (const token of keywordTokens) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
         v.owner_name ILIKE $${paramIndex} OR
-        v.specialization ILIKE $${paramIndex}
+        v.specialization ILIKE $${paramIndex} OR
+        EXISTS (
+          SELECT 1 FROM vendor_services vs_kw
+          WHERE vs_kw.vendor_id = v.id
+            AND vs_kw.is_enabled = true
+            AND vs_kw.publish_status IN ('published', 'auto_published')
+            AND (
+              vs_kw.service_name ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.custom_description, '') ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.sub_category, '') ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.category, '') ILIKE $${paramIndex}
+            )
+        )
       )`;
-      params.push(`%${searchQuery}%`);
+      params.push(`%${token}%`);
       paramIndex++;
     }
 
@@ -248,7 +272,7 @@ class UniversalSearchHandler extends BaseHandler {
           SELECT 1 FROM vendor_services vscat
           WHERE vscat.vendor_id = v.id
             AND vscat.is_enabled = true
-            AND vscat.publish_status = 'published'
+            AND vscat.publish_status IN ('published', 'auto_published')
             AND LOWER(TRIM(COALESCE(vscat.category, ''))) = ANY($${paramIndex}::text[])
         )
         OR (v.category IS NOT NULL AND LOWER(TRIM(COALESCE(v.category, ''))) = ANY($${paramIndex}::text[]))
@@ -275,7 +299,7 @@ class UniversalSearchHandler extends BaseHandler {
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
       JOIN vendors v ON vs.vendor_id = v.id
-      WHERE vs.publish_status = 'published'
+      WHERE vs.publish_status IN ('published', 'auto_published')
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
@@ -290,11 +314,14 @@ class UniversalSearchHandler extends BaseHandler {
     const serviceParams: any[] = [];
     let serviceParamIndex = 1;
 
-    if (searchQuery) {
+    for (const token of keywordTokens) {
       servicesQuery += ` AND (
         vs.service_name ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.custom_description, '') ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.sub_category, '') ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.category, '') ILIKE $${serviceParamIndex}
       )`;
-      serviceParams.push(`%${searchQuery}%`);
+      serviceParams.push(`%${token}%`);
       serviceParamIndex++;
     }
 
@@ -325,12 +352,15 @@ class UniversalSearchHandler extends BaseHandler {
       services: services.map(s => ({
         id: s.id,
         serviceName: s.service_name,
-        description: s.service_description || s.description_text || s.service_name,
+        description:
+          s.custom_description || s.service_description || s.description_text || s.service_name,
         price: s.price,
         vendorId: s.vendor_id,
         vendorName: s.business_name,
         city: s.city,
         state: s.state,
+        category: s.category,
+        serviceType: s.category,
       })),
       total: vendors.length + services.length,
       searchMethod: 'sql-fallback',

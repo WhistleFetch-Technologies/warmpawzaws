@@ -570,10 +570,10 @@ export function ProblemGridFlowRouter({
                 )}
               </div>
 
-              {/* Match ClinicListView vet cards: title + desc, bottom row (orange price, time, distance, category), right column (gray price + Book Now) */}
-              <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-medium text-gray-900 leading-snug">{title}</h3>
+              {/* Price + CTA on the right; left = title, desc, metadata only (avoids horizontal overflow) */}
+              <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 pr-1">
+                  <h3 className="font-medium text-gray-900 leading-snug break-words">{title}</h3>
                   <div className="mt-1">
                     {showDesc ? (
                       <div onClick={(e) => e.stopPropagation()}>
@@ -590,10 +590,7 @@ export function ProblemGridFlowRouter({
                       </p>
                     )}
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <span className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                      {formatPriceWithSymbol(price)}
-                    </span>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="text-xs shrink-0">
                       <Clock className="w-3 h-3 mr-1" />
                       {duration > 0 ? `${duration} mins` : 'Duration on request'}
@@ -604,13 +601,13 @@ export function ProblemGridFlowRouter({
                         {distFmt}
                       </span>
                     )}
-                    <Badge variant="secondary" className="text-xs shrink-0">
+                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
                       {categoryLabel}
                     </Badge>
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-2 min-w-[6.5rem] flex flex-col items-end">
-                  <div className="text-lg font-bold text-gray-900 mb-2 tabular-nums">
+                <div className="flex shrink-0 flex-col items-end text-right ml-1 min-w-[6.5rem]">
+                  <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
                     {formatPriceWithSymbol(price)}
                   </div>
                   <Button

@@ -1192,6 +1192,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const mealPlans = (rows || []).map((r: any) => ({
         ...r,
         name: r.plan_name || r.name,
+        price: r.price_per_meal ?? r.price,
         pet_types: (() => {
           try {
             const d = typeof r.dietary_requirements === 'string' ? JSON.parse(r.dietary_requirements) : r.dietary_requirements;
@@ -1240,7 +1241,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         plan_name: planName,
         description: mealPlanData.description || null,
         duration_days: durationDays,
-        price,
+        price_per_meal: price,
         meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
         dietary_requirements: JSON.stringify({
           pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
@@ -1290,7 +1291,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
       if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
       if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
-      if (price != null) { updates.push(`price = $${idx}`); params.push(price); idx++; }
+      if (price != null) { updates.push(`price_per_meal = $${idx}`); params.push(price); idx++; }
       if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
       if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
       if (petTypes != null) {
@@ -1689,7 +1690,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             name: mp.plan_name,
             plan_name: mp.plan_name,
             description: mp.description,
-            price: mp.price,
+            price: mp.price_per_meal ?? mp.price,
             category: 'meal_plan',
             metadata: dietForApi,
             petTypes: dietaryReqs.petTypes || [],
@@ -1789,7 +1790,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         vendor_id: vendorId,
         plan_name: data.name,
         description: data.description,
-        price: data.price,
+        price_per_meal: data.price,
         duration_days: data.durationDays || 7,
         meals_per_day: data.mealsPerDay || 2,
         dietary_requirements: JSON.stringify(dietaryPayload),
@@ -1903,7 +1904,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
-            price = COALESCE($3, price),
+            price_per_meal = COALESCE($3, price_per_meal),
             dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
