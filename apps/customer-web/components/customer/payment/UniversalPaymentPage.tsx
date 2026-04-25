@@ -2762,9 +2762,10 @@ export function UniversalPaymentPage({
 
   return (
     <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
-      {/* In-app payment summary (not Razorpay’s iframe). Safe top/inset: ServiceDashboardHeader + globals .cw-header-safe-*. */}
+      {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
       <ServiceDashboardHeader
         className="sticky top-0 z-50 shrink-0"
+        compact
         serviceName="Payment"
         serviceSubtitle="Secure checkout"
         serviceIcon={Shield}

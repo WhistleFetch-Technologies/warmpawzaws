@@ -1,0 +1,12 @@
+{
+  "appId": "com.warmpawz.vendor",
+  "appName": "Warmpawz Vendor",
+  "webDir": "dist",
+  "server": {
+    "url": "https://vendor.warmpawz.com",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

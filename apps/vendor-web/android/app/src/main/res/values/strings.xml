@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Warmpawz Vendor</string>
+    <string name="title_activity_main">Warmpawz Vendor</string>
+    <string name="package_name">com.warmpawz.vendor</string>
+    <string name="custom_url_scheme">com.warmpawz.vendor</string>
+</resources>
