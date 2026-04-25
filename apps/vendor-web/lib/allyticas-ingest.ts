@@ -1,21 +1,43 @@
 'use client';
 
+import { getApiBaseUrl } from './api-client';
+
 type AllyticasEnv = 'dev' | 'staging' | 'prod';
 
 const MAX_QUEUE = 50;
 const FLUSH_DEBOUNCE_MS = 600;
 
 function resolveIngestUrl(): string | null {
-  const u =
-    (
-      process.env.NEXT_PUBLIC_ANALYTICS_INGEST_URL ||
-      process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT ||
-      process.env.NEXT_PUBLIC_API_BASE_URL ||
-      ''
-    ).trim() || '';
-  if (!u) return null;
-  if (u.includes('/analytics/v1/events')) return u;
-  return u.replace(/\/$/, '') + '/analytics/v1/events';
+  const explicitOverride = (
+    process.env.NEXT_PUBLIC_ANALYTICS_INGEST_URL ||
+    process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT ||
+    ''
+  ).trim();
+  if (explicitOverride) {
+    return explicitOverride.includes('/analytics/v1/events')
+      ? explicitOverride
+      : explicitOverride.replace(/\/$/, '') + '/analytics/v1/events';
+  }
+
+  let base = '';
+  if (typeof window !== 'undefined') {
+    try {
+      base = getApiBaseUrl().trim();
+    } catch {
+      base = '';
+    }
+  }
+  if (!base && typeof process !== 'undefined') {
+    base = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim();
+    if (!base && process.env.NEXT_PUBLIC_ENVIRONMENT === 'production') {
+      base = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+    } else if (!base) {
+      base = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    }
+  }
+  if (!base) return null;
+  if (base.includes('/analytics/v1/events')) return base;
+  return base.replace(/\/$/, '') + '/analytics/v1/events';
 }
 
 function resolveEnv(): AllyticasEnv {

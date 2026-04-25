@@ -12,6 +12,10 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
+/** Must stay in sync with `lib/api-client.ts` `getApiGatewayUrl()` — analytics + REST use the same gateways. */
+const WARMPAWZ_API_GATEWAY_PROD = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+const WARMPAWZ_API_GATEWAY_DEV = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+
 export default function RootLayout({
   children,
 }: {
@@ -19,10 +23,10 @@ export default function RootLayout({
 }) {
   // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
   const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  /** Align with next.config env + api-client dev gateway when env is unset (avoids missing script → wrong API base). */
+  /** When env is unset: prod builds → prod gateway; non-prod → dev gateway (never default prod to dev). */
   const prodApiUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
 
   return (
     <html lang="en">

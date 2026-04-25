@@ -23,6 +23,10 @@ export const metadata: Metadata = {
   },
 };
 
+/** Same gateways as `lib/api-client.ts` — prod and dev analytics + REST must match. */
+const WARMPAWZ_API_GATEWAY_PROD = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+const WARMPAWZ_API_GATEWAY_DEV = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+
 export default function RootLayout({
   children,
 }: {
@@ -32,10 +36,11 @@ export default function RootLayout({
   const isUatBuild = process.env.NEXT_PUBLIC_UAT_MODE === 'true';
   const rawApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
   // Retired dev gateway in CI secrets → always use current dev API for injects
-  const prodApiUrl =
-    rawApiUrl && rawApiUrl.includes('iixwc3fzfl')
-      ? 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com'
-      : rawApiUrl;
+  let prodApiUrl =
+    rawApiUrl && rawApiUrl.includes('iixwc3fzfl') ? WARMPAWZ_API_GATEWAY_DEV : rawApiUrl;
+  if (!prodApiUrl) {
+    prodApiUrl = isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV;
+  }
   const injectProdRuntime = isProd && !!prodApiUrl && !isUatBuild;
 
   return (
