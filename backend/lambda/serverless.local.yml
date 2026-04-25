@@ -19,6 +19,7 @@ provider:
   # Local environment variables (override with .env file)
   environment:
     NODE_ENV: local
+    WPZ_API_STAGE: local
     AWS_REGION: ap-south-1
     
     # AWS Chime Configuration

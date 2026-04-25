@@ -698,17 +698,6 @@ export function registerInsuranceEndpoints(app: Hono) {
 
       const plan = plans.rows[0];
 
-      let isInsuranceRenewal = false;
-      try {
-        const prev = await query(
-          `SELECT COUNT(*)::int AS c FROM insurance_policies WHERE pet_id = $1::uuid AND customer_id = $2::uuid`,
-          [petId, customerId]
-        );
-        isInsuranceRenewal = (prev.rows[0]?.c ?? 0) > 0;
-      } catch {
-        isInsuranceRenewal = false;
-      }
-
       // Generate policy number
       const policyNumber = `POL-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
@@ -728,7 +717,6 @@ export function registerInsuranceEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        isInsuranceRenewal,
         policy: policy[0],
         policyNumber,
         message: 'Policy purchased successfully',

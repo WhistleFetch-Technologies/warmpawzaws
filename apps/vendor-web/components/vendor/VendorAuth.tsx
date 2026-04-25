@@ -329,6 +329,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       const accessToken =
         tokens.access_token ||
         (payload.access_token as string | undefined);
+      const idToken = tokens.id_token || (payload.id_token as string | undefined);
+      const refreshToken = tokens.refresh_token || (payload.refresh_token as string | undefined);
+      const expiresInRaw = tokens.expires_in ?? (payload as { expires_in?: number }).expires_in;
+      const expiresIn =
+        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
       const user = (payload.user || {}) as Record<string, unknown>;
       const profile = (payload.profile || {}) as Record<string, unknown>;
 
@@ -340,6 +345,27 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         typeof user.phone === 'string' && user.phone
           ? user.phone
           : usernamePhone;
+
+      if (idToken) {
+        try {
+          const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+          storeCognitoTokens({
+            accessToken,
+            idToken,
+            refreshToken: refreshToken || '',
+            expiresIn,
+          });
+          if (user.id) {
+            storeUserInfo({
+              userId: String(user.id),
+              phone: dialablePhone,
+              username: String(user.phone || dialablePhone),
+            });
+          }
+        } catch (e) {
+          console.warn('[VendorAuth] storeCognitoTokens skipped:', e);
+        }
+      }
 
       storeSession({
         phone: dialablePhone,
@@ -1284,6 +1310,12 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                   Use the mobile number registered on your vendor account. After your first onboarding, you can use this
                   number with your password here; until then, use OTP from the registration flow.
                 </p>
+                {uatRuntimeForgotHint && (
+                  <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                    UAT / dev: sign in with password <strong>12345678</strong> (same as customer app when the API runs
+                    in UAT or non-prod with <code className="text-[11px]">X-UAT-Mode</code>).
+                  </p>
+                )}
               </div>
 
               <div>

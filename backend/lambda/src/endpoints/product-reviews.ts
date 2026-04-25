@@ -230,7 +230,6 @@ export function registerProductReviewEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        customerId,
         reviewId: newReview.id,
         verifiedPurchase,
         message: 'Review submitted successfully',

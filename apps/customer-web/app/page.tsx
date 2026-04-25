@@ -35,7 +35,8 @@ export default function HomePage() {
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    // Must match password + OTP login: Cognito bundle lives in customerCognitoTokens, not always authToken.
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
     const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
