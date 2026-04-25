@@ -1459,6 +1459,11 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             const newVendorId = identity.vendor_id || identityId;
             console.log(`[AVAILABILITY] 🔨 Auto-creating vendor record for approved vendor ${identityId}, using vendor ID: ${newVendorId}`);
             try {
+              const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+              const tr = await resolveNewVendorOnboardingTier({
+                email: payload.email,
+                businessName: payload.businessName || payload.business_name,
+              });
               const newVendor = await insert('vendors', {
                 id: newVendorId,
                 phone: identity.phone,
@@ -1473,6 +1478,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                 pincode: payload.pin || payload.pincode || '',
                 status: 'active',
                 is_active: true,
+                is_deleted: false,
+                tier: tr.tier,
+                commission_percentage: tr.commission_percentage,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });

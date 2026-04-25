@@ -933,7 +933,7 @@ class ActivateVendorHandler extends BaseHandler {
       }
 
       // Create vendor record from application
-      const vendorData = {
+      const vendorData: Record<string, unknown> = {
         phone: identity.phone,
         email: payload.email || identity.email || '',
         business_name: payload.businessName || '',
@@ -950,7 +950,15 @@ class ActivateVendorHandler extends BaseHandler {
         profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
         service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
         ...payload, // Include all other fields
+        is_deleted: false, // after payload so new vendors are never deleted
       };
+      const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+      const tr = await resolveNewVendorOnboardingTier({
+        email: vendorData.email as string,
+        businessName: vendorData.business_name as string,
+      });
+      vendorData.tier = tr.tier;
+      vendorData.commission_percentage = tr.commission_percentage;
 
       const vendors = await insert('vendors', vendorData);
       const vendor = vendors[0];

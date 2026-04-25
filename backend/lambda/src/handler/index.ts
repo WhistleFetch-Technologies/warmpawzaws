@@ -104,6 +104,7 @@ import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
+import { registerAdminVendorDailyAccrualEndpoints } from '../endpoints/admin/endpoints/admin-vendor-daily-accrual';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor/endpoints/vendor-setup';
 import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';
@@ -613,6 +614,7 @@ registerEventEndpoints(app);
 registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
+registerAdminVendorDailyAccrualEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);

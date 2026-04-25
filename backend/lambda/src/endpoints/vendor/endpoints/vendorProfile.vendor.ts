@@ -369,23 +369,13 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     return extractPincodeFromPayload(payload);
   })()}, profile_photo_url: ${profilePhotoUrl}, service_radius: ${serviceRadius}`);
   
-  // Fetch default tier/commission from vendor_tiers
-  let resolvedTierName: string = 'Basic';
-  let resolvedCommission: number = 15;
-  try {
-    const tierRes = await query(
-      `SELECT tier_name, commission_rate
-       FROM vendor_tiers
-       WHERE is_active = true
-       ORDER BY is_default DESC NULLS LAST, tier_level ASC
-       LIMIT 1`
-    ).catch(() => ({ rows: [] as any[] }));
-    if (tierRes.rows && tierRes.rows.length > 0) {
-      resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
-      const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
-      if (!isNaN(cr)) resolvedCommission = cr;
-    }
-  } catch {}
+  const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+  const tierResolved = await resolveNewVendorOnboardingTier({
+    email: payload.email || payload.businessEmail,
+    businessName: payload.businessName || payload.business_name,
+  });
+  const resolvedTierName = tierResolved.tier;
+  const resolvedCommission = tierResolved.commission_percentage;
 
   const payloadVtRaw = payload.vendorType || payload.vendor_type;
   const payloadVt =
