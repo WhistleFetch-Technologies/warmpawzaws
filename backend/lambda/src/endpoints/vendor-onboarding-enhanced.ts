@@ -1394,6 +1394,11 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
       // Create vendor record from application
       console.log(`📍 [VENDOR-ACTIVATION] Creating vendor with pincode: '${pincodeValue || '(empty)'}', service_radius: ${serviceRadius || 'null'}`);
+      const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+      const tr = await resolveNewVendorOnboardingTier({
+        email: payload.email || identity.email,
+        businessName: payload.businessName,
+      });
       const vendors = await insert('vendors', {
         phone: identity.phone,
         email: payload.email || identity.email || '',
@@ -1405,6 +1410,9 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         onboarding_status: 'ACTIVATED',
         status: 'approved',
         is_active: true,
+        is_deleted: false,
+        tier: tr.tier,
+        commission_percentage: tr.commission_percentage,
         address: payload.address || '',
         city: payload.city || '',
         state: payload.state || '',

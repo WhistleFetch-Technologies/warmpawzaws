@@ -236,6 +236,11 @@ async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actua
   const application = applications.length > 0 ? applications[0] : null;
   const payload = (application?.application_payload as Record<string, unknown>) || {};
   console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
+  const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+  const tr = await resolveNewVendorOnboardingTier({
+    email: (payload.email as string) || undefined,
+    businessName: (payload.businessName as string) || (payload.business_name as string) || undefined,
+  });
   await insert('vendors', {
     id: vendorId,
     phone: identity.phone,
@@ -251,6 +256,8 @@ async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actua
     status: 'active',
     is_active: true,
     is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+    tier: tr.tier,
+    commission_percentage: tr.commission_percentage,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });

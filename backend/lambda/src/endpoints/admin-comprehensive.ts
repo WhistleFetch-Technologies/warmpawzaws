@@ -2758,11 +2758,27 @@ class CreateVendorHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = this.parseBody(context.event);
-      
+      const { is_deleted, tier: incomingTier, commission_percentage: incomingComm, ...safeBody } = body;
+      let tier: unknown = incomingTier;
+      let commission: unknown = incomingComm;
+      if (tier == null || String(tier).trim() === '') {
+        const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+        const tr = await resolveNewVendorOnboardingTier({
+          email: body.email,
+          businessName: body.business_name,
+        });
+        tier = tr.tier;
+        commission = tr.commission_percentage;
+      } else if (commission == null || String(commission).trim() === '') {
+        commission = 15;
+      }
       const vendor = await insert('vendors', {
-        ...body,
+        ...safeBody,
+        tier,
+        commission_percentage: commission,
         status: 'pending',
         is_active: false,
+        is_deleted: false,
         created_at: new Date().toISOString(),
       });
 

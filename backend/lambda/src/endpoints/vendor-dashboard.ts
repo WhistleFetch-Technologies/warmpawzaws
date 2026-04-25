@@ -57,8 +57,12 @@ class VendorDashboardHandler extends BaseHandler {
             const application = applications.length > 0 ? applications[0] : null;
             const payload = application?.application_payload || {};
             
-            // Create vendors record
             console.log(`[DASHBOARD] Auto-creating vendor record for approved vendor ${vendorId}`);
+            const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+            const tr = await resolveNewVendorOnboardingTier({
+              email: payload.email,
+              businessName: payload.businessName || payload.business_name,
+            });
             const newVendor = await insert('vendors', {
               id: vendorId,
               phone: identity.phone,
@@ -73,6 +77,9 @@ class VendorDashboardHandler extends BaseHandler {
               pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
               status: 'active',
               is_active: true,
+              is_deleted: false,
+              tier: tr.tier,
+              commission_percentage: tr.commission_percentage,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             });

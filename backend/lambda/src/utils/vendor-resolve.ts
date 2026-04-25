@@ -52,25 +52,13 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
       }
     }
 
-    // Fetch default tier and commission from vendor_tiers
-    let resolvedTierName: string = 'Bronze';
-    let resolvedCommission: number = 15;
-    try {
-      const tierRes = await query(
-        `SELECT tier_name, commission_rate
-         FROM vendor_tiers
-         WHERE is_active = true
-         ORDER BY is_default DESC NULLS LAST, tier_level ASC
-         LIMIT 1`
-      ).catch(() => ({ rows: [] as any[] }));
-      if (tierRes.rows && tierRes.rows.length > 0) {
-        resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
-        const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
-        if (!isNaN(cr)) resolvedCommission = cr;
-      }
-    } catch {
-      // keep fallbacks
-    }
+    const { resolveNewVendorOnboardingTier } = await import('./onboarding-f100-tier');
+    const tr = await resolveNewVendorOnboardingTier({
+      email: payload.email || payload.businessEmail,
+      businessName: payload.businessName || payload.business_name,
+    });
+    const resolvedTierName = tr.tier;
+    const resolvedCommission = tr.commission_percentage;
 
     const newVendor = await insert('vendors', {
       id: identity.id,
