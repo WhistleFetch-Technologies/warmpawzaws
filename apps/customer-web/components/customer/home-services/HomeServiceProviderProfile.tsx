@@ -2,7 +2,9 @@
  * HomeServiceProviderProfile — home-service vendor profile (walker, sitter, grooming, etc.)
  *
  * Vet-style layout: ServiceDashboardHeader, hero carousel, overlapping identity card,
- * phased footer (“Select Services to Book” → Services emphasis → “Continue to book” → onSelectService).
+ * phased CTA (“Select Services to Book” → Services emphasis → “Continue to book” → onSelectService).
+ * Fixed at bottom with no full-width bar — only the pill button. Set fixedFooterAboveBottomNav when this
+ * view is inside CustomerScreenWrapper so the CTA clears BottomNavigation (globals token).
  */
 
 "use client";
@@ -150,6 +152,11 @@ interface HomeServiceProviderProfileProps {
   onBack: () => void;
   onSelectService: () => void;
   onNavigate?: (screen: string, data?: any) => void;
+  /**
+   * When true, fixed CTA container uses `cw-fixed-above-customer-tabbar` so it sits above BottomNavigation.
+   * When false (default), `bottom-0` + safe-area — for full-screen routes without CustomerScreenWrapper.
+   */
+  fixedFooterAboveBottomNav?: boolean;
 }
 
 export function HomeServiceProviderProfile({
@@ -159,7 +166,8 @@ export function HomeServiceProviderProfile({
   config,
   onBack,
   onSelectService,
-  onNavigate
+  onNavigate,
+  fixedFooterAboveBottomNav = false,
 }: HomeServiceProviderProfileProps) {
 
   const [provider, setProvider] = useState<ProviderDetails | null>(null);
@@ -883,13 +891,19 @@ export function HomeServiceProviderProfile({
         </div>
       </div>
 
-      <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t bg-white px-5 py-3 sm:px-6">
-        <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+      <div
+        className={`pointer-events-none fixed left-0 right-0 z-40 mx-auto flex w-full max-w-customer justify-center px-5 sm:px-6 ${
+          fixedFooterAboveBottomNav
+            ? 'cw-fixed-above-customer-tabbar py-3'
+            : 'bottom-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]'
+        }`}
+      >
+        <div className="pointer-events-auto mx-auto w-full max-w-xs sm:max-w-sm">
           {profileBookingPhase === 'intro' ? (
             <Button
               type="button"
               onClick={revealServicesAndScroll}
-              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-md hover:bg-orange-600"
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
             >
               Select Services to Book
             </Button>
@@ -898,7 +912,7 @@ export function HomeServiceProviderProfile({
               type="button"
               onClick={() => onSelectService()}
               disabled={continueBookingDisabled}
-              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-md hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-md"
             >
               {continueBookingDisabled ? 'Choose a service above' : 'Continue to book'}
             </Button>

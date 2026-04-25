@@ -68,26 +68,21 @@ const ANDROID_INTENT_TEXT_MAX = 4000;
 
 type WebSharePayload = Pick<ShareData, 'title' | 'text' | 'url'>;
 
-function canUseWebSharePayload(data: WebSharePayload): boolean {
-  if (!data.text?.trim() && !data.url?.trim()) return false;
-  if (typeof navigator.canShare !== 'function') return true;
-  try {
-    return navigator.canShare(data);
-  } catch {
-    return false;
-  }
+function isNonEmptyWebShareData(data: WebSharePayload): boolean {
+  return !!(data.text?.trim() || data.url?.trim() || data.title?.trim());
 }
 
 /**
  * Try Web Share with payloads that match iOS/Android system sheets.
- * Chrome Android often rejects text-only long payloads; title + text + url works like iOS.
+ * We always call `navigator.share` when a payload has text/url (do not trust `canShare` alone —
+ * Android Chrome often reports false for valid payloads, so the sheet never opened).
  */
 async function invokeWebShare(
   payloads: WebSharePayload[]
 ): Promise<'shared' | 'aborted' | 'failed'> {
   if (typeof navigator.share !== 'function') return 'failed';
   for (const data of payloads) {
-    if (!canUseWebSharePayload(data)) continue;
+    if (!isNonEmptyWebShareData(data)) continue;
     try {
       await navigator.share(data);
       return 'shared';
@@ -96,6 +91,33 @@ async function invokeWebShare(
     }
   }
   return 'failed';
+}
+
+function triggerAndroidSendIntent(shareTitle: string, textPayload: string) {
+  const intent =
+    'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
+    `S.android.intent.extra.TEXT=${encodeURIComponent(textPayload)};` +
+    `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
+  try {
+    const a = document.createElement('a');
+    a.href = intent;
+    a.rel = 'noreferrer';
+    a.style.position = 'fixed';
+    a.style.width = '0';
+    a.style.height = '0';
+    a.style.left = '-9999px';
+    a.setAttribute('data-intent', '1');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {
+    // fall through
+  }
+  try {
+    window.location.href = intent;
+  } catch {
+    // ignore
+  }
 }
 
 export function ReferralSystemPage(props: ReferralSystemPageProps) {
@@ -160,37 +182,35 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     const combinedBody = `${shareLine}\n${referralLink}`;
     const isAndroid = /Android/i.test(navigator.userAgent);
 
-    const tryAndroidSendIntent = (): boolean => {
-      const textPayload =
-        combinedBody.length > ANDROID_INTENT_TEXT_MAX
-          ? `${combinedBody.slice(0, ANDROID_INTENT_TEXT_MAX - 20)}…`
-          : combinedBody;
-      try {
-        const intent =
-          'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
-          `S.android.intent.extra.TEXT=${encodeURIComponent(textPayload)};` +
-          `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
-        window.location.href = intent;
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    const textPayloadForIntent =
+      combinedBody.length > ANDROID_INTENT_TEXT_MAX
+        ? `${combinedBody.slice(0, ANDROID_INTENT_TEXT_MAX - 20)}…`
+        : combinedBody;
 
-    const sharePayloads: WebSharePayload[] = [
-      { title: shareTitle, text: shareLine, url: referralLink },
-      { title: shareTitle, text: combinedBody },
-      { title: shareTitle, url: referralLink },
-      { text: `${shareLine} ${referralLink}` },
-    ];
+    // Android: prefer a single `text` payload first (most reliable with Web Share on Chrome);
+    // iOS is fine with title + text + url.
+    const sharePayloads: WebSharePayload[] = isAndroid
+      ? [
+          { text: combinedBody },
+          { title: shareTitle, text: shareLine, url: referralLink },
+          { title: shareTitle, text: combinedBody },
+          { title: shareTitle, url: referralLink },
+          { text: `${shareLine} ${referralLink}` },
+        ]
+      : [
+          { title: shareTitle, text: shareLine, url: referralLink },
+          { title: shareTitle, text: combinedBody },
+          { title: shareTitle, url: referralLink },
+          { text: combinedBody },
+          { text: `${shareLine} ${referralLink}` },
+        ];
 
     const shareResult = await invokeWebShare(sharePayloads);
     if (shareResult === 'shared' || shareResult === 'aborted') return;
 
-    // Android: Web Share often fails in embedded Chrome / WebView; try intent chooser
-    // before clipboard-only UX so users still get SEND targets when the intent URL works.
+    // Web Share often missing or blocked in in-app WebViews; try SEND chooser via intent.
     if (isAndroid) {
-      tryAndroidSendIntent();
+      triggerAndroidSendIntent(shareTitle, textPayloadForIntent);
     }
 
     const copied = await copyTextToClipboard(combinedBody);
@@ -200,9 +220,22 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     }
 
     if (isAndroid) {
-      toast.info(
-        'If nothing opened to share, use Copy next to your code — you can paste the link from there.'
-      );
+      // Clipboard after `await` often fails without a fresh user gesture; offer an explicit action.
+      toast.info('Could not open share or copy automatically.', {
+        description: 'Tap Copy below, then paste into WhatsApp, SMS, or email.',
+        action: {
+          label: 'Copy message & link',
+          onClick: () => {
+            void copyTextToClipboard(combinedBody).then((ok) => {
+              if (ok) {
+                toast.success('Copied! Paste to share with friends.');
+              } else {
+                toast.error('Copy failed. Long-press the referral link in your browser address bar, or type the code for friends to enter at sign-up.');
+              }
+            });
+          },
+        },
+      });
       return;
     }
 

@@ -235,31 +235,28 @@ export default function SettlementsPage() {
   return (
     <AdminLayout>
       <div className="flex-1 flex flex-col min-h-screen bg-gray-50">
-        {/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                {/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
-                <h1 className="text-2xl font-bold text-gray-900">Settlements Dashboard</h1>
-                <p className="text-sm text-gray-500 mt-1">Process and track vendor payouts</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleRunAutoSettlement}
-                  disabled={processing}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition disabled:opacity-50"
-                >
-                  ⚡ Run Daily Settlement
-                </button>
-                <button
-                  onClick={handleProcessSelected}
-                  disabled={processing || selectedIds.length === 0}
-                  className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
-                >
-                  {processing ? 'Processing...' : `Process Selected (${selectedIds.length})`}
-                </button>
-              </div>
+        {/* Page toolbar: keep short — AdminLayout already provides the sticky app header */}
+        <header className="border-b border-gray-200 bg-white">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-gray-900 sm:text-xl">Settlements</h1>
+              <p className="text-xs text-gray-500 sm:text-sm">Vendor payouts</p>
+            </div>
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+              <button
+                onClick={handleRunAutoSettlement}
+                disabled={processing}
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 sm:px-4 sm:py-2"
+              >
+                ⚡ Run daily
+              </button>
+              <button
+                onClick={handleProcessSelected}
+                disabled={processing || selectedIds.length === 0}
+                className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-orange-600 disabled:opacity-50 sm:px-4 sm:py-2"
+              >
+                {processing ? 'Processing...' : `Process (${selectedIds.length})`}
+              </button>
             </div>
           </div>
         </header>
