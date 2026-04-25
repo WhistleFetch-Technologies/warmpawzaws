@@ -840,9 +840,9 @@ export function VendorCustomServiceCreation({
                 {/* ✅ AI-POWERED CATEGORIES (with templates) */}
                 {availableCategories.length > 0 && (
                   <optgroup label="📚 Suggested Categories (With Templates)">
-                    {availableCategories.map(cat => (
-                      <option key={cat.category} value={cat.category}>
-                        {cat.categoryLabel} ({cat.microCategories.length} templates)
+                    {availableCategories.map((cat: MicroCategory) => (
+                      <option key={cat.id} value={cat.name}>
+                        {cat.name}
                       </option>
                     ))}
                   </optgroup>
@@ -851,8 +851,8 @@ export function VendorCustomServiceCreation({
                 {/* ✅ CATALOG CATEGORIES (from 441 services) */}
                 {catalogCategories.length > 0 && (
                   <optgroup label="🗂️ All Platform Categories">
-                    {catalogCategories.map(cat => (
-                      <option key={cat.id} value={cat.name}>
+                    {catalogCategories.map((cat: { id: string; name: string }) => (
+                      <option key={cat.id} value={cat.id}>
                         {cat.name}
                       </option>
                     ))}

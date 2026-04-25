@@ -110,6 +110,7 @@ const nextConfig = {
     config.resolve.alias['@warmpawz/shared-types'] = path.resolve(
       __dirname,
       '../../packages/shared-types/src/index.ts'
+    );
     // Tsconfig `paths` `@/*` is not applied to webpack in this Windows/Next combo; rewrite `@/…` explicitly.
     if (!config.plugins) config.plugins = [];
     config.plugins.push(
