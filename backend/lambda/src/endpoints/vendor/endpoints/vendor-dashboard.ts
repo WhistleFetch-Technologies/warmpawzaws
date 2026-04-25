@@ -58,24 +58,14 @@ class VendorDashboardHandler extends BaseHandler {
             const application = applications.length > 0 ? applications[0] : null;
             const payload = application?.application_payload || {};
             
-            // Create vendors record (include default tier/commission from vendor_tiers)
             console.log(`[DASHBOARD] Auto-creating vendor record for approved vendor ${vendorId}`);
-            let resolvedTierName: string = 'Basic';
-            let resolvedCommission: number = 15;
-            try {
-              const tierRes = await query(
-                `SELECT tier_name, commission_rate
-                 FROM vendor_tiers
-                 WHERE is_active = true
-                 ORDER BY is_default DESC NULLS LAST, tier_level ASC
-                 LIMIT 1`
-              ).catch(() => ({ rows: [] as any[] }));
-              if (tierRes.rows && tierRes.rows.length > 0) {
-                resolvedTierName = tierRes.rows[0].tier_name || resolvedTierName;
-                const cr = parseFloat(tierRes.rows[0].commission_rate || '15');
-                if (!isNaN(cr)) resolvedCommission = cr;
-              }
-            } catch {}
+            const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+            const tr = await resolveNewVendorOnboardingTier({
+              email: payload.email,
+              businessName: payload.businessName || payload.business_name,
+            });
+            const resolvedTierName = tr.tier;
+            const resolvedCommission = tr.commission_percentage;
             const newVendor = await insert('vendors', {
               id: vendorId,
               phone: identity.phone,
@@ -174,8 +164,9 @@ class VendorDashboardHandler extends BaseHandler {
       }
     }
 
-    // ✅ SQL: Get bookings for vendor
-    const bookings = await select('bookings', { vendor_id: vendorId });
+    // ✅ SQL: Get bookings for vendor (exclude unpaid holds — same as enhanced dashboard)
+    const bookingsRaw = await select('bookings', { vendor_id: vendorId });
+    const bookings = bookingsRaw.filter((b: any) => b.status !== 'pending_payment');
 
     // Calculate stats
     const today = new Date().toISOString().split('T')[0];

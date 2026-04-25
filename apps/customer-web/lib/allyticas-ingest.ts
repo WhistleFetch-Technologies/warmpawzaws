@@ -12,26 +12,42 @@ const MAX_QUEUE = 50;
 const FLUSH_DEBOUNCE_MS = 600;
 
 function resolveIngestUrl(): string | null {
-  /** Prefer explicit analytics URL; else same base as REST API client (includes `window.__NEXT_PUBLIC_API_BASE_URL__`). */
-  let u =
-    (
-      process.env.NEXT_PUBLIC_ANALYTICS_INGEST_URL ||
-      process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT ||
-      process.env.NEXT_PUBLIC_API_BASE_URL ||
-      ''
-    ).trim() || '';
-
-  if (!u && typeof window !== 'undefined') {
-    try {
-      u = getApiBaseUrl().trim();
-    } catch {
-      u = '';
-    }
+  /**
+   * Must match REST `getApiBaseUrl()` priority on the client: `runtime-config.js` wins on prod hosts.
+   * Do **not** read `NEXT_PUBLIC_API_BASE_URL` before `getApiBaseUrl()` — Next inlines that at **build** time
+   * and CI often bakes the **dev** gateway; regular API calls then use runtime config while analytics wrongly hit dev.
+   */
+  const explicitOverride = (
+    process.env.NEXT_PUBLIC_ANALYTICS_INGEST_URL ||
+    process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT ||
+    ''
+  ).trim();
+  if (explicitOverride) {
+    return explicitOverride.includes('/analytics/v1/events')
+      ? explicitOverride
+      : explicitOverride.replace(/\/$/, '') + '/analytics/v1/events';
   }
 
-  if (!u) return null;
-  if (u.includes('/analytics/v1/events')) return u;
-  return u.replace(/\/$/, '') + '/analytics/v1/events';
+  let base = '';
+  if (typeof window !== 'undefined') {
+    try {
+      base = getApiBaseUrl().trim();
+    } catch {
+      base = '';
+    }
+  }
+  /** SSR / edge: no `window` — same gateways as `api-client` getApiGatewayUrl() (prod mss9…, dev z0b3…). */
+  if (!base && typeof process !== 'undefined') {
+    base = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim();
+    if (!base && process.env.NEXT_PUBLIC_ENVIRONMENT === 'production') {
+      base = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+    } else if (!base) {
+      base = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    }
+  }
+  if (!base) return null;
+  if (base.includes('/analytics/v1/events')) return base;
+  return base.replace(/\/$/, '') + '/analytics/v1/events';
 }
 
 function resolveEnv(): AllyticasEnv {

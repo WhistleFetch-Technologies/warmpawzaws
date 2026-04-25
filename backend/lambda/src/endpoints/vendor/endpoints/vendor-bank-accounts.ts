@@ -144,8 +144,12 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 }
               }
               
-              // Create vendors record
               console.log(`[BankAccount] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+              const tr = await resolveNewVendorOnboardingTier({
+                email: payload.email,
+                businessName: payload.businessName || payload.business_name,
+              });
               const newVendor = await insert('vendors', {
                 id: vendorId,
                 phone: identity.phone,
@@ -163,6 +167,8 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 status: 'active',
                 is_active: true,
                 is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+                tier: tr.tier,
+                commission_percentage: tr.commission_percentage,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });
