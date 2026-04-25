@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
+import { apiClient } from '@/lib/api-client';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -105,9 +106,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <button 
                 onClick={() => {
                   if (typeof window !== 'undefined') {
-                    localStorage.removeItem('adminAuthToken');
-                    localStorage.removeItem('adminId');
-                    localStorage.removeItem('adminPermissions');
+                    apiClient.clearAuth();
+                    sessionStorage.removeItem('_warmpawz_admin_has_session');
                     window.location.href = '/';
                   }
                 }}

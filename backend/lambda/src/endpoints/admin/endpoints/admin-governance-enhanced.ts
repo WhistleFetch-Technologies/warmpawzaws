@@ -379,6 +379,32 @@ class CalculateTaxHandler extends BaseHandler {
 // BANNER MANAGEMENT
 // ============================================================================
 
+const ALLOWED_BANNER_DB_TYPES = new Set([
+  'main',
+  'spotlight',
+  'category',
+  'service',
+  'home_top',
+  'home_middle',
+  'checkout',
+]);
+
+function pickBannerStringField(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim();
+  return s.length ? s : undefined;
+}
+
+function normalizeBannerTypeForDb(typeOrPosition: string): string {
+  const key = typeOrPosition.trim().toLowerCase();
+  return ALLOWED_BANNER_DB_TYPES.has(key) ? key : 'main';
+}
+
+function resolveBannerTypeFromBody(type: unknown, position: unknown): string {
+  const raw = pickBannerStringField(type) ?? pickBannerStringField(position) ?? 'main';
+  return normalizeBannerTypeForDb(raw);
+}
+
 class GetBannersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const queryParams = context.event.queryStringParameters || {};
@@ -448,7 +474,7 @@ class CreateBannerHandler extends BaseHandler {
       metadata,
     } = body;
 
-    const bannerType = type || position || 'main';
+    const bannerType = resolveBannerTypeFromBody(type, position);
     this.validateRequired(body, ['title']);
 
     try {
@@ -523,8 +549,9 @@ class UpdateBannerHandler extends BaseHandler {
       if (ctaText !== undefined) updateData.cta_text = ctaText;
       if (cta_link !== undefined) updateData.cta_link = cta_link;
       if (linkUrl !== undefined) updateData.cta_link = linkUrl;
-      if (type !== undefined) updateData.type = type;
-      if (position !== undefined) updateData.type = position;
+      if (type !== undefined || position !== undefined) {
+        updateData.type = resolveBannerTypeFromBody(type, position);
+      }
       if (display_order !== undefined) updateData.display_order = display_order;
       if (priority !== undefined) updateData.display_order = priority;
       if (startDate !== undefined) updateData.start_date = startDate ? new Date(startDate) : null;
@@ -538,7 +565,7 @@ class UpdateBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'update',
         bannerId,
-        position: type || position || undefined,
+        position: updateData.type !== undefined ? updateData.type : undefined,
       });
 
       // Use explicit UUID casting in query to avoid "uuid = text" errors

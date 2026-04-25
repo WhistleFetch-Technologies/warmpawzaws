@@ -10,6 +10,7 @@ import {
   getOpenCustomerPortalBaseUrl,
   LOCAL_CUSTOMER_ORIGIN,
 } from './open-vendor-portal-base';
+import { isJwtExpiringWithin, clearAdminSession } from './session-utils';
 
 type RuntimeConfig = {
   apiBaseUrl?: string;
@@ -222,8 +223,14 @@ export class RateLimitError extends Error {
   }
 }
 
+function normalizeApiBaseForRequest(url: string): string {
+  return (url && typeof url === 'string' ? url.trim() : '').replace(/\/+$/, '');
+}
+
 export class ApiClient {
   private baseUrl: string;
+  /** Deduplicate concurrent POST /admin/auth/refresh calls from 401 recovery and proactive refresh. */
+  private adminAuthRefreshInFlight: Promise<boolean> | null = null;
 
   constructor(baseUrl?: string) {
     // Use provided URL or get from config (with fallback)
@@ -267,6 +274,108 @@ export class ApiClient {
       return localStorage.getItem('adminAuthToken');
     }
     return null;
+  }
+
+  /** Stored refresh from admin login (or Cognito bundle when used). */
+  private getStoredAdminRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    const fromLs = localStorage.getItem('adminRefreshToken');
+    if (fromLs) return fromLs;
+    try {
+      const { getCognitoTokens } = require('./cognito-auth');
+      return getCognitoTokens()?.refreshToken ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isEligibleForAdminBearerRefresh(endpoint: string): boolean {
+    if (!endpoint.startsWith('/admin')) return false;
+    if (endpoint === '/admin/auth/login' || endpoint.startsWith('/admin/auth/login?')) return false;
+    if (endpoint === '/admin/auth/refresh' || endpoint.startsWith('/admin/auth/refresh?')) return false;
+    if (endpoint === '/admin/auth/signup' || endpoint.startsWith('/admin/auth/signup?')) return false;
+    return true;
+  }
+
+  private persistAdminSessionFromRefreshBody(data: any): boolean {
+    if (typeof window === 'undefined' || !data?.success || !data?.token?.access_token) {
+      return false;
+    }
+    const t = data.token;
+    localStorage.setItem('adminAuthToken', t.access_token);
+    if (t.refresh_token) {
+      localStorage.setItem('adminRefreshToken', t.refresh_token);
+    }
+    if (t.id_token) {
+      localStorage.setItem('adminIdToken', t.id_token);
+    }
+    if (data.admin?.email) {
+      localStorage.setItem('adminEmail', data.admin.email);
+    }
+    if (data.admin?.id) {
+      localStorage.setItem('adminId', data.admin.id);
+    }
+    if (data.admin?.name) {
+      localStorage.setItem('adminName', data.admin.name);
+    }
+    if (Array.isArray(data.permissions) && data.permissions.length > 0) {
+      localStorage.setItem('adminPermissions', JSON.stringify(data.permissions));
+    }
+    return true;
+  }
+
+  private async performAdminTokenRefresh(baseUrlNorm: string): Promise<boolean> {
+    const rt = this.getStoredAdminRefreshToken();
+    if (!rt) return false;
+    const url = `${baseUrlNorm}/admin/auth/refresh`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (UAT_MODE && typeof window !== 'undefined') {
+      headers['X-UAT-Mode'] = 'true';
+    }
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+    } catch {
+      return false;
+    }
+    if (!res.ok) return false;
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      return false;
+    }
+    return this.persistAdminSessionFromRefreshBody(data);
+  }
+
+  private trySilentAdminRefreshWithBase(baseUrlNorm: string): Promise<boolean> {
+    if (!this.adminAuthRefreshInFlight) {
+      this.adminAuthRefreshInFlight = this.performAdminTokenRefresh(baseUrlNorm).finally(() => {
+        this.adminAuthRefreshInFlight = null;
+      });
+    }
+    return this.adminAuthRefreshInFlight;
+  }
+
+  private handleAdminRefreshHardFailure(): void {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(
+      '_warmpawz_admin_session_msg',
+      'Session expired. Please sign in again.'
+    );
+    try {
+      const { clearCognitoTokens } = require('./cognito-auth');
+      clearCognitoTokens();
+    } catch {
+      /* ignore */
+    }
+    clearAdminSession();
+    sessionStorage.removeItem('_warmpawz_admin_has_session');
+    window.location.href = '/';
   }
 
   private async request<T>(
@@ -330,9 +439,21 @@ export class ApiClient {
     }
     
     // Fix: Normalize URL to avoid double slashes
-    const base = currentBaseUrl.replace(/\/+$/, ''); // Remove trailing slashes
-    const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+    const base = normalizeApiBaseForRequest(currentBaseUrl);
+    const path = endpoint.replace(/^\/+/, '/'); // Ensure single leading slash
     const url = `${base}${path}`;
+
+    if (
+      typeof window !== 'undefined' &&
+      retryCount === 0 &&
+      this.isEligibleForAdminBearerRefresh(endpoint)
+    ) {
+      const bearer = this.getAuthToken();
+      if (bearer && this.getStoredAdminRefreshToken() && isJwtExpiringWithin(bearer, 300)) {
+        await this.trySilentAdminRefreshWithBase(base);
+      }
+    }
+
     const token = this.getAuthToken();
     
     const headers: Record<string, string> = {
@@ -449,26 +570,35 @@ export class ApiClient {
         );
       }
       
-      // Handle 401: In UAT mode or for admin routes, don't redirect - let components handle gracefully
+      // Handle 401: silent admin refresh once, then session-expired redirect for protected /admin/* calls
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
-          // Check if we're in UAT mode - if so, don't redirect, just throw error
+          const isAdminProtected =
+            this.isEligibleForAdminBearerRefresh(endpoint) && retryCount === 0;
+
+          if (isAdminProtected) {
+            const hadRefresh = !!this.getStoredAdminRefreshToken();
+            const refreshed = hadRefresh ? await this.trySilentAdminRefreshWithBase(base) : false;
+            if (refreshed) {
+              return this.request<T>(endpoint, options, retryCount + 1);
+            }
+            if (hadRefresh) {
+              this.handleAdminRefreshHardFailure();
+              throw new Error('Session expired. Please sign in again.');
+            }
+          }
+
           const isUat = getRuntimeConfig().uatMode || UAT_MODE;
           const isAdminRoute = endpoint.startsWith('/admin');
-          
-          // Don't redirect if in UAT mode OR if it's an admin route (admin app should handle auth differently)
+
           if (!isUat && !isAdminRoute) {
-            // Only redirect in production mode for non-admin routes
             localStorage.removeItem('adminAuthToken');
             localStorage.removeItem('adminId');
             window.location.href = '/';
-          } else {
-            // In UAT mode or admin routes, just throw error with helpful message
-            if (UAT_MODE) {
-              console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
-              console.warn('   Endpoint:', endpoint);
-              console.warn('   Token present:', !!token);
-            }
+          } else if (UAT_MODE && isAdminRoute && !isAdminProtected) {
+            console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
+            console.warn('   Endpoint:', endpoint);
+            console.warn('   Token present:', !!token);
           }
         }
       }
@@ -535,9 +665,13 @@ export class ApiClient {
   // Clear auth token
   clearAuth(): void {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('adminAuthToken');
-      localStorage.removeItem('adminId');
-      localStorage.removeItem('adminPermissions');
+      try {
+        const { clearCognitoTokens } = require('./cognito-auth');
+        clearCognitoTokens();
+      } catch {
+        /* ignore */
+      }
+      clearAdminSession();
     }
   }
 }

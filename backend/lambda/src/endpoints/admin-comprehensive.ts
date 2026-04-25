@@ -18,6 +18,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 // Password verification
 import * as crypto from 'crypto';
+import { resolveAdminPermissions } from '../utils/admin-rbac-permissions';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -397,6 +398,181 @@ class AdminLoginHandler extends BaseHandler {
       });
     } catch (error: any) {
       return this.error(error.message || 'Login failed', 500);
+    }
+  }
+}
+
+/** Email for admin row lookup from Cognito ID token (admin login uses `phone_${email}` as username). */
+function adminEmailFromCognitoIdPayload(payload: Record<string, unknown>): string | null {
+  const emailRaw = payload.email;
+  if (typeof emailRaw === 'string' && emailRaw.trim()) {
+    return emailRaw.trim();
+  }
+  const un = String(payload['cognito:username'] || '');
+  if (un.startsWith('phone_')) {
+    return un.slice('phone_'.length) || null;
+  }
+  return un || null;
+}
+
+class AdminRefreshTokenHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const body = this.parseBody(context.event);
+      const refreshToken =
+        typeof body.refreshToken === 'string'
+          ? body.refreshToken.trim()
+          : typeof (body as any).refresh_token === 'string'
+            ? String((body as any).refresh_token).trim()
+            : '';
+
+      if (!refreshToken) {
+        return this.error('refreshToken is required', 400);
+      }
+
+      const parts = refreshToken.split('.');
+      const looksLikeJwt = parts.length === 3;
+
+      if (looksLikeJwt) {
+        const { verifyProductionJWTToken, generateProductionJWTToken } = await import('../utils/jwt-generator');
+        const prodResult = await verifyProductionJWTToken(refreshToken);
+        if (prodResult.valid && prodResult.payload) {
+          const p = prodResult.payload as Record<string, unknown>;
+          if (p.token_use !== 'refresh') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminId = String(p.sub || '').trim();
+          if (!adminId) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query('SELECT * FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const tokens = await generateProductionJWTToken({
+            userId: admin.id,
+            phone: admin.email,
+            role: 'admin',
+            expiresIn: 24 * 60 * 60,
+          });
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: tokens.accessToken,
+              id_token: tokens.idToken,
+              refresh_token: tokens.refreshToken,
+              expires_in: tokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        }
+
+        const { verifyUATJWTToken, generateUATJWTToken } = await import('../utils/jwt-generator');
+        const uatResult = await verifyUATJWTToken(refreshToken);
+        if (uatResult.valid && uatResult.payload) {
+          const p = uatResult.payload as Record<string, unknown>;
+          if (p.token_use !== 'refresh') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminId = String(p.sub || '').trim();
+          if (!adminId) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query('SELECT * FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const tokens = await generateUATJWTToken({
+            userId: admin.id,
+            phone: admin.email,
+            role: 'admin',
+            expiresIn: 3600,
+          });
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: tokens.accessToken,
+              id_token: tokens.idToken,
+              refresh_token: tokens.refreshToken,
+              expires_in: tokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        }
+      }
+
+      const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || '';
+      const cognitoClientId = process.env.COGNITO_CLIENT_ID || '';
+      if (cognitoUserPoolId && cognitoClientId) {
+        try {
+          const { refreshCognitoUserSession } = await import('../utils/cognito-client');
+          const cognitoTokens = await refreshCognitoUserSession(refreshToken);
+          const { verifyIdToken } = await import('../utils/jwt-verification');
+          const idPayload = await verifyIdToken(cognitoTokens.idToken);
+          if (!idPayload) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const userType = idPayload['custom:user_type'];
+          if (userType !== 'admin') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const emailHint = adminEmailFromCognitoIdPayload(idPayload as Record<string, unknown>);
+          if (!emailHint) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query(
+            'SELECT * FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+            [emailHint]
+          );
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        } catch (cognitoErr: any) {
+          console.warn('[ADMIN AUTH] Cognito refresh failed:', cognitoErr?.message || cognitoErr);
+        }
+      }
+
+      return this.error('Invalid or expired refresh token', 401);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Refresh error:', error);
+      return this.error(error.message || 'Refresh failed', 500);
     }
   }
 }
@@ -3394,6 +3570,20 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[ADMIN AUTH] Login endpoint error:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500);
+    }
+  });
+
+  app.post('/admin/auth/refresh', async (c) => {
+    try {
+      const requestBody = await c.req.json().catch(() => ({}));
+      const handler = new AdminRefreshTokenHandler();
+      const event = createApiGatewayEventWithBody(c.req, requestBody);
+      const context = createLambdaContext();
+      const result = await handler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Refresh endpoint error:', error);
       return c.json({ error: error.message || 'Internal server error' }, 500);
     }
   });
