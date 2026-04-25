@@ -12,9 +12,13 @@
     "lint": "next lint",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "verify:capabilities": "node scripts/verify-capabilities.js"
+    "verify:capabilities": "node scripts/verify-capabilities.js",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/camera": "^8.0.2",
     "@capacitor/core": "^8.3.1",
     "@capawesome/capacitor-file-picker": "^8.0.2",
     "@hookform/resolvers": "^3.3.0",
@@ -53,6 +57,7 @@
     "@aws-sdk/client-cloudfront": "^3.993.0",
     "@aws-sdk/client-s3": "^3.993.0",
     "@aws-sdk/client-sts": "^3.993.0",
+    "@capacitor/cli": "^8.3.1",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.1.0",
     "@types/node": "^20.10.0",
