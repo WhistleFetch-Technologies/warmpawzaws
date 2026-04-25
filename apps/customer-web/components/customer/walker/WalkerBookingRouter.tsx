@@ -434,7 +434,11 @@ export function WalkerBookingRouter({
           vendorServiceId: sel.id,
           serviceType: 'walking',
           serviceName: sel.name,
-          totalSessions: sel.totalSessions,
+          totalSessions: sel.totalSessions ?? 1,
+          price: sel.price,
+          duration: sel.duration,
+          description: sel.desc,
+          serviceStyle: sel.serviceStyle,
         });
         return;
       }
