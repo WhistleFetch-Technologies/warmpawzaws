@@ -377,8 +377,9 @@ export function VendorCustomServiceCreationEnhanced({
         const data = await apiClient.get('/service-catalog/categories') as any;
         if (data?.success && Array.isArray(data.categories)) {
           const list = data.categories.map((c: any) => ({
-            id: c.id || c.category_id || '',
-            name: c.name || c.categoryName || ''
+            id: c.id || '',
+            category_id: (c.category_id != null && String(c.category_id).trim()) || '',
+            name: c.name || c.categoryName || '',
           })).filter((c: { id: string; name: string }) => c.id && c.name);
           setCatalogCategories(list);
         } else {
@@ -1097,9 +1098,9 @@ export function VendorCustomServiceCreationEnhanced({
                 
                 {availableCategories.length > 0 && (
                   <optgroup label="📚 Suggested Categories">
-                    {availableCategories.map(cat => (
-                      <option key={cat.category} value={cat.category}>
-                        {cat.categoryLabel}
+                    {availableCategories.map((cat: MicroCategory) => (
+                      <option key={cat.id} value={cat.name}>
+                        {cat.name}
                       </option>
                     ))}
                   </optgroup>
@@ -1107,8 +1108,11 @@ export function VendorCustomServiceCreationEnhanced({
                 
                 {catalogCategories.length > 0 && (
                   <optgroup label="🗂️ All Platform Categories">
-                    {catalogCategories.map(cat => (
-                      <option key={cat.id} value={cat.name}>
+                    {catalogCategories.map((cat: { id?: string; category_id?: string; name?: string }) => (
+                      <option
+                        key={cat.id || cat.category_id || cat.name}
+                        value={(cat.category_id && String(cat.category_id).trim()) || cat.name || ''}
+                      >
                         {cat.name}
                       </option>
                     ))}

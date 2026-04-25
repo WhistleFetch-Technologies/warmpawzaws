@@ -29,6 +29,14 @@ import { resolveVendorById } from './vendorProfile.vendor';
 const isUuid = (s?: string) =>
   !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 
+function normalizeCatalogCategoryKey(s: string): string {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-')
+    .replace(/\s+/g, '-');
+}
+
 async function resolveCategory(dbQuery: typeof query, raw?: string | null) {
   let category_id: string | null = null;
   let category_text: string | null = null;
@@ -43,13 +51,33 @@ async function resolveCategory(dbQuery: typeof query, raw?: string | null) {
       [key]
     ).catch(() => ({ rows: [] }));
     category_text = res.rows?.[0]?.name ?? null;
+    return { category_id, category_text };
+  }
+
+  const slugNorm = normalizeCatalogCategoryKey(key);
+
+  const res = await dbQuery(
+    `SELECT id, name
+     FROM service_categories
+     WHERE (is_active = true OR is_active IS NULL)
+       AND (
+         (category_id IS NOT NULL AND LOWER(REPLACE(REPLACE(TRIM(category_id), '_', '-'), ' ', '-')) = $1)
+         OR LOWER(TRIM(COALESCE(name, ''))) = LOWER(TRIM($2))
+       )
+     ORDER BY CASE
+       WHEN category_id IS NOT NULL AND LOWER(REPLACE(REPLACE(TRIM(category_id), '_', '-'), ' ', '-')) = $1 THEN 0
+       ELSE 1
+     END
+     LIMIT 1`,
+    [slugNorm, key]
+  ).catch(() => ({ rows: [] }));
+
+  const row = res.rows?.[0];
+  if (row?.id) {
+    category_id = row.id;
+    category_text = (row.name && String(row.name).trim()) || key;
   } else {
     category_text = key;
-    const res = await dbQuery(
-      `SELECT id FROM service_categories WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
-      [key]
-    ).catch(() => ({ rows: [] }));
-    category_id = res.rows?.[0]?.id ?? null;
   }
 
   return { category_id, category_text };
