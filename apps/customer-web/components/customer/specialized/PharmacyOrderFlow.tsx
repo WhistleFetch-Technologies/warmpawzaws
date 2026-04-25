@@ -29,10 +29,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { PharmacyBroadcastMap, type BroadcastPharmacy } from '../pharmacy/PharmacyBroadcastMap';
@@ -120,10 +116,6 @@ function getAddressLatLng(addr: any): { lat: number; lng: number } | null {
     }
   }
   return null;
-}
-
-function addressHasMapLocation(addr: any): boolean {
-  return getAddressLatLng(addr) != null;
 }
 
 export function PharmacyOrderFlow({
@@ -557,20 +549,14 @@ export function PharmacyOrderFlow({
         throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
       }
 
-      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
-        key: (paymentRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
-        amountPaise: Math.max(
-          1,
-          Math.round(Number(paymentRes.amount || invoice.totalAmount) * 100)
-        ),
+      // Open Razorpay checkout
+      const options = {
+        key: paymentRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: Math.round((paymentRes.amount || invoice.totalAmount) * 100), // Convert to paise
         currency: paymentRes.currency || 'INR',
         name: 'Warmpawz',
         description: 'Medicine Order',
         order_id: paymentRes.orderId,
-        customerPhone,
-        customerEmail: checkoutEmail,
-        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment with retry
@@ -598,6 +584,9 @@ export function PharmacyOrderFlow({
           }
           setLoading(false);
         },
+        prefill: {
+          contact: customerPhone,
+        },
         theme: {
           color: '#FF8C42',
         },
@@ -606,7 +595,7 @@ export function PharmacyOrderFlow({
             setLoading(false);
           },
         },
-      });
+      };
 
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();
@@ -758,9 +747,7 @@ export function PharmacyOrderFlow({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {addresses.map((addr) => {
-                    const hasPin = addressHasMapLocation(addr);
-                    return (
+                  {addresses.map((addr) => (
                     <button
                       key={addr.id}
                       onClick={() => setSelectedAddress(addr)}
@@ -770,20 +757,12 @@ export function PharmacyOrderFlow({
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
-                        {!hasPin && (
-                          <Badge variant="outline" className="shrink-0 text-amber-800 border-amber-300 bg-amber-50 text-xs font-normal">
-                            No map location
-                          </Badge>
-                        )}
-                      </div>
+                      <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
                       <p className="text-sm text-gray-500 mt-1">
                         {addr.addressLine1 || addr.address}, {addr.city} - {addr.pincode}
                       </p>
                     </button>
-                    );
-                  })}
+                  ))}
                   <Button
                     variant="outline"
                     onClick={() => setShowAddAddressModal(true)}
@@ -795,18 +774,6 @@ export function PharmacyOrderFlow({
                 </div>
               )}
             </Card>
-
-            {selectedAddress && !addressHasMapLocation(selectedAddress) && (
-              <Card className="bg-amber-50 border-amber-200 rounded-2xl p-4">
-                <p className="text-amber-900 text-sm flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>
-                    This address has no GPS pin yet. Pharmacy search needs a map location. Use{' '}
-                    <strong className="font-semibold">Add New Address</strong> and pick the place with Google search, or edit the address in your profile so it saves coordinates.
-                  </span>
-                </p>
-              </Card>
-            )}
 
             <Card className="bg-white rounded-2xl p-5 border border-gray-100">
               <h3 className="font-medium text-gray-900 mb-3">Add Note (Optional)</h3>
@@ -828,7 +795,7 @@ export function PharmacyOrderFlow({
               </Button>
               <Button
                 onClick={createOrder}
-                disabled={!selectedAddress || loading || !addressHasMapLocation(selectedAddress)}
+                disabled={!selectedAddress || loading}
                 className="flex-1 bg-[#FF8C42] hover:bg-[#E67A35] py-6"
               >
                 {loading ? (

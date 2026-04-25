@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI booking wizard — server-backed draft sessions for customer-web in-chat flow.
  * Routes are mounted under /ai-chatbot/* (same rate limit / optional auth as other ai-chatbot).
  */

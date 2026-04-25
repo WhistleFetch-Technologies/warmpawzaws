@@ -5,6 +5,7 @@
  * AWS Serverless compatible (Lambda, RDS)
  */
 
+import type { PoolClient } from 'pg';
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
 import { loyaltySegmentationService } from '../loyalty-segmentation-service';
 
@@ -117,6 +118,181 @@ export class LoyaltyPointsService {
     const policy: LoyaltyWalletPolicy = { autoConvert, pointsPerRupee: rr };
     this.walletPolicyCache = { at: now, policy };
     return policy;
+  }
+
+  /**
+   * Rule + frequency + base points (no open transaction on caller’s behalf).
+   */
+  async preparePointsAward(
+    params: AwardPointsParams
+  ): Promise<{ pointsAfterRuleMultipliers: number; walletPolicy: LoyaltyWalletPolicy } | null> {
+    const rule = await this.getApplicableRule(params);
+    if (!rule) {
+      console.log(`No rule found for action: ${params.actionName}`);
+      return null;
+    }
+    if (!(await this.checkFrequencyLimit(rule, params))) {
+      console.log(`Frequency limit reached for action: ${params.actionName}`);
+      return null;
+    }
+    const points = await this.calculatePoints(rule, params);
+    if (points <= 0) {
+      return null;
+    }
+    const pointsAfterRuleMultipliers = await this.applyMultipliers(rule, points, params);
+    if (pointsAfterRuleMultipliers <= 0) {
+      return null;
+    }
+    const walletPolicy = await this.getWalletPolicy();
+    return { pointsAfterRuleMultipliers, walletPolicy };
+  }
+
+  /**
+   * Insert earn row, update customer totals, optional vendor wallet path — use inside an existing `withTransaction` client.
+   * Caller is responsible for any required profile upsert / pre-steps before this.
+   */
+  async commitEarnedPointsInTransaction(
+    client: PoolClient,
+    params: AwardPointsParams,
+    opts: { finalPoints: number; description: string; walletPolicy: LoyaltyWalletPolicy }
+  ): Promise<{ points: number; walletCredited: number }> {
+    const { finalPoints, description, walletPolicy } = opts;
+    const userId = params.customerId || params.vendorId;
+    if (!userId) {
+      throw new Error('customerId or vendorId is required');
+    }
+    const isVendor = !!(params.vendorId && !params.customerId);
+
+    await client.query(
+      `INSERT INTO loyalty_transactions
+         (transaction_type, points, reference_type, reference_id, description, vendor_id, customer_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        'earned',
+        finalPoints,
+        params.referenceType || params.actionName,
+        params.referenceId || null,
+        description,
+        isVendor ? params.vendorId! : null,
+        isVendor ? null : (params.customerId || userId),
+      ]
+    );
+
+    await client.query(
+      `UPDATE customer_loyalty_points
+       SET total_points = total_points + $1,
+           lifetime_points_earned = lifetime_points_earned + $1,
+           updated_at = NOW()
+       WHERE customer_id = $2`,
+      [finalPoints, userId]
+    );
+
+    if (!walletPolicy.autoConvert) {
+      console.info(
+        `[LOYALTY] Points awarded without wallet conversion (auto_convert_to_wallet=false) action=${params.actionName}`
+      );
+      return { points: finalPoints, walletCredited: 0 };
+    }
+
+    if (!isVendor) {
+      console.info(
+        `[LOYALTY] Customer award: wallet credit skipped (redeem to wallet in app). action=${params.actionName} points=${finalPoints}`
+      );
+      return { points: finalPoints, walletCredited: 0 };
+    }
+
+    const ppr = walletPolicy.pointsPerRupee;
+    const walletAmount = Math.round((finalPoints / ppr) * 100) / 100;
+    const walletConvLabel = `${ppr} points = ₹1`;
+
+    await client.query('SAVEPOINT vendor_wallet_upsert');
+    try {
+      await client.query(
+        `INSERT INTO vendor_wallets (vendor_id, balance, currency)
+         VALUES ($1, 0, 'INR')
+         ON CONFLICT (vendor_id) DO NOTHING`,
+        [userId]
+      );
+      await client.query('RELEASE SAVEPOINT vendor_wallet_upsert');
+    } catch (walletCreateErr: any) {
+      await client.query('ROLLBACK TO SAVEPOINT vendor_wallet_upsert');
+      if (walletCreateErr.message?.includes('currency') || walletCreateErr.message?.includes('column')) {
+        await client.query(
+          `INSERT INTO vendor_wallets (vendor_id, balance)
+           VALUES ($1, 0)
+           ON CONFLICT (vendor_id) DO NOTHING`,
+          [userId]
+        );
+      } else {
+        throw walletCreateErr;
+      }
+    }
+
+    const walletRes = await client.query(
+      `SELECT id, balance FROM vendor_wallets WHERE vendor_id = $1`,
+      [userId]
+    );
+    const wallet = walletRes.rows[0];
+    if (!wallet) throw new Error(`vendor_wallets row not found for vendor ${userId}`);
+
+    await client.query(
+      `UPDATE vendor_wallets
+       SET balance = balance + $1, updated_at = NOW()
+       WHERE id = $2`,
+      [walletAmount, wallet.id]
+    );
+
+    const balAfterRes = await client.query(
+      `SELECT balance FROM vendor_wallets WHERE id = $1`,
+      [wallet.id]
+    );
+    const newBalance = parseFloat(balAfterRes.rows[0]?.balance || '0');
+
+    await client.query('SAVEPOINT vwt_insert');
+    try {
+      await client.query(
+        `INSERT INTO vendor_wallet_transactions
+           (wallet_id, vendor_id, transaction_type, amount, balance_after,
+            reference_type, reference_id, description, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          wallet.id, userId, 'credit', walletAmount, newBalance,
+          params.referenceType || params.actionName,
+          params.referenceId || null,
+          `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`,
+          'loyalty_points',
+        ]
+      );
+      await client.query('RELEASE SAVEPOINT vwt_insert');
+    } catch (vwtErr: any) {
+      await client.query('ROLLBACK TO SAVEPOINT vwt_insert');
+      if (vwtErr.message?.includes('source') || vwtErr.message?.includes('column')) {
+        await client.query(
+          `INSERT INTO vendor_wallet_transactions
+             (wallet_id, vendor_id, transaction_type, amount, balance_after,
+              reference_type, reference_id, description)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [
+            wallet.id, userId, 'credit', walletAmount, newBalance,
+            params.referenceType || params.actionName,
+            params.referenceId || null,
+            `Loyalty points converted: ${finalPoints} points = ₹${walletAmount.toFixed(2)} (${walletConvLabel})`,
+          ]
+        );
+      } else {
+        throw vwtErr;
+      }
+    }
+
+    console.log(`✅ [LOYALTY] Awarded ${finalPoints} points (₹${walletAmount} to vendor wallet) for action: ${params.actionName}`);
+    return { points: finalPoints, walletCredited: walletAmount };
+  }
+
+  /**
+   * Non-blocking in-app notification after a successful earn (e.g. called by referral orchestration after its transaction).
+   */
+  async sendPointsEarnedNotification(params: AwardPointsParams, points: number): Promise<void> {
+    await this.createPointsEarnedNotification(params, points);
   }
 
   /**
@@ -855,4 +1031,3 @@ export class LoyaltyPointsService {
 }
 
 export const loyaltyPointsService = new LoyaltyPointsService();
-

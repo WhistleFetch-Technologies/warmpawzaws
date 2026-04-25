@@ -24,6 +24,7 @@ provider:
   # Environment variables
   environment:
     NODE_ENV: ${self:provider.stage}
+    WPZ_API_STAGE: ${self:provider.stage}
     
     # RDS Configuration
     DB_HOST: ${ssm:/warmpawz/${self:provider.stage}/db/host}

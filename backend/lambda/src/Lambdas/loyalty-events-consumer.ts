@@ -8,9 +8,20 @@ import {
 	processCustomerReferralOtpVerifyReward,
 	processCustomerReferralFirstBookingReward,
 	processCustomerReferralVendorApprovalReward,
+	processLoyaltyActionOccurredForQualifyingPurchase,
 } from 'src/lib/services/referral-service';
 
 // Avoid circular import at module init by dynamic import inside handler for heavy deps.
+
+function isDuplicateLoyaltyEarnError(err: unknown): boolean {
+	const msg = String((err as { message?: string })?.message || '');
+	return (
+		msg.includes('loyalty_transactions') &&
+		(msg.includes('duplicate key value') ||
+			msg.includes('unique constraint') ||
+			msg.includes('already exists'))
+	);
+}
 
 type ActionOccurred = {
 	eventId: string;
@@ -167,13 +178,28 @@ export const handler: SQSHandler = async (event) => {
 					eventId: evt.eventId,
 					reference: evt.reference,
 				});
+			} else if (evt.actionName === 'qualifying_purchase') {
+				try {
+					await processLoyaltyActionOccurredForQualifyingPurchase({
+						actionName: 'qualifying_purchase',
+						entity: evt.entity,
+						amount: evt.amount,
+						reference: evt.reference,
+						metadata: evt.metadata || {},
+					});
+				} catch (awardErr: any) {
+					if (!isDuplicateLoyaltyEarnError(awardErr)) {
+						throw awardErr;
+					}
+					console.info('[LOYALTY CONSUMER] award deduplicated (treated as success)', {
+						eventId: evt.eventId,
+						message: String(awardErr?.message || '').slice(0, 180),
+					});
+				}
 			} else {
-				// Default: award based on entity type
 				const customerId = evt.entity.type === 'vendor' ? undefined : evt.entity.id;
 				const vendorId = evt.entity.type === 'vendor' ? evt.entity.id : undefined;
-
 				try {
-
 					await loyaltyPointsService.awardPoints({
 						customerId,
 						vendorId,
@@ -185,21 +211,12 @@ export const handler: SQSHandler = async (event) => {
 						metadata: evt.metadata || {},
 					});
 				} catch (awardErr: any) {
-					// Only swallow genuine loyalty_transactions duplicate errors.
-					// Do NOT swallow profile/wallet creation conflicts – those are
-					// concurrent-upsert errors that should be retried.
-					const msg = String(awardErr?.message || '');
-					const isDupTxn =
-						msg.includes('loyalty_transactions') &&
-						(msg.includes('duplicate key value') ||
-							msg.includes('unique constraint') ||
-							msg.includes('already exists'));
-					if (!isDupTxn) {
+					if (!isDuplicateLoyaltyEarnError(awardErr)) {
 						throw awardErr;
 					}
 					console.info('[LOYALTY CONSUMER] award deduplicated (treated as success)', {
 						eventId: evt.eventId,
-						message: msg.slice(0, 180),
+						message: String(awardErr?.message || '').slice(0, 180),
 					});
 				}
 			}

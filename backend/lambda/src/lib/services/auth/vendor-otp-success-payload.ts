@@ -9,6 +9,7 @@ import {
   authenticateCognitoUser,
   CognitoTokens,
 } from '../../../utils/cognito-client';
+import { shouldUseUatJwtIssuer } from './uat-auth-env';
 
 export type VendorVerifyOtpInnerMeta = {
   timestamp: string;
@@ -49,9 +50,16 @@ export async function issueAuthTokensAfterOtp(params: {
   customerAuthVersion?: number;
   /** Optional override; otherwise loaded from `vendors.auth_version` for vendors. */
   vendorAuthVersion?: number;
+  /**
+   * Lowercased API Gateway–style headers (e.g. from BaseHandlerEnhanced.getHeaders).
+   * When `X-UAT-Mode: true` on a non–production-like stage, issues UAT JWTs even if `UAT_MODE` env is unset.
+   */
+  requestHeaders?: Record<string, string>;
+  /** Set true after UAT password bypass so tokens always match bypass rules. */
+  preferUatJwt?: boolean;
 }): Promise<CognitoTokens> {
   const { userId, phone, role } = params;
-  const isUATMode = process.env.UAT_MODE === 'true';
+  const useUatJwtIssuer = shouldUseUatJwtIssuer(params.requestHeaders, params.preferUatJwt);
 
   let customerJwtAuthVersion: number | undefined;
   if (role === 'customer') {
@@ -71,7 +79,7 @@ export async function issueAuthTokensAfterOtp(params: {
 
   let cognitoTokens: CognitoTokens;
 
-  if (isUATMode) {
+  if (useUatJwtIssuer) {
     cognitoTokens = await generateUATJWTToken({
       userId,
       phone,

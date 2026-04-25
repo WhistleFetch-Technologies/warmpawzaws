@@ -234,6 +234,36 @@ async function ensureEscalationTicket(
   return { ticketId, created: true };
 }
 
+function shortSupportTicketRefForUser(ticketId: string): string {
+  return ticketId.replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+/**
+ * Bedrock runs before we know ticketId — append a factual line so the assistant's text matches API behavior.
+ */
+function appendSupportTicketAckToResponse(
+  responseText: string,
+  opts: { ticketId: string; created: boolean; capReached: boolean; isVendorSession: boolean }
+): string {
+  const base = responseText.trim();
+  if (!opts.ticketId || opts.capReached) return base;
+
+  const ref = shortSupportTicketRefForUser(opts.ticketId);
+  if (/\blogged a support request from this chat\b/i.test(base)) return base;
+  if (/\blinked to (?:your )?open support request\b/i.test(base)) return base;
+  if (new RegExp(`\\b${ref}\\b`, 'i').test(base)) return base;
+
+  const tail = opts.isVendorSession
+    ? opts.created
+      ? `\n\nWarmpawz has **logged a support request** from this chat so our team can follow up. Open **Support** in your vendor app to track it — your reference starts with **${ref}**.`
+      : `\n\nThis chat is **linked to your open support request**. Open **Support** in your vendor app to continue — reference **${ref}**.`
+    : opts.created
+      ? `\n\nWarmpawz has **logged a support request** from this chat. Open **Help & Support** to track it — reference **${ref}**.`
+      : `\n\nThis chat is **linked to an open support request**. Open **Help & Support** — reference **${ref}**.`;
+
+  return `${base}${tail}`.trim();
+}
+
 function formatChatPreviousTurns(contextObj: Record<string, unknown>): string {
   const pm = contextObj.previousMessages;
   if (!Array.isArray(pm) || pm.length === 0) return '';
@@ -662,7 +692,8 @@ IMPORTANT RULES:
 - For symptoms: Always advise seeing a vet for serious issues, never diagnose
 - For booking: Guide users to the booking flow
 - For support: Provide helpful information or escalate to agent if needed
-- If confidence < 0.7 or user requests human agent, set requiresAgent: true`;
+- If confidence < 0.7 or user requests human agent, set requiresAgent: true
+- If they ask to **raise/open/create a ticket** or speak to a **human/agent**, set **requiresAgent: true** and reassure them the chat can be **passed to support** — do not say you cannot open a ticket from chat; point them to **Help & Support** to follow up.`;
 
       const vendorSystemPrompt = `You are the Warmpawz AI Assistant for **vendors** (pet care providers using the Warmpawz vendor app / dashboard).
 
@@ -692,6 +723,7 @@ Respond with a VALID JSON object ONLY:
 
 IMPORTANT RULES:
 - Be concise and actionable; reference app areas: Bookings tab, Settings, Reporting, Services
+- **Support handoff:** If they ask for a **human**, **live agent**, or to **raise/open/create/file/log a support ticket** (or "can you open a ticket"), set **requiresAgent: true** in your JSON. The **Warmpawz platform records this chat for the support team** when handoff is triggered — **do not** say you are unable to open or raise a ticket from chat; say their request is **flagged for support** and they should use **Support** / **Help** in the vendor app to track it. Never paste a full ticket UUID in "response".
 - If the user needs human help (payout disputes, account lock), set requiresAgent: true
 - If confidence < 0.7 or they ask for a human, set requiresAgent: true
 ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when relevant):\n${vendorAiSuffix}\n` : ''}`;
@@ -787,7 +819,11 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
           } else if (
             /\b(contact support|support team|help desk|human agent|live agent|real person|talk to someone|speak to (a )?human)\b/.test(
               lowerMessage
-            )
+            ) ||
+            /\b(raise|open|file|create|log|start)\s+(a\s+)?(support\s+)?ticket\b/.test(lowerMessage) ||
+            /\b(raise|open|create)\s+(a\s+)?(case|support\s+case)\b/.test(lowerMessage) ||
+            (/\bcan\s+you\s+(raise|open|create|file|log)\b/.test(lowerMessage) && /\bticket\b/.test(lowerMessage)) ||
+            /\bneed\s+(a\s+)?(support\s+)?ticket\b/.test(lowerMessage)
           ) {
             intent = 'vendor_support';
             responseText =
@@ -885,30 +921,31 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         }
       }
 
+      /** Escalation only runs when requiresAgent or confidence < 0.7 — catch ticket/human phrasing the model missed. */
+      if (!requiresAgent) {
+        const lm = String(message || '').toLowerCase();
+        const wantsTicketOrHuman =
+          /\b(raise|open|file|create|log|start)\s+(a\s+)?(support\s+)?ticket\b/.test(lm) ||
+          /\b(raise|open|create)\s+(a\s+)?(case|support\s+case)\b/.test(lm) ||
+          (/\bcan\s+you\s+(raise|open|create|file|log)\b/.test(lm) && /\bticket\b/.test(lm)) ||
+          /\bneed\s+(a\s+)?(support\s+)?ticket\b/.test(lm) ||
+          /\bi\s+need\s+(a\s+)?human\b/.test(lm) ||
+          /\btalk\s+to\s+(a\s+)?human\b/.test(lm) ||
+          /\bspeak\s+to\s+(a\s+)?human\b/.test(lm) ||
+          /\b(contact|get)\s+(a\s+)?(human|agent|real\s+person)\b/.test(lm);
+        if (wantsTicketOrHuman) {
+          requiresAgent = true;
+          if (isVendorSession && (intent === 'general' || intent === 'support')) {
+            intent = 'vendor_support';
+          }
+        }
+      }
+
       // Only fill defaults when Bedrock did not supply actions (avoid stomping model JSON).
       if (!isVendorSession && widgetMode === 'chat') {
         if (!usedBedrock || !Array.isArray(suggestedActions) || suggestedActions.length === 0) {
           suggestedActions = ['Create Ticket', 'Contact Support'];
         }
-      }
-
-      // Save conversation to database
-      try {
-        await insert('ai_chatbot_conversations', {
-          conversation_id: currentConversationId,
-          customer_id: !isVendorSession ? customerId || null : null,
-          customer_phone: !isVendorSession ? customerPhone || null : null,
-          user_message: message,
-          bot_response: responseText,
-          intent,
-          confidence,
-          requires_agent: requiresAgent,
-          created_at: new Date().toISOString(),
-        }).catch(() => {
-          // Graceful fallback if table doesn't exist
-        });
-      } catch (e) {
-        logErrorSafe('ai-chatbot-save-conversation', e);
       }
 
       let escalationTicketId: string | undefined;
@@ -939,6 +976,33 @@ ${vendorAiSuffix ? `\nOPERATOR / TENANT-SPECIFIC INSTRUCTIONS (must follow when 
         } catch (e) {
           logErrorSafe('ai-chatbot-escalation-ticket', e);
         }
+      }
+
+      if (escalationTicketId && !escalationCapReached) {
+        responseText = appendSupportTicketAckToResponse(responseText, {
+          ticketId: escalationTicketId,
+          created: escalationTicketCreated,
+          capReached: escalationCapReached,
+          isVendorSession,
+        });
+      }
+
+      try {
+        await insert('ai_chatbot_conversations', {
+          conversation_id: currentConversationId,
+          customer_id: !isVendorSession ? customerId || null : null,
+          customer_phone: !isVendorSession ? customerPhone || null : null,
+          user_message: message,
+          bot_response: responseText,
+          intent,
+          confidence,
+          requires_agent: requiresAgent,
+          created_at: new Date().toISOString(),
+        }).catch(() => {
+          // Graceful fallback if table doesn't exist
+        });
+      } catch (e) {
+        logErrorSafe('ai-chatbot-save-conversation', e);
       }
 
       return c.json({

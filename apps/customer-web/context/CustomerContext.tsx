@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -41,7 +42,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
     const loadSession = () => {
       if (typeof window !== 'undefined') {
         const storedPhone = localStorage.getItem('customerPhone');
-        const storedToken = localStorage.getItem('authToken');
+        const storedToken = getStoredCustomerJwtForSession();
         const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
         const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
         const storedJourney = localStorage.getItem('customerJourneyStage');

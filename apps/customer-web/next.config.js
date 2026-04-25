@@ -36,7 +36,12 @@ const nextConfig = {
       ? 'dist'
       : process.env.NEXT_DEV_DIST_DIR || '.next',
   reactStrictMode: true,
-  transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs', '@warmpawz/service-launch-mappings'],
+  transpilePackages: [
+    '@warmpawz/ui',
+    '@warmpawz/shared-libs',
+    '@warmpawz/service-launch-mappings',
+    '@warmpawz/shared-types',
+  ],
   swcMinify: true,
   compress: true,
   // Allow dev exports to proceed even if there are transient type or lint issues
@@ -101,6 +106,10 @@ const nextConfig = {
     if (!config.resolve.alias) {
       config.resolve.alias = {};
     }
+    // Workspace package: ensures dev works if file: link under node_modules/@warmpawz is missing (fresh clone).
+    config.resolve.alias['@warmpawz/shared-types'] = path.resolve(
+      __dirname,
+      '../../packages/shared-types/src/index.ts'
     // Tsconfig `paths` `@/*` is not applied to webpack in this Windows/Next combo; rewrite `@/…` explicitly.
     if (!config.plugins) config.plugins = [];
     config.plugins.push(

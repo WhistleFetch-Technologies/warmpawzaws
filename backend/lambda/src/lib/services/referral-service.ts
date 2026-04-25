@@ -7,7 +7,8 @@
  * Supports customer→customer, vendor→vendor, vendor→customer, and customer→vendor referrals
  */
 
-import { select, query, update, insert } from '../../database/rds-connection';
+import { select, query, update, insert, withTransaction } from '../../database/rds-connection';
+import type { AwardPointsParams } from './loyalty&reward/loyalty-points-service';
 import { loyaltyPointsService } from './loyalty&reward/loyalty-points-service';
 import { loyaltyRulesInitService } from './loyalty-rules-init-service';
 
@@ -1445,4 +1446,122 @@ export async function processVendorReferralForCustomerSignup(params: {
     console.error('[VENDOR-REFERRAL-CUSTOMER] ❌', error);
     return { success: false, error: error.message || 'Failed to process vendor referral for customer' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Loyalty consumer: actionName === "qualifying_purchase" (Razorpay payment ref, etc.)
+// ---------------------------------------------------------------------------
+
+export type LoyaltyActionOccurredQualifyingPurchaseEvent = {
+  actionName: 'qualifying_purchase';
+  entity: { type: 'customer' | 'vendor' | 'auto'; id: string };
+  amount?: number;
+  reference?: { type: string; id?: string };
+  metadata?: Record<string, any>;
+};
+
+/**
+ * qualifying_purchase: 1) rule + base points, 2) in one transaction — profile upsert, purchase # / every-3rd 2× bump, 3) commit earn.
+ */
+export async function processLoyaltyActionOccurredForQualifyingPurchase(
+  evt: LoyaltyActionOccurredQualifyingPurchaseEvent
+): Promise<{ points: number; walletCredited: number }> {
+  const customerId = evt.entity.type === 'vendor' ? undefined : evt.entity.id;
+  const vendorId = evt.entity.type === 'vendor' ? evt.entity.id : undefined;
+  const params: AwardPointsParams = {
+    customerId,
+    vendorId,
+    actionName: 'qualifying_purchase',
+    amount: evt.amount,
+    referenceType: evt.reference?.type,
+    referenceId: evt.reference?.id,
+    description: `Action ${evt.actionName}`,
+    metadata: evt.metadata || {},
+  };
+
+  const prep = await loyaltyPointsService.preparePointsAward(params);
+  if (!prep) {
+    return { points: 0, walletCredited: 0 };
+  }
+
+  const awardResult = await withTransaction(async (client) => {
+    const userId = customerId || vendorId;
+    if (!userId) {
+      throw new Error('customerId or vendorId is required for qualifying_purchase');
+    }
+    const isVendor = !!vendorId && !customerId;
+
+    await client.query(
+      `INSERT INTO customer_loyalty_points (customer_id, total_points, lifetime_points_earned, lifetime_points_redeemed)
+       VALUES ($1, 0, 0, 0)
+       ON CONFLICT (customer_id) DO NOTHING`,
+      [userId]
+    );
+
+    let finalPoints = prep.pointsAfterRuleMultipliers;
+    let descExtra = '';
+    if (customerId && !isVendor) {
+      const streak = await bumpQualifyingPurchaseStreakAndApplyThirdBonus(
+        client,
+        customerId,
+        prep.pointsAfterRuleMultipliers
+      );
+      finalPoints = streak.finalPoints;
+      if (streak.doubled) {
+        descExtra = ` — 2x every 3rd purchase (#${streak.purchaseIndex})`;
+      }
+    }
+
+    const fullDescription = `${params.description || `Action ${params.actionName}`}${descExtra}`;
+    return loyaltyPointsService.commitEarnedPointsInTransaction(client, params, {
+      finalPoints,
+      description: fullDescription,
+      walletPolicy: prep.walletPolicy,
+    });
+  });
+
+  if (awardResult.points > 0) {
+    await loyaltyPointsService.sendPointsEarnedNotification(params, awardResult.points);
+  }
+  return awardResult;
+}
+
+// ---------------------------------------------------------------------------
+// Qualifying purchase streak (3rd / 6th / 9th → 2× on that earn)
+// Invoked from processLoyaltyActionOccurredForQualifyingPurchase in the same transaction.
+// ---------------------------------------------------------------------------
+
+export type QualifyingPurchaseLoyaltyTxClient = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: unknown[] }>;
+};
+
+/**
+ * Bumps `customer_loyalty_points.qualifying_purchase_count` under row lock; every 3rd award gets 2× base points.
+ */
+export async function bumpQualifyingPurchaseStreakAndApplyThirdBonus(
+  client: QualifyingPurchaseLoyaltyTxClient,
+  customerId: string,
+  basePointsAfterRuleMultipliers: number
+): Promise<{ finalPoints: number; purchaseIndex: number; doubled: boolean }> {
+  await client.query(
+    `INSERT INTO customer_loyalty_points (customer_id, total_points, lifetime_points_earned, lifetime_points_redeemed, qualifying_purchase_count)
+     VALUES ($1, 0, 0, 0, 0)
+     ON CONFLICT (customer_id) DO NOTHING`,
+    [customerId]
+  );
+  const lockRes = await client.query(
+    `SELECT qualifying_purchase_count FROM customer_loyalty_points WHERE customer_id = $1 FOR UPDATE`,
+    [customerId]
+  );
+  const row = lockRes.rows[0] as { qualifying_purchase_count?: number | string } | undefined;
+  const current = Math.max(0, parseInt(String(row?.qualifying_purchase_count ?? '0'), 10) || 0);
+  const newCount = current + 1;
+  const doubled = newCount % 3 === 0;
+  const mult = doubled ? 2 : 1;
+  const finalPoints = Math.floor(basePointsAfterRuleMultipliers * mult);
+  await client.query(
+    `UPDATE customer_loyalty_points SET qualifying_purchase_count = $1, updated_at = NOW() WHERE customer_id = $2`,
+    [newCount, customerId]
+  );
+  return { finalPoints, purchaseIndex: newCount, doubled };
 }

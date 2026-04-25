@@ -31,6 +31,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/e
 import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
 import { issueAuthTokensAfterOtp } from '../../lib/services/auth/vendor-otp-success-payload';
+import { isUatRelaxedAuthContext } from '../../lib/services/auth/uat-auth-env';
 import { consumeVendorPortalCodeAndBuildPayload } from '../../lib/services/admin/vendor-portal-session-service';
 import { consumeCustomerPortalCodeAndBuildPayload } from '../../lib/services/admin/customer-portal-session-service';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
@@ -69,13 +70,13 @@ import {
 } from '../../lib/services/auth/vendor-forgot-password';
 
 /**
- * When `UAT_MODE=true`, this value skips password-hash checks for customer/vendor **password** login
- * (account must still exist). OTP verify also accepts it in addition to `123456`.
+ * When `isUatRelaxedAuthContext(headers)` is true, this value skips password-hash checks for
+ * customer/vendor **password** login (account must still exist). OTP verify also accepts it in addition to `123456`.
  * Override with env `UAT_DEV_PASSWORD_BYPASS`.
  */
 const UAT_DEV_PASSWORD_BYPASS =
   typeof process.env.UAT_DEV_PASSWORD_BYPASS === 'string' && process.env.UAT_DEV_PASSWORD_BYPASS.length > 0
-    ? process.env.UAT_DEV_PASSWORD_BYPASS
+    ? process.env.UAT_DEV_PASSWORD_BYPASS.trim()
     : '12345678';
 
 // ============================================================================
@@ -1144,6 +1145,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           userId,
           phone,
           role: role as 'customer' | 'vendor' | 'admin',
+          requestHeaders: this.getHeaders(context.event),
         });
       } catch (jwtError: any) {
         console.error('[AUTH] Token issuance failed:', jwtError);
@@ -1173,6 +1175,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         data: {
           token: {
             access_token: cognitoTokens.accessToken,
+            id_token: cognitoTokens.idToken,
             refresh_token: cognitoTokens.refreshToken,
             expires_in: cognitoTokens.expiresIn,
             token_type: 'Bearer',
@@ -1241,8 +1244,10 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
       return this.error('Only customer login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
     }
 
-    const isUATMode = process.env.UAT_MODE === 'true';
-    const uatPasswordBypass = isUATMode && password === UAT_DEV_PASSWORD_BYPASS;
+    const hdrs = this.getHeaders(context.event);
+    const passTrim = String(password ?? '').trim();
+    const bypassSecret = String(UAT_DEV_PASSWORD_BYPASS).trim();
+    const uatPasswordBypass = isUatRelaxedAuthContext(hdrs) && passTrim === bypassSecret;
 
     try {
       const customer = await findCustomerForPasswordLogin(username);
@@ -1278,6 +1283,8 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
           userId,
           phone: phoneOut,
           role: 'customer',
+          requestHeaders: hdrs,
+          preferUatJwt: uatPasswordBypass,
         });
       } catch (jwtError: any) {
         console.error('[AUTH] Customer login token issuance failed:', jwtError);
@@ -1308,6 +1315,7 @@ class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
           data: {
             token: {
               access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
               refresh_token: cognitoTokens.refreshToken,
               expires_in: cognitoTokens.expiresIn,
               token_type: 'Bearer',
@@ -1370,8 +1378,11 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
       return this.error('Only vendor login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
     }
 
-    const isUATModeVendor = process.env.UAT_MODE === 'true';
-    const uatVendorPasswordBypass = isUATModeVendor && password === UAT_DEV_PASSWORD_BYPASS;
+    const hdrsVendor = this.getHeaders(context.event);
+    const passTrimVendor = String(password ?? '').trim();
+    const bypassSecretVendor = String(UAT_DEV_PASSWORD_BYPASS).trim();
+    const uatVendorPasswordBypass =
+      isUatRelaxedAuthContext(hdrsVendor) && passTrimVendor === bypassSecretVendor;
 
     try {
       const vendor = await findVendorForPasswordLogin(username);
@@ -1420,6 +1431,8 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
           userId,
           phone: phoneForTokens,
           role: 'vendor',
+          requestHeaders: hdrsVendor,
+          preferUatJwt: uatVendorPasswordBypass,
         });
       } catch (jwtError: any) {
         console.error('[AUTH] Vendor login token issuance failed:', jwtError);
@@ -1453,6 +1466,7 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
           data: {
             token: {
               access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
               refresh_token: cognitoTokens.refreshToken,
               expires_in: cognitoTokens.expiresIn,
               token_type: 'Bearer',
@@ -1972,6 +1986,12 @@ async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): P
   } catch (e) {
     console.warn('[AUTH] Error processing headers:', e);
   }
+
+  // Hono: always merge UAT headers from the request API (raw Node headers sometimes omit custom fields).
+  const xUatMode = c.req.header('x-uat-mode') || c.req.header('X-UAT-Mode');
+  if (xUatMode) headers['x-uat-mode'] = xUatMode;
+  const xUatToken = c.req.header('x-uat-token') || c.req.header('X-UAT-Token');
+  if (xUatToken) headers['x-uat-token'] = xUatToken;
 
   const url = new URL(c.req.url);
   // Ensure body is stringified for API Gateway event format
