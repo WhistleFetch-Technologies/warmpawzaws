@@ -58,6 +58,10 @@ export interface ServiceDashboardHeaderProps {
    * `flat` — use with ServiceDashboardHeaderBottomWave directly above a hero image so the dip sits on the photo edge.
    */
   bottomEdge?: 'wave' | 'flat';
+  /**
+   * Tighter safe-area + padding and smaller stat row (e.g. full-screen payment) so the header does not dominate the viewport.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -134,6 +138,7 @@ export function ServiceDashboardHeader({
   onStatClick,
   useLegacyContentCollar = false,
   bottomEdge = 'wave',
+  compact = false,
 }: ServiceDashboardHeaderProps) {
   const waveGradId = useId().replace(/:/g, '');
   const waveUsesGradient = Boolean(
@@ -141,6 +146,21 @@ export function ServiceDashboardHeader({
   );
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
+
+  const topPad = compact
+    ? 'pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.35rem))]'
+    : 'pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))]';
+  const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
+  const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
+  const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
+  const iconInner = compact ? 'w-6 h-6' : 'w-7 h-7';
+  const statGrid = compact ? 'mt-2 grid grid-cols-3 gap-1 sm:gap-1.5' : 'mt-4 grid grid-cols-3 gap-1.5 sm:gap-2';
+  const statCard = compact
+    ? 'rounded-xl border border-white/30 bg-white/20 p-1.5 text-center backdrop-blur-md sm:p-2 w-full transition-opacity hover:bg-white/25 active:opacity-90'
+    : 'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
+  const statValue = compact
+    ? 'mb-0 flex items-center justify-center gap-1 text-base font-bold text-white sm:text-lg'
+    : 'mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl';
 
   return (
     <div
@@ -151,13 +171,13 @@ export function ServiceDashboardHeader({
         next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
       */}
       <div
-        className={`relative z-20 ${headerGradient || headerColor} text-white pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
+        className={`relative z-20 ${headerGradient || headerColor} text-white ${topPad} pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
       >
-        <div className="pb-4 md:pb-6">
+        <div className={innerBottom}>
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
           <>
-            <div className="relative z-20 mb-3 flex items-center justify-between gap-2 md:mb-4">
+            <div className={`relative z-20 flex items-center justify-between gap-2 ${titleRowMb}`}>
               <button
                 type="button"
                 onClick={onCloseToHome}
@@ -178,16 +198,22 @@ export function ServiceDashboardHeader({
                 </button>
               )}
             </div>
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-14 h-14 flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
+            <div className={`flex items-start gap-3 ${compact ? 'mb-3' : 'mb-4'}`}>
+              <div
+                className={`${iconBox} flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg`}
+              >
                 {isLucideIcon ? (
-                  <IconComponent className={`w-7 h-7 ${iconColor}`} />
+                  <IconComponent className={`${iconInner} ${iconColor}`} />
                 ) : (
                   <div className={iconColor}>{ServiceIcon as ReactNode}</div>
                 )}
               </div>
               <div className="flex-1 min-w-0 pt-1">
-                <h1 className="text-xl font-bold text-white mb-1 sm:text-2xl">{serviceName}</h1>
+                <h1
+                  className={`font-bold text-white mb-1 ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}
+                >
+                  {serviceName}
+                </h1>
                 {serviceSubtitle && (
                   <p className="text-white/90 text-xs leading-tight sm:text-sm">{serviceSubtitle}</p>
                 )}
@@ -195,7 +221,7 @@ export function ServiceDashboardHeader({
             </div>
           </>
         ) : (
-          <div className="relative z-20 mb-3 flex items-center gap-3 md:mb-4">
+          <div className={`relative z-20 flex items-center gap-3 ${titleRowMb}`}>
             {showBackButton && onBack && (
               <button
                 type="button"
@@ -207,16 +233,22 @@ export function ServiceDashboardHeader({
               </button>
             )}
 
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white/20 shadow-lg backdrop-blur-md">
+            <div
+              className={`flex ${iconBox} flex-shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white/20 shadow-lg backdrop-blur-md`}
+            >
               {isLucideIcon ? (
-                <IconComponent className={`w-7 h-7 ${iconColor}`} />
+                <IconComponent className={`${iconInner} ${iconColor}`} />
               ) : (
                 <div className={iconColor}>{ServiceIcon as ReactNode}</div>
               )}
             </div>
 
             <div className="min-w-0 flex-1 py-0.5">
-              <h1 className="mb-1 text-xl font-bold text-white sm:text-2xl">{serviceName}</h1>
+              <h1
+                className={`mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}
+              >
+                {serviceName}
+              </h1>
               {serviceSubtitle && (
                 <p className="text-xs leading-tight text-white/90 sm:text-sm">{serviceSubtitle}</p>
               )}
@@ -226,19 +258,18 @@ export function ServiceDashboardHeader({
 
         {/* Stats Cards - Frosted Effect */}
         {stats.length > 0 && (
-          <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-2">
+          <div className={statGrid}>
             {stats.map((stat, index) => {
               const inner = (
                 <>
-                  <div className="mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl">
+                  <div className={statValue}>
                     {stat.icon && <span className="text-white">{stat.icon}</span>}
                     <span className="truncate tabular-nums">{stat.value}</span>
                   </div>
                   <div className="text-[10px] font-medium text-white/90 sm:text-xs">{stat.label}</div>
                 </>
               );
-              const cardClass =
-                'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
+              const cardClass = statCard;
               if (onStatClick) {
                 return (
                   <button

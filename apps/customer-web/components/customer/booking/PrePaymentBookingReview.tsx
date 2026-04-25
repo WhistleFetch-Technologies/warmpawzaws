@@ -116,6 +116,7 @@ export function PrePaymentBookingReview({
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <ServiceDashboardHeader
+        compact
         serviceName={title}
         serviceSubtitle={subtitle}
         serviceIcon={HeaderIcon}
@@ -135,7 +136,7 @@ export function PrePaymentBookingReview({
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="space-y-4 -mx-4 cw-header-safe-x cw-header-safe-top sm:-mx-6">
+        <div className="space-y-4 -mx-4 cw-header-safe-x sm:-mx-6">
           <div className="bg-white rounded-xl p-4 space-y-0">
             {summaryBody ? (
               <div className="space-y-0">{summaryBody}</div>

@@ -614,17 +614,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     <>
     <div className="vendor-root-scroll flex w-full justify-center bg-gray-50 overscroll-y-contain">
       <div className="vendor-app-column w-full min-h-min bg-white shadow-lg sm:shadow-xl sm:mb-2 sm:rounded-b-lg">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white sticky top-0 z-10 shadow-sm">
-          <div className="px-3 py-3 sm:px-4">
-            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+        {/* Header — compact strip; safe-area only where needed */}
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-orange-500 to-amber-500 pt-[max(0px,env(safe-area-inset-top,0px))] text-white shadow-sm">
+          <div className="px-3 py-2 sm:px-4 sm:py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                 <Button variant="ghost" size="icon" onClick={handleBack} className="rounded-full text-white hover:bg-white/20 -ml-1 shrink-0 sm:-ml-2">
                   <ArrowLeft className="w-5 h-5" />
                 </Button>
                 <div className="min-w-0">
-                  <h1 className="truncate text-base font-bold sm:text-lg">Earnings & Settlements</h1>
-                  <p className="text-[11px] text-white/80 sm:text-xs">Manage your revenue, settlements, and tier</p>
+                  <h1 className="truncate text-base font-bold leading-tight sm:text-lg">Earnings & Settlements</h1>
+                  <p className="hidden text-[11px] text-white/80 sm:block sm:text-xs">Revenue, settlements & tier</p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
