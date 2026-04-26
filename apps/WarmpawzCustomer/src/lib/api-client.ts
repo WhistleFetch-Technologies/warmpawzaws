@@ -26,15 +26,18 @@ import {
   NetworkState,
   QueuedRequest,
 } from './network-resilience';
+import { API_BASE_URL as CANONICAL_API_BASE_URL } from '../config/aws';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-// ✅ FIXED: Use dev.api.warmpawz.com for DEV builds
-const API_BASE_URL = __DEV__ 
-  ? 'https://dev.api.warmpawz.com' 
-  : 'https://api.warmpawz.com';
+// Single source of truth: src/config/aws.ts. That module honours the env vars
+// AWS_API_GATEWAY_URL / EXPO_PUBLIC_API_GATEWAY_URL and falls back to the real
+// dev/prod API Gateway URLs (NOT broken vanity DNS). Importing here keeps both
+// API clients aligned so referral / prescription / share calls resolve correctly
+// in production release builds.
+const API_BASE_URL = CANONICAL_API_BASE_URL;
 
 const AUTH_TOKEN_KEY = '@warmpawz_auth_token';
 const CUSTOMER_PHONE_KEY = '@warmpawz_customer_phone';

@@ -351,7 +351,9 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ success: true, bookings: [] });
       }
 
-      // Joinable = upcoming (next X min) OR live (scheduled passed, status confirmed/in_progress, within 2h)
+      // Joinable = upcoming (next X min) OR live (scheduled passed, status confirmed/in_progress, within 2h).
+      // Completed/cancelled/no_show MUST be excluded so home cards disappear once the
+      // tele-consultation is finished (the client also defends with `nextCall.status !== 'completed'`).
       const statusFilter = includeLive
         ? `AND b.status IN ('confirmed', 'scheduled', 'in_progress', 'active')`
         : `AND b.status IN ('confirmed', 'scheduled')`;
@@ -393,6 +395,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         success: true,
         bookings: bookingsResult.rows.map((b: any) => ({
           id: b.id,
+          // Expose status so the customer-web home (CustomerHomeComplete.tsx) can
+          // defensively filter `nextCall.status !== 'completed'`. Without this the
+          // client-side check is always-true and tele cards never go away.
+          status: b.status,
           bookingDate: b.booking_date,
           scheduledAt: b.scheduled_at,
           bookingTime: b.booking_time,
