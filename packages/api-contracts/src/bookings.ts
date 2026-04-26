@@ -69,6 +69,8 @@ export const CreateBookingRequestSchema = z.object({
   useWallet: z.boolean().optional(),
   /** Max INR to take from wallet; server clamps to balance and list price. */
   walletAmount: z.coerce.number().min(0).optional(),
+  /** Diagnostics (pay-first): Razorpay order id after successful checkout + /razorpay/verify-payment. */
+  razorpayOrderId: z.string().min(1).max(96).optional(),
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({

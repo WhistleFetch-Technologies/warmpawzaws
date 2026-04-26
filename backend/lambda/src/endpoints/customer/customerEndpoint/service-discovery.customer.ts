@@ -1330,6 +1330,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(_vendorRoleName).toLowerCase()
           )
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
             ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -1521,6 +1522,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const nutritionRoleUncategorizedOr =
         !sittingDiscoveryRelaxed && nutritionDiscoverySearch
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
+          : '';
       const vetCategoryEmptyOr =
         !sittingDiscoveryRelaxed && isVetCategoryDiscovery
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
