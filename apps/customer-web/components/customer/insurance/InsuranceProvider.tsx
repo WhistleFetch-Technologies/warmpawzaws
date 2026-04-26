@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -86,7 +87,10 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
       
       // Load insurance plans
       const plansData = await apiClient.get<any>(`/customer/vendor/${props.vendorId}/services?category=insurance`);
-      const plansList = plansData.services || plansData.plans || [];
+      const plansList =
+        Array.isArray(plansData?.services) || Array.isArray(plansData?.packages)
+          ? mergeCustomerVendorServicesPayload(plansData)
+          : plansData.plans || [];
       
       // If no plans from API, use default plans
       if (plansList.length === 0) {

@@ -6,6 +6,7 @@ import { InstantTeleQueue } from '@/components/customer/InstantTele/InstantTeleQ
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 type DirectPayContext = {
@@ -74,13 +75,17 @@ async function fetchDefaultInstantTelePayContext(
     : vendors[0];
 
   const svcRes = await apiClient.get<any>(`/customer/vendor/${v.vendorId}/services?serviceStyle=tele`);
-  let list = svcRes?.services || svcRes?.tele?.services || [];
+  let list = Array.isArray(svcRes?.services)
+    ? mergeCustomerVendorServicesPayload(svcRes)
+    : svcRes?.tele?.services || [];
   if (Array.isArray(svcRes) && svcRes.length) list = svcRes;
   let services = Array.isArray(list) ? list : [];
 
   if (services.length === 0) {
     const allRes = await apiClient.get<any>(`/customer/vendor/${v.vendorId}/services`);
-    let allList = allRes?.services || allRes?.tele?.services || [];
+    let allList = Array.isArray(allRes?.services)
+      ? mergeCustomerVendorServicesPayload(allRes)
+      : allRes?.tele?.services || [];
     if (Array.isArray(allRes) && allRes.length) allList = allRes;
     const all = Array.isArray(allList) ? allList : [];
     services = all.filter(isTeleServiceRow);

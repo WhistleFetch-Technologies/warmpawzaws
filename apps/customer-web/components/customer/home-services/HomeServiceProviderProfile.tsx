@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import {
   getVendorHeroPhotoUrls,
   mergeCustomerFacilityPayload,
@@ -258,7 +259,7 @@ export function HomeServiceProviderProfile({
           servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
         }
         if (servicesData?.services && Array.isArray(servicesData.services)) {
-          services = servicesData.services;
+          services = mergeCustomerVendorServicesPayload(servicesData);
         } else if (Array.isArray(servicesData)) {
           services = servicesData;
         }

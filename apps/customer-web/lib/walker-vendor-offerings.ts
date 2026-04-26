@@ -3,6 +3,8 @@
  * GET /customer/vendor/:vendorId/services { services, packages }.
  */
 
+import { mergeCustomerVendorServicesPayload } from './customer-vendor-services-merge';
+
 const WALK_BOOKING_HOME_STYLES = new Set(['at_home', 'home', 'home_visit']);
 
 export function vendorServiceRowDedupeKey(
@@ -104,9 +106,7 @@ export function rowQualifiesForWalkingModal(s: Record<string, any> | null | unde
 export function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | null | undefined): any[] {
   if (!svcRes || typeof svcRes !== 'object') return [];
   const root = servicesPayloadRoot(svcRes);
-  const rawServices = Array.isArray(root.services) ? root.services : [];
-  const rawPackages = Array.isArray(root.packages) ? root.packages : [];
-  return [...rawServices, ...rawPackages];
+  return mergeCustomerVendorServicesPayload(root);
 }
 
 /** Router: merge services + packages, filter by selected walk style (at_home / outdoor / …). */
@@ -115,9 +115,7 @@ export function getWalkerRouterOfferingsForStyle(
   bookingStyle: string
 ): any[] {
   if (!svcRes || typeof svcRes !== 'object') return [];
-  const rawServices = Array.isArray(svcRes.services) ? svcRes.services : [];
-  const rawPackages = Array.isArray(svcRes.packages) ? svcRes.packages : [];
-  const all = [...rawServices, ...rawPackages];
+  const all = mergeCustomerVendorServicesPayload(svcRes);
   return all.filter((s) => walkerOfferingMatchesRouterStyle(s, bookingStyle));
 }
 

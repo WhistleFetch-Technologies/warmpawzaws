@@ -23,6 +23,7 @@ import {
 } from '@/lib/ai-booking-wizard-category-config';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { toast } from 'sonner';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface AIChatbotWidgetProps {
   customerId?: string;
@@ -392,7 +393,7 @@ export function AIChatbotWidget({
         const qs = vendorServicesQueryAllStyles(cat);
         const svcRes: any = await apiClient.get(`/customer/vendor/${encodeURIComponent(p.id)}/services${qs}`);
         const list = Array.isArray(svcRes?.services)
-          ? svcRes.services
+          ? mergeCustomerVendorServicesPayload(svcRes)
           : Array.isArray(svcRes)
             ? svcRes
             : [];

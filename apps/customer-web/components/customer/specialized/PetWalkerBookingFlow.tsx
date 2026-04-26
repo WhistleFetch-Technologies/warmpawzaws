@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { MapPin, Clock, Calendar, Route, Star } from 'lucide-react';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
@@ -75,7 +76,10 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
       let serviceIdValue: string | undefined;
       try {
         const servicesRes = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`) as any;
-        const services = servicesRes?.services ?? servicesRes?.data ?? [];
+        const services =
+          Array.isArray(servicesRes?.services) || Array.isArray(servicesRes?.packages)
+            ? mergeCustomerVendorServicesPayload(servicesRes)
+            : servicesRes?.data ?? [];
         const walkerService = Array.isArray(services) && services.find((s: any) => (s.service_type || s.serviceType || s.category || '').toLowerCase().includes('walk'));
         serviceIdValue = walkerService?.id ?? walkerService?.serviceId ?? walkerService?.service_id ?? (services[0]?.id ?? services[0]?.serviceId ?? services[0]?.service_id);
       } catch (_) {

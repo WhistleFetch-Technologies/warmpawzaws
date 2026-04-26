@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
@@ -236,9 +237,14 @@ function SearchContent() {
       } catch {
         response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
       }
-      const serviceList = Array.isArray(response?.services) ? response.services : (response?.services?.at_home?.services || response?.services?.at_center?.services || response?.services?.tele?.services || []);
+      const serviceList = Array.isArray(response?.services)
+        ? mergeCustomerVendorServicesPayload(response)
+        : (response?.services?.at_home?.services ||
+            response?.services?.at_center?.services ||
+            response?.services?.tele?.services ||
+            []);
       if (serviceList.length) {
-        setVendorServices(Array.isArray(response?.services) ? response.services : serviceList);
+        setVendorServices(serviceList);
         saveSearchContext({
           query: query || '',
           category: category || undefined,

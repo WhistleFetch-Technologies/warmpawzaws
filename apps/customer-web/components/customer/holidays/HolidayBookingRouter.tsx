@@ -5,6 +5,7 @@ import { LucideIcon, Palmtree, Calendar, Clock, MapPin, User, CheckCircle2, Plus
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -117,7 +118,7 @@ export function HolidayBookingRouter({
       setLoading(true);
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=holiday`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setHolidayPackages(servicesResponse.services);
+        setHolidayPackages(mergeCustomerVendorServicesPayload(servicesResponse));
       } else {
         // Default packages
         setHolidayPackages([

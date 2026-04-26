@@ -12,6 +12,10 @@ import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profi
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -353,6 +357,24 @@ export function GroomingServicesByStyle({
       providerName: provider.name,
     };
 
+    const vendorIdForPkg =
+      provider.providerType === 'vendor'
+        ? String(provider.providerId || provider.vendorId || '')
+        : String(provider.vendorId || provider.providerId || '');
+    if (isVendorServicePackageRow(service as any) && vendorIdForPkg) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vendorIdForPkg,
+        vendorName: provider.vendorName || provider.name,
+        serviceRow: service as Record<string, unknown>,
+        serviceTypeCategory: 'grooming',
+        serviceStyle,
+      });
+      if (pkgNav) {
+        onNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
+
     if (provider.providerType === 'vendor') {
       bookingData.vendorId = provider.providerId;
       bookingData.vendorName = provider.name;
@@ -452,6 +474,27 @@ export function GroomingServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
+      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      if (pkgRow && profileProvider) {
+        const vid =
+          profileProvider.providerType === 'vendor'
+            ? String(profileProvider.providerId || profileProvider.vendorId || '')
+            : String(profileProvider.vendorId || profileProvider.providerId || '');
+        if (vid) {
+          const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+            vendorId: vid,
+            vendorName: profileProvider.vendorName || profileProvider.name,
+            serviceRow: pkgRow as Record<string, unknown>,
+            serviceTypeCategory: 'grooming',
+            serviceStyle,
+          });
+          if (pkgNav) {
+            onNavigate('purchase-package', pkgNav);
+            return;
+          }
+        }
+      }
+
       // ✅ FIX: Pass all selected services, not just the first one
       // Build booking data similar to VetCenterProfileView
       const firstService = selectedServicesData[0];

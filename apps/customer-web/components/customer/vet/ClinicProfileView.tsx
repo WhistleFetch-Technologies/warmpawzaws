@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
@@ -95,7 +100,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       let services: any[] = [];
       const servicesData = servicesResponse as any;
       if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = servicesData.services;
+        services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
         services = [
           ...(servicesData.services.at_home?.services || []),
@@ -124,6 +129,9 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           name: s.serviceName || s.name || s.service_name,
           price: parseFloat(s.price || '0'),
           duration: s.duration || s.duration_minutes || 30,
+          isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
+          packageDetails: s.packageDetails,
+          metadata: s.metadata,
         };
       });
       
@@ -168,24 +176,37 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       }
       return;
     }
-    
-    // ✅ CRITICAL: Use service_id (UUID) not numeric id
-    const serviceId =
-      (selectedService as any).serviceId || selectedService.id || selectedService.selectionKey;
-    
-    // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
-    onNavigate('appointment', { 
-      clinicId: clinic?.id, 
+
+    const svc = selectedService as any;
+    const vid = clinic?.id;
+    if (vid && isVendorServicePackageRow(svc)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vid),
+        vendorName: clinic?.name,
+        serviceRow: svc as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle: 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
+
+    const serviceId = svc.serviceId || selectedService.id || selectedService.selectionKey;
+
+    onNavigate('appointment', {
+      clinicId: clinic?.id,
       vendorId: clinic?.id,
       vendorName: clinic?.name,
       service: selectedService,
-      serviceId: serviceId, // ✅ UUID from services table
+      serviceId,
       serviceName: selectedService.name,
       price: selectedService.price,
       duration: selectedService.duration || 20,
-      serviceStyle: 'at_center', // Clinic visits are at_center type
+      serviceStyle: 'at_center',
       serviceType: 'at_center',
-      clinic 
+      clinic,
     });
   };
 

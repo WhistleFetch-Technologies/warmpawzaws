@@ -6,6 +6,7 @@ import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronR
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 import { PromotionBanner } from './shared/PromotionBanner';
@@ -191,7 +192,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     if (!serviceId) {
       try {
         const res = await apiClient.get<any>(`/customer/vendor/${vid}/services?category=grooming`);
-        const list = Array.isArray(res?.services) ? res.services : [];
+        const list = mergeCustomerVendorServicesPayload(res);
         serviceId = firstGroomingServiceUuid(list);
       } catch {
         /* CreateBookingPage will resolve via vendor/available + catalog */

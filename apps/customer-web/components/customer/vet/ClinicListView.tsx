@@ -16,6 +16,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -38,6 +43,9 @@ export interface ClinicServiceRow {
   category?: string;
   catalogServiceId: string | null;
   vendorServiceId: string | number;
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
 }
 
 export interface ClinicProvider {
@@ -121,6 +129,9 @@ function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServ
     category,
     catalogServiceId,
     vendorServiceId,
+    isPackage: !!(p.isPackage ?? p.metadata?.isPackage),
+    packageDetails: p.packageDetails,
+    metadata: p.metadata,
   };
 }
 
@@ -203,7 +214,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         let services: any[] = [];
         const servicesData = res;
         if (servicesData?.services && Array.isArray(servicesData.services)) {
-          services = servicesData.services;
+          services = mergeCustomerVendorServicesPayload(servicesData);
         } else if (
           servicesData?.services?.at_home ||
           servicesData?.services?.at_center ||
@@ -402,13 +413,29 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     const vendorId = clinic.id;
     const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
     const serviceObj = {
-      id: serviceIdForBooking,
+      id: String(row.vendorServiceId),
       serviceId: row.catalogServiceId,
       vendorServiceId: row.vendorServiceId,
       name: row.name,
       price: row.price,
       duration: row.duration,
+      isPackage: row.isPackage,
+      packageDetails: row.packageDetails,
+      metadata: row.metadata,
     };
+    if (isVendorServicePackageRow(serviceObj as Record<string, unknown>)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName: clinic.name,
+        serviceRow: serviceObj as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle: 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
     onNavigate('appointment', {
       clinicId: vendorId,
       vendorId,

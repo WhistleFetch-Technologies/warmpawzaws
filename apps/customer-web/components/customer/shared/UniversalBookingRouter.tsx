@@ -12,6 +12,7 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -468,7 +469,7 @@ export function UniversalBookingRouter({
               ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
-            services = servicesResponse.services;
+            services = mergeCustomerVendorServicesPayload(servicesResponse);
           }
         } else if (servicesResponse.allServices) {
           services = servicesResponse.allServices;

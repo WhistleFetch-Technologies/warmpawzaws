@@ -5,6 +5,7 @@ import { Moon, Heart, Sparkles, Calendar, Clock, MapPin, User, CreditCard, Check
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
@@ -221,7 +222,7 @@ export function SunsetBookingRouter({
       // Use vendor endpoint for sunset services
       const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services?category=sunset`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+        setVendorServices(mergeCustomerVendorServicesPayload(servicesResponse));
         console.log('✅ Loaded vendor services:', servicesResponse.services.length);
       } else {
         console.warn('⚠️ No services found or invalid response');

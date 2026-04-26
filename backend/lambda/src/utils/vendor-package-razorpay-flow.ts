@@ -78,12 +78,21 @@ export async function computeVendorPackagePurchase(params: {
     return { ok: false, status: 403, error: 'Vendor service does not belong to this vendor' };
   }
 
-  const meta = parseJsonObject(vs.metadata);
-  if (!meta || !Boolean(meta.isPackage)) {
+  const meta = parseJsonObject(vs.metadata) || {};
+  const detailsProbe = parseJsonObject(meta.packageDetails) || {};
+  const probeSessions = Number(detailsProbe.totalSessions ?? detailsProbe.total_sessions ?? meta.totalSessions);
+  const hasSessionBundle = Number.isFinite(probeSessions) && probeSessions > 0;
+  const isPackageLike =
+    Boolean(meta.isPackage) ||
+    String(meta.type || '') === 'package' ||
+    String(meta.packageType || '') === 'session' ||
+    hasSessionBundle;
+  if (!isPackageLike) {
     return {
       ok: false,
       status: 400,
-      error: 'This vendor service must have metadata.isPackage = true to purchase as a package',
+      error:
+        'This vendor service is not a package (needs metadata.isPackage or packageDetails with totalSessions)',
     };
   }
   const details = parseJsonObject(meta.packageDetails) || {};

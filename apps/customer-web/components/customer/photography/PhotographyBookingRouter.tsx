@@ -5,6 +5,7 @@ import { Camera, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCa
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
@@ -221,7 +222,7 @@ export function PhotographyBookingRouter({
       // Use vendor endpoint for photography services
       const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services?category=photography`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+        setVendorServices(mergeCustomerVendorServicesPayload(servicesResponse));
         console.log('✅ Loaded vendor services:', servicesResponse.services.length);
       } else {
         console.warn('⚠️ No services found or invalid response');

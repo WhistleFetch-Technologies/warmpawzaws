@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
@@ -74,7 +75,7 @@ async function fetchResolvedServiceId(vendorId: string, preferred?: string): Pro
 
   try {
     const res = await apiClient.get<any>(`/customer/vendor/${vendorId}/services?category=grooming`);
-    const grooming = Array.isArray(res?.services) ? res.services : [];
+    const grooming = mergeCustomerVendorServicesPayload(res);
     if (preferred) {
       const match = grooming.find(
         (s: any) => String(s?.id ?? s?.service_id ?? s?.serviceId) === String(preferred)

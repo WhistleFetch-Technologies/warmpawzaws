@@ -8,6 +8,7 @@ import {
   vendorOffersBoardingSlug,
 } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 export interface BoardingPlanRow {
   rowId: string;
@@ -149,7 +150,7 @@ export function mapServicesApiResponseToPlanRows(servicesResponse: any): Boardin
   let services: any[] = [];
   const servicesData = servicesResponse as any;
   if (servicesData?.services && Array.isArray(servicesData.services)) {
-    services = servicesData.services;
+    services = mergeCustomerVendorServicesPayload(servicesData);
   } else if (servicesData?.services?.at_center) {
     services = servicesData.services.at_center?.services || [];
   } else if (Array.isArray(servicesData)) {

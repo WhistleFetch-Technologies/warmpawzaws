@@ -758,7 +758,14 @@ export function CustomerHomeWrapper({
     else if (service === 'booking-messages') openMessages();
     else if (service === 'purchase-package') {
       setPreviousScreen(currentScreen);
-      setCurrentScreen('package-booking');
+      const vid = String((data as any)?.vendorId ?? '').trim();
+      const vsid = String((data as any)?.vendorServiceId ?? '').trim();
+      if (vsid && vid) {
+        setWalkerServiceData(data ?? null);
+        setCurrentScreen('purchase-package');
+      } else {
+        setCurrentScreen('package-booking');
+      }
     }
     else if (service === 'package-tracking') {
       setPreviousScreen(currentScreen);
@@ -865,8 +872,15 @@ export function CustomerHomeWrapper({
     }
     else if (screen === 'purchase-package') {
       setPreviousScreen(currentScreen);
-      setVetServiceData((prev: any) => ({ ...prev, ...data }));
-      setCurrentScreen('package-booking');
+      const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
+      const vsid = String(data?.vendorServiceId ?? '').trim();
+      if (vsid && vid) {
+        setWalkerServiceData(data ?? null);
+        setCurrentScreen('purchase-package');
+      } else {
+        setVetServiceData((prev: any) => ({ ...prev, ...data }));
+        setCurrentScreen('package-booking');
+      }
     }
     else if (screen === 'package-tracking') {
       setPreviousScreen(currentScreen);
@@ -2107,7 +2121,13 @@ export function CustomerHomeWrapper({
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
-          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          const vid = String(data?.vendorId ?? '').trim();
+          const vsid = String(data?.vendorServiceId ?? '').trim();
+          if (vsid && vid) {
+            setWalkerServiceData(data ?? null);
+          } else {
+            setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          }
           setCurrentScreen('purchase-package');
         } else if (screen === 'grooming-vendor-profile' && data?.vendorId) {
           const style = String(data.serviceStyle || 'at_center').toLowerCase();
@@ -2164,7 +2184,13 @@ export function CustomerHomeWrapper({
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
-          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          const vid = String(data?.vendorId ?? '').trim();
+          const vsid = String(data?.vendorServiceId ?? '').trim();
+          if (vsid && vid) {
+            setWalkerServiceData(data ?? null);
+          } else {
+            setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          }
           setCurrentScreen('purchase-package');
         } else {
           console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);

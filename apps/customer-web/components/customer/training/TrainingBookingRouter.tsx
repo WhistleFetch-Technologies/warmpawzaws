@@ -13,6 +13,11 @@ import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response'
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -95,6 +100,7 @@ export function TrainingBookingRouter({
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to datetime
@@ -129,6 +135,59 @@ export function TrainingBookingRouter({
       serviceStyle: serviceStyle || serviceType
     } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
   );
+
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = vendorId;
+    if (!vid) return;
+
+    const fromList = (selectedServices || []).filter(Boolean) as Record<string, unknown>[];
+    let pkgRow: Record<string, unknown> | null =
+      (fromList.find((r) => isVendorServicePackageRow(r)) as Record<string, unknown> | null) || null;
+
+    if (!pkgRow && serviceId && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (row: any) =>
+          String(row?.id) === String(serviceId) || String(row?.serviceId || row?.service_id) === String(serviceId)
+      );
+      if (vs && isVendorServicePackageRow(vs)) pkgRow = vs as Record<string, unknown>;
+    }
+
+    if (!pkgRow && selectedVendorService && isVendorServicePackageRow(selectedVendorService)) {
+      pkgRow = selectedVendorService as Record<string, unknown>;
+    }
+
+    if (!pkgRow) return;
+
+    packageRedirectRef.current = true;
+    const styleFromRow = String(
+      (pkgRow.serviceStyle as string) ||
+        (pkgRow.service_style as string) ||
+        serviceStyle ||
+        serviceType ||
+        selectedServiceType ||
+        'at_center'
+    );
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: trainer?.name,
+      serviceRow: pkgRow,
+      serviceTypeCategory: 'training',
+      serviceStyle: styleFromRow,
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    selectedServices,
+    serviceId,
+    vendorServices,
+    selectedVendorService,
+    trainer,
+    serviceStyle,
+    serviceType,
+    selectedServiceType,
+    onNavigate,
+  ]);
   
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
@@ -169,6 +228,7 @@ export function TrainingBookingRouter({
         serviceStyle: style,
         icon: style === 'tele' ? Video : style === 'at_home' ? Home : style === 'outdoor' ? Home : Building2,
         color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : style === 'outdoor' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -314,8 +374,9 @@ export function TrainingBookingRouter({
       // Load actual vendor training services
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=training`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
-        console.log('Loaded vendor services:', servicesResponse.services.length);
+        const merged = mergeCustomerVendorServicesPayload(servicesResponse);
+        setVendorServices(merged);
+        console.log('Loaded vendor services:', merged.length);
       }
     } catch (error) {
       console.error('Error loading vendor services:', error);
@@ -461,6 +522,27 @@ export function TrainingBookingRouter({
   const handleNext = () => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
+
+    if (step === 'service' && vendorId && vendorServices.length > 0 && selectedServiceType) {
+      const row = vendorServices.find(
+        (vs: any) =>
+          String(vs?.id) === String(selectedServiceType) ||
+          String(vs?.serviceId || vs?.service_id) === String(selectedServiceType)
+      );
+      if (row && isVendorServicePackageRow(row)) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vendorId),
+          vendorName: trainer?.name,
+          serviceRow: row as Record<string, unknown>,
+          serviceTypeCategory: 'training',
+          serviceStyle: String(row.serviceStyle ?? row.service_style ?? serviceStyle ?? serviceType ?? 'at_center'),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
+    }
     
     // ✅ FIX: Skip address for tele and at_center (customer goes to center)
     if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {

@@ -399,6 +399,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
   
   const handleVetNavigate = (screen: string, data?: any) => {
+    if (screen === 'purchase-package') {
+      setWalkerServiceData(data);
+      navigateToScreen('package-booking');
+      return;
+    }
     setVetServiceData(data);
     if (screen === 'vet-booking') navigateToScreen('vet-booking');
     else if (screen === 'vet-doctor-details') navigateToScreen('vet-doctor-details');
@@ -596,6 +601,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         clinicProfileBackScreen: data?.clinicProfileBackScreen ?? 'vet-clinic-list',
       });
       navigateToScreen('vet-clinic-profile');
+    } else if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
     } else if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         vendorId: data?.vendorId || data?.clinicId,
@@ -614,7 +621,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'appointment' || screen === 'vet-booking') {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+    } else if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         vendorId: data?.clinicId || data?.vendorId || vetServiceData?.id,
         clinicId: data?.clinicId || vetServiceData?.id,
@@ -964,11 +973,28 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Package Booking (includes purchase-package from WalkerService via same screen + walkerServiceData)
   if (currentScreen === 'package-booking') {
     const walkSession = walkerServiceData?.walkSession ?? null;
+    const w = walkerServiceData;
+    const vendorPackageIntent =
+      w?.vendorServiceId && w?.vendorId
+        ? {
+            vendorId: String(w.vendorId),
+            vendorServiceId: String(w.vendorServiceId),
+            serviceName: String(w.serviceName || 'Package'),
+            totalSessions: Math.max(1, Number(w.totalSessions) || 1),
+            price: Number(w.price) || 0,
+            duration: w.duration != null ? Number(w.duration) : 60,
+            serviceType: w.serviceType ? String(w.serviceType) : undefined,
+            serviceStyle: w.serviceStyle ? String(w.serviceStyle) : undefined,
+            description: w.description != null ? String(w.description) : undefined,
+            vendorName: w.walker?.name || w.vendorName,
+          }
+        : null;
     return (
       <PackageBookingPage
         customerPhone={phone}
         customerId={phone}
         petId={selectedPetId || undefined}
+        vendorPackageIntent={vendorPackageIntent}
         walkSessionIntent={walkSession}
         onContinueToChooseWalker={
           walkSession

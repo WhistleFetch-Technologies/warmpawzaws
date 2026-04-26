@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import {
@@ -122,7 +123,7 @@ export function BoardingVendorProfileView({
       let services: any[] = [];
       const servicesData = servicesResponse as any;
       if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = servicesData.services;
+        services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_center) {
         services = servicesData.services.at_center?.services || [];
       }

@@ -5,6 +5,7 @@ import { Plane, Truck, Shield, Calendar, Clock, MapPin, User, CreditCard, CheckC
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
@@ -250,7 +251,7 @@ export function RelocationBookingRouter({
       // Use vendor endpoint for relocation services
       const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services?category=relocation`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+        setVendorServices(mergeCustomerVendorServicesPayload(servicesResponse));
         console.log('✅ Loaded vendor services:', servicesResponse.services.length);
       } else {
         console.warn('⚠️ No services found or invalid response');

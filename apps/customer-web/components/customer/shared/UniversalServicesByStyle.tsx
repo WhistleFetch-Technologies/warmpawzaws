@@ -20,6 +20,12 @@ import {
   getWebVetDiscoveryChevronNavTarget,
 } from '@/lib/customer-vendor-profile-navigation';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+  serviceTypeCategoryFromRoleId,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -119,10 +125,7 @@ async function fetchEmbeddedVendorAsProvider(args: {
       const servicesResponse = (await apiClient.get(
         `/customer/vendor/${embedVendorId}/services?serviceStyle=${st}&category=${finalCategory}${phoneParam}`
       )) as any;
-      const servicesArray = [
-        ...(servicesResponse?.services || []),
-        ...(servicesResponse?.packages || []),
-      ];
+      const servicesArray = mergeCustomerVendorServicesPayload(servicesResponse);
       if (servicesArray.length === 0) continue;
       services = servicesArray.map((s: any) => ({
         id: String(s.id || s.service_id || ''),
@@ -344,11 +347,8 @@ export function UniversalServicesByStyle({
                 ) as any;
                 
                 // ✅ FIX: Handle response format correctly - API returns { success: true, services: [...] }
-                // API returns { services, packages }; merge both so packages appear in list with isPackage flag
-                let servicesArray = [
-                  ...(servicesResponse?.services || []),
-                  ...(servicesResponse?.packages || []),
-                ];
+                // API returns { services, packages }; merge + dedupe so vendor custom packages appear (business + solo).
+                let servicesArray = mergeCustomerVendorServicesPayload(servicesResponse);
                 if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
 
                 services = servicesArray.map((s: any) => ({
@@ -370,10 +370,7 @@ export function UniversalServicesByStyle({
                   `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
                 ) as any;
 
-                let servicesArray = [
-                  ...(servicesResponse?.services || []),
-                  ...(servicesResponse?.packages || []),
-                ];
+                let servicesArray = mergeCustomerVendorServicesPayload(servicesResponse);
                 if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
 
                 services = servicesArray.map((s: any) => ({
@@ -623,6 +620,24 @@ export function UniversalServicesByStyle({
       }
     };
 
+    const vendorIdForPkg =
+      provider.providerType === 'vendor'
+        ? String(provider.providerId || provider.vendorId || '')
+        : String(provider.vendorId || provider.providerId || '');
+    if (isVendorServicePackageRow(service as any) && vendorIdForPkg) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vendorIdForPkg,
+        vendorName: provider.vendorName || provider.name,
+        serviceRow: service as Record<string, unknown>,
+        serviceTypeCategory: serviceTypeCategoryFromRoleId(roleId),
+        serviceStyle: String(serviceStyle),
+      });
+      if (pkgNav) {
+        onNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
+
     if (provider.providerType === 'vendor') {
       bookingData.vendorId = provider.providerId || provider.vendorId;
       bookingData.vendorName = provider.name;
@@ -681,6 +696,27 @@ export function UniversalServicesByStyle({
       ) {
         handleSelectService(profileProvider, selectedServicesData[0]);
         return;
+      }
+
+      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      if (pkgRow && profileProvider) {
+        const vid =
+          profileProvider.providerType === 'vendor'
+            ? String(profileProvider.providerId || profileProvider.vendorId || '')
+            : String(profileProvider.vendorId || profileProvider.providerId || '');
+        if (vid) {
+          const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+            vendorId: vid,
+            vendorName: profileProvider.vendorName || profileProvider.name,
+            serviceRow: pkgRow as Record<string, unknown>,
+            serviceTypeCategory: serviceTypeCategoryFromRoleId(roleId),
+            serviceStyle: String(serviceStyle),
+          });
+          if (pkgNav) {
+            onNavigate('purchase-package', pkgNav);
+            return;
+          }
+        }
       }
 
       const firstService = selectedServicesData[0];
