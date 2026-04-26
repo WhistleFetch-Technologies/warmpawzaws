@@ -75,6 +75,18 @@ const BOARDING_CARD_LINKS: {
 /** Hub uses the same discovery + cards as View All (`service=all`). */
 const HUB_SERVICE_SLUG: BoardingServiceSlug = 'all';
 
+function navigateToBoardingVendorList(
+  onNavigate: BoardingServiceRouterProps['onNavigate'],
+  router: { push: (href: string) => void },
+  serviceSlug: string
+) {
+  if (onNavigate) {
+    onNavigate('pet-boarding-vendors', { serviceSlug });
+    return;
+  }
+  router.push(`/pet-boarding/vendors?service=${encodeURIComponent(serviceSlug)}`);
+}
+
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
   const router = useRouter();
   const {
@@ -260,7 +272,11 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <button
                     key={slug}
                     type="button"
-                    onClick={() => router.push(`/pet-boarding/vendors?service=${encodeURIComponent(slug)}`)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigateToBoardingVendorList(onNavigate, router, slug);
+                    }}
                     className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                   >
                     <div
@@ -286,7 +302,11 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 <button
                   type="button"
                   className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                  onClick={() => router.push('/pet-boarding/vendors?service=all')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigateToBoardingVendorList(onNavigate, router, 'all');
+                  }}
                 >
                   View All <ChevronRight className="w-4 h-4" />
                 </button>

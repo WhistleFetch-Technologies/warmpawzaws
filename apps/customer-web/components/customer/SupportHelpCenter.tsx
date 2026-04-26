@@ -1,11 +1,13 @@
 "use client";
 
+import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   HelpCircle,
   MessageCircle,
-  Phone,
+  Bot,
   Mail,
   FileText,
   ChevronRight,
@@ -19,7 +21,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
-import { getSupportPhoneLabel, getSupportTelHref, SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
 import {
   SupportTicketDetailView,
   SupportTicketStatusBadge,
@@ -43,9 +50,19 @@ interface SupportHelpCenterProps {
   onBack: () => void;
   onCloseToHome?: () => void;
   initialTab?: 'faq' | 'contact' | 'tickets';
+  /** In-app shell: route chatbot deep-links (services, support). Defaults to Next router for `/…` only. */
+  onChatbotNavigate?: (dest: string, data?: unknown) => void;
 }
 
-export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: SupportHelpCenterProps) {
+export function SupportHelpCenter({
+  phone,
+  onBack,
+  onCloseToHome,
+  initialTab,
+  onChatbotNavigate,
+}: SupportHelpCenterProps) {
+  const router = useRouter();
+  const [showAIChat, setShowAIChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
   const [searchQuery, setSearchQuery] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
@@ -259,6 +276,21 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
 
   const openTickets = tickets.filter((t) => t.status === 'open' || t.status === 'in_progress').length;
 
+  const handleChatbotNavigate = useCallback(
+    (dest: string, data?: unknown) => {
+      const d = (dest || '').trim();
+      if (!d) return;
+      if (onChatbotNavigate) {
+        onChatbotNavigate(d, data);
+        return;
+      }
+      if (d.startsWith('/')) {
+        router.push(d);
+      }
+    },
+    [onChatbotNavigate, router]
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-customer mx-auto">
       {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
@@ -380,18 +412,6 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
                 <Card className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                   <h3 className="font-semibold text-gray-900 mb-4">Contact Us</h3>
                   <div className="space-y-3">
-                    <a
-                      href={getSupportTelHref()}
-                      className="flex items-center gap-3 rounded-lg p-1 -m-1 hover:bg-blue-100/60 transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Phone className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Phone</p>
-                        <p className="text-sm text-blue-700 font-medium">{getSupportPhoneLabel()}</p>
-                      </div>
-                    </a>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                         <Mail className="w-5 h-5 text-blue-600" />
@@ -401,15 +421,19 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
                         <p className="text-sm text-gray-600">support@warmpawz.com</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <MessageCircle className="w-5 h-5 text-blue-600" />
+                    <button
+                      type="button"
+                      onClick={() => setShowAIChat(true)}
+                      className="flex w-full items-center gap-3 rounded-lg p-1 -m-1 text-left hover:bg-blue-100/60 transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                        <Bot className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Live Chat</p>
-                        <p className="text-sm text-gray-600">Available 24/7</p>
+                        <p className="text-sm font-medium text-gray-900">Chat with us</p>
+                        <p className="text-sm text-gray-600">AI assistant · Available 24/7</p>
                       </div>
-                    </div>
+                    </button>
                   </div>
                 </Card>
 
@@ -592,6 +616,16 @@ export function SupportHelpCenter({ phone, onBack, onCloseToHome, initialTab }: 
           </div>
         )}
       </div>
+
+      {showAIChat && (
+        <AIChatbotWidget
+          presentation="modal"
+          customerId={getResolvedCustomerId() || undefined}
+          customerPhone={phone}
+          onClose={() => setShowAIChat(false)}
+          onNavigate={handleChatbotNavigate}
+        />
+      )}
     </div>
   );
 }

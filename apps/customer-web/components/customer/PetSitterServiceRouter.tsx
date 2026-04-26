@@ -33,7 +33,7 @@ interface PetSitterServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
   /** When false (e.g. “View all”), list all sitters and hide the redundant View all control. */
   hubMode?: boolean;
-  /** Set when opening full list from hub with a pre-selected sitting tile (`pet-sitter-facility` only). */
+  /** Set when opening `pet-sitter-vendors` from hub with a pre-selected tile (browse list). */
   initialSittingOptionId?: string | null;
 }
 
@@ -201,17 +201,17 @@ export function PetSitterServiceRouter({
       });
     }
     /** Always navigate so taps reliably change screen (scroll-only felt broken on mobile / overlap cases). */
-    onNavigate?.("pet-sitter-facility", { sittingOptionId: optionId });
+    onNavigate?.("pet-sitter-vendors", { sittingOptionId: optionId });
   };
 
   const handleStatClick = (index: number) => {
     if (index === 0) {
-      onNavigate?.("pet-sitter-facility");
+      onNavigate?.("pet-sitter-vendors");
       return;
     }
     if (displaySitters.length === 0) {
       toast.info("No sitters to show yet — opening the full list.");
-      onNavigate?.("pet-sitter-facility");
+      onNavigate?.("pet-sitter-vendors");
       return;
     }
     scrollToFeatured();
@@ -258,7 +258,7 @@ export function PetSitterServiceRouter({
       />
       <div
         ref={scrollRootRef}
-        className="relative z-[12] -mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]"
+        className="relative z-[30] -mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]"
       >
         <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
@@ -273,7 +273,7 @@ export function PetSitterServiceRouter({
               onClick={() => {
                 if (displaySitters.length === 0) {
                   toast.info("We’ll show every sitter we can find on the next screen.");
-                  onNavigate?.("pet-sitter-facility");
+                  onNavigate?.("pet-sitter-vendors");
                   return;
                 }
                 scrollToFeatured();
@@ -346,7 +346,7 @@ export function PetSitterServiceRouter({
               </div>
             )}
 
-            <div>
+            <div className="relative z-[1]">
               <h2 className="mb-4 text-lg font-bold text-slate-900">
                 Sitting options
               </h2>
@@ -357,8 +357,12 @@ export function PetSitterServiceRouter({
                     <button
                       key={opt.id}
                       type="button"
-                      onClick={() => handleSittingOptionPress(opt.id)}
-                      className={`group relative overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition-all hover:shadow-md ${
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleSittingOptionPress(opt.id);
+                      }}
+                      className={`touch-manipulation group relative overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition-all hover:shadow-md ${
                         selectedSittingOption === opt.id
                           ? "border-[#FF8C42] ring-2 ring-[#FF8C42]/30"
                           : "border-slate-100 bg-white"
@@ -391,7 +395,7 @@ export function PetSitterServiceRouter({
                   <button
                     type="button"
                     className="flex items-center gap-1 text-sm font-medium text-[#FF8C42]"
-                    onClick={() => onNavigate?.("pet-sitter-facility")}
+                    onClick={() => onNavigate?.("pet-sitter-vendors")}
                   >
                     View all <ChevronRight className="h-4 w-4" />
                   </button>

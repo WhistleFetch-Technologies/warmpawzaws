@@ -399,11 +399,11 @@ export function ServiceDashboardHeader({
 
       {bottomEdge === 'sheet' && (
         <div
-          className={`relative z-[21] ${sheetOverlapClass} w-full ${fullWidth ? '' : 'mx-auto max-w-customer'}`.trim()}
+          className={`pointer-events-none relative z-[21] ${sheetOverlapClass} w-full ${fullWidth ? '' : 'mx-auto max-w-customer'}`.trim()}
           aria-hidden
         >
           <div
-            className={`h-8 rounded-t-[1.75rem] shadow-[0_-10px_36px_-8px_rgba(0,0,0,0.12)] sm:h-9 sm:rounded-t-[2rem] ${sheetToneClass}`.trim()}
+            className={`pointer-events-none h-8 rounded-t-[1.75rem] shadow-[0_-10px_36px_-8px_rgba(0,0,0,0.12)] sm:h-9 sm:rounded-t-[2rem] ${sheetToneClass}`.trim()}
           />
         </div>
       )}
