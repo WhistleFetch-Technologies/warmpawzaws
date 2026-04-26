@@ -193,9 +193,7 @@ async function run() {
     console.log('Seeding banners...');
     try {
     const banners = [
-      ['main', 'Get 50% OFF', 'First Grooming Session', 'Claim Now', '/grooming', 1, { gradient_from: '#FF8C42', gradient_to: '#FF6B35', icon: '✂️' }],
-      ['main', 'Free Health Checkup', 'Book Vet Appointment Today', 'Book Now', '/vet', 2, { gradient_from: '#4CAF50', gradient_to: '#2E7D32', icon: '🩺' }],
-      ['main', 'Premium Pet Food', '20% OFF First Order', 'Shop Now', '/shop', 3, { gradient_from: '#FF6B9D', gradient_to: '#C44569', icon: '🦴' }],
+      ['main', 'Free Health Checkup', 'Book Vet Appointment Today', 'Book Now', '/vet', 1, { gradient_from: '#4CAF50', gradient_to: '#2E7D32', icon: '🩺' }],
     ];
     for (const [type, title, subtitle, cta_text, cta_link, display_order, metadata] of banners) {
       await pool.query(`

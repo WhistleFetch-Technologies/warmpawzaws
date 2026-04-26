@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { CAPABILITY_ROUTES } from '@/lib/capability-routes';
 
 interface Capability {
   id: string;
@@ -62,20 +63,38 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
             {categoryLabels.core}
           </h3>
           <div className="space-y-1">
-            {coreNavItems.map((cap) => (
-              <Link
-                key={cap.id}
-                href={cap.route}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
-                  isActive(cap.route)
-                    ? 'bg-orange-500 text-white'
-                    : 'text-gray-700 hover:bg-orange-50'
-                }`}
-              >
-                <span className="text-xl">{cap.icon}</span>
-                <span className="text-sm font-medium">{cap.display_name}</span>
-              </Link>
-            ))}
+            {coreNavItems.map((cap) => {
+              const comingSoon = !!CAPABILITY_ROUTES[cap.name as keyof typeof CAPABILITY_ROUTES]?.comingSoon;
+              if (comingSoon) {
+                return (
+                  <div
+                    key={cap.id}
+                    className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2 text-left text-gray-400"
+                    aria-disabled
+                  >
+                    <span className="text-xl opacity-60">{cap.icon}</span>
+                    <span className="text-sm font-medium">
+                      {cap.display_name}
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">
+                        Soon
+                      </span>
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <Link
+                  key={cap.id}
+                  href={cap.route}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
+                    isActive(cap.route) ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-orange-50'
+                  }`}
+                >
+                  <span className="text-xl">{cap.icon}</span>
+                  <span className="text-sm font-medium">{cap.display_name}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
@@ -87,20 +106,38 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
             {categoryLabels[category]}
           </h3>
           <div className="space-y-1">
-            {groupedCapabilities[category].map((cap) => (
-              <Link
-                key={cap.id}
-                href={cap.route}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
-                  isActive(cap.route)
-                    ? 'bg-orange-500 text-white'
-                    : 'text-gray-700 hover:bg-orange-50'
-                }`}
-              >
-                <span className="text-xl">{cap.icon}</span>
-                <span className="text-sm font-medium">{cap.display_name}</span>
-              </Link>
-            ))}
+            {groupedCapabilities[category].map((cap) => {
+              const comingSoon = !!CAPABILITY_ROUTES[cap.name as keyof typeof CAPABILITY_ROUTES]?.comingSoon;
+              if (comingSoon) {
+                return (
+                  <div
+                    key={cap.id}
+                    className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2 text-left text-gray-400"
+                    aria-disabled
+                  >
+                    <span className="text-xl opacity-60">{cap.icon}</span>
+                    <span className="text-sm font-medium">
+                      {cap.display_name}
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">
+                        Soon
+                      </span>
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <Link
+                  key={cap.id}
+                  href={cap.route}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
+                    isActive(cap.route) ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-orange-50'
+                  }`}
+                >
+                  <span className="text-xl">{cap.icon}</span>
+                  <span className="text-sm font-medium">{cap.display_name}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       ))}

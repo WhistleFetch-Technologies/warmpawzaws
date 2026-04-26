@@ -10,6 +10,7 @@ import {
 } from '@/lib/vendor-payout';
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
+import { MealPlansComingSoonPanel } from './MealPlansComingSoonPanel';
 
 // ============================================================================
 // TYPES
@@ -1430,55 +1431,10 @@ function AdoptionSection({ vendorId }: { vendorId: string }) {
   );
 }
 
-function MealPlansSection({ vendorId }: { vendorId: string }) {
-  const router = useRouter();
-  const [count, setCount] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadMealPlansCount();
-  }, [vendorId]);
-
-  const loadMealPlansCount = async () => {
-    try {
-      // Try nutritionist meal plans endpoint
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`).catch(() => null);
-      if (response && (response.mealPlans || response.plans || response.count !== undefined)) {
-        setCount(response.count || response.mealPlans?.length || response.plans?.length || 0);
-      } else {
-        // Alternative: count services with meal plan type
-        const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-        const list = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
-        const mealPlanServices = list.filter((s: any) =>
-          s.service_type?.toLowerCase().includes('meal') ||
-          s.service_type?.toLowerCase().includes('diet') ||
-          s.category?.toLowerCase().includes('nutrition')
-        );
-        setCount(mealPlanServices.length);
-      }
-    } catch (err) {
-      console.error('Error loading meal plans count:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
-
+function MealPlansSection({ vendorId: _vendorId }: { vendorId: string }) {
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{count}</p>
-          <p className="text-sm text-gray-500">Meal plans available</p>
-        </div>
-      </div>
-      <button 
-        onClick={() => router.push('/nutrition/plans')}
-        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
-      >
-        Manage Meal Plans
-      </button>
+      <MealPlansComingSoonPanel />
     </div>
   );
 }
