@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
@@ -199,15 +200,21 @@ export function WalkerServiceScreen({
   };
 
   const renderSelectStep = () => (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Dog Walking Service</Text>
-        <Text style={styles.headerSubtitle}>Book a trusted walker for your pet</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Dog Walking"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={onBack}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Dog Walking Service</Text>
+          <Text style={styles.headerSubtitle}>Book a trusted walker for your pet</Text>
+        </View>
+      }
+    >
+    <ScrollView style={styles.bodyScroll} contentContainerStyle={{ paddingBottom: spacing.xl }}>
       {/* Step 1: Select Pet */}
       <View style={styles.section}>
         <View style={styles.stepHeader}>
@@ -377,17 +384,24 @@ export function WalkerServiceScreen({
         <Text style={styles.primaryButtonText}>Find Walkers</Text>
       </TouchableOpacity>
     </ScrollView>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderWalkersStep = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setStep('select')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Walker</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Dog Walking"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setStep('select')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Select Walker</Text>
+        </View>
+      }
+    >
+    <View style={styles.walkersBody}>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -448,6 +462,7 @@ export function WalkerServiceScreen({
         </ScrollView>
       )}
     </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderConfirmStep = () => {
@@ -456,14 +471,19 @@ export function WalkerServiceScreen({
       : `${bookingDetails.duration} min`;
 
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setStep('walkers')}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Confirm Booking</Text>
-        </View>
-
+      <OrangeBrandedScreenLayout
+        title="Dog Walking"
+        bodyBackgroundColor={colors.white}
+        padBodyBottomInset={false}
+        customOrangeHeader={
+          <View style={styles.orangeHeaderInner}>
+            <TouchableOpacity onPress={() => setStep('walkers')}>
+              <Text style={styles.backButton}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Confirm Booking</Text>
+          </View>
+        }
+      >
         <ScrollView style={styles.confirmContainer}>
           <View style={styles.bookingSummary}>
             <Text style={styles.summaryTitle}>Booking Details</Text>
@@ -512,7 +532,7 @@ export function WalkerServiceScreen({
             )}
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </OrangeBrandedScreenLayout>
     );
   };
 
@@ -525,11 +545,11 @@ export function WalkerServiceScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
+    <>
       {step === 'select' && renderSelectStep()}
       {step === 'walkers' && renderWalkersStep()}
       {step === 'confirm' && renderConfirmStep()}
-    </ScreenShell>
+    </>
   );
 }
 
@@ -538,11 +558,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+  orangeHeaderInner: {
+    width: '100%',
+    paddingBottom: spacing.sm,
+  },
+  bodyScroll: {
+    flex: 1,
+  },
+  walkersBody: {
+    flex: 1,
+    minHeight: 0,
   },
   backButton: {
     fontSize: typography.body,

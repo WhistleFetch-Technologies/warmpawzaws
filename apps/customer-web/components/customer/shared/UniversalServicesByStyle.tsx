@@ -1274,10 +1274,12 @@ export function UniversalServicesByStyle({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        bottomEdge="sheet"
+        sheetToneClass="bg-white"
       />
       
       {/* Info section */}
-      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
+      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-6 pt-6 pb-2 sm:rounded-t-[2rem]">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1442,26 +1444,26 @@ export function UniversalServicesByStyle({
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
+                        <div className="flex w-full min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1 pr-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-medium text-gray-900">{service.name}</h5>
+                              <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 {(service as any).isPackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">Package</span>
                                 )}
                                 {(service as any).inActivePackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200">In your package</span>
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200 shrink-0">In your package</span>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 mt-2 flex-wrap">
-                              <Badge variant="outline" className="text-xs">
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="text-xs shrink-0">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {(service.duration ?? 0)} mins
                               </Badge>
                               {service.category && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
                                   {service.category}
                                 </Badge>
                               )}
@@ -1476,7 +1478,7 @@ export function UniversalServicesByStyle({
                               </div>
                             )}
                           </div>
-                          <div className="text-right ml-4 flex-shrink-0">
+                          <div className="shrink-0 text-right ml-2 min-w-[6.5rem]">
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
@@ -1484,7 +1486,7 @@ export function UniversalServicesByStyle({
                             />
                             <Button
                               size="sm"
-                              className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                              className="w-full bg-[#FF8C42] hover:bg-[#E67A35] text-white sm:w-auto"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);

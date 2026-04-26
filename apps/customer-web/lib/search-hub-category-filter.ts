@@ -41,6 +41,21 @@ const HUB_TO_DB_CATEGORIES: Record<string, string[]> = {
     'e_pharmacy',
     'online_pharmacy',
   ],
+  /** Align with backend CATEGORY_ROLES / discover-services nutrition roles */
+  nutritionist: [
+    'nutrition',
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+    'nutritionist_solo',
+  ],
+  nutrition: [
+    'nutrition',
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+    'nutritionist_solo',
+  ],
 };
 
 const HUB_QUERY_HINTS: Record<string, string[]> = {
@@ -63,6 +78,24 @@ const HUB_QUERY_HINTS: Record<string, string[]> = {
   cafe: ['cafe', 'coffee', 'pet cafe', 'café', 'bistro', 'lounge'],
   resort: ['resort', 'holiday', 'vacation', 'lodge', 'hotel', 'staycation', 'getaway'],
   pharmacy: ['pharma', 'medicine', 'meds', 'drug', 'prescription', 'chemist', 'dispens', 'tablet', 'rx'],
+  nutritionist: [
+    'nutrition',
+    'nutritionist',
+    'diet',
+    'meal plan',
+    'pet food',
+    'feeding',
+    'weight',
+  ],
+  nutrition: [
+    'nutrition',
+    'nutritionist',
+    'diet',
+    'meal plan',
+    'pet food',
+    'feeding',
+    'weight',
+  ],
 };
 
 function normalizedAllowed(hubId: string): Set<string> {

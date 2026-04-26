@@ -1243,12 +1243,14 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
           onCloseToHome={handleHeaderCloseToHome}
           onBack={showProfileMenuBack ? handleSidebarBack : undefined}
           showBackButton={showProfileMenuBack}
+          bottomEdge="sheet"
+          sheetToneClass="bg-gray-50"
         />
 
         {/* Scrollable Content Area - Fixed Height with Proper Overflow */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
+          className="-mt-1 flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {activeView === 'menu' && (

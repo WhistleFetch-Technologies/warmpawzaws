@@ -19,6 +19,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
 
 interface PhotoUploadProps {
   photoUrl?: string;
@@ -66,8 +67,8 @@ export function PhotoUpload({
   const handleFileSelect = async (file: File) => {
     setError(null);
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
+    // Validate file type (extension fallback when MIME is empty or octet-stream — common on Android)
+    if (!fileMatchesAccept(file, accept)) {
       setError('Please select an image file');
       toast.error('Invalid file type. Please select an image.');
       return;

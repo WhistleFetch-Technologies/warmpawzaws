@@ -859,6 +859,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
         const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
+        const bookingRowStatus =
+          paymentStatus === 'pending' && calculatedFinalAmount > 0 ? 'pending_payment' : 'confirmed';
         
         // ✅ CRITICAL FIX: Extract coordinates from address_id or address field for GPS tracking
         let bookingLatitude: number | null = null;
@@ -1034,9 +1036,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address: fullAddressText,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
-          // Slot was validated in this transaction — treat as vendor-confirmed (no separate accept step).
+          // Slot validated in-tx: confirmed once paid (or immediately if no online payment due).
           // Note: omit confirmed_at / confirmed_by — many schemas lack these; INSERT retry budget is limited.
-          status: 'confirmed',
+          status: bookingRowStatus,
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           // Coordinates from base schema
           latitude: bookingLatitude,
@@ -1272,35 +1274,37 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.error('Failed to publish booking created event:', error);
       }
 
-      // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
-      try {
-        const customers = await select('customers', { id: booking.customer_id });
-        const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
-        const serviceName = service?.service_name || service?.name || 'Service';
-        const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
-        // ✅ FIX: Use notification_type instead of type (schema column name)
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
-          title: 'New appointment',
-          message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
-          channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
-          data: JSON.stringify({
-            bookingId: booking.id,
-            customerId: booking.customer_id,
-            customerName,
-            serviceName,
-            serviceType: booking.service_type,
-            bookingDate: booking.booking_date,
-            bookingTime: booking.booking_time,
-            address: booking.address,
-          }),
-          is_read: false,
-          created_at: new Date(),
-        });
-      } catch (notifErr) {
-        console.warn('Failed to create vendor notification for new booking:', notifErr);
+      // Rule 4: Defer vendor in-app alert until paid when status is pending_payment.
+      if (booking.status !== 'pending_payment') {
+        try {
+          const customers = await select('customers', { id: booking.customer_id });
+          const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
+          const serviceName = service?.service_name || service?.name || 'Service';
+          const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
+          // ✅ FIX: Use notification_type instead of type (schema column name)
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
+            title: 'New appointment',
+            message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+            channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
+            data: JSON.stringify({
+              bookingId: booking.id,
+              customerId: booking.customer_id,
+              customerName,
+              serviceName,
+              serviceType: booking.service_type,
+              bookingDate: booking.booking_date,
+              bookingTime: booking.booking_time,
+              address: booking.address,
+            }),
+            is_read: false,
+            created_at: new Date(),
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for new booking:', notifErr);
+        }
       }
 
       // ✅ FIX: Auto-generate OTP for confirmed bookings (package bookings, etc.) that don't require payment
@@ -2676,7 +2680,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const oldStatus = currentBooking.status;
 
     // Validate that booking can be rescheduled
-    const reschedulableStatuses = ['pending', 'confirmed'];
+    const reschedulableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!reschedulableStatuses.includes(oldStatus)) {
       return this.error(
         `Booking cannot be rescheduled. Current status: ${oldStatus}`,

@@ -3135,9 +3135,24 @@ class CreateVendorHandler extends BaseHandler {
       const body = this.parseBody(context.event);
       
       // ✅ CRITICAL FIX: Exclude is_deleted from body to prevent it from being set to true
-      const { is_deleted, ...safeBody } = body;
+      const { is_deleted, tier: incomingTier, commission_percentage: incomingComm, ...safeBody } = body;
+      let tier: unknown = incomingTier;
+      let commission: unknown = incomingComm;
+      if (tier == null || String(tier).trim() === '') {
+        const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+        const tr = await resolveNewVendorOnboardingTier({
+          email: body.email,
+          businessName: body.business_name,
+        });
+        tier = tr.tier;
+        commission = tr.commission_percentage;
+      } else if (commission == null || String(commission).trim() === '') {
+        commission = 15;
+      }
       const vendor = await insert('vendors', {
         ...safeBody,
+        tier,
+        commission_percentage: commission,
         status: 'pending',
         is_active: false,
         is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors

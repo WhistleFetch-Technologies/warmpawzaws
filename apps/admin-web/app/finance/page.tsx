@@ -16,6 +16,7 @@ import {
 	FileCheck,
 	RefreshCw,
 	Package,
+	TableProperties,
 	X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -30,6 +31,7 @@ import {
 	RefundPoliciesSection,
 	DynamicSettlementRulesManager,
 	EcommercePoliciesSection,
+	VendorDailyAccrualReport,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 
@@ -60,12 +62,27 @@ type TabType =
 	| "tiers"
 	| "schedule-settings"
 	| "payment-settings"
-	| "settlement-rules";
+	| "settlement-rules"
+	| "vendor-daily-accrual";
 
 function FinanceManagementContent() {
 	const searchParams = useSearchParams();
 	const tabFromUrl = searchParams.get("tab") as TabType | null;
-	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules"];
+	const validTabs: TabType[] = [
+		"dashboard",
+		"fee-config",
+		"payment-policies",
+		"cancellation-policy",
+		"ecommerce-policies",
+		"gst-config",
+		"settlements",
+		"payouts",
+		"tiers",
+		"schedule-settings",
+		"payment-settings",
+		"settlement-rules",
+		"vendor-daily-accrual",
+	];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 	const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
@@ -150,6 +167,11 @@ function FinanceManagementContent() {
 		{ id: "tiers", label: "Tier System", icon: Layers },
 		{ id: "schedule-settings", label: "Schedule Settings", icon: Clock },
 		{ id: "settlement-rules", label: "Settlement Rules", icon: TrendingUp },
+		{
+			id: "vendor-daily-accrual",
+			label: "Daily accrual (IST)",
+			icon: TableProperties,
+		},
 		{ id: "payment-settings", label: "Payment Gateway", icon: Settings },
 	];
 
@@ -358,6 +380,13 @@ function FinanceManagementContent() {
 					{activeTab === "settlement-rules" && (
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<DynamicSettlementRulesManager />
+						</div>
+					)}
+
+					{activeTab === "vendor-daily-accrual" && (
+						<div className="rounded-lg border border-gray-200 bg-white p-6">
+							<h2 className="mb-4 text-lg font-semibold text-gray-900">Vendor daily accrual (IST)</h2>
+							<VendorDailyAccrualReport />
 						</div>
 					)}
 

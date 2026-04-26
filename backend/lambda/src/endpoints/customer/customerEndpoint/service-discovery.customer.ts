@@ -1253,6 +1253,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      /**
+       * Nutrition: catalog/custom rows may leave vs.category empty while vendors.role is pet_nutritionist / nutritionist
+       * (mirrors boardingRoleUncategorizedOr so experts still appear in discovery).
+       */
+      const nutritionDiscoverySearch =
+        catTextExact.some(
+          (c) =>
+            ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
+            c.includes('nutritionist') ||
+            c === 'pet nutrition' ||
+            (c.length >= 8 && c.startsWith('nutrition'))
+        ) ||
+        (roleId &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(roleId).toLowerCase().replace(/-/g, '_')
+          ));
+
       /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
       const walkerCategoryDiscoveryOr =
         !sittingDiscoveryRelaxed &&
@@ -1305,6 +1322,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(_vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const nutritionUncatSql =
+          !sitterRoleBypass &&
+          nutritionDiscoverySearch &&
+          _vendorRoleName &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(_vendorRoleName).toLowerCase()
+          )
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
             ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -1317,6 +1342,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
+            ${nutritionUncatSql}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
           )
@@ -1492,6 +1518,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
           : '';
 
+      const nutritionRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && nutritionDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
       const vetCategoryEmptyOr =
         !sittingDiscoveryRelaxed && isVetCategoryDiscovery
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -1514,6 +1543,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
+                ${nutritionRoleUncategorizedOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
               )`
@@ -4901,9 +4931,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      const nutritionDiscoverySearchByStyle =
+        catTextExact.some(
+          (c) =>
+            ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
+            c.includes('nutritionist') ||
+            c === 'pet nutrition' ||
+            (c.length >= 8 && c.startsWith('nutrition'))
+        ) ||
+        (roleId &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(roleId).toLowerCase().replace(/-/g, '_')
+          ));
+
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
+          : '';
+
+      const nutritionRoleUncategorizedOrByStyle =
+        nutritionDiscoverySearchByStyle
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
 
       const walkerCategoryDiscoveryOrByStyle =
@@ -4954,6 +5002,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ['boarding', 'pet_boarding'].includes(String(vendorRoleName).toLowerCase())
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const nutritionUncatSqlByStyle =
+          nutritionDiscoverySearchByStyle &&
+          vendorRoleName &&
+          ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+            String(vendorRoleName).toLowerCase()
+          )
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
           : '';
@@ -4963,6 +5019,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
+            ${nutritionUncatSqlByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
           )
@@ -5140,6 +5197,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
+                ${nutritionRoleUncategorizedOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
               )` : ``}

@@ -753,6 +753,12 @@ class GetAdminCapabilitiesHandler extends BaseHandler {
       { id: 'admin.ecommerce', name: 'Ecommerce', category: 'Admin Portal', description: 'Ecommerce / seller setup' },
       { id: 'admin.platform_settings', name: 'Platform settings', category: 'Admin Portal', description: 'Platform-wide settings' },
       { id: 'admin.roles', name: 'RBAC management', category: 'Admin Portal', description: 'Create roles, create users, assign roles' },
+      {
+        id: 'admin.ai_copilot',
+        name: 'Admin AI copilot',
+        category: 'Admin Portal',
+        description: 'Bedrock assistant with read-only tools (assign with care)',
+      },
       { id: 'admin.full_access', name: 'Full admin access', category: 'Admin Portal', description: 'All admin sections including RBAC' },
     ];
     return this.success({

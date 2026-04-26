@@ -208,9 +208,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-white"
       />
-      <div className="flex-1 overflow-y-auto bg-white">
-        <div className="px-4 pt-4 bg-white">
+      <div className="flex-1 -mt-4 overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
+        <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
             <PromotionBanner service="boarding" maxPromotions={3} onNavigate={onNavigate} />
 

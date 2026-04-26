@@ -5,6 +5,7 @@ import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, Che
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -33,7 +34,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   useEffect(() => {
     loadPets();
     loadNutritionists();
-  }, []);
+  }, [phone]);
 
   //---------------------------fucntions----------------------------------//
   const loadPets = async () => {
@@ -52,9 +53,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const loadNutritionists = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist&serviceStyle=at_center`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const nutritionistList = data.vendors || data.services || [];
+      const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
 
       setStats({

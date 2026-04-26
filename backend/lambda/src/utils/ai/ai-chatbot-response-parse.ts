@@ -22,6 +22,10 @@ const CHAT_INTENT_ALLOWLIST = new Set([
   'vendor_payouts',
   'vendor_support',
   'service',
+  'admin_vendors',
+  'admin_platform_settings',
+  'admin_roles',
+  'admin_governance',
 ]);
 
 function clampConfidence(n: unknown): number {
@@ -55,6 +59,15 @@ function sanitizeSuggestedActions(raw: unknown): string[] {
 export function extractFirstJsonObjectString(text: string): string | null {
   const m = text.match(/\{[\s\S]*\}/);
   return m ? m[0] : null;
+}
+
+/** Models often wrap JSON in ```json fences; strip so extraction/parsing succeeds. */
+function stripMarkdownCodeFence(text: string): string {
+  let s = text.trim();
+  if (!s.startsWith('```')) return s;
+  s = s.replace(/^```[a-zA-Z0-9]*\s*\n?/, '');
+  s = s.replace(/\n?```\s*$/, '').trim();
+  return s;
 }
 
 export type ParsedChatFields = {
@@ -141,7 +154,7 @@ export type ParsedSymptomsFields = {
 };
 
 export function parseSymptomsBedrockCompletion(completion: string): ParsedSymptomsFields {
-  const raw = String(completion ?? '').trim();
+  const raw = stripMarkdownCodeFence(String(completion ?? '')).trim();
   const fallback = (): ParsedSymptomsFields => ({
     response: raw.slice(0, MAX_RESPONSE_CHARS) || 'Please consult a veterinarian for guidance.',
     possibleCauses: [],
@@ -160,11 +173,13 @@ export function parseSymptomsBedrockCompletion(completion: string): ParsedSympto
     const urgency = SYMPTOM_URGENCY.has(urgencyRaw)
       ? (urgencyRaw as 'immediate' | 'soon' | 'routine')
       : 'routine';
+    const narrative =
+      typeof p.response === 'string' ? p.response.trim().slice(0, MAX_RESPONSE_CHARS) : '';
     return {
       response:
-        typeof p.response === 'string'
-          ? p.response.trim().slice(0, MAX_RESPONSE_CHARS)
-          : fallback().response,
+        narrative.length > 0
+          ? narrative
+          : 'Please consult a veterinarian for guidance.',
       possibleCauses: sanitizeStringArray(p.possibleCauses, 12, 200),
       urgency,
       recommendations: sanitizeStringArray(p.recommendations, 12, 200),

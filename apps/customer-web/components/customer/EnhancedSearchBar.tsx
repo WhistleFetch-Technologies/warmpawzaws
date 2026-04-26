@@ -43,15 +43,28 @@ export function EnhancedSearchBar({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  
+  /** Latest coords for async search — avoids debounced `performSearch` using a stale `userLocation` closure. */
+  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  /** Monotonic id: only the latest in-flight `/search` may update `results` / `loading`. */
+  const searchRequestSeqRef = useRef(0);
+  /** Always invoke latest `performSearch` from debounce (stable closure). */
+  const performSearchRef = useRef<(q: string) => void>(() => {});
+
+  useEffect(() => {
+    userLocationRef.current = userLocation;
+  }, [userLocation]);
 
   // Get user location (silent fallback when permission denied)
   useEffect(() => {
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe(
-      (coords: { lat: number; lng: number }) => setUserLocation(coords),
+      (coords: { lat: number; lng: number }) => {
+        userLocationRef.current = coords;
+        setUserLocation(coords);
+      },
       () => {} // Fallback handled by onSuccess with default coords
     );
   }, []);
@@ -165,7 +178,7 @@ export function EnhancedSearchBar({
 
     debounceRef.current = setTimeout(() => {
       if (value.trim().length >= 2) {
-        performSearch(value.trim());
+        performSearchRef.current(value.trim());
       } else {
         setResults([]);
       }
@@ -173,16 +186,18 @@ export function EnhancedSearchBar({
   };
 
   const performSearch = async (searchQuery: string) => {
+    const reqId = ++searchRequestSeqRef.current;
+    const locForRequest = userLocationRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         q: searchQuery,
-        limit: '10'
+        limit: '30'
       });
 
-      if (userLocation) {
-        params.append('lat', userLocation.lat.toString());
-        params.append('lng', userLocation.lng.toString());
+      if (locForRequest) {
+        params.append('lat', locForRequest.lat.toString());
+        params.append('lng', locForRequest.lng.toString());
       }
 
       if (customerId) {
@@ -199,6 +214,11 @@ export function EnhancedSearchBar({
         }>(`/search?${params.toString()}`),
         apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] })),
       ]);
+
+      if (reqId !== searchRequestSeqRef.current) {
+        return;
+      }
+
       const data = searchData;
       
       // Transform results from universal search format to SearchResult format
@@ -277,18 +297,26 @@ export function EnhancedSearchBar({
       });
       
       // Fallback to old format if available
+      const oldResults = data.data?.results || data.results || [];
       if (transformedResults.length === 0) {
-        const oldResults = data.data?.results || data.results || [];
         setResults(oldResults);
       } else {
         setResults(transformedResults);
       }
     } catch (error) {
       console.error('Error performing search:', error);
-      setResults([]);
+      if (reqId === searchRequestSeqRef.current) {
+        setResults([]);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === searchRequestSeqRef.current) {
+        setLoading(false);
+      }
     }
+  };
+
+  performSearchRef.current = (q: string) => {
+    void performSearch(q);
   };
 
   const saveSearch = async (searchQuery: string) => {

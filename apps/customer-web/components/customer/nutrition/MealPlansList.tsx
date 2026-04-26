@@ -75,18 +75,29 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
   const fetchMealPlans = async () => {
     try {
       setLoading(true);
-      const loc = getLocation();
-      const params = new URLSearchParams();
-      if (loc) {
-        params.set('lat', String(loc.lat));
-        params.set('lng', String(loc.lng));
-        params.set('maxRadius', String(MAX_RADIUS_KM));
+      const buildParams = (withLocalRadius: boolean) => {
+        const params = new URLSearchParams();
+        const loc = withLocalRadius ? getLocation() : null;
+        if (loc) {
+          params.set('lat', String(loc.lat));
+          params.set('lng', String(loc.lng));
+          params.set('maxRadius', String(MAX_RADIUS_KM));
+        }
+        if (selectedPurpose) params.set('purpose', selectedPurpose);
+        if (selectedMealType) params.set('mealType', selectedMealType);
+        return params;
+      };
+      const load = async (params: URLSearchParams) => {
+        const data = (await apiClient.get<{ mealPlans?: any[]; meal_plans?: any[] }>(
+          `/meal-plans/search${params.toString() ? `?${params.toString()}` : ''}`
+        )) as any;
+        return (data.mealPlans || data.meal_plans || []) as any[];
+      };
+      let plans = await load(buildParams(true));
+      // Hyperlocal 10km can hide valid catalog when vendors lack geocodes or sit outside radius; show all next.
+      if (plans.length === 0) {
+        plans = await load(buildParams(false));
       }
-      if (selectedPurpose) params.set('purpose', selectedPurpose);
-      if (selectedMealType) params.set('mealType', selectedMealType);
-      const url = `/meal-plans/search${params.toString() ? `?${params.toString()}` : ''}`;
-      const data = await apiClient.get<{ success?: boolean; mealPlans?: any[] }>(url) as any;
-      const plans = data.mealPlans || data.meal_plans || [];
       setMealPlans(plans);
     } catch (error: any) {
       console.error('Error loading meal plans:', error);

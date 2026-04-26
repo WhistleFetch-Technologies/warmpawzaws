@@ -15,6 +15,7 @@ import {
   Alert,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -246,72 +247,89 @@ export function GroomingServiceRouter({
 
   const renderLanding = () => (
     <View style={styles.container}>
-      <Text style={styles.title}>Grooming Services</Text>
-      <Text style={styles.subtitle}>Choose your preferred grooming option</Text>
-
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleServiceTypeSelect('center')}
-        >
-          <Text style={styles.optionIcon}>✂️</Text>
-          <Text style={styles.optionTitle}>Grooming Center</Text>
-          <Text style={styles.optionDescription}>
-            Visit our grooming center for professional pet grooming
-          </Text>
+      <View style={styles.headerOrange}>
+        <TouchableOpacity onPress={onBack}>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleServiceTypeSelect('home')}
-        >
-          <Text style={styles.optionIcon}>🏠</Text>
-          <Text style={styles.optionTitle}>Home Grooming</Text>
-          <Text style={styles.optionDescription}>
-            Professional groomer visits your home for convenience
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitleWhite} numberOfLines={1}>
+          Grooming Services
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
+      <BrandedStackBelowHeader>
+        <View style={styles.contentPad}>
+          <Text style={styles.subtitle}>Choose your preferred grooming option</Text>
+
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity
+              style={styles.optionCard}
+              onPress={() => handleServiceTypeSelect('center')}
+            >
+              <Text style={styles.optionIcon}>✂️</Text>
+              <Text style={styles.optionTitle}>Grooming Center</Text>
+              <Text style={styles.optionDescription}>
+                Visit our grooming center for professional pet grooming
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionCard}
+              onPress={() => handleServiceTypeSelect('home')}
+            >
+              <Text style={styles.optionIcon}>🏠</Text>
+              <Text style={styles.optionTitle}>Home Grooming</Text>
+              <Text style={styles.optionDescription}>
+                Professional groomer visits your home for convenience
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </BrandedStackBelowHeader>
     </View>
   );
 
   const renderVendorList = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView('landing')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
           {bookingFlow.serviceType === 'center' ? 'Select Grooming Center' : 'Select Groomer'}
         </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} />
-      ) : (
-        <ScrollView style={styles.vendorList}>
-          {vendors.map((vendor) => (
-            <TouchableOpacity
-              key={vendor.id}
-              style={styles.vendorCard}
-              onPress={() => handleVendorSelect(vendor)}
-            >
-              <Text style={styles.vendorName}>{vendor.name}</Text>
-              <Text style={styles.vendorAddress}>{vendor.address}</Text>
-              {vendor.rating && (
-                <Text style={styles.vendorRating}>
-                  ⭐ {vendor.rating.toFixed(1)}
-                </Text>
-              )}
-              {vendor.distance && (
-                <Text style={styles.vendorDistance}>
-                  📍 {vendor.distance} km away
-                </Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
+      <BrandedStackBelowHeader>
+        {loading ? (
+          <View style={styles.brandedLoadingWrap}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <ScrollView style={styles.vendorList} contentContainerStyle={styles.contentPad}>
+            {vendors.map((vendor) => (
+              <TouchableOpacity
+                key={vendor.id}
+                style={styles.vendorCard}
+                onPress={() => handleVendorSelect(vendor)}
+              >
+                <Text style={styles.vendorName}>{vendor.name}</Text>
+                <Text style={styles.vendorAddress}>{vendor.address}</Text>
+                {vendor.rating && (
+                  <Text style={styles.vendorRating}>
+                    ⭐ {vendor.rating.toFixed(1)}
+                  </Text>
+                )}
+                {vendor.distance && (
+                  <Text style={styles.vendorDistance}>
+                    📍 {vendor.distance} km away
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -319,14 +337,18 @@ export function GroomingServiceRouter({
   // This matches the vet flow where services are selected from profile before booking
   const renderCenterProfile = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView(bookingFlow.serviceType === 'center' ? 'grooming_center' : 'grooming_home')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{selectedVendor?.name}</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          {selectedVendor?.name}
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView style={styles.profileContainer}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.profileContainer} contentContainerStyle={styles.contentPad}>
         {selectedVendor?.image && (
           <View style={styles.imagePlaceholder}>
             <Text style={styles.imageText}>📷</Text>
@@ -419,6 +441,7 @@ export function GroomingServiceRouter({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
       
       {/* ✅ Fixed bottom book button */}
       <View style={styles.bottomButtonContainer}>
@@ -443,17 +466,23 @@ export function GroomingServiceRouter({
 
   const renderServiceSelection = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView('center_profile')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Service</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          Select Service
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.brandedLoadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       ) : (
-        <ScrollView style={styles.serviceList}>
+        <ScrollView style={styles.serviceList} contentContainerStyle={styles.contentPad}>
           {packages.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Service Packages</Text>
@@ -491,19 +520,28 @@ export function GroomingServiceRouter({
           </View>
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
   const renderBookingDetails = () => (
     <View style={styles.flexFill}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView('center_profile')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book visit</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          Book visit
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView style={styles.petList} keyboardShouldPersistTaps="handled">
+      <BrandedStackBelowHeader>
+      <ScrollView
+        style={styles.petList}
+        contentContainerStyle={styles.contentPad}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.sectionHeader}>Your pet</Text>
         {pets.length === 0 ? (
           <Text style={styles.infoText}>No pets on file. Add a pet in your profile first.</Text>
@@ -560,6 +598,7 @@ export function GroomingServiceRouter({
           <Text style={styles.primaryButtonText}>Continue to payment</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -569,56 +608,58 @@ export function GroomingServiceRouter({
 
     return (
       <View style={styles.container}>
-        <View style={styles.summaryHeader}>
+        <View style={styles.headerOrange}>
           <TouchableOpacity
             onPress={() => setCurrentView('booking_details')}
-            style={styles.headerBackTap}
             hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Text style={styles.summaryBackGlyph} pointerEvents="none">
-              ‹
-            </Text>
+            <Text style={styles.backButtonWhite}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.summaryHeaderTitle} numberOfLines={1}>
+          <Text style={styles.headerTitleWhite} numberOfLines={1}>
             Booking Summary
           </Text>
+          <View style={styles.headerRightSpacer} />
         </View>
 
-        <View style={styles.bookingSummary}>
-          <Text style={styles.summaryItem}>Provider: {bookingFlow.vendorName || selectedVendor?.name}</Text>
-          {!!selectedVendor?.address && (
-            <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
-          )}
-          <Text style={styles.summaryItem}>
-            Service: {bookingFlow.services[0]?.name}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Pet: {bookingFlow.pet?.name}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Date: {bookingFlow.date}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Time: {bookingFlow.time}
-          </Text>
-          {bookingFlow.addOns.length > 0 && (
-            <Text style={styles.summaryItem}>
-              Add-ons: {bookingFlow.addOns.length}
-            </Text>
-          )}
-          <Text style={styles.summaryTotal}>
-            Total: ₹{totalPrice}
-          </Text>
-        </View>
+        <BrandedStackBelowHeader>
+          <View style={styles.contentPad}>
+            <View style={styles.bookingSummary}>
+              <Text style={styles.summaryItem}>Provider: {bookingFlow.vendorName || selectedVendor?.name}</Text>
+              {!!selectedVendor?.address && (
+                <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
+              )}
+              <Text style={styles.summaryItem}>
+                Service: {bookingFlow.services[0]?.name}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Pet: {bookingFlow.pet?.name}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Date: {bookingFlow.date}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Time: {bookingFlow.time}
+              </Text>
+              {bookingFlow.addOns.length > 0 && (
+                <Text style={styles.summaryItem}>
+                  Add-ons: {bookingFlow.addOns.length}
+                </Text>
+              )}
+              <Text style={styles.summaryTotal}>
+                Total: ₹{totalPrice}
+              </Text>
+            </View>
 
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => handlePayment({ method: 'wallet' })}
-        >
-          <Text style={styles.primaryButtonText}>Pay with Wallet</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => handlePayment({ method: 'wallet' })}
+            >
+              <Text style={styles.primaryButtonText}>Pay with Wallet</Text>
+            </TouchableOpacity>
+          </View>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -684,13 +725,40 @@ const styles = StyleSheet.create({
   },
   screenContentPad: {
     flex: 1,
-    paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
   },
-  header: {
+  contentPad: {
+    paddingHorizontal: spacing.md,
+  },
+  headerOrange: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primary,
+    paddingBottom: spacing.md + 4,
+  },
+  backButtonWhite: {
+    fontSize: typography.body,
+    color: colors.white,
+  },
+  headerTitleWhite: {
+    flex: 1,
+    fontSize: typography.h1,
+    fontWeight: 'bold',
+    color: colors.white,
+    marginLeft: spacing.md,
+  },
+  headerRightSpacer: {
+    width: 44,
+    flexShrink: 0,
+  },
+  brandedLoadingWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -722,23 +790,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes['2xl'],
     fontWeight: '700',
     color: colors.text,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.primary,
-    marginRight: spacing.md,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: typography.h2,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  title: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: typography.body,

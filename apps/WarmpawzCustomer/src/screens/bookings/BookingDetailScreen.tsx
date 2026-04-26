@@ -16,6 +16,7 @@ import {
   Clipboard,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -158,29 +159,16 @@ export function BookingDetailScreen({
 
   if (!booking) {
     return (
-      <ScreenShell style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Booking Details</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Booking Details" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>Booking not found</Text>
         </View>
-      </ScreenShell>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Booking Details</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout title="Booking Details" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Status Badge */}
         <View style={styles.statusContainer}>
@@ -446,7 +434,7 @@ export function BookingDetailScreen({
           </View>
         )}
       </ScrollView>
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -454,25 +442,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-    marginRight: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

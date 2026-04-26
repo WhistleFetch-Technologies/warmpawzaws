@@ -1927,16 +1927,33 @@ export function CustomerHomeComplete({
                 });
                 return;
               }
-              if (result.type === 'service' || result.category) {
-
-                const category = result.category || result.data?.serviceType || result.data?.category || '';
+              // Vendor / staff / center: must run before any `result.category` branch (vendors carry category too).
+              if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
+                const vendorId = String(result.id || '').trim();
+                if (vendorId) {
+                  router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
+                } else {
+                  const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
+                  handleNavigation(serviceType);
+                }
+                return;
+              }
+              // Bookable listing: API search uses vendor_services.id — same id GET /services/:id and BookingFlow expect.
+              if (result.type === 'service') {
+                const sid = String(result.id || '').trim();
+                if (sid) {
+                  router.push(`/booking/${encodeURIComponent(sid)}`);
+                }
+                return;
+              }
+              if (result.type === 'product') {
+                handleNavigation('shop');
+                return;
+              }
+              const category = result.category || result.data?.serviceType || result.data?.category || '';
+              if (category) {
                 const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
                 handleNavigation(targetScreen);
-              } else if (result.type === 'product') {
-                handleNavigation('shop');
-              } else if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
-                const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
-                handleNavigation(serviceType);
               }
             }}
           />

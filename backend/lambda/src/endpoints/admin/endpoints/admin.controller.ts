@@ -34,7 +34,6 @@ import {
 	SQL_PACKAGE_PURCHASE_JOIN,
 	SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
-
 // ============================================================================
 // ADMIN HANDLERS
 // ============================================================================
@@ -1209,27 +1208,13 @@ export function registerAdminEndpoints(app: Hono) {
           //Ensure email is never null - use phone-based fallback if needed
           const vendorEmail = formData.email || identity.email || `vendor-${identity.phone}@warmpawz.app`;
 
-          // Fetch default tier/commission from vendor_tiers (fallback to Basic/15%)
-          let defaultTierName = 'Basic';
-          let defaultCommission = 15;
-          try {
-            const tierResult = await query(
-              `SELECT tier_name, commission_rate 
-          FROM vendor_tiers 
-          WHERE is_active = true 
-            AND (is_default = true OR is_free_tier = true)
-          ORDER BY is_default DESC NULLS LAST, tier_level ASC
-          LIMIT 1`
-            );
-
-            if (tierResult.rows && tierResult.rows.length > 0) {
-              defaultTierName = tierResult.rows[0].tier_name;
-              const cr = parseFloat(tierResult.rows[0].commission_rate || '15');
-              if (!isNaN(cr)) defaultCommission = cr;
-            }
-          } catch (tierError: any) {
-            // Continue with fallback tier
-          }
+          const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+          const tr = await resolveNewVendorOnboardingTier({
+            email: vendorEmail,
+            businessName: (formData.businessName || formData.contactPersonName) as string | undefined,
+          });
+          const defaultTierName = tr.tier;
+          const defaultCommission = tr.commission_percentage;
 
           try {
             // Debug: log live vendors columns to ensure schema alignment
