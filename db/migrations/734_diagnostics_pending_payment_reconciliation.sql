@@ -1,0 +1,82 @@
+-- ============================================================================
+-- MIGRATION 734: Documentation + optional reconciliation for diagnostics
+-- bookings stuck in pending_payment after Razorpay capture (legacy pay-first gap)
+-- ============================================================================
+-- Safe approach: review candidates with SELECT only; apply manual UPDATE only
+-- after matching Razorpay Dashboard / payments rows for the same customer.
+--
+-- Automated blind UPDATE is not included — amounts, time windows, and duplicate
+-- payments require human verification.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) LIST CANDIDATES (read-only): diagnostics-ish bookings still pending_payment
+--    Tighten filters (date range, vendor) before using in production.
+-- ---------------------------------------------------------------------------
+-- Example (uncomment and run in a session after substituting dates):
+--
+-- SELECT b.id,
+--        b.customer_id,
+--        b.vendor_id,
+--        b.total_amount,
+--        b.payment_status,
+--        b.status,
+--        b.booking_date,
+--        b.booking_time,
+--        b.created_at,
+--        LEFT(b.notes::text, 200) AS notes_preview
+-- FROM bookings b
+-- LEFT JOIN vendor_services vs ON vs.id = b.service_id
+-- LEFT JOIN services s ON s.id = vs.service_id
+-- WHERE b.status = 'pending_payment'
+--   AND COALESCE(b.total_amount, 0) > 0
+--   AND (
+--     LOWER(COALESCE(s.category, '')) = 'diagnostics'
+--     OR LOWER(COALESCE(b.service_name, '')) LIKE '%diagnostic%'
+--     OR (b.notes::text LIKE '%"tests"%' AND b.notes::text LIKE '%patientName%')
+--   )
+--   AND b.created_at > NOW() - INTERVAL '90 days'
+-- ORDER BY b.created_at DESC;
+
+-- ---------------------------------------------------------------------------
+-- 2) OPTIONAL: find completed Razorpay payments for same customer/vendor/amount
+--    within a time window (still review each row against Razorpay before UPDATE).
+-- ---------------------------------------------------------------------------
+-- SELECT p.id AS payment_id,
+--        p.razorpay_order_id,
+--        p.razorpay_payment_id,
+--        p.amount,
+--        p.booking_id,
+--        p.customer_id,
+--        p.vendor_id,
+--        p.completed_at,
+--        p.created_at
+-- FROM payments p
+-- WHERE p.payment_status = 'completed'
+--   AND p.pharmacy_order_id IS NULL
+--   AND p.customer_id = '<customer_uuid>'::uuid
+--   AND p.vendor_id = '<vendor_uuid>'::uuid
+--   AND p.booking_id IS NULL
+--   AND ABS(p.amount - <booking_total_inr>) < 0.02
+--   AND p.created_at > NOW() - INTERVAL '7 days';
+
+-- ---------------------------------------------------------------------------
+-- 3) MANUAL FIX TEMPLATE (run only after verifying a 1:1 match in Razorpay + DB)
+--    - Link payment to booking
+--    - Confirm booking
+-- ---------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE payments
+-- SET booking_id = '<booking_uuid>'::uuid,
+--     updated_at = NOW()
+-- WHERE id = '<payment_uuid>'::uuid
+--   AND booking_id IS NULL
+--   AND payment_status = 'completed';
+--
+-- UPDATE bookings
+-- SET status = 'confirmed',
+--     payment_status = 'paid',
+--     updated_at = NOW()
+-- WHERE id = '<booking_uuid>'::uuid
+--   AND status = 'pending_payment';
+-- COMMIT;

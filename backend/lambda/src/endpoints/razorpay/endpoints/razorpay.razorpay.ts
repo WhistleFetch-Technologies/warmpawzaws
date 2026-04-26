@@ -579,7 +579,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, 'razorpay', 'pending']
         );
       } else if (isDiagnosticsOrder) {
-        // Diagnostics: booking is created after payment success; do not insert payment row here (no booking_id yet)
+        // Diagnostics: pay-first — persist payments row (booking_id set on POST /bookings/create after verify).
+        await insert('payments', {
+          booking_id: null,
+          customer_id: customerIdFinal,
+          vendor_id: vendorIdFinal,
+          razorpay_order_id: razorpayOrder.id,
+          amount: Number(amount),
+          currency: currency,
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+        });
       } else if (isBookingPrepaid) {
         await insert('payments', {
           booking_id: null,
@@ -754,25 +764,6 @@ class VerifyPaymentHandler extends BaseHandler {
         );
 
         if (payments.length === 0) {
-          // Diagnostics (and similar) orders: payment-before-booking – no row was inserted at create-order.
-          // Verify that this Razorpay order is a diagnostics order, then return success so frontend can create the booking.
-          try {
-            const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, 'GET', undefined, 10000) as any;
-            const notes = razorpayOrder?.notes || {};
-            const orderType = typeof notes === 'object' && notes !== null ? (notes.type || notes.orderType) : undefined;
-            if (orderType === 'diagnostics') {
-              console.log('[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success');
-              return {
-                success: true,
-                message: 'Payment verified successfully',
-                paymentId: razorpay_payment_id,
-                orderId: razorpay_order_id,
-                bookingId: null,
-              };
-            }
-          } catch (fetchErr: any) {
-            console.warn('[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:', fetchErr?.message);
-          }
           console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);
           throw new Error('Payment record not found. Please contact support with your order ID.');
         }
