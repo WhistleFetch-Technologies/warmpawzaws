@@ -126,10 +126,12 @@ export function PrePaymentBookingReview({
         onBack={onBack}
         showBackButton={showBackButton}
         headerColor={headerColor}
+        bottomEdge="sheet"
+        sheetToneClass="bg-gray-50"
       />
       <div
         className={[
-          "max-w-md mx-auto px-4 py-6 w-full min-h-0 flex-1",
+          "max-w-md mx-auto w-full min-h-0 flex-1 -mt-2 px-4 pt-5 pb-6",
           scrollable ? "overflow-y-auto" : "",
           contentClassName,
         ]

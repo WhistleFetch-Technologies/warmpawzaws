@@ -15,7 +15,7 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -186,31 +186,18 @@ export function CancelBookingScreen({
 
   if (loading) {
     return (
-      <ScreenShell style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Cancel Booking</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Cancel Booking" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </ScreenShell>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   const price = bookingData?.price || bookingData?.amount || booking?.price || 0;
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cancel Booking</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout title="Cancel Booking" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Booking Details */}
         <View style={styles.bookingDetailsCard}>
@@ -331,7 +318,7 @@ export function CancelBookingScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -339,25 +326,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-    marginRight: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

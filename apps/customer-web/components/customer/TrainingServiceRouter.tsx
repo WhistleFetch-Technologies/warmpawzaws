@@ -186,10 +186,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
+      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
         <div className="space-y-8">
 
           {/* Phase 1: Book again with previous trainer */}

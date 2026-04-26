@@ -16,6 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
@@ -345,7 +346,8 @@ export function ResortServicesScreen({
         <Text style={styles.subtitle}>Luxury vacation for your pets</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.heroCard}>
           <Text style={styles.heroIcon}>🏝️</Text>
           <Text style={styles.heroTitle}>5-Star Pet Experience</Text>
@@ -424,6 +426,7 @@ export function ResortServicesScreen({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -436,6 +439,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Luxury Pet Resorts</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -473,6 +477,7 @@ export function ResortServicesScreen({
           )}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -485,6 +490,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>{selectedResort?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.roomSelectionContainer}>
         <Text style={styles.sectionTitle}>Select Room Type</Text>
         {rooms.length === 0 ? (
@@ -525,6 +531,7 @@ export function ResortServicesScreen({
           ))
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -537,6 +544,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Select Dates</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.datesContainer}>
         <View style={styles.selectedRoomCard}>
           <Text style={styles.selectedRoomName}>{selectedRoom?.name}</Text>
@@ -629,6 +637,7 @@ export function ResortServicesScreen({
           <Text style={styles.primaryButtonText}>Continue to Pre-Check</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -641,6 +650,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Pet Pre-Check</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.preCheckContainer}>
         <View style={styles.preCheckCard}>
           <Text style={styles.preCheckTitle}>Mandatory Information</Text>
@@ -823,6 +833,7 @@ export function ResortServicesScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -893,8 +904,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -918,8 +931,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   heroCard: {
     backgroundColor: '#F0FDFA',

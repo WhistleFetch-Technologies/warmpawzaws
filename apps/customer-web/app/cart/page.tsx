@@ -133,10 +133,12 @@ export default function CartPage() {
         stats={cartRouteStats}
         onBack={() => goBackOrReplace(router, '/shop')}
         showBackButton
+        bottomEdge="sheet"
+        sheetToneClass="bg-[#F2F4F7]"
       />
 
       {cart.length === 0 ? (
-        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+        <div className="-mt-1 flex flex-col items-center justify-center px-6 py-16 text-center">
           <div className="mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-white shadow-sm">
             <ShoppingCart className="h-14 w-14 text-slate-300" />
           </div>
@@ -152,7 +154,7 @@ export default function CartPage() {
         </div>
       ) : (
         <>
-          <main className={`px-3 pt-3 ${scrollPad}`}>
+          <main className={`-mt-1 px-3 pt-3 ${scrollPad}`}>
             {/* In-cart notice — app-style banner */}
             <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3.5 shadow-sm ring-1 ring-amber-100/80">
               <p className="font-semibold text-slate-900">Your item is in the cart</p>

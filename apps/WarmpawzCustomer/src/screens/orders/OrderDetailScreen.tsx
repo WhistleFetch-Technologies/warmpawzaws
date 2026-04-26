@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -213,46 +214,35 @@ export function OrderDetailScreen({
 
   if (!order) {
     return (
-      <ScreenShell style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Order Details</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+      <OrangeBrandedScreenLayout title="Order Details" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateIcon}>📦</Text>
           <Text style={styles.emptyStateText}>Order not found</Text>
         </View>
-      </ScreenShell>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>Order Details</Text>
-          <Text style={styles.headerSubtitle}>#{order.orderNumber || orderId}</Text>
-        </View>
+    <>
+    <OrangeBrandedScreenLayout
+      title="Order Details"
+      subtitle={`#${order.orderNumber || orderId}`}
+      onBack={onBack}
+      bodyBackgroundColor={colors.white}
+      headerRight={
         <View
           style={[
             styles.statusBadge,
             { backgroundColor: getStatusColor(order.status) + '20' },
           ]}
         >
-          <Text
-            style={[styles.statusText, { color: getStatusColor(order.status) }]}
-          >
+          <Text style={[styles.statusText, { color: getStatusColor(order.status) }]}>
             {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
           </Text>
         </View>
-      </View>
-
+      }
+    >
       <ScrollView style={styles.content}>
         {/* Order Timeline */}
         {order.status !== 'cancelled' && (
@@ -542,6 +532,7 @@ export function OrderDetailScreen({
           )}
         </View>
       )}
+    </OrangeBrandedScreenLayout>
 
       {/* Cancel Confirmation Modal */}
       <Modal
@@ -584,7 +575,7 @@ export function OrderDetailScreen({
           </View>
         </View>
       </Modal>
-    </ScreenShell>
+    </>
   );
 }
 
@@ -592,36 +583,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-  },
-  headerInfo: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.h2,
-    fontWeight: 'bold',
-    color: colors.white,
-  },
-  headerSubtitle: {
-    fontSize: typography.caption,
-    color: colors.white,
-    opacity: 0.8,
-  },
-  headerSpacer: {
-    width: 60,
   },
   statusBadge: {
     paddingHorizontal: spacing.sm,
