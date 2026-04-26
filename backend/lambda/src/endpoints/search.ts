@@ -214,7 +214,10 @@ class UniversalSearchHandler extends BaseHandler {
   ): Promise<HandlerResponse> {
     // ✅ SQL: Search vendors and services
     // ✅ LIVE STATUS FILTER: Only show vendors that are eligible for listing
-    // Criteria: At least 1 enabled service, has schedule, has location (lat/lng)
+    // Criteria: active+approved, has at least 1 enabled+published service, has schedule.
+    // NOTE: latitude/longitude are NOT required at the base filter — many real prod
+    // vendors are onboarded before geo is captured. Geo is applied as an extra filter
+    // only when a `lat`/`lng` query param is provided (distance-bounded search).
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
@@ -222,8 +225,6 @@ class UniversalSearchHandler extends BaseHandler {
       FROM vendors v
       WHERE v.is_active = true 
         AND v.status = 'approved'
-        AND v.latitude IS NOT NULL 
-        AND v.longitude IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
@@ -295,6 +296,7 @@ class UniversalSearchHandler extends BaseHandler {
 
     // ✅ SQL: Search services
     // ✅ LIVE STATUS FILTER: Only show services from live-eligible vendors
+    // Geo is intentionally not required here — see vendorsQuery comment above.
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
@@ -303,8 +305,6 @@ class UniversalSearchHandler extends BaseHandler {
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
-        AND v.latitude IS NOT NULL 
-        AND v.longitude IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
           WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)

@@ -48,18 +48,34 @@ export async function registerForPushNotifications(): Promise<NotificationToken 
       return null;
     }
 
-    // Get Expo push token
-    // Note: EXPO_PROJECT_ID should be set in environment variables or app.json
-    // For Expo projects, this is typically in app.json under "expo.extra.eas.projectId"
-    // For bare React Native, use process.env.EXPO_PROJECT_ID
-    // Configuration options:
-    // 1. Environment variable: EXPO_PROJECT_ID=your-project-id
-    // 2. app.json: { "expo": { "extra": { "eas": { "projectId": "your-project-id" } } } }
-    const projectId = process.env.EXPO_PROJECT_ID || 'your-project-id'; // Replace with actual project ID
-    
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: projectId,
-    });
+    // Get Expo push token. Read project id from env in this priority:
+    //   1. EXPO_PUBLIC_PROJECT_ID  (preferred, exposed to client bundles)
+    //   2. EXPO_PROJECT_ID         (legacy)
+    //   3. app.json -> expo.extra.eas.projectId via expo-constants
+    // The previous fallback `'your-project-id'` made getExpoPushTokenAsync
+    // throw at runtime, so push registration silently failed in release
+    // builds and home-screen popups never refreshed.
+    let projectId = process.env.EXPO_PUBLIC_PROJECT_ID || process.env.EXPO_PROJECT_ID;
+    if (!projectId) {
+      try {
+        const Constants = require('expo-constants').default;
+        projectId =
+          Constants?.expoConfig?.extra?.eas?.projectId ||
+          Constants?.easConfig?.projectId ||
+          undefined;
+      } catch (_) {
+        // expo-constants not available; fall through to the explicit error below.
+      }
+    }
+
+    if (!projectId) {
+      console.warn(
+        '[push] EXPO_PUBLIC_PROJECT_ID is not set and app.json has no expo.extra.eas.projectId — push notifications disabled.'
+      );
+      return null;
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
     const deviceId = Device.modelId || Device.modelName || 'unknown';
 

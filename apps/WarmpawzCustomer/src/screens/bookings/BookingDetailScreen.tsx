@@ -105,9 +105,27 @@ export function BookingDetailScreen({
       case 'cancelled_by_customer':
       case 'cancelled_by_vendor':
         return '#EF4444';
+      case 'pending_payment':
+        return '#D97706';
       default:
         return '#F59E0B';
     }
+  };
+
+  /** Customer-facing label; handles payment vs status lag like customer-web BookingDetailModal. */
+  const getBookingStatusDisplayLabel = (b: any): string => {
+    const st = String(b?.status || '');
+    const ps = String(b?.payment_status || b?.paymentStatus || '').toLowerCase();
+    if ((ps === 'paid' || ps === 'completed') && (st === 'pending_payment' || st === 'pending')) {
+      return 'Confirmed';
+    }
+    if (st === 'pending_payment') return 'Payment pending';
+    if (st === 'in_progress') return 'In Progress';
+    if (!st) return 'Unknown';
+    return st
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
   };
 
   const formatDate = (dateString: string) => {
@@ -184,10 +202,7 @@ export function BookingDetailScreen({
                 { color: getStatusColor(booking.status) },
               ]}
             >
-              {booking.status === 'in_progress'
-                ? 'In Progress'
-                : booking.status.charAt(0).toUpperCase() +
-                  booking.status.slice(1)}
+              {getBookingStatusDisplayLabel(booking)}
             </Text>
           </View>
           <Text style={styles.bookingId}>

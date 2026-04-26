@@ -192,16 +192,10 @@ export function ReferralSystemScreen({
       });
 
       if (result.action === Share.sharedAction) {
-        if (profile.customerId) {
-          try {
-            await ReferralApi.sendInvite({
-              customerId: profile.customerId,
-              message: shareMessage,
-            });
-          } catch (error) {
-            console.log('Share tracking failed:', error);
-          }
-        }
+        // /referral/invite requires an email or phone (it actually sends an
+        // invite). Generic OS-share has no recipient, so we don't call it
+        // here. If we ever add per-channel share telemetry it should go
+        // through a dedicated tracking endpoint.
         Alert.alert('Shared!', 'Your referral code has been shared');
       }
     } catch (error) {

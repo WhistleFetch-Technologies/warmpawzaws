@@ -899,6 +899,24 @@ app.onError((err, c) => {
     }
     return c.json({ success: true, suggestions: [], count: 0 }, 200, corsHeaders);
   }
+
+  // Universal /search must never hard-fail the home page. If the underlying SQL
+  // throws (schema drift, missing column, etc.) return an empty result envelope
+  // shaped like the success response so the EnhancedSearchBar shows "no results"
+  // rather than a broken UI. Match the canonical /search route only — avoid
+  // accidentally swallowing /customer/search-* (already handled above).
+  if (requestPath === '/search' || requestPath.endsWith('/search')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED /search - Returning 200 empty');
+    }
+    let qParam = '';
+    try { qParam = (c.req as any).query('q') || ''; } catch (_) { qParam = ''; }
+    return c.json(
+      { query: qParam, vendors: [], services: [], total: 0, searchMethod: 'sql-fallback' },
+      200,
+      corsHeaders
+    );
+  }
   
   // Check for customer orders/meals/active - return empty on error (non-critical)
   if (requestPath.includes('orders/meals/active')) {

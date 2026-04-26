@@ -61,6 +61,12 @@ const CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL = `
         LEFT JOIN pets p ON b.pet_id = p.id
         WHERE gts.customer_id = $1
           AND gts.status IN ('in_transit', 'arrived')
+          -- Drop GPS rows whose booking is already finished. Some completion paths
+          -- (e.g. vendor-booking-actions OTP completion) don't currently call
+          -- completeTracking, so the session can stay 'in_transit'/'arrived' even
+          -- after the booking is done. Filtering here makes the "Vendor on the way"
+          -- card disappear regardless of which completion path was used.
+          AND b.status NOT IN ('completed', 'cancelled', 'no_show')
         ORDER BY gts.started_at DESC
       `;
 
