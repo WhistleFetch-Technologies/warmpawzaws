@@ -6,6 +6,7 @@ import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -33,7 +34,7 @@ function PetBoardingVendorsInner() {
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
     const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';

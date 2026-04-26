@@ -5,25 +5,9 @@ import { serviceScreenMap as sharedServiceScreenMap } from '@warmpawz/service-la
 export const serviceScreenMap = sharedServiceScreenMap;
 
 
-/**
- * Subtitle for the default Premium Pet Food hero slide. Used when merging API banners so the same
- * shop promo from the CMS is treated as coming-soon without removing mapping logic.
- */
-export const PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE = '20% OFF on First Order';
-
 export const defaultBanners = [
     {
-        id: 'default-1',
-        title: "Get 50% OFF",
-        subtitle: "First Grooming Session",
-        gradientFrom: "#FF8C42",
-        gradientTo: "#FF6B35",
-        Icon: Scissors,
-        ctaText: "Claim Now",
-        ctaLink: "grooming"
-    },
-    {
-        id: 'default-2',
+        id: 'default-vet-checkup',
         title: "Free Health Checkup",
         subtitle: "Book Vet Appointment Today",
         gradientFrom: "#4CAF50",
@@ -32,21 +16,6 @@ export const defaultBanners = [
         ctaText: "Book Now",
         ctaLink: "vet"
     },
-    {
-        id: 'default-3',
-        title: "Premium Pet Food",
-        subtitle: PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE,
-        gradientFrom: "#FF6B9D",
-        gradientTo: "#C44569",
-        Icon: Bone,
-        ctaText: "Shop Now",
-        ctaLink: "shop",
-        /**
-         * Hero-only: when true, show SOON badge and skip CTA navigation + /banners/:id/click.
-         * Set to false (or remove) to re-enable this slide in one edit.
-         */
-        comingSoon: true,
-    }
 ];
 
 

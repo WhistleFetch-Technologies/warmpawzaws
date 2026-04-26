@@ -20,6 +20,8 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
+const MEAL_PLANS_COMING_SOON = true;
+
 interface NutritionistServiceScreenProps {
   phone: string;
   onBack: () => void;
@@ -143,34 +145,30 @@ export function NutritionistServiceScreen({
               <Text style={styles.serviceTypeTitle}>Consultation</Text>
               <Text style={styles.serviceTypeDescription}>Book a nutrition consultation</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.serviceTypeCard}
-              onPress={() => {
-                if (onNavigate) {
-                  // Check if we have nutritionists, if yes go to ordering, if no go to orders list
-                  if (nutritionists.length > 0) {
-                    onNavigate('MealPlanOrderScreen', { 
-                      vendorId: nutritionists[0].id || nutritionists[0].vendorId 
-                    });
-                  } else {
-                    // Show option to view orders or order new
-                    Alert.alert(
-                      'Meal Plans',
-                      'Would you like to order a new meal plan or view your existing orders?',
-                      [
-                        { text: 'View Orders', onPress: () => onNavigate('MealPlanOrders') },
-                        { text: 'Order New', onPress: () => onNavigate('ServiceDiscovery') },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]
-                    );
-                  }
-                }
-              }}
+            <View
+              style={[
+                styles.serviceTypeCard,
+                MEAL_PLANS_COMING_SOON && styles.serviceTypeCardDisabled,
+              ]}
+              accessibilityState={{ disabled: true }}
             >
-              <Icon name="food" size={32} color={colors.primary} />
+              {MEAL_PLANS_COMING_SOON && (
+                <View style={styles.comingSoonChip}>
+                  <Text style={styles.comingSoonChipText}>SOON</Text>
+                </View>
+              )}
+              <Icon
+                name="food"
+                size={32}
+                color={MEAL_PLANS_COMING_SOON ? colors.textSecondary : colors.primary}
+              />
               <Text style={styles.serviceTypeTitle}>Meal Plans</Text>
-              <Text style={styles.serviceTypeDescription}>Order custom meal plans</Text>
-            </TouchableOpacity>
+              <Text style={styles.serviceTypeDescription}>
+                {MEAL_PLANS_COMING_SOON
+                  ? 'Coming soon — monthly meal subscriptions'
+                  : 'Order custom meal plans'}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -517,12 +515,31 @@ const styles = StyleSheet.create({
   },
   serviceTypeCard: {
     flex: 1,
+    position: 'relative',
     backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: colors.border,
+  },
+  serviceTypeCardDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  comingSoonChip: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  comingSoonChipText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
   },
   serviceTypeTitle: {
     fontSize: typography.fontSizes.md,

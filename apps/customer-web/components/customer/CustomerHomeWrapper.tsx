@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { useCart } from '../../context/CartContext';
@@ -234,7 +235,8 @@ type ScreenType =
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
-  
+  const router = useRouter();
+
   // ✅ NAVIGATION HISTORY STACK - Fixes back/forward navigation issues
   const [navigationHistory, setNavigationHistory] = useState<ScreenType[]>([initialScreen || 'home']);
   const currentScreen = navigationHistory[navigationHistory.length - 1];
@@ -397,7 +399,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       navigateToScreen('home');
     }
   };
-  
+
+  const handleSupportHelpChatbotNavigate = (dest: string, data?: any) => {
+    const d = (dest || '').trim();
+    if (!d) return;
+    if (d.startsWith('/')) {
+      router.push(d);
+      return;
+    }
+    handleNavigateToService(d, data);
+  };
+
   const handleVetNavigate = (screen: string, data?: any) => {
     setVetServiceData(data);
     if (screen === 'vet-booking') navigateToScreen('vet-booking');
@@ -987,7 +999,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }
 
   // Emergency Booking
-  if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
+  if (currentScreen === 'support_help')
+    return (
+      <SupportHelpCenter
+        phone={phone}
+        onBack={handleBack}
+        onChatbotNavigate={handleSupportHelpChatbotNavigate}
+      />
+    );
 
   if (currentScreen === 'emergency-booking') return <EmergencyBookingPage
     customerPhone={phone}
