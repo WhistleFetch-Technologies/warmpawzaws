@@ -78,7 +78,7 @@ export function StandardizedHeader({
   const topRowMb = hasPetsRow ? 'mb-2' : 'mb-0';
 
   return (
-    <div className="relative z-20 isolate mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-2 sm:pb-3 pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
+    <div className="relative z-20 isolate mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-2 sm:pb-3 pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
       {/* Top Row - Match footer height: compact py-3, same width */}
       <div className={`flex items-center justify-between min-h-0 ${topRowMb}`}>
         <div className="flex min-w-0 flex-1 items-center gap-2">

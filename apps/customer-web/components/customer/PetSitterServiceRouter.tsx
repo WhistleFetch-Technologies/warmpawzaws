@@ -254,12 +254,13 @@ export function PetSitterServiceRouter({
         onBack={onBack}
         showBackButton
         headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-white"
       />
       <div
         ref={scrollRootRef}
-        className="relative z-[12] min-h-0 flex-1 touch-pan-y overflow-y-auto bg-white"
+        className="relative z-[12] -mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]"
       >
-        <div className="bg-white px-4 pt-4">
+        <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
             <PromotionBanner
               service="sitting"

@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, RewardsApi } from '../../services/api';
 
@@ -307,15 +308,22 @@ export function RewardsLoyaltyScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Rewards & Loyalty</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Rewards & Loyalty"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={onBack}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Rewards & Loyalty
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
+      }
+    >
       {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
@@ -709,7 +717,7 @@ export function RewardsLoyaltyScreen({
           </View>
         </View>
       </Modal>
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -718,14 +726,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
+  orangeHeaderInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    width: '100%',
+    paddingBottom: spacing.sm,
   },
   backButton: {
     fontSize: typography.fontSizes.md,

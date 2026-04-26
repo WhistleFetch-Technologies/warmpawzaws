@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
@@ -175,42 +176,34 @@ export function CustomerProfileScreen({
 
   if (!profile) {
     return (
-      <ScreenShell style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Profile</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Profile" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load profile</Text>
         </View>
-      </ScreenShell>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={editMode ? handleCancel : onBack}>
-          <Text style={styles.backButton}>
-            {editMode ? 'Cancel' : '← Back'}
-          </Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        {!editMode ? (
+    <OrangeBrandedScreenLayout
+      title="Profile"
+      onBack={editMode ? handleCancel : onBack}
+      backLabel={editMode ? 'Cancel' : '← Back'}
+      bodyBackgroundColor={colors.white}
+      headerRight={
+        !editMode ? (
           <TouchableOpacity onPress={() => setEditMode(true)}>
-            <Text style={styles.editButton}>Edit</Text>
+            <Text style={styles.headerActionText}>Edit</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={handleSave} disabled={saving}>
-            <Text style={[styles.saveButton, saving && styles.saveButtonDisabled]}>
+            <Text style={[styles.headerActionText, saving && styles.saveButtonDisabled]}>
               {saving ? 'Saving...' : 'Save'}
             </Text>
           </TouchableOpacity>
-        )}
-      </View>
-
+        )
+      }
+    >
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {/* Photo Section */}
         <View style={styles.photoSection}>
@@ -424,7 +417,7 @@ export function CustomerProfileScreen({
           </View>
         )}
       </ScrollView>
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -433,32 +426,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
-    textAlign: 'center',
-  },
-  editButton: {
-    fontSize: typography.body,
-    color: colors.white,
-    fontWeight: '600',
-  },
-  saveButton: {
+  headerActionText: {
     fontSize: typography.body,
     color: colors.white,
     fontWeight: '600',

@@ -70,6 +70,12 @@ export const borderRadius = {
   full: 9999,
 };
 
+/**
+ * Large top radii on the body sheet over the orange header — shared with `CustomerHomeScreen`
+ * and `OrangeBrandedScreenLayout` for visual parity (28–36 logical px; use 32).
+ */
+export const BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS = 32;
+
 export const typography = {
   fontSizes: {
     xs: 12,

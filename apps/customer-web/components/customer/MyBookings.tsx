@@ -496,9 +496,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        bottomEdge="sheet"
+        sheetToneClass="bg-gray-50"
       />
-      
-      <div className="max-w-customer mx-auto">
+
+      <div className="-mt-1 max-w-customer mx-auto">
         {/* Meal Plan Orders; navigation gated by MEAL_PLAN_ORDERS_ENABLED (mirrors booking/MyBookings.tsx) */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button

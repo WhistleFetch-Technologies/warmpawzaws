@@ -209,9 +209,10 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-gray-50"
       />
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto -mt-4 px-4 pt-6 pb-6">
         {/* Filters */}
         <div className="mb-6 space-y-4">
           <div className="flex flex-wrap gap-3">

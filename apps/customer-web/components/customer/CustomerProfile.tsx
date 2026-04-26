@@ -76,9 +76,11 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
         ]}
         onBack={onBack}
         showBackButton
+        bottomEdge="sheet"
+        sheetToneClass="bg-gray-50"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-8">
+      <div className="-mt-1 max-w-customer mx-auto px-4 pt-4 pb-8">
         {/* Personal Information - design system card */}
         <div className="card rounded-2xl p-5 border border-gray-100 mb-4">
           <div className="flex items-center gap-4 mb-4">

@@ -21,9 +21,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import {
+  colors,
+  spacing,
+  borderRadius,
+  typography,
+  BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+} from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { CustomerMessagesModal } from '../chat/CustomerMessagesModal';
+import { useScreenTopInset } from '../../components/layout/ScreenShell';
 
 const { width } = Dimensions.get('window');
 
@@ -135,6 +142,7 @@ export function CustomerHomeScreen({
 
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const screenTopInset = useScreenTopInset();
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 60;
 
   const fabStorageKey = useMemo(
@@ -331,7 +339,7 @@ export function CustomerHomeScreen({
     />
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Section */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: screenTopInset + spacing.lg }]}>
         <View style={styles.headerTop}>
           <TouchableOpacity
             onPress={onProfileClick}
@@ -419,6 +427,7 @@ export function CustomerHomeScreen({
         )}
       </View>
 
+      <View style={styles.homeBodySheet}>
       {/* Pet Dashboard */}
       {selectedPet && (
         <View style={styles.dashboardContainer}>
@@ -550,6 +559,7 @@ export function CustomerHomeScreen({
           ))}
         </View>
       </View>
+      </View>
     </ScrollView>
     <View
       style={[
@@ -605,9 +615,15 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: colors.primary,
-    paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
+  },
+  homeBodySheet: {
+    backgroundColor: colors.backgroundSecondary,
+    borderTopLeftRadius: BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+    borderTopRightRadius: BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+    overflow: 'hidden',
+    paddingTop: spacing.sm,
   },
   headerTop: {
     flexDirection: 'row',

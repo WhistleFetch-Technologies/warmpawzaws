@@ -1,7 +1,7 @@
 'use client';
 
 import { User, type LucideIcon } from 'lucide-react';
-import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { ServiceDashboardHeader, type ServiceDashboardHeaderProps } from './ServiceDashboardHeader';
 
 export interface ProfileAccountScreenHeaderProps {
   /** Left: close profile flow and go to app home */
@@ -13,6 +13,8 @@ export interface ProfileAccountScreenHeaderProps {
   /** Optional icon tile; defaults to User */
   icon?: LucideIcon;
   className?: string;
+  bottomEdge?: ServiceDashboardHeaderProps['bottomEdge'];
+  sheetToneClass?: string;
 }
 
 /**
@@ -26,6 +28,8 @@ export function ProfileAccountScreenHeader({
   subtitle,
   icon: Icon = User,
   className = '',
+  bottomEdge = 'sheet',
+  sheetToneClass = 'bg-gray-50',
 }: ProfileAccountScreenHeaderProps) {
   return (
     <ServiceDashboardHeader
@@ -38,6 +42,8 @@ export function ProfileAccountScreenHeader({
       onCloseToHome={onCloseToHome}
       onBack={onBack}
       showBackButton={Boolean(onBack)}
+      bottomEdge={bottomEdge}
+      sheetToneClass={sheetToneClass}
     />
   );
 }

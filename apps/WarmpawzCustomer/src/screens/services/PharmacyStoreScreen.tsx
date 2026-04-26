@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -265,7 +266,8 @@ export function PharmacyStoreScreen({
         <Text style={styles.subtitle}>Medicines & health products</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{stats.activePharmacies}+</Text>
@@ -308,6 +310,7 @@ export function PharmacyStoreScreen({
           <Text style={styles.primaryButtonText}>Browse Products</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -469,6 +472,7 @@ export function PharmacyStoreScreen({
           <Text style={styles.headerTitle}>{selectedProduct.name}</Text>
         </View>
 
+        <BrandedStackBelowHeader>
         <ScrollView style={styles.productDetailContainer}>
           <Image
             source={{ uri: selectedProduct.image }}
@@ -526,6 +530,7 @@ export function PharmacyStoreScreen({
             </TouchableOpacity>
           </View>
         </ScrollView>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -539,6 +544,7 @@ export function PharmacyStoreScreen({
         <Text style={styles.headerTitle}>Shopping Cart</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cartContainer}>
         {cart.length === 0 ? (
           <View style={styles.emptyCart}>
@@ -607,6 +613,7 @@ export function PharmacyStoreScreen({
           </>
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -619,6 +626,7 @@ export function PharmacyStoreScreen({
         <Text style={styles.headerTitle}>Checkout</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.checkoutContainer}>
         <View style={styles.checkoutSection}>
           <Text style={styles.checkoutSectionTitle}>Order Summary</Text>
@@ -646,6 +654,7 @@ export function PharmacyStoreScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -700,8 +709,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -725,8 +736,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   statsContainer: {
     flexDirection: 'row',
