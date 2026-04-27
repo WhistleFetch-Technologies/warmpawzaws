@@ -1418,9 +1418,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Fetch only matching services (style + category; published/auto_published)
       const fetchServices = async (vendorId: string, _vendorRoleName?: string | null) => {
         /**
-         * Main vendor SQL already restricted rows to sitting (category/role). Do not require the same
-         * match again here — vendors with legacy/custom `roles.name` values were passing the EXISTS
-         * clause via `vs.category` but then dropped here with zero services (customer sees no sitters).
+         * Pet Sitting uses relaxed calendar rules but must still filter **services** by sitting-relevant
+         * categories (same as vendor EXISTS). Previously `sitterRoleBypass` skipped all category SQL and
+         * returned every at_home row for sitters (dog walk / vet / custom boarding leaked into the hub).
          */
         const sitterRoleBypass = sittingDiscoveryRelaxed;
 
@@ -1458,6 +1458,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
         `
             : '';
+        const sittingRelaxedFetchCategorySql =
+          sitterRoleBypass && sittingDiscoveryRelaxed && (catTextExact.length + catUUIDs.length > 0)
+            ? `
+            AND (
+              ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
+              ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
+              ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
+              OR (
+                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+                AND COALESCE(vs.is_custom_service, false) = false
+              )
+            )
+            ${sittingExcludeNonSittingSql}`
+            : '';
         const styleMatchSql =
           sitterRoleBypass && !isAtCenter
             ? `(vs.service_style = ANY($2::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
@@ -1484,13 +1498,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE vs.vendor_id = $1
              AND ${styleMatchSql}
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
-            ${categoryFilterSql}
+            ${categoryFilterSql}${sittingRelaxedFetchCategorySql}
              AND ${vsDiscoverSql}
           ORDER BY vs.price ASC
         `;
         const params =
           sitterRoleBypass
-            ? [vendorId, acceptableStyles]
+            ? sittingRelaxedFetchCategorySql
+              ? catTextExact.length > 0
+                ? catUUIDs.length > 0
+                  ? [vendorId, acceptableStyles, catTextExact, catTextLike, catUUIDs]
+                  : [vendorId, acceptableStyles, catTextExact, catTextLike]
+                : [vendorId, acceptableStyles, [], [], catUUIDs]
+              : [vendorId, acceptableStyles]
             : (catTextExact.length + catUUIDs.length > 0)
               ? (catTextExact.length > 0
                 ? (catUUIDs.length > 0
@@ -1611,14 +1631,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
-       * Service catalog seeds pet-sitting rows with category `boarding` (not `sitting`).
-       * Style is already restricted to at_home above, so boarding+at_home ≈ sitting catalog — without this,
-       * dev/prod sitters using default catalog rows vanish from Pet Sitting discovery.
+       * Catalog historically used `boarding` for some at_home sitting products. Only treat **non-custom**
+       * `boarding` rows as sitting — custom services tagged Boarding belong in the Boarding hub, not Pet Sitting.
        */
-      const sittingCatalogCategoryOr =
+      const sittingCatalogBoardingNonCustomOr =
         sittingDiscoveryRelaxed
-          ? `OR LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'`
+          ? `OR (
+                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+                AND COALESCE(vs.is_custom_service, false) = false
+              )`
           : '';
+
+      /** Pet Sitting hub: never surface walker / vet / grooming / custom-boarding rows even if vendor is a sitter. */
+      const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
+        ? `
+              AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+        : '';
 
       const boardingRoleUncategorizedOr =
         !sittingDiscoveryRelaxed && boardingDiscoverySearch
@@ -1642,9 +1680,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                OR LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-                ${sittingCatalogCategoryOr}
-              )`
+                ${sittingCatalogBoardingNonCustomOr}
+              )
+              ${sittingExcludeNonSittingSql}`
             : `
               AND (
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
@@ -3281,20 +3319,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
+          /** Align with discover-services: catalog-only legacy `boarding` at_home counts as sitting; never all at_home rows for sitters. */
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR (
-              (vs.service_style = 'at_home' OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')
-              AND EXISTS (
-                SELECT 1 FROM vendors v_sit
-                LEFT JOIN roles r_sit ON v_sit.role_id = r_sit.id
-                WHERE v_sit.id = vs.vendor_id
-                  AND (
-                    LOWER(REPLACE(TRIM(COALESCE(r_sit.display_name, r_sit.name, '')), ' ', '_')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-                    OR (LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) LIKE '%sitter%' AND LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) NOT LIKE '%babysitter%')
-                    OR (r_sit.id IS NULL AND LOWER(COALESCE(v_sit.vendor_type, '')) LIKE '%sitter%')
-                  )
-              )
+              LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+              AND COALESCE(vs.is_custom_service, false) = false
+            )
+          )
+          AND NOT (
+            LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+              'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+              'vet','veterinary','veterinarian','vet care','vet_care',
+              'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+            ]::text[])
+            OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+              AND COALESCE(vs.is_custom_service, false) = true
             )
           )`;
         } else if (walkerBookingCategoryRequest) {
