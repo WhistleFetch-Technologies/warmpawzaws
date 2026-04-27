@@ -1400,6 +1400,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             )`
           : '';
 
+      /**
+       * Boarding discovery: custom rows may store the hub only in `vendor_services.category_id` (text `vs.category` empty).
+       * Text filters alone miss those rows — especially for pet_sitter / multi-role vendors offering at_center boarding.
+       */
+      const hasVsCategoryIdDiscover = await columnExists('vendor_services', 'category_id');
+      let boardingCustomCategoryIdOrSql = '';
+      if (boardingDiscoverySearch && hasVsCategoryIdDiscover) {
+        const slugRes = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['boarding', 'pet_boarding', 'pet boarding']]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        const ids = (slugRes.rows || []).map((r: any) => r?.id).filter(Boolean);
+        const UUID_RE =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const clean = ids.filter((id: string) => UUID_RE.test(String(id).trim()));
+        if (clean.length > 0) {
+          const uuidList = clean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+          boardingCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidList}]::uuid[])
+                )`;
+        }
+      }
+
       // 3) Helpers
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
@@ -1455,6 +1486,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSql}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
+            ${boardingCustomCategoryIdOrSql}
           )
         `
             : '';
@@ -1692,6 +1724,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
+                ${boardingCustomCategoryIdOrSql}
               )`
           : '';
 
@@ -3316,6 +3349,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'walking' ||
           catLower === 'dog_walker' ||
           catLower === 'pet_walker';
+        const boardingBookingCategoryRequest =
+          catLower === 'boarding' || catLower === 'pet_boarding';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -3356,6 +3391,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
               )
             )
+          )`;
+        } else if (boardingBookingCategoryRequest) {
+          let boardingCatIdOr = '';
+          const hasVsCatColBooking = await columnExists('vendor_services', 'category_id');
+          if (hasVsCatColBooking) {
+            const brSlug = await query(
+              `SELECT id::text FROM service_categories
+               WHERE COALESCE(is_active, true) = true
+                 AND (
+                   LOWER(TRIM(category_id)) = ANY($1::text[])
+                   OR LOWER(TRIM(name)) = ANY($1::text[])
+                 )`,
+              [['boarding', 'pet_boarding', 'pet boarding']]
+            ).catch(() => ({ rows: [] as { id: string }[] }));
+            const bids = (brSlug.rows || []).map((r: any) => r?.id).filter(Boolean);
+            const UUID_RE_B =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+            const bclean = bids.filter((id: string) => UUID_RE_B.test(String(id).trim()));
+            if (bclean.length > 0) {
+              const uuidListB = bclean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+              boardingCatIdOr = `
+            OR (
+              COALESCE(vs.is_custom_service, false) = true
+              AND vs.category_id IS NOT NULL
+              AND vs.category_id = ANY(ARRAY[${uuidListB}]::uuid[])
+            )`;
+            }
+          }
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            ${boardingCatIdOr}
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
@@ -5070,6 +5136,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
       );
 
+      const boardingDiscoverySearchByStyle =
+        catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
+        (roleId &&
+          ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+
       // Strict catalogue category IDs from the `category` query param only (not roleId) — custom services must match.
       const categoryOnlyKeys: string[] = [];
       if (category) categoryOnlyKeys.push(String(category));
@@ -5102,6 +5173,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               const clean = strictCategoryIds.filter((id) => UUID_RE.test(String(id).trim()));
               if (clean.length === 0) return '';
               const arr = `ARRAY[${clean.map((id) => `'${String(id).trim()}'::uuid`).join(',')}]::uuid[]`;
+              if (boardingDiscoverySearchByStyle) {
+                return ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND (
+        (vs.category_id IS NOT NULL AND vs.category_id = ANY(${arr}))
+        OR LOWER(TRIM(COALESCE(vs.category, ''))) IN ('boarding', 'pet_boarding', 'pet boarding')
+      )
+    )
+  )`;
+              }
               return ` AND (
     COALESCE(vs.is_custom_service, false) = false
     OR (
@@ -5111,12 +5194,41 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     )
   )`;
             })()
-          : '';
+          : boardingDiscoverySearchByStyle && hasVsCategoryIdCol
+            ? ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND LOWER(TRIM(COALESCE(vs.category, ''))) IN ('boarding', 'pet_boarding', 'pet boarding')
+    )
+  )`
+            : '';
 
-      const boardingDiscoverySearchByStyle =
-        catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
-        (roleId &&
-          ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+      let boardingCustomCategoryIdOrByStyleSql = '';
+      if (boardingDiscoverySearchByStyle && hasVsCategoryIdCol) {
+        const slugResByStyle = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['boarding', 'pet_boarding', 'pet boarding']]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        const idB = (slugResByStyle.rows || []).map((r: any) => r?.id).filter(Boolean);
+        const UUID_RE_BS =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const cleanB = idB.filter((id: string) => UUID_RE_BS.test(String(id).trim()));
+        if (cleanB.length > 0) {
+          const uuidListBs = cleanB.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+          boardingCustomCategoryIdOrByStyleSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidListBs}]::uuid[])
+                )`;
+        }
+      }
 
       const nutritionDiscoverySearchByStyle =
         catTextExact.some(
@@ -5209,6 +5321,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSqlByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
+            ${boardingCustomCategoryIdOrByStyleSql}
           )
         ` : '';
         const sql = `
@@ -5385,6 +5498,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
+                ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
           )
