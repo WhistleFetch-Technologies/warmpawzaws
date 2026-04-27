@@ -68,6 +68,75 @@ function safeParseOperatingHours(raw: any): Record<string, any> | null {
   }
 }
 
+/** Parse vendor_services.metadata (JSONB or string) for customer listings. */
+function parseVendorServiceMetadataForCustomer(vsMetadata: unknown): Record<string, any> {
+  if (!vsMetadata) return {};
+  if (typeof vsMetadata === 'object' && !Array.isArray(vsMetadata)) {
+    return vsMetadata as Record<string, any>;
+  }
+  if (typeof vsMetadata === 'string') {
+    try {
+      const p = JSON.parse(vsMetadata);
+      return typeof p === 'object' && p !== null && !Array.isArray(p) ? (p as Record<string, any>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/**
+ * Custom vendor packages store flags under metadata.isPackage and sessions under metadata.packageDetails.
+ * Aligns customer API with vendor dashboard shape (business + solo).
+ */
+function vendorServicePackagePresentationForCustomer(
+  metadata: Record<string, any>,
+  durationFallback: number
+): { isPackage: boolean; packageDetails: Record<string, any> | undefined } {
+  const pdRaw = metadata?.packageDetails;
+  const pkg =
+    pdRaw && typeof pdRaw === 'object' && !Array.isArray(pdRaw) ? ({ ...pdRaw } as Record<string, any>) : {};
+  const pkgSessions = pkg.totalSessions ?? pkg.total_sessions;
+  const legacySessions = metadata?.totalSessions ?? metadata?.total_sessions;
+  const totalSessionsNum = Number(pkgSessions ?? legacySessions);
+  const hasSessionBundle = Number.isFinite(totalSessionsNum) && totalSessionsNum > 0;
+  const isPackage =
+    Boolean(metadata?.isPackage) ||
+    metadata?.type === 'package' ||
+    metadata?.packageType === 'session' ||
+    hasSessionBundle;
+
+  if (!isPackage) return { isPackage: false, packageDetails: undefined };
+
+  const validityDays =
+    pkg.validityDays ??
+    pkg.validity_days ??
+    metadata?.validityDays ??
+    metadata?.validity_days ??
+    pkg.packageDuration;
+  const sessionDuration =
+    Number(
+      pkg.sessionDuration ??
+        pkg.session_duration ??
+        metadata?.sessionDuration ??
+        durationFallback
+    ) || durationFallback;
+  const priceNum = Number(pkg.price ?? pkg.packagePrice ?? metadata?.price);
+  const packageDetails: Record<string, any> = {
+    ...pkg,
+    totalSessions:
+      Number.isFinite(totalSessionsNum) && totalSessionsNum > 0
+        ? totalSessionsNum
+        : pkg.totalSessions ?? pkg.total_sessions,
+    validityDays: validityDays ?? undefined,
+    sessionDuration,
+  };
+  if (Number.isFinite(priceNum) && !Number.isNaN(priceNum)) {
+    packageDetails.price = priceNum;
+  }
+  return { isPackage: true, packageDetails };
+}
+
 /**
  * SQL predicate: vendor row is eligible for customer-facing discovery.
  * Case-insensitive status; solo providers may remain `pending` until fully approved.
@@ -704,6 +773,45 @@ function deduplicateServices(services: any[]): any[] {
   return Array.from(seen.values());
 }
 
+/**
+ * Enrich vendor_services rows for customer discovery lists (by-style, discover-services)
+ * with the same isPackage / packageDetails semantics as GET /customer/vendor/:id/services.
+ */
+function mapVendorServiceRowForCustomerDiscoveryList(s: any): any {
+  const rawPrice =
+    s.custom_price != null && s.custom_price !== ''
+      ? parseFloat(String(s.custom_price))
+      : parseFloat(String(s.price ?? 0));
+  const duration = Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 30) || 30;
+  const metadata = parseVendorServiceMetadataForCustomer(s.vs_metadata);
+  const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(metadata, duration);
+  let price = Number.isFinite(rawPrice) ? rawPrice : 0;
+  if (isPackage && packageDetails) {
+    const pkgPrice = Number(packageDetails.price);
+    if (Number.isFinite(pkgPrice) && pkgPrice >= 0 && (!Number.isFinite(price) || price <= 0)) {
+      price = pkgPrice;
+    }
+  }
+  return {
+    id: s.id,
+    serviceId: s.service_id,
+    name: s.service_name,
+    serviceName: s.service_name,
+    price,
+    duration,
+    description: cleanDescription(s.description),
+    category: s.category_name,
+    categoryName: s.category_name,
+    serviceStyle: s.service_style || null,
+    service_style: s.service_style || null,
+    metadata,
+    isPackage,
+    packageDetails: isPackage ? packageDetails : undefined,
+    publishStatus: s.publish_status,
+    isEnabled: s.is_enabled !== false && s.is_enabled !== 'f' && s.is_enabled !== 'false',
+  };
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -1238,14 +1346,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       /** Solo sitters often lack vendor_availability_v2 rows; still show them if they have published at_home services. */
-      const sittingDiscoveryRelaxed =
+      const sittingDiscoveryRelaxed = Boolean(
         catTextExact.some((c) =>
           ['sitting', 'pet_sitter', 'sitter', 'sitter_solo'].includes(c)
         ) ||
-        (roleId &&
-          ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
-            String(roleId).toLowerCase().replace(/-/g, '_')
-          ));
+          (Boolean(roleId) &&
+            ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
+              String(roleId).toLowerCase().replace(/-/g, '_')
+            ))
+      );
 
       /** Pet boarding list uses category=boarding / roleId=pet_boarding; some centers have at_center rows with empty vs.category */
       const boardingDiscoverySearch =
@@ -1356,6 +1465,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const vsDiscoverSql = sqlVendorServiceDiscoverable('vs', sitterRoleBypass);
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
+                 vs.custom_price,
+                 vs.metadata AS vs_metadata,
+                 vs.service_style,
+                 vs.publish_status,
+                 vs.is_enabled,
                  COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                  COALESCE(
                    vs.custom_description,
@@ -1386,15 +1500,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               : [vendorId, acceptableStyles];
         const res = await query(sql, params).catch(() => ({ rows: [] }));
 
-        return deduplicateServices(res.rows.map((s: any) => ({
-          id: s.id,
-          serviceId: s.service_id,
-          name: s.service_name,
-          price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
-          description: cleanDescription(s.description),
-          category: s.category_name,
-        })));
+        return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
 
       // Enrichment
@@ -3235,16 +3341,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const shortDescription = description.length > 200 ? description.slice(0, 200) + '…' : description;
         const rawSpec = row.catalog_specialization_ids;
         const specializationIds = Array.isArray(rawSpec) ? rawSpec : (rawSpec != null ? [].concat(rawSpec) : []);
-        let metadata: any = {};
-        try {
-          metadata = typeof row.vs_metadata === 'string' ? (row.vs_metadata ? JSON.parse(row.vs_metadata) : {}) : (row.vs_metadata || {});
-        } catch (_) { }
-        const isPackage = !!metadata?.isPackage || metadata?.type === 'package';
-        const packageDetails = isPackage && (metadata?.totalSessions != null || metadata?.validityDays != null) ? {
-          totalSessions: metadata.totalSessions ?? null,
-          validityDays: metadata.validityDays ?? null,
-          sessionDuration: metadata.sessionDuration ?? duration,
-        } : undefined;
+        const metadata = parseVendorServiceMetadataForCustomer(row.vs_metadata);
+        const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(metadata, duration);
         const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
         const couponEligible = metadata?.couponEligible !== false;
         const inActivePackage = includedVendorServiceIds.has(row.id) || includedLegacyServiceIds.has(row.service_id);
@@ -3268,6 +3366,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
+          metadata,
           isPackage,
           packageDetails,
           taxCategoryId,
@@ -3281,27 +3380,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       });
 
-      let services = formattedServices.filter((s: any) => !s.isPackage);
-      const packages = formattedServices.filter((s: any) => s.isPackage);
+      let combined = formattedServices;
       const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
-      // ✅ FIX: Filter services by serviceStyle if provided - ensure only matching services are returned
-      // This is a critical filter to ensure SQL query results match the requested serviceStyle
+      // ✅ Filter by serviceStyle on the full list (packages + one-offs) so custom packages are not dropped.
       if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
 
-        console.log(`[Vendor Services] Before filter: ${services.length} services`);
+        console.log(`[Vendor Services] Before filter: ${combined.length} rows`);
         console.log(`[Vendor Services] Filtering by serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
 
-        // Log all service styles before filtering
-        const serviceStylesBefore = services.map((s: any) => ({
+        const serviceStylesBefore = combined.map((s: any) => ({
           id: s.id,
           name: s.name,
           style: s.serviceStyle || s.service_style
         }));
         console.log(`[Vendor Services] Service styles before filter:`, serviceStylesBefore);
 
-        services = services.filter((s: any) => {
+        combined = combined.filter((s: any) => {
           const style = s.serviceStyle || s.service_style;
           const matches = acceptableStyles.includes(style);
           if (!matches) {
@@ -3310,8 +3406,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           return matches;
         });
 
-        console.log(`[Vendor Services] After filter: ${services.length} services`);
-        const serviceStylesAfter = services.map((s: any) => ({
+        console.log(`[Vendor Services] After filter: ${combined.length} rows`);
+        const serviceStylesAfter = combined.map((s: any) => ({
           id: s.id,
           name: s.name,
           style: s.serviceStyle || s.service_style
@@ -3319,11 +3415,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[Vendor Services] Service styles after filter:`, serviceStylesAfter);
       }
 
+      const packages = combined.filter((s: any) => s.isPackage);
+      const services = combined;
+
       return c.json({
         success: true,
         services,
         packages,
-        count: services.length + packages.length,
+        count: combined.length,
         hasActivePackage: hasActivePackageForVendor,
       });
 
@@ -4811,21 +4910,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const servicesResult = await query(servicesQuery, params);
 
-      const services = servicesResult.rows.map(s => {
-        const meta = typeof s.package_details === 'string' ? (s.package_details ? JSON.parse(s.package_details) : {}) : (s.package_details || {});
-        const isPackage = !!(meta?.isPackage || meta?.type === 'package');
+      const services = servicesResult.rows.map((s) => {
+        const meta = parseVendorServiceMetadataForCustomer(s.package_details);
+        const dur = s.duration || 30;
+        const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(meta, dur);
         return {
           id: s.id,
           serviceId: s.service_id,
           serviceName: s.service_name || s.base_service_name,
           description: cleanDescription(s.description) || cleanDescription(s.base_description) || '',
           price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
+          duration: dur,
           serviceStyle: s.service_style,
           categoryName: s.category_name || s.category,
           subCategoryName: s.sub_category_name || s.sub_category,
+          metadata: meta,
           isPackage,
-          packageDetails: isPackage && (meta?.totalSessions != null || meta?.validityDays != null) ? { totalSessions: meta.totalSessions, validityDays: meta.validityDays, sessionDuration: meta.sessionDuration } : meta,
+          packageDetails: isPackage ? packageDetails : undefined,
           isEnabled: s.is_enabled,
           publishStatus: s.publish_status,
         };
@@ -5071,6 +5172,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ` : '';
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
+                  vs.custom_price,
+                  vs.metadata AS vs_metadata,
+                  vs.service_style,
+                  vs.publish_status,
+                  vs.is_enabled,
                   COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                   COALESCE(
                     vs.custom_description,
@@ -5100,15 +5206,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : [vendorId, acceptableStyles];
         const res = await query(sql, params).catch(() => ({ rows: [] }));
 
-        return deduplicateServices(res.rows.map((s: any) => ({
-          id: s.id,
-          serviceId: s.service_id,
-          name: s.service_name,
-          price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
-          description: cleanDescription(s.description),
-          category: s.category_name,
-        })));
+        return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
 
       /**

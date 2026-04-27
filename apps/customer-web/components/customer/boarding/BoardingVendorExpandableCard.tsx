@@ -241,7 +241,7 @@ export function BoardingVendorExpandableCard({
                             </Badge>
                           )}
                           <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                            {planBadgeLabel}
+                            {plan.categoryLabel?.trim() || planBadgeLabel}
                           </Badge>
                         </div>
                       </div>
