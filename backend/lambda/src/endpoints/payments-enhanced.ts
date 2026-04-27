@@ -451,6 +451,68 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Log initial status
       await logPaymentStatusChange(payment.id, null, payment.payment_status);
 
+      // Full wallet at create: payment is completed immediately (no Razorpay webhook). Confirm booking and notify like payment.captured.
+      if (payment.payment_status === 'completed' && payment.booking_id) {
+        try {
+          let bookingToNotify: string | null = null;
+          let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+
+          await withTransaction(async (client) => {
+            const { rows: bookingRows } = await client.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
+              [payment.booking_id]
+            );
+            if (bookingRows.length > 0) {
+              const booking = bookingRows[0];
+              const previousStatus = booking.status || null;
+              const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
+              const nextStatus = previousStatus === 'pending_payment' ? 'confirmed' : previousStatus;
+
+              await client.query(
+                `UPDATE bookings SET 
+                   payment_status = 'paid', 
+                   status = $2,
+                   updated_at = NOW() 
+                 WHERE id = $1`,
+                [booking.id, nextStatus]
+              );
+
+              if (shouldNotify) {
+                bookingToNotify = booking.id;
+              }
+              if (previousStatus !== nextStatus) {
+                bookingStatusChange = { bookingId: booking.id, from: previousStatus, to: nextStatus };
+              }
+            }
+          });
+
+          if (bookingStatusChange) {
+            try {
+              await logBookingStatusChange(
+                bookingStatusChange.bookingId,
+                bookingStatusChange.from,
+                bookingStatusChange.to,
+                'system',
+                'system',
+                'Payment completed (wallet)'
+              );
+            } catch (auditErr) {
+              console.error('[PAYMENT-CREATE] Failed to log booking status change after wallet payment:', auditErr);
+            }
+          }
+
+          if (bookingToNotify) {
+            try {
+              await notifyBookingCreated(bookingToNotify, requestId);
+            } catch (notifyErr) {
+              console.error('[PAYMENT-CREATE] Failed to notify booking after wallet payment:', notifyErr);
+            }
+          }
+        } catch (error) {
+          console.error('[PAYMENT-CREATE] Wallet full-payment booking update failed:', error);
+        }
+      }
+
       // Payment/booking loyalty for customer: handled by action_sources → loyalty-events-consumer (not inline here).
 
       // Publish event

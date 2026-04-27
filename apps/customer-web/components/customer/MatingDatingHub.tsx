@@ -255,7 +255,7 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Mating &amp; Dating</h1>
+            <h1 className="text-xl font-semibold">Peer to Peer</h1>
           </div>
         </div>
 

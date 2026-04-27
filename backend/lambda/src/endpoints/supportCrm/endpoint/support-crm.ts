@@ -138,25 +138,53 @@ export function registerSupportCrmEndpoints(app: Hono) {
    */
   app.get("/support/tickets", async (c) => {
     try {
-      const customerId = c.req.query('customerId');
-      const customerPhone = c.req.query('customerPhone');
-      const agentId = c.req.query('agentId');
-      const status = c.req.query('status');
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
+      const customerId = c.req.query("customerId")?.trim() || undefined;
+      const customerPhone = c.req.query("customerPhone")?.trim() || undefined;
+      const agentId = c.req.query("agentId");
+      const status = c.req.query("status");
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
 
       let ticketsQuery = `SELECT * FROM support_tickets WHERE 1=1`;
       const params: any[] = [];
       let paramIndex = 1;
 
+      /**
+       * Mobile/web send various phone shapes (+91…, 91…, 10 digits). `customer_phone` in DB
+       * may not match a single string. Match by: exact row, full digits equality, or last-10-digits
+       * equality. When both customerId and customerPhone are present, use OR (previously: only id,
+       * which missed rows with phone set but id null or mismatched).
+       */
+      const customerClauses: string[] = [];
       if (customerId) {
-        ticketsQuery += ` AND customer_id = $${paramIndex}`;
         params.push(customerId);
-        paramIndex++;
-      } else if (customerPhone) {
-        ticketsQuery += ` AND customer_phone = $${paramIndex}`;
-        params.push(customerPhone);
-        paramIndex++;
+        customerClauses.push(`customer_id = $${paramIndex}`);
+        paramIndex += 1;
+      }
+      if (customerPhone) {
+        const digits = customerPhone.replace(/\D/g, "");
+        const last10 = digits.length >= 10 ? digits.slice(-10) : "";
+        if (last10) {
+          params.push(customerPhone, digits, last10);
+          const i1 = paramIndex;
+          const i2 = paramIndex + 1;
+          const i3 = paramIndex + 2;
+          paramIndex += 3;
+          customerClauses.push(`(
+            customer_phone = $${i1}
+            OR NULLIF(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), '') = $${i2}
+            OR (length(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g')) >= 10
+                AND right(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), 10) = $${i3}
+            )
+          `);
+        } else {
+          params.push(customerPhone);
+          customerClauses.push(`customer_phone = $${paramIndex}`);
+          paramIndex += 1;
+        }
+      }
+      if (customerClauses.length > 0) {
+        ticketsQuery += ` AND (${customerClauses.join(" OR ")})`;
       }
 
       if (agentId) {

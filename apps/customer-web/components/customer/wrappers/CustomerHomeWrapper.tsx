@@ -125,7 +125,7 @@ import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
 import { MedicalRecordsPage } from '../MedicalRecordsPage';
 import { WalletPage as CustomerWalletPage } from '../WalletPage';
 
-// ✅ MATING & DATING SERVICE - P2P Matchmaking
+// ✅ PEER TO PEER SERVICE - P2P Matchmaking
 import { MatingDatingHub } from '../MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../../IntegratedServicesHub';
@@ -3681,7 +3681,7 @@ export function CustomerHomeWrapper({
     onNavigate={handleAccountNavigate}
   />;
 
-  // ✅ MATING & DATING SERVICE - P2P Matchmaking
+  // ✅ PEER TO PEER SERVICE - P2P Matchmaking
   if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
     phone={phone}
     onBack={handleBack}

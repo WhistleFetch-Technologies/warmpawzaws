@@ -486,7 +486,7 @@ export function SpecializedServicesDashboard({ vendorId, vendorRole, onBack }: S
                   : 'bg-white text-gray-700 border border-gray-200'
               }`}
             >
-              Mating ({matingRequests.length})
+              Peer to Peer ({matingRequests.length})
             </button>
           )}
         </div>
