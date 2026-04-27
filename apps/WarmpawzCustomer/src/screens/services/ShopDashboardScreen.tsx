@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -270,6 +271,7 @@ export function ShopDashboardScreen({
         </TouchableOpacity>
       </View>
 
+      <BrandedStackBelowHeader>
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -536,6 +538,7 @@ export function ShopDashboardScreen({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -553,6 +556,7 @@ export function ShopDashboardScreen({
           <Text style={styles.headerTitle}>{selectedProduct.name}</Text>
         </View>
 
+        <BrandedStackBelowHeader>
         <ScrollView style={styles.productDetailContainer}>
           <Image
             source={{ uri: selectedProduct.image }}
@@ -611,6 +615,7 @@ export function ShopDashboardScreen({
             </TouchableOpacity>
           </View>
         </ScrollView>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -624,6 +629,7 @@ export function ShopDashboardScreen({
         <Text style={styles.headerTitle}>Shopping Cart</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cartContainer}>
         {cart.length === 0 ? (
           <View style={styles.emptyCart}>
@@ -692,6 +698,7 @@ export function ShopDashboardScreen({
           </>
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -704,6 +711,7 @@ export function ShopDashboardScreen({
         <Text style={styles.headerTitle}>Checkout</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.checkoutContainer}>
         <View style={styles.checkoutSection}>
           <Text style={styles.checkoutSectionTitle}>Order Summary</Text>
@@ -733,6 +741,7 @@ export function ShopDashboardScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -789,8 +798,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
   },
   backButton: {
     fontSize: typography.body,

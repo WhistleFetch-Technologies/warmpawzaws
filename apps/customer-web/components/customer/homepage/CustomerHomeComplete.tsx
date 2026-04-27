@@ -32,7 +32,7 @@ import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
-import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
+import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
@@ -692,10 +692,14 @@ export function CustomerHomeComplete({
       // Handle adoption stats (home row is adoption-only; ignore legacy breeder counts from API)
       if (adoptionResp.status === 'fulfilled' && adoptionResp.value?.stats) {
         const s = adoptionResp.value.stats as Record<string, unknown>;
-        setAdoptionStats((prev) => ({
-          adoptablePets: (s.adoptablePets as string | number | undefined) ?? prev.adoptablePets,
-          rehomingListings: (s.rehomingListings as string | number | undefined) ?? prev.rehomingListings,
-        }));
+        setAdoptionStats((prev) => {
+          const ap = Number(s.adoptablePets);
+          const rh = Number(s.rehomingListings);
+          return {
+            adoptablePets: Number.isFinite(ap) ? ap : prev.adoptablePets,
+            rehomingListings: Number.isFinite(rh) ? rh : prev.rehomingListings,
+          };
+        });
       } else if (adoptionResp.status === 'rejected') {
         const error = adoptionResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1153,22 +1157,12 @@ export function CustomerHomeComplete({
       return defaultBanners;
     }
 
-    const premiumPetFoodSubtitleNorm = PREMIUM_PET_FOOD_HERO_MATCH_SUBTITLE.toLowerCase().trim();
-
     const fromApi = dynamicBanners.map((b: any) => {
       const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
       const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
       const ctaLink = screenFromSlash ?? rawCta;
-      const titleNorm = String(b.title || '').toLowerCase().trim();
-      const subtitleNorm = String(b.subtitle || '').toLowerCase().trim();
-      const normalizedTarget = normalizeBannerTarget(rawCta);
-      const duplicatesPremiumPetFoodHero =
-        titleNorm === 'premium pet food' ||
-        (normalizedTarget === 'shop' && subtitleNorm === premiumPetFoodSubtitleNorm);
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
-      const comingSoon = explicitComingSoonFalse
-        ? false
-        : Boolean(b.comingSoon || b.coming_soon) || duplicatesPremiumPetFoodHero;
+      const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
       return {
         id: b.id,
         title: b.title,

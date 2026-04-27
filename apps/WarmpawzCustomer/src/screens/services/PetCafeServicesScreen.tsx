@@ -16,6 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
@@ -274,7 +275,8 @@ export function PetCafeServicesScreen({
         <Text style={styles.subtitle}>Dine with your furry friends</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.heroCard}>
           <Text style={styles.heroIcon}>☕</Text>
           <Text style={styles.heroTitle}>Pet-Friendly Dining</Text>
@@ -300,6 +302,7 @@ export function PetCafeServicesScreen({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -312,6 +315,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>Top Rated Cafes</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -347,6 +351,7 @@ export function PetCafeServicesScreen({
           )}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -359,6 +364,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>{selectedCafe?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cafeDetailContainer}>
         <View style={styles.cafeDetailHeader}>
           <View style={styles.cafeImagePlaceholderLarge}>
@@ -415,6 +421,7 @@ export function PetCafeServicesScreen({
           <Text style={styles.primaryButtonText}>Reserve Table</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -427,6 +434,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>Reservation Details</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.reservationContainer}>
         <View style={styles.reservationCard}>
           <Text style={styles.reservationCardTitle}>Cafe</Text>
@@ -523,6 +531,7 @@ export function PetCafeServicesScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -582,8 +591,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -607,8 +618,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   heroCard: {
     backgroundColor: colors.error + 20% opacity,

@@ -254,6 +254,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('customerId or customerPhone (to resolve customer) is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    // Accept snake_case Razorpay field from older clients
+    if (typeof (body as any).razorpay_order_id === 'string' && (body as any).razorpay_order_id.trim() && !(body as any).razorpayOrderId) {
+      (body as any).razorpayOrderId = String((body as any).razorpay_order_id).trim();
+    }
+
     // Validate request with Zod schema
     const validationResult = CreateBookingRequestSchema.safeParse(body);
     if (!validationResult.success) {
@@ -290,6 +295,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       checkOutTime: reqCheckOutTime,
       flowVariant,
     } = validationResult.data;
+
+    const razorpayOrderIdFromSchema = (validationResult.data as { razorpayOrderId?: string }).razorpayOrderId;
 
     const amount = amountFromSchema ?? totalAmount;
     // ✅ Map legacy 'online' to 'tele' for backward compatibility
@@ -808,6 +815,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           return existingBookingFull.rows[0];
         }
 
+        // Diagnostics pay-first: if this Razorpay order already linked a booking, return it before overlap
+        // (avoids SLOT_CONFLICT against the same customer's confirmed slot on client retry).
+        const diagnosticsSlugEarly = /^diagnostics?$/i.test(String(serviceId));
+        const rzOrderEarly = String(razorpayOrderIdFromSchema || (body as any).razorpay_order_id || '').trim();
+        if (diagnosticsSlugEarly && rzOrderEarly) {
+          const payEarly = await client.query(
+            `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 AND customer_id = $2::uuid AND vendor_id = $3::uuid FOR UPDATE`,
+            [rzOrderEarly, customerId, vendorId]
+          );
+          if (payEarly.rows.length > 0 && payEarly.rows[0].booking_id) {
+            const exB = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [payEarly.rows[0].booking_id]);
+            if (exB.rows[0]) {
+              console.log(`[BOOKING] Diagnostics prepaid idempotent replay → booking ${exB.rows[0].id}`);
+              return exB.rows[0];
+            }
+          }
+        }
+
         // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
         // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
         // Get booking duration (pet sitting: exact visit length from check-in → check-out)
@@ -1096,10 +1121,77 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               ? Math.max(calculatedBasePrice, listedServerPrice)
               : calculatedBasePrice;
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
-        const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
+        let diagnosticsPrepaidPaymentId: string | null = null;
+        let paymentStatus = isPackageBooking ? 'completed' : isSubscriptionBooking ? 'paid' : 'pending';
         /** Hold slot but hide from vendor lists until Razorpay succeeds (vendor APIs filter pending_payment). */
-        const bookingRowStatus =
+        let bookingRowStatus =
           paymentStatus === 'pending' && calculatedFinalAmount > 0 ? 'pending_payment' : 'confirmed';
+
+        const isDiagnosticsSlug = /^diagnostics?$/i.test(String(serviceId));
+        if (
+          isDiagnosticsSlug &&
+          calculatedFinalAmount > 0.009 &&
+          !isPackageBooking &&
+          !isSubscriptionBooking
+        ) {
+          const rzOrder = String(razorpayOrderIdFromSchema || (body as any).razorpay_order_id || '').trim();
+          if (!rzOrder) {
+            throw new Error('DIAGNOSTICS_PAYMENT_ORDER_REQUIRED');
+          }
+          const { rows: payRows } = await client.query(
+            `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+            [rzOrder]
+          );
+          if (payRows.length === 0) {
+            throw new Error('DIAGNOSTICS_PAYMENT_NOT_FOUND');
+          }
+          const pr = payRows[0];
+          if (String(pr.customer_id) !== String(customerId) || String(pr.vendor_id) !== String(vendorId)) {
+            throw new Error('DIAGNOSTICS_PAYMENT_MISMATCH');
+          }
+          let effectiveCompleted = String(pr.payment_status || '').toLowerCase() === 'completed';
+          if (!effectiveCompleted && String(pr.payment_status || '').toLowerCase() === 'pending') {
+            try {
+              const { razorpayRequest } = await import('../../../utils/payments/razorpay-client');
+              const ord = (await razorpayRequest(`/orders/${rzOrder}`, 'GET', undefined, 12000)) as {
+                amount_paid?: number;
+              };
+              const paidPaise = Number(ord?.amount_paid ?? 0);
+              const expectedPaise = Math.round(calculatedFinalAmount * 100);
+              if (paidPaise >= expectedPaise - 1) {
+                await client.query(
+                  `UPDATE payments SET payment_status = 'completed', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+                   WHERE id = $1::uuid AND payment_status = 'pending'`,
+                  [pr.id]
+                );
+                effectiveCompleted = true;
+              }
+            } catch (syncErr: any) {
+              console.warn('[BOOKING] Diagnostics Razorpay order sync failed:', syncErr?.message || syncErr);
+            }
+          }
+          if (!effectiveCompleted) {
+            throw new Error('DIAGNOSTICS_PAYMENT_NOT_COMPLETED');
+          }
+          const payAmt = Math.round((Number(pr.amount) || 0) * 100) / 100;
+          const bookAmt = Math.round(calculatedFinalAmount * 100) / 100;
+          if (Math.abs(payAmt - bookAmt) > 0.05) {
+            throw new Error('DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH');
+          }
+          if (pr.booking_id != null) {
+            const { rows: linkedB } = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [
+              pr.booking_id,
+            ]);
+            if (linkedB.length > 0) {
+              console.log('[BOOKING] Diagnostics payment already linked; returning existing booking');
+              return linkedB[0];
+            }
+            throw new Error('DIAGNOSTICS_PAYMENT_ALREADY_USED');
+          }
+          diagnosticsPrepaidPaymentId = pr.id;
+          paymentStatus = 'paid';
+          bookingRowStatus = 'confirmed';
+        }
         
         // ✅ CRITICAL FIX: Extract coordinates from address_id or address field for GPS tracking
         let bookingLatitude: number | null = null;
@@ -1421,6 +1513,20 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             );
             await client.query('RELEASE SAVEPOINT sp_booking_insert');
             insertedBooking = insertResult.rows[0];
+            if (diagnosticsPrepaidPaymentId && insertedBooking?.id) {
+              const up = await client.query(
+                `UPDATE payments SET booking_id = $1::uuid, updated_at = NOW()
+                 WHERE id = $2::uuid AND booking_id IS NULL
+                 RETURNING id`,
+                [insertedBooking.id, diagnosticsPrepaidPaymentId]
+              );
+              if (up.rows.length === 0) {
+                console.warn('[BOOKING] Diagnostics prepaid: payment not linked to booking (already linked?)', {
+                  bookingId: insertedBooking.id,
+                  paymentId: diagnosticsPrepaidPaymentId,
+                });
+              }
+            }
             break; // Success!
           } catch (insertError: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_booking_insert').catch(() => {});
@@ -1875,14 +1981,81 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           requestId
         );
       }
+
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_ORDER_REQUIRED') {
+        return this.error(
+          'Complete payment first, then create the booking with razorpay_order_id (same value as checkout order_id).',
+          400,
+          'DIAGNOSTICS_PAYMENT_REQUIRED',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_NOT_FOUND') {
+        return this.error(
+          'No payment record found for this order. Start checkout again from the lab booking screen.',
+          404,
+          'DIAGNOSTICS_PAYMENT_NOT_FOUND',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_MISMATCH') {
+        return this.error(
+          'This payment order does not match your customer or lab account.',
+          403,
+          'DIAGNOSTICS_PAYMENT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_NOT_COMPLETED') {
+        return this.error(
+          'Payment is not completed yet. Wait a moment after payment, or open Pay again if the app closed before confirmation.',
+          400,
+          'DIAGNOSTICS_PAYMENT_NOT_COMPLETED',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH') {
+        return this.error(
+          'The paid amount does not match this booking total. Go back, refresh tests or fees, and pay the updated total.',
+          400,
+          'DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_ALREADY_USED') {
+        return this.error(
+          'This payment is already linked to another booking. Contact support if you need help.',
+          409,
+          'DIAGNOSTICS_PAYMENT_ALREADY_USED',
+          undefined,
+          requestId
+        );
+      }
       
       // Service not found / invalid
       if (errorMessage.includes('Service') || errorMessage.includes('service')) {
         return this.error(errorMessage, 404, 'SERVICE_NOT_FOUND', undefined, requestId);
       }
       
+      // CHECK constraint (e.g. bookings_status_check) — do not confuse with missing FK rows
+      if (err?.code === '23514') {
+        console.error('[BOOKING] Check constraint violation:', errorMessage);
+        return this.error(
+          'A database rule rejected this booking (for example an invalid status value).',
+          400,
+          'CHECK_CONSTRAINT_VIOLATION',
+          { originalError: errorMessage },
+          requestId
+        );
+      }
+
       // Foreign key constraint violation (missing required data)
-      if (err?.code === '23503' || errorMessage.includes('foreign key') || errorMessage.includes('constraint')) {
+      if (err?.code === '23503' || errorMessage.includes('foreign key')) {
         console.error('[BOOKING] Foreign key constraint error:', errorMessage);
         return this.error(
           'Required data missing. Please ensure customer, vendor, and service exist.',

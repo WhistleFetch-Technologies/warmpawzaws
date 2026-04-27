@@ -310,6 +310,28 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
 
+      // Close any active GPS tracking session for this booking. Without this the
+      // home-screen "Vendor on the way" card and the live-tracking ETA banner
+      // continue to render after the at-home service is finished, because
+      // CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL only filters on session-level
+      // statuses ('in_transit','arrived'). Booking-level filtering also exists
+      // (see gps-tracking.ts NOT IN ('completed', ...)), but updating the
+      // session here makes the cleanup correct at every layer.
+      try {
+        await query(
+          `UPDATE gps_tracking_sessions
+             SET status = 'completed',
+                 ended_at = NOW(),
+                 last_update_at = NOW()
+           WHERE booking_id = $1
+             AND status IN ('started', 'in_transit', 'arrived')`,
+          [bookingId]
+        );
+      } catch (gpsErr: any) {
+        // Non-fatal: most bookings won't have a GPS session row at all.
+        console.warn(`[COMPLETE-BOOKING] GPS session close (non-fatal):`, gpsErr?.message);
+      }
+
       // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
       try {
         const commissionRate = await getVendorCommissionRate(booking.vendor_id);
@@ -1463,6 +1485,22 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           status: 'completed',
           completed_at: new Date().toISOString()
         });
+
+        // Mirror the COMPLETE-BOOKING handler: close any active GPS tracking
+        // session so the customer-side "Vendor on the way" card disappears.
+        try {
+          await query(
+            `UPDATE gps_tracking_sessions
+               SET status = 'completed',
+                   ended_at = NOW(),
+                   last_update_at = NOW()
+             WHERE booking_id = $1
+               AND status IN ('started', 'in_transit', 'arrived')`,
+            [bookingId]
+          );
+        } catch (gpsErr: any) {
+          console.warn(`[OTP-VERIFY] GPS session close (non-fatal):`, gpsErr?.message);
+        }
       } else if (action === 'start') {
         newStatus = 'in_progress';
         await update('bookings', { id: bookingId }, {

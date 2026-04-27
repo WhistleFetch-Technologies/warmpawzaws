@@ -5,6 +5,8 @@ import { ArrowLeft, Star, MapPin, UtensilsCrossed, Calendar, Clock } from 'lucid
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { MEAL_PLANS_COMING_SOON } from './constants';
+import { MealPlansComingSoon } from './MealPlansComingSoon';
 
 const MAX_RADIUS_KM = 10;
 
@@ -35,11 +37,16 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
   }, []);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     fetchPets();
     fetchFilters();
   }, [phone]);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) return;
     fetchMealPlans();
   }, [phone, selectedPurpose, selectedMealType]);
 
@@ -120,6 +127,28 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
       toast.error('Failed to navigate. Please try again.');
     }
   };
+
+  if (MEAL_PLANS_COMING_SOON) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
+        <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={onBack}
+              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <h1 className="text-2xl font-bold text-white">Meal Plans</h1>
+          </div>
+        </div>
+        <div className="relative z-10 -mt-6 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-8 pb-12 shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
+          <MealPlansComingSoon />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">

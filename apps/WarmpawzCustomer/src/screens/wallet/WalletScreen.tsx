@@ -17,6 +17,7 @@ import {
   Modal,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { WalletApi } from '../../services/api';
 
@@ -178,15 +179,8 @@ export function WalletScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Wallet</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <>
+    <OrangeBrandedScreenLayout title="My Wallet" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Wallet Balance Card */}
         <View style={styles.balanceCard}>
@@ -296,6 +290,7 @@ export function WalletScreen({
           )}
         </View>
       </ScrollView>
+    </OrangeBrandedScreenLayout>
 
       {/* Top-Up Modal */}
       <Modal
@@ -526,7 +521,7 @@ export function WalletScreen({
           </View>
         </View>
       </Modal>
-    </ScreenShell>
+    </>
   );
 }
 
@@ -534,29 +529,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.fontSizes.md,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 60,
   },
   loadingContainer: {
     flex: 1,

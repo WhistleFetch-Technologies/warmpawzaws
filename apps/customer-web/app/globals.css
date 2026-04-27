@@ -171,12 +171,12 @@ body {
  */
 @layer utilities {
   .cw-header-safe-top {
-    padding-top: max(4rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
   }
 
   @media (min-width: 768px) {
     .cw-header-safe-top {
-      padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.35rem));
+      padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
     }
   }
 

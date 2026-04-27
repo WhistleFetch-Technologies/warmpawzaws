@@ -797,7 +797,7 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'room', 'payment', 'confirmation'];
+    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
     if (currentIdx <= 0) {
@@ -805,16 +805,7 @@ export function BoardingBookingRouter({
       return;
     }
 
-    let prevIdx = currentIdx - 1;
-    // Forward flow skips `room` when there are no rooms (pet → create booking → payment). Mirror that when going back.
-    if (rooms.length === 0 && steps[prevIdx] === 'room') {
-      prevIdx = currentIdx - 2;
-    }
-    if (prevIdx >= 0) {
-      setStep(steps[prevIdx]);
-    } else {
-      onBack();
-    }
+    setStep(steps[currentIdx - 1]);
   };
 
   const handlePaymentSuccess = (paidBookingId: string) => {

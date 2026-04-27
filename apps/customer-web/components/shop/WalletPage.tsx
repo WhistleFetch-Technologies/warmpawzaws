@@ -31,6 +31,8 @@ export function WalletPage({ onBack, onCloseToHome, onNavigate }: WalletPageProp
       onBack={onBack}
       showBackButton={Boolean(onBack)}
       onCloseToHome={onCloseToHome}
+      bottomEdge="sheet"
+      sheetToneClass="bg-[#FAF6F0]"
     />
   );
 
@@ -38,7 +40,7 @@ export function WalletPage({ onBack, onCloseToHome, onNavigate }: WalletPageProp
     return (
       <div className="w-full flex flex-col bg-[#FAF6F0] min-h-screen overflow-hidden max-w-customer mx-auto">
         {headerBar}
-        <div className="px-4 pb-6 pt-2">
+        <div className="-mt-1 px-4 pb-6 pt-2">
           <p className="text-gray-600 text-center">Please login to view your wallet</p>
         </div>
       </div>
@@ -48,7 +50,7 @@ export function WalletPage({ onBack, onCloseToHome, onNavigate }: WalletPageProp
   return (
     <div className="w-full flex flex-col bg-[#FAF6F0] min-h-screen overflow-hidden max-w-customer mx-auto">
       {headerBar}
-      <div className="flex-1 min-h-0 px-4 pb-2 pt-2">
+      <div className="-mt-1 flex-1 min-h-0 px-4 pb-2 pt-2">
         <CustomerWallet customerPhone={phone} onNavigate={onNavigate} />
       </div>
     </div>

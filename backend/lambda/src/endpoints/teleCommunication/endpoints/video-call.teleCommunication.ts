@@ -1177,15 +1177,18 @@ export function registerVideoCallEndpoints(app: Hono) {
         LEFT JOIN pets p ON b.pet_id = p.id
         LEFT JOIN customers c ON b.customer_id = c.id
         WHERE b.customer_id = $1
+          AND b.status NOT IN ('completed', 'cancelled', 'no_show')
           AND (
             -- Active or waiting sessions
-            (vcs.status IN ('active', 'waiting') AND b.status != 'completed')
+            (vcs.status IN ('active', 'waiting'))
             OR
-            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh
+            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh.
+            -- The booking-level NOT IN filter above ensures this never resurrects a finalized
+            -- consultation card; combined they make the tele "rejoin" banner disappear as soon
+            -- as the booking is marked completed (or cancelled / no_show).
             (vcs.status = 'completed' 
              AND vcs.ended_at IS NOT NULL 
-             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
-             AND b.status != 'completed')
+             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes'))
           )
         ORDER BY 
           CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,

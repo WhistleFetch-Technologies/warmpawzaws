@@ -337,7 +337,7 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
         requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
       })),
       { id: 'diet_plans', label: 'Diet Plans', icon: '📋', priority: 4 },
-      { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5 },
+      { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5, comingSoon: true },
       { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 5, requiresCapability: 'medical_records' },
     ],
     primaryActions: ['create_diet_plan', 'view_consultations', 'track_progress'],
@@ -355,7 +355,7 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
         requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
       })),
       { id: 'diet_plans', label: 'Diet Plans', icon: '📋', priority: 4 },
-      { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5 },
+      { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5, comingSoon: true },
       { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 5, requiresCapability: 'medical_records' },
     ],
     primaryActions: ['create_diet_plan', 'view_consultations', 'track_progress'],

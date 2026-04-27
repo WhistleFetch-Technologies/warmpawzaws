@@ -71,6 +71,14 @@ async function main(): Promise<void> {
     const { status, data } = await apiRequest('/bookings/create', 'POST', payload);
     const isSchemaReject = status === 500 && (data?.error?.message?.includes('Invalid') || (typeof data?.error === 'string' && data.error.toLowerCase().includes('schema')));
     assert(!isSchemaReject, 'Create booking (diagnostics at_center) – schema accepts payload; got ' + status);
+    // Paid diagnostics require razorpay_order_id + completed payment row (400 DIAGNOSTICS_PAYMENT_REQUIRED).
+    if (
+      status === 400 &&
+      (data?.error?.code === 'DIAGNOSTICS_PAYMENT_REQUIRED' ||
+        String(data?.error?.message || data?.error || '').includes('razorpay_order_id'))
+    ) {
+      assert(true, 'Paid diagnostics without order id → 400 payment required (expected)');
+    }
     if (status === 200 && data?.success && data?.data?.bookingId) log('CREATE', 'Booking created', data.data);
     passed++;
   } catch (e: any) {
@@ -146,6 +154,8 @@ async function main(): Promise<void> {
       const bookingId = data?.data?.bookingId ?? data?.bookingId;
       assert(!!data?.success && !!bookingId, 'Response has success and bookingId');
       assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId), 'bookingId is UUID');
+    } else if (status === 400 && data?.error?.code === 'DIAGNOSTICS_PAYMENT_REQUIRED') {
+      assert(true, 'Diagnostics with amount and no razorpay_order_id → payment required');
     }
     passed++;
   } catch (e: any) {

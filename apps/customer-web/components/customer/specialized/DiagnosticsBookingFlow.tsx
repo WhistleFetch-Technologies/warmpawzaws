@@ -429,7 +429,13 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
               }
             }
 
-            const createPayload = { ...pendingPayloadRef.current };
+            const createPayload = {
+              ...pendingPayloadRef.current,
+              razorpay_order_id:
+                response.razorpay_order_id ||
+                response?.razorpayOrderId ||
+                orderId,
+            };
             let bookingResponse: any;
             try {
               bookingResponse = await apiClient.post<any>('/bookings/create', createPayload);

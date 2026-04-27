@@ -24,6 +24,9 @@ import {
   profileEmailAndName,
 } from '../../utils/razorpay-checkout-options';
 
+/** In sync with customer web `MEAL_PLANS_COMING_SOON` — re-enable when meal subscriptions launch. */
+const MEAL_PLANS_COMING_SOON = true;
+
 interface MealPlanOrderScreenProps {
   vendorId: string;
   phone: string;
@@ -80,6 +83,10 @@ export function MealPlanOrderScreen({
   const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     loadData();
   }, [vendorId, phone, customerId]);
 
@@ -359,6 +366,27 @@ export function MealPlanOrderScreen({
       setProcessing(false);
     }
   };
+
+  if (MEAL_PLANS_COMING_SOON) {
+    return (
+      <ScreenShell style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Meal plans</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.comingSoonContainer}>
+          <Text style={styles.comingSoonBadge}>COMING SOON</Text>
+          <Text style={styles.comingSoonTitle}>Not available yet</Text>
+          <Text style={styles.comingSoonMessage}>
+            Monthly meal subscriptions are not available in the app yet. Diet consultations are unchanged.
+          </Text>
+        </View>
+      </ScreenShell>
+    );
+  }
 
   if (loading) {
     return (
@@ -901,6 +929,34 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  comingSoonContainer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  comingSoonBadge: {
+    overflow: 'hidden',
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: spacing.md,
+  },
+  comingSoonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  comingSoonMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });
 

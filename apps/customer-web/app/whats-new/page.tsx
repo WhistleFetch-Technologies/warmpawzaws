@@ -51,15 +51,15 @@ export default function WhatsNewHubPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-slate-50">
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-orange-100">
-        <div className="max-w-customer mx-auto px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-orange-100 cw-header-safe-top">
+        <div className="max-w-customer mx-auto flex items-center gap-3 pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
           <button
             type="button"
             onClick={() => router.push('/')}
-            className="p-2 rounded-full hover:bg-orange-50 text-slate-600"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-orange-50 active:bg-orange-100"
             aria-label="Back to home"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="h-5 w-5" aria-hidden />
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">

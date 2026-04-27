@@ -132,9 +132,7 @@ done
 # --- 7) BANNERS (customer home + dashboards) ---
 echo "7) Banners (type=main for customer home)..."
 for BAN in \
-  '{"type":"main","title":"Get 50% OFF","subtitle":"First Grooming Session","ctaText":"Claim Now","ctaLink":"/grooming","display_order":1,"metadata":{"gradient_from":"#FF8C42","gradient_to":"#FF6B35","icon":"✂️"},"isActive":true}' \
-  '{"type":"main","title":"Free Health Checkup","subtitle":"Book Vet Appointment Today","ctaText":"Book Now","ctaLink":"/vet","display_order":2,"metadata":{"gradient_from":"#4CAF50","gradient_to":"#2E7D32","icon":"🩺"},"isActive":true}' \
-  '{"type":"main","title":"Premium Pet Food","subtitle":"20% OFF First Order","ctaText":"Shop Now","ctaLink":"/shop","display_order":3,"metadata":{"gradient_from":"#FF6B9D","gradient_to":"#C44569","icon":"🦴"},"isActive":true}'; do
+  '{"type":"main","title":"Free Health Checkup","subtitle":"Book Vet Appointment Today","ctaText":"Book Now","ctaLink":"/vet","display_order":1,"metadata":{"gradient_from":"#4CAF50","gradient_to":"#2E7D32","icon":"🩺"},"isActive":true}'; do
   B=$(curl -s -w "\n%{http_code}" -X POST "$API_BASE_URL/admin/banners" \
     -H "Content-Type: application/json" \
     -H "$AUTH_HEADER" \

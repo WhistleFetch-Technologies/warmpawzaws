@@ -74,8 +74,13 @@ export function registerCustomerContentEndpoints(app: Hono) {
         return {};
       };
 
+      // Legacy home hero promos removed from product (see migration 1006); omit if still in DB.
+      const legacyHeroTitles = new Set(['Get 50% OFF', 'Premium Pet Food']);
+
       // Map banners to frontend format (type exposed as position for backward compat)
-      const banners = (bannersResult.rows || []).map((b: any) => {
+      const banners = (bannersResult.rows || [])
+        .filter((b: any) => !legacyHeroTitles.has(String(b.title || '').trim()))
+        .map((b: any) => {
         const meta = parseMetadata(b.metadata);
         return {
         id: b.id,
@@ -104,17 +109,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
         success: true,
         banners: [
           {
-            id: 'default-1',
-            title: 'Get 50% OFF',
-            subtitle: 'First Grooming Session',
-            gradientFrom: '#FF8C42',
-            gradientTo: '#FF6B35',
-            ctaText: 'Claim Now',
-            ctaLink: '/grooming',
-            icon: '✂️',
-          },
-          {
-            id: 'default-2',
+            id: 'default-vet-checkup',
             title: 'Free Health Checkup',
             subtitle: 'Book Vet Appointment Today',
             gradientFrom: '#4CAF50',
@@ -123,18 +118,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
             ctaLink: '/vet',
             icon: '🩺',
           },
-          {
-            id: 'default-3',
-            title: 'Premium Pet Food',
-            subtitle: '20% OFF on First Order',
-            gradientFrom: '#FF6B9D',
-            gradientTo: '#C44569',
-            ctaText: 'Shop Now',
-            ctaLink: '/shop',
-            icon: '🦴',
-          },
         ],
-        total: 3,
+        total: 1,
         isDefault: true,
       });
     }

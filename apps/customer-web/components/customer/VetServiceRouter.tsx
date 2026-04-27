@@ -376,10 +376,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-gray-50"
       />
 
-      {/* Main Content */}
-      <div className="max-w-customer mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
+      {/* Main Content — negative margin pulls body under the sheet curve */}
+      <div className="max-w-customer mx-auto -mt-4 px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6">
           <PromotionBanner service="vet" maxPromotions={3} onNavigate={onNavigate} />

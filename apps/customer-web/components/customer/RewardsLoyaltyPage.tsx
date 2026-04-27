@@ -390,9 +390,11 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
           onBack={props.onBack}
           showBackButton={Boolean(props.onBack)}
           onCloseToHome={props.onCloseToHome}
+          bottomEdge="sheet"
+          sheetToneClass="bg-orange-50"
         />
 
-        <main className="flex-1 w-full px-3 sm:px-4 pt-3 sm:pt-4 overflow-y-auto min-h-0">
+        <main className="flex-1 w-full min-h-0 -mt-4 overflow-y-auto px-3 pt-5 sm:px-4 sm:pt-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center px-4 py-16" aria-busy="true" aria-live="polite">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />

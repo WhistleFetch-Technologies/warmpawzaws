@@ -13,8 +13,9 @@ import {
   RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookingChatApi } from '../../services/api';
 
 interface Row {
@@ -40,6 +41,7 @@ export function CustomerChatInboxScreen({
   onBack,
   onNavigate,
 }: CustomerChatInboxScreenProps) {
+  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -113,27 +115,31 @@ export function CustomerChatInboxScreen({
     </TouchableOpacity>
   );
 
-  return (
-    <ScreenShell style={styles.shell}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Messages</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+  const listBottomPad = Math.max(insets.bottom, spacing.xl);
 
+  return (
+    <OrangeBrandedScreenLayout
+      title="Messages"
+      onBack={onBack}
+      bodyBackgroundColor={colors.backgroundSecondary}
+      padBodyBottomInset={false}
+    >
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
+          style={styles.listFlex}
           data={rows}
           keyExtractor={(item, index) => String(item.booking_id || item.id || index)}
           renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          contentContainerStyle={rows.length === 0 ? styles.emptyList : styles.listPad}
+          contentContainerStyle={
+            rows.length === 0
+              ? [styles.emptyList, { paddingBottom: listBottomPad }]
+              : [styles.listPad, { paddingBottom: listBottomPad }]
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Icon name="message-outline" size={48} color={colors.textSecondary} />
@@ -151,42 +157,13 @@ export function CustomerChatInboxScreen({
           }
         />
       )}
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: {
+  listFlex: {
     flex: 1,
-    backgroundColor: colors.backgroundSecondary,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backBtn: {
-    paddingVertical: spacing.xs,
-    paddingRight: spacing.sm,
-  },
-  backText: {
-    color: colors.white,
-    fontSize: typography.fontSizes.md,
-    fontWeight: typography.fontWeights.semibold,
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    color: colors.white,
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.bold,
-  },
-  headerSpacer: {
-    width: 56,
   },
   centered: {
     flex: 1,
@@ -195,7 +172,6 @@ const styles = StyleSheet.create({
   },
   listPad: {
     padding: spacing.md,
-    paddingBottom: spacing.xl,
   },
   emptyList: {
     flexGrow: 1,
