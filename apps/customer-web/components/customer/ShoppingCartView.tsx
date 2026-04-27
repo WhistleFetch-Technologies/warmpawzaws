@@ -294,9 +294,11 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
           stats={[]}
           onBack={onNavigateHome ?? onBack}
           showBackButton
+          bottomEdge="sheet"
+          sheetToneClass="bg-gradient-to-br from-orange-50 to-amber-50"
         />
 
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="-mt-1 flex flex-1 flex-col items-center justify-center p-8 text-center">
           <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
             <ShoppingBag className="w-16 h-16 text-[#FF8C42]" />
           </div>
@@ -321,9 +323,11 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
         stats={cartHeaderStats}
         onBack={handleNavigateBack}
         showBackButton
+        bottomEdge="sheet"
+        sheetToneClass="bg-white"
       />
 
-      <div className={`${scrollBottomPad}`}>
+      <div className={`-mt-1 ${scrollBottomPad}`}>
         {/* Trust Badges */}
         <div className="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b border-blue-100">
           <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:flex sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0">

@@ -15,6 +15,7 @@ import {
   Alert,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ApiService } from '../../services/api';
 
@@ -221,13 +222,18 @@ export function InsuranceServicesScreen({
   };
 
   const renderLanding = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Pet Insurance</Text>
-        <Text style={styles.subtitle}>Protect your pet's health</Text>
-      </View>
-
-      <ScrollView style={styles.landingContent}>
+    <OrangeBrandedScreenLayout
+      title="Pet Insurance"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <Text style={styles.title}>Pet Insurance</Text>
+          <Text style={styles.subtitle}>Protect your pet's health</Text>
+        </View>
+      }
+    >
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{stats.activeProviders}</Text>
@@ -270,18 +276,23 @@ export function InsuranceServicesScreen({
           <Text style={styles.primaryButtonText}>Browse Insurance Providers</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderProviders = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('landing')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Insurance Providers</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Insurance"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setCurrentView('landing')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Insurance Providers</Text>
+        </View>
+      }
+    >
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -309,18 +320,23 @@ export function InsuranceServicesScreen({
           ))}
         </ScrollView>
       )}
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderProviderDetail = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('providers')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{selectedProvider?.name}</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Insurance"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setCurrentView('providers')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{selectedProvider?.name}</Text>
+        </View>
+      }
+    >
       <ScrollView style={styles.providerDetailContainer}>
         <View style={styles.ratingContainer}>
           <Text style={styles.ratingText}>
@@ -362,18 +378,23 @@ export function InsuranceServicesScreen({
           <Text style={styles.primaryButtonText}>View Insurance Plans</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderPlans = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('provider_detail')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Insurance Plans</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Insurance"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setCurrentView('provider_detail')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Insurance Plans</Text>
+        </View>
+      }
+    >
       <ScrollView style={styles.plansContainer}>
         {plans.map((plan) => (
           <TouchableOpacity
@@ -422,18 +443,23 @@ export function InsuranceServicesScreen({
           </TouchableOpacity>
         ))}
       </ScrollView>
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderPolicyPurchase = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('plans')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Purchase Policy</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Insurance"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setCurrentView('plans')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Purchase Policy</Text>
+        </View>
+      }
+    >
       <ScrollView style={styles.purchaseContainer}>
         {selectedPlan && (
           <View style={styles.selectedPlanCard}>
@@ -493,11 +519,11 @@ export function InsuranceServicesScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderConfirmation = () => (
-    <View style={styles.container}>
+    <OrangeBrandedScreenLayout title="Policy purchased" onBack={onBack} bodyBackgroundColor={colors.white} padBodyBottomInset={false}>
       <View style={styles.confirmationContainer}>
         <Text style={styles.confirmationIcon}>✅</Text>
         <Text style={styles.confirmationTitle}>Policy Purchased!</Text>
@@ -522,7 +548,7 @@ export function InsuranceServicesScreen({
           <Text style={styles.primaryButtonText}>Back to Home</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </OrangeBrandedScreenLayout>
   );
 
   if (loading && currentView === 'landing') {
@@ -534,14 +560,14 @@ export function InsuranceServicesScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
+    <>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'providers' && renderProviders()}
       {currentView === 'provider_detail' && renderProviderDetail()}
       {currentView === 'plans' && renderPlans()}
       {currentView === 'policy_purchase' && renderPolicyPurchase()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </ScreenShell>
+    </>
   );
 }
 
@@ -550,11 +576,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+  orangeHeaderInner: {
+    width: '100%',
+    paddingBottom: spacing.sm,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -578,8 +605,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   statsContainer: {
     flexDirection: 'row',

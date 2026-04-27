@@ -54,10 +54,13 @@ export interface ServiceDashboardHeaderProps {
    */
   useLegacyContentCollar?: boolean;
   /**
-   * `wave` — default U-curve is part of the header (most hub/list screens).
-   * `flat` — use with ServiceDashboardHeaderBottomWave directly above a hero image so the dip sits on the photo edge.
+   * `wave` — U-curve SVG at bottom of orange (legacy).
+   * `flat` — no curve; use with ServiceDashboardHeaderBottomWave on a hero.
+   * `sheet` — home-style light panel with large top radii overlapping orange (preferred for hub screens).
    */
-  bottomEdge?: 'wave' | 'flat';
+  bottomEdge?: 'wave' | 'flat' | 'sheet';
+  /** Background for the `sheet` curve (match the screen body below). Default gray-50. */
+  sheetToneClass?: string;
   /**
    * Tighter safe-area + padding and smaller stat row (e.g. full-screen payment) so the header does not dominate the viewport.
    */
@@ -137,7 +140,8 @@ export function ServiceDashboardHeader({
   fullWidth = false,
   onStatClick,
   useLegacyContentCollar = false,
-  bottomEdge = 'wave',
+  bottomEdge = 'sheet',
+  sheetToneClass = 'bg-gray-50',
   compact = false,
 }: ServiceDashboardHeaderProps) {
   const waveGradId = useId().replace(/:/g, '');
@@ -147,9 +151,10 @@ export function ServiceDashboardHeader({
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
 
+  /** Never shrink below ~48px on md+ — wide phones/tablets still need status-bar clearance when env() is 0. */
   const topPad = compact
-    ? 'pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.35rem))]'
-    : 'pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))]';
+    ? 'pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))]'
+    : 'pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+1rem))]';
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
   const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
@@ -162,6 +167,17 @@ export function ServiceDashboardHeader({
     ? 'mb-0 flex items-center justify-center gap-1 text-base font-bold text-white sm:text-lg'
     : 'mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl';
 
+  /** Extra orange padding below stats before the sheet so the curve does not cut into stat chips. */
+  const innerShellClass =
+    bottomEdge === 'sheet' && stats.length > 0
+      ? compact
+        ? 'pb-5 md:pb-6'
+        : 'pb-6 md:pb-8'
+      : innerBottom;
+
+  /** Tighter overlap for `compact` (pre-payment / payment) so stat chips stay clear of the sheet. */
+  const sheetOverlapClass = compact ? '-mt-2' : '-mt-4';
+
   return (
     <div
       className={`relative z-10 isolate w-full ${fullWidth ? 'max-w-none' : 'mx-auto max-w-customer'} ${className}`.trim()}
@@ -173,7 +189,7 @@ export function ServiceDashboardHeader({
       <div
         className={`relative z-20 ${headerGradient || headerColor} text-white ${topPad} pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
       >
-        <div className={innerBottom}>
+        <div className={innerShellClass}>
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
           <>
@@ -380,6 +396,17 @@ export function ServiceDashboardHeader({
           </svg>
         )}
       </div>
+
+      {bottomEdge === 'sheet' && (
+        <div
+          className={`pointer-events-none relative z-[21] ${sheetOverlapClass} w-full ${fullWidth ? '' : 'mx-auto max-w-customer'}`.trim()}
+          aria-hidden
+        >
+          <div
+            className={`pointer-events-none h-8 rounded-t-[1.75rem] shadow-[0_-10px_36px_-8px_rgba(0,0,0,0.12)] sm:h-9 sm:rounded-t-[2rem] ${sheetToneClass}`.trim()}
+          />
+        </div>
+      )}
 
       {useLegacyContentCollar && (
         <div className="pointer-events-none relative -mt-4 min-h-[32px] rounded-t-[32px] bg-gray-50">

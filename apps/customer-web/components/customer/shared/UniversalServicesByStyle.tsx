@@ -1310,10 +1310,12 @@ export function UniversalServicesByStyle({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        bottomEdge="sheet"
+        sheetToneClass="bg-white"
       />
       
       {/* Info section */}
-      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
+      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-6 pt-6 pb-2 sm:rounded-t-[2rem]">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}

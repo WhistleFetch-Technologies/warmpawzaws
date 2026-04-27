@@ -16,6 +16,7 @@ import {
   Clipboard,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -104,9 +105,27 @@ export function BookingDetailScreen({
       case 'cancelled_by_customer':
       case 'cancelled_by_vendor':
         return '#EF4444';
+      case 'pending_payment':
+        return '#D97706';
       default:
         return '#F59E0B';
     }
+  };
+
+  /** Customer-facing label; handles payment vs status lag like customer-web BookingDetailModal. */
+  const getBookingStatusDisplayLabel = (b: any): string => {
+    const st = String(b?.status || '');
+    const ps = String(b?.payment_status || b?.paymentStatus || '').toLowerCase();
+    if ((ps === 'paid' || ps === 'completed') && (st === 'pending_payment' || st === 'pending')) {
+      return 'Confirmed';
+    }
+    if (st === 'pending_payment') return 'Payment pending';
+    if (st === 'in_progress') return 'In Progress';
+    if (!st) return 'Unknown';
+    return st
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
   };
 
   const formatDate = (dateString: string) => {
@@ -158,29 +177,16 @@ export function BookingDetailScreen({
 
   if (!booking) {
     return (
-      <ScreenShell style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Booking Details</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Booking Details" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>Booking not found</Text>
         </View>
-      </ScreenShell>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Booking Details</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout title="Booking Details" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Status Badge */}
         <View style={styles.statusContainer}>
@@ -196,10 +202,7 @@ export function BookingDetailScreen({
                 { color: getStatusColor(booking.status) },
               ]}
             >
-              {booking.status === 'in_progress'
-                ? 'In Progress'
-                : booking.status.charAt(0).toUpperCase() +
-                  booking.status.slice(1)}
+              {getBookingStatusDisplayLabel(booking)}
             </Text>
           </View>
           <Text style={styles.bookingId}>
@@ -446,7 +449,7 @@ export function BookingDetailScreen({
           </View>
         )}
       </ScrollView>
-    </ScreenShell>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -454,25 +457,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-    marginRight: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

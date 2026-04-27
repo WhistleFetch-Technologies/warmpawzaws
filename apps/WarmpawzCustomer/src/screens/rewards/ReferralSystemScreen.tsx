@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ReferralApi } from '../../services/api';
 
@@ -191,16 +192,10 @@ export function ReferralSystemScreen({
       });
 
       if (result.action === Share.sharedAction) {
-        if (profile.customerId) {
-          try {
-            await ReferralApi.sendInvite({
-              customerId: profile.customerId,
-              message: shareMessage,
-            });
-          } catch (error) {
-            console.log('Share tracking failed:', error);
-          }
-        }
+        // /referral/invite requires an email or phone (it actually sends an
+        // invite). Generic OS-share has no recipient, so we don't call it
+        // here. If we ever add per-channel share telemetry it should go
+        // through a dedicated tracking endpoint.
         Alert.alert('Shared!', 'Your referral code has been shared');
       }
     } catch (error) {
@@ -257,15 +252,8 @@ export function ReferralSystemScreen({
   }
 
   return (
-    <ScreenShell style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Referral Program</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <OrangeBrandedScreenLayout title="Referral Program" onBack={onBack} bodyBackgroundColor={colors.white}>
+      <View style={styles.stackFill}>
       {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
@@ -296,7 +284,7 @@ export function ReferralSystemScreen({
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <View>
@@ -536,7 +524,8 @@ export function ReferralSystemScreen({
           </View>
         )}
       </ScrollView>
-    </ScreenShell>
+      </View>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -545,28 +534,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.fontSizes.md,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: 'bold',
-    color: colors.white,
+  stackFill: {
     flex: 1,
-    textAlign: 'center',
   },
-  headerSpacer: {
-    width: 60,
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.lg,
   },
   loadingContainer: {
     flex: 1,

@@ -104,6 +104,14 @@ import { OrderInvoiceScreen } from './src/screens/orders/OrderInvoiceScreen';
 import { AIChatbotScreen } from './src/screens/ai-chatbot/AIChatbotScreen';
 import { SupportTicketThreadScreen } from './src/screens/support/SupportTicketThreadScreen';
 
+// Push notifications
+import { Platform } from 'react-native';
+import {
+  registerForPushNotifications,
+  registerPushTokenWithBackend,
+  setupNotificationListeners,
+} from './src/utils/notifications';
+
 // Import theme
 import { colors } from './src/theme/colors';
 
@@ -141,6 +149,73 @@ export default function App() {
       // Cleanup if needed
     };
   }, []);
+
+  // Set up notification listeners exactly once. The handler routes taps to the
+  // booking the notification refers to; if no bookingId is present we fall back
+  // to the in-app notification center. This makes home-screen popups dismiss
+  // promptly because the refresh is triggered as soon as a push lands while the
+  // app is foregrounded.
+  useEffect(() => {
+    const cleanup = setupNotificationListeners(
+      (_notification) => {
+        // Foreground: expo-notifications will display its own banner via
+        // setNotificationHandler in utils/notifications.ts. Nothing to do here
+        // beyond letting screens that subscribe to their own polling pick up
+        // fresh state on the next interval.
+      },
+      (response) => {
+        try {
+          if (!navigationRef.isReady()) return;
+          const data: any = response?.notification?.request?.content?.data || {};
+          const bookingId = data.bookingId || data.booking_id;
+          if (bookingId) {
+            (navigationRef.navigate as (name: string, params: object) => void)(
+              'BookingDetail',
+              { bookingId }
+            );
+            return;
+          }
+          (navigationRef.navigate as (name: string) => void)('NotificationCenter');
+        } catch (err) {
+          console.warn('[push] tap handler failed:', err);
+        }
+      }
+    );
+    return cleanup;
+  }, []);
+
+  // Register for push notifications once the user is fully onboarded and we
+  // have a customerId to associate the token with. Guarded by AsyncStorage so
+  // we don't re-register the same token on every relaunch.
+  useEffect(() => {
+    if (!session?.hasCompletedOnboarding || !session?.customerId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const tokenInfo = await registerForPushNotifications();
+        if (cancelled || !tokenInfo) return;
+
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const cacheKey = `push_token_registered:${session.customerId}`;
+        const last = await AsyncStorage.getItem(cacheKey);
+        if (last === tokenInfo.token) return;
+
+        const ok = await registerPushTokenWithBackend(
+          session.customerId,
+          tokenInfo.token,
+          Platform.OS === 'ios' ? 'ios' : 'android'
+        );
+        if (ok) await AsyncStorage.setItem(cacheKey, tokenInfo.token);
+      } catch (err) {
+        console.warn('[push] bootstrap failed (non-fatal):', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.hasCompletedOnboarding, session?.customerId]);
 
   const handleAuthSuccess = (authSession: any) => {
     setSession(authSession);

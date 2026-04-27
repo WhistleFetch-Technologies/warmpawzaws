@@ -16,6 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -192,6 +193,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.subtitle}>Find your perfect companion</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <View style={styles.landingContent}>
         <Text style={styles.landingIcon}>❤️</Text>
         <Text style={styles.landingTitle}>Welcome to Pet Adoption</Text>
@@ -207,6 +209,7 @@ export function AdoptionServiceRouter({
           <Text style={styles.primaryButtonText}>Browse Adoption Centers</Text>
         </TouchableOpacity>
       </View>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -219,6 +222,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Adoption Centers</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -245,6 +249,7 @@ export function AdoptionServiceRouter({
           ))}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -257,6 +262,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>{selectedCenter?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.profileContainer}>
         {selectedCenter?.image && (
           <View style={styles.imagePlaceholder}>
@@ -293,6 +299,7 @@ export function AdoptionServiceRouter({
           <Text style={styles.primaryButtonText}>View Available Pets</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -305,6 +312,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Available Pets</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -340,6 +348,7 @@ export function AdoptionServiceRouter({
           ))}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -352,6 +361,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Adoption Application</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.applicationContainer}>
         {selectedPet && (
           <View style={styles.selectedPetCard}>
@@ -453,6 +463,7 @@ export function AdoptionServiceRouter({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -514,8 +525,7 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
   },
   backButton: {
     fontSize: typography.body,

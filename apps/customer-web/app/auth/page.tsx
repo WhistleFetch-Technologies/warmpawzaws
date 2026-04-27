@@ -881,7 +881,7 @@ function AuthPageContent() {
           <h1 className={authHeroH1Class}>Welcome to</h1>
           <h2 className={authHeroTitleClass}>WARMPAWZ!</h2>
           <p className={authHeroTaglineClass}>
-            Pet Care Reimagined !!
+            Pet Care . Reimagined .
           </p>
         </div>
 

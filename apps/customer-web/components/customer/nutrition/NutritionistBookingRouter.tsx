@@ -13,7 +13,7 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
-import { defaultServiceTypeOptions } from './constants';
+import { defaultServiceTypeOptions, MEAL_PLANS_COMING_SOON } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 
@@ -113,9 +113,16 @@ export function NutritionistBookingRouter({
   };
 
   // Use actual vendor services or fallback to defaults (only when API hasn't loaded yet)
-  const serviceOptions = vendorServices.length > 0
+  const serviceOptions = (vendorServices.length > 0
     ? mapVendorServices()
-    : defaultServiceTypeOptions;
+    : defaultServiceTypeOptions
+  ).filter(
+    (s) =>
+      !(
+        MEAL_PLANS_COMING_SOON &&
+        (s as { id?: string; name?: string }).id === 'meal_plans'
+      )
+  );
 
   const generateDates = () => {
     const dates = [];

@@ -588,10 +588,12 @@ export function MyBookings({
         showBackButton={true}
         onCloseToHome={onCloseToHome}
         headerColor="bg-[#FF8C42]"
+        bottomEdge="sheet"
+        sheetToneClass="bg-gray-50"
       />
 
       {hasActivePackages && (
-        <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
+        <div className="-mt-1 px-4 py-2 bg-purple-50 border-b border-purple-100">
           <button
             type="button"
             onClick={() => onNavigate?.('package-tracking')}
@@ -606,7 +608,7 @@ export function MyBookings({
         </div>
       )}
 
-      <div className="max-w-customer mx-auto">
+      <div className={`max-w-customer mx-auto${hasActivePackages ? '' : ' -mt-1'}`}>
         {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1); navigation gated by MEAL_PLAN_ORDERS_ENABLED */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button

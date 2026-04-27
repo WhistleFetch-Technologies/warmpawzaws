@@ -460,9 +460,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         return 'bg-gray-100 text-gray-700 border-gray-200';
       case 'cancelled':
         return 'bg-red-100 text-red-700 border-red-200';
+      case 'pending_payment':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
     }
+  };
+
+  /** Map raw DB status to a short customer-facing label; handle payment vs status lag. */
+  const getBookingStatusDisplayLabel = (raw: Record<string, any>): string => {
+    const st = String(raw?.status || '');
+    const ps = String(raw?.payment_status || raw?.paymentStatus || '').toLowerCase();
+    if ((ps === 'paid' || ps === 'completed') && (st === 'pending_payment' || st === 'pending')) {
+      return 'Confirmed';
+    }
+    if (st === 'pending_payment') return 'Payment pending';
+    if (st === 'in_progress') return 'In progress';
+    if (!st) return 'Unknown';
+    return st.charAt(0).toUpperCase() + st.slice(1).replace(/_/g, ' ');
   };
 
   const formatDate = (dateString: string) => {
@@ -530,8 +545,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             {/* Status Badge */}
             <div className="flex items-center justify-between">
               <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
-                {booking.status === 'in_progress' ? 'In Progress' : 
-                 booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                {getBookingStatusDisplayLabel(booking)}
               </span>
               <span className="text-sm text-gray-600">
                 Booking #{booking.id.slice(0, 8)}

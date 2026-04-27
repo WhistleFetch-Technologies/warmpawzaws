@@ -10,9 +10,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resilientFetch, NetworkMonitor, NetworkError, OfflineQueue } from '../lib/network-resilience';
 import NetInfo from '@react-native-community/netinfo';
 
-// Validate API Base URL is configured
-if (!API_BASE_URL || API_BASE_URL.includes('api.warmpawz.com')) {
-  console.warn('⚠️ API_BASE_URL is not properly configured. Please set AWS_API_GATEWAY_URL environment variable.');
+// Validate API Base URL is configured. Warn only on truly broken values
+// (empty, or vanity DNS that does not resolve in production).
+if (!API_BASE_URL || /(\.|^)(dev\.)?api\.warmpawz\.com/i.test(API_BASE_URL)) {
+  console.warn('⚠️ API_BASE_URL is not properly configured. Set AWS_API_GATEWAY_URL or EXPO_PUBLIC_API_GATEWAY_URL to the resolvable HTTP API URL (e.g. https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com).');
 }
 
 const SESSION_TOKEN_KEY = 'warmpawz_session_token';

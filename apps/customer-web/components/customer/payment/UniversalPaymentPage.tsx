@@ -2773,9 +2773,13 @@ export function UniversalPaymentPage({
         stats={paymentStats}
         onBack={onBack}
         showBackButton
+        bottomEdge="sheet"
+        sheetToneClass="bg-orange-50"
       />
 
-      <main className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 ${mainBottomPadding}`}>
+      <main
+        className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-4 -mt-2 pt-5 pb-4 ${mainBottomPadding}`}
+      >
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
