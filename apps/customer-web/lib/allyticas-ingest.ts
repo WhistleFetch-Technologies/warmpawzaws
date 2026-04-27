@@ -3,6 +3,7 @@
  */
 
 import { getApiBaseUrl } from './api-client';
+import { humanizeCustomerRouteScreen } from './route-screen-label';
 
 export type AllyticasApp = 'customer_web' | 'vendor_web';
 export type AllyticasEnv = 'dev' | 'staging' | 'prod';
@@ -123,13 +124,20 @@ export function mapLegacyTrackToAllyticas(ev: LegacyTrackInput): IngestEventRow 
         event_name: named(`conversion_${ev.action}`),
         properties: { value: ev.value, ...dims },
       };
-    case 'error':
+    case 'error': {
+      const routeKey = typeof dims.route_key === 'string' ? dims.route_key.trim() : '';
+      const screenName =
+        routeKey !== ''
+          ? humanizeCustomerRouteScreen(routeKey).slice(0, 512)
+          : named(`error_${ev.action}`).slice(0, 512);
       return {
         event_type: 'error',
         event_name: named(`error_${ev.action}`),
         error_code: slug(ev.label || ev.action || 'unknown', 80) || 'unknown',
+        screen_name: screenName,
         properties: dims,
       };
+    }
     case 'navigation':
       return {
         event_type: 'custom',

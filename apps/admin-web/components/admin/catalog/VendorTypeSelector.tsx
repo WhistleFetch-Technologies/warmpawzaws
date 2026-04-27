@@ -19,7 +19,7 @@ const VENDOR_TYPES: VendorType[] = [
   { id: 'cafe', emoji: '☕', label: 'Pet-Friendly Cafes', description: 'Dining spots' },
   { id: 'adoption', emoji: '🐾', label: 'Adoption Services', description: 'Find homes' },
   { id: 'insurance', emoji: '🛡️', label: 'Insurance Providers', description: 'Pet protection' },
-  { id: 'mating', emoji: '💕', label: 'Mating & Dating', description: 'Breeding services' },
+  { id: 'mating', emoji: '💕', label: 'Peer to Peer', description: 'Breeding services' },
 ];
 
 interface VendorTypeSelectorProps {

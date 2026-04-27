@@ -100,7 +100,7 @@ export default function PromotionsPage() {
                 Offers & Coupons
               </h1>
               <p className="truncate text-xs text-slate-500">
-                Save more on your pet shopping
+                Save more on pet products
               </p>
             </div>
             <button

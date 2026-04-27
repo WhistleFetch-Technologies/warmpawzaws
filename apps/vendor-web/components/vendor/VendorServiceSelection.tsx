@@ -25,7 +25,7 @@ const services: ServiceType[] = [
   { id: 'sunset', name: 'SunSet Services', icon: '🌅', popular: false, supportsClinic: false, supportsHome: true },
   { id: 'events', name: 'Events', icon: '🎪', popular: false, supportsClinic: true, supportsHome: true },
   { id: 'insurance', name: 'Pet Insurance', icon: '🛡️', popular: false, supportsClinic: true, supportsHome: true },
-  { id: 'mating', name: 'Mating & Dating', icon: '💕', popular: false, supportsClinic: true, supportsHome: false }
+  { id: 'mating', name: 'Peer to Peer', icon: '💕', popular: false, supportsClinic: true, supportsHome: false }
 ];
 
 interface ServiceStyle {

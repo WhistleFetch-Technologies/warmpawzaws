@@ -134,7 +134,7 @@ const CheckInCheckOutPage = dynamic(() => import('./CheckInCheckOutPage').then(m
 const MedicalRecordsPage = dynamic(() => import('./MedicalRecordsPage').then(mod => ({ default: mod.MedicalRecordsPage })), { loading: LoadingSpinner });
 const CustomerWalletPage = dynamic(() => import('./WalletPage').then(mod => ({ default: mod.WalletPage })), { loading: LoadingSpinner });
 
-// Mating & Dating Service
+// Peer to Peer service
 const MatingDatingHub = dynamic(() => import('./MatingDatingHub').then(mod => ({ default: mod.MatingDatingHub })), { loading: LoadingSpinner });
 const HomeServiceSelectionEnhanced = dynamic(() => import('./HomeServiceSelectionEnhanced').then(mod => ({ default: mod.HomeServiceSelectionEnhanced })), { loading: LoadingSpinner });
 const UniversalHomeServiceRouter = dynamic(() => import('./home-services/UniversalHomeServiceRouter').then(mod => ({ default: mod.UniversalHomeServiceRouter })), { loading: LoadingSpinner });
@@ -1040,7 +1040,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     onNavigate={handleAccountNavigate}
   />;
 
-  // ✅ MATING & DATING SERVICE - P2P Matchmaking
+  // ✅ PEER TO PEER SERVICE - P2P Matchmaking
   if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
     phone={phone}
     onBack={handleBack}

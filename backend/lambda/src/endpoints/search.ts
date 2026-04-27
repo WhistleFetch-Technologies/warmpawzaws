@@ -17,6 +17,7 @@
  *
  * Service result ids: OpenSearch warmpawz-services documents MUST use vendor_services.id
  * (same as SQL fallback) so customer /booking/:id and GET /services/:id resolve correctly.
+ * Canonical service detail for that id: GET /services/:serviceId (service_catalog row first, else vendor_services).
  * ============================================================================
  */
 

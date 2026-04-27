@@ -7,6 +7,8 @@ import { SearchContextProvider } from '@/context/SearchContext';
 import { CartProvider } from '@/context/CartContext';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { AnalyticsRouteTracker } from '@/components/AnalyticsRouteTracker';
+import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
+import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -32,22 +34,25 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <CartProvider>
-        <SearchContextProvider>
-          <ScrollToTop />
-          <Suspense fallback={null}>
-            <AnalyticsRouteTracker />
-          </Suspense>
-          {children}
-          <Toaster position="top-right" />
-          {/* Only load DevTools in development mode - prevents bundle bloat in production */}
-          {process.env.NODE_ENV === 'development' && (
+      <ClientErrorBoundary>
+        <GlobalClientErrorReporting />
+        <CartProvider>
+          <SearchContextProvider>
+            <ScrollToTop />
             <Suspense fallback={null}>
-              <ReactQueryDevtools initialIsOpen={false} />
+              <AnalyticsRouteTracker />
             </Suspense>
-          )}
-        </SearchContextProvider>
-      </CartProvider>
+            {children}
+            <Toaster position="top-right" />
+            {/* Only load DevTools in development mode - prevents bundle bloat in production */}
+            {process.env.NODE_ENV === 'development' && (
+              <Suspense fallback={null}>
+                <ReactQueryDevtools initialIsOpen={false} />
+              </Suspense>
+            )}
+          </SearchContextProvider>
+        </CartProvider>
+      </ClientErrorBoundary>
     </QueryClientProvider>
   );
 }

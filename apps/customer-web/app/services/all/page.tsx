@@ -6,6 +6,7 @@ import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -33,7 +34,8 @@ export default function AllServicesCatalogPage() {
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    // Must match home + password/OTP login: Cognito bundle lives in customerCognitoTokens, not always authToken.
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
     const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
@@ -111,6 +113,10 @@ export default function AllServicesCatalogPage() {
 
   useEffect(() => {
     if (isLoading || !session) return;
+    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
+      router.replace('/auth/set-password?next=/services/all');
+      return;
+    }
     if (!readProfileCompleted()) {
       router.replace('/profile');
       return;

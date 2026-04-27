@@ -6,7 +6,7 @@
  * Complete end-to-end flows for specialized pet services:
  * - Adoption: Pet catalog, adoption requests, applications
  * - Breeder: Puppy listings, purchase inquiries, reservations
- * - Mating/Dating: Pet matching, match requests, messaging
+ * - Peer to Peer: Pet matching, match requests, messaging
  * - Pet Holidays: Package builder, bookings, itinerary
  * - Relocation: Quote calculator, booking, tracking
  * 
@@ -601,7 +601,7 @@ export function registerSpecializedServiceFlows(app: Hono) {
   });
 
   // ============================================
-  // MATING/DATING FLOW ENDPOINTS
+  // PEER TO PEER FLOW ENDPOINTS
   // ============================================
 
   /**

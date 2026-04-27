@@ -22,7 +22,11 @@ export function formatCustomerApiFailure(err: unknown, leadSentence: string): st
       return `${head}. You may need to sign in again, or contact support if this continues.`;
     }
     if (err.statusCode === 404) {
-      return `${head}. This service is temporarily unavailable—try again later.`;
+      const detail = err.message?.trim();
+      if (detail && !/^HTTP\s*404\b/i.test(detail) && detail.length < 240) {
+        return `${head}. ${detail}`;
+      }
+      return `${head}. This booking or chat was not found.`;
     }
     if (err.statusCode === 408 || err.statusCode === 504) {
       return `${head}. The request timed out. ${CONNECTION_HINT}`;

@@ -174,7 +174,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     'Medicine Delivery',
     'Pet Cafe',
     'Pet Insurance',
-    'Mating Services'
+    'Peer to Peer'
   ];
 
   // Format phone number with spaces
