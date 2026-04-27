@@ -17,6 +17,52 @@ export interface BoardingPlanRow {
   duration?: number;
   serviceStyle?: string;
   description?: string;
+  /** Per-service category for badges (e.g. Boarding, Dog walking). Falls back to hub `planBadgeLabel` when absent. */
+  categoryLabel?: string;
+}
+
+/** Map stored category slugs / short names to customer-facing badge text. */
+export function humanizeServiceCategoryBadge(raw: string | undefined | null): string | undefined {
+  if (raw == null || typeof raw !== 'string') return undefined;
+  const t = raw.trim();
+  if (!t) return undefined;
+  const norm = t.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  const map: Record<string, string> = {
+    boarding: 'Boarding',
+    sitting: 'Pet sitting',
+    pet_sitting: 'Pet sitting',
+    pet_sitter: 'Pet sitting',
+    'pet-sitter': 'Pet sitting',
+    walking: 'Dog walking',
+    walker: 'Dog walking',
+    dog_walking: 'Dog walking',
+    'dog-walking': 'Dog walking',
+    veterinary: 'Veterinary',
+    vet: 'Veterinary',
+    grooming: 'Grooming',
+    training: 'Training',
+    diagnostics: 'Diagnostics',
+    behaviourist: 'Behaviourist',
+    nutritionist: 'Nutritionist',
+    daycare: 'Daycare',
+    transport: 'Transport',
+  };
+  if (map[norm]) return map[norm];
+  if (/^[a-z0-9_-]+$/i.test(t) && !/\s/.test(t)) {
+    return t
+      .split(/[-_]/g)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+  return t;
+}
+
+function categoryLabelFromServiceRow(s: Record<string, unknown>): string | undefined {
+  const raw = String(
+    s.category_name ?? s.categoryName ?? s.category ?? s.service_category ?? ''
+  ).trim();
+  return humanizeServiceCategoryBadge(raw);
 }
 
 export interface BoardingVendorCard {
@@ -129,6 +175,7 @@ export function planRowsFromDiscoveryServices(services: unknown[] | undefined): 
       duration: (s.duration || s.duration_minutes) as number | undefined,
       serviceStyle: (s.serviceStyle || s.service_style) as string | undefined,
       description: desc || undefined,
+      categoryLabel: categoryLabelFromServiceRow(s),
     });
   }
   return out;
@@ -170,6 +217,7 @@ export function mapServicesApiResponseToPlanRows(servicesResponse: any): Boardin
       duration: s.duration || s.duration_minutes,
       serviceStyle: s.serviceStyle || s.service_style,
       description: desc || undefined,
+      categoryLabel: categoryLabelFromServiceRow(s as Record<string, unknown>),
     });
   }
   return mapped;
