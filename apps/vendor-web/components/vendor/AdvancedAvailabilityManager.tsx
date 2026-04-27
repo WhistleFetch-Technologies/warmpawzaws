@@ -10,7 +10,8 @@
  * - Breaks section (lunch, tea, custom)
  * - Holidays and vacation management
  * - Copy schedule across days
- * - Go Offline slider (solo providers only)
+ * - Online/offline toggle (all vendors — customer discovery)
+ * - Service radius (solo) / service distance km (center & business)
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -263,6 +264,8 @@ export function AdvancedAvailabilityManager({
 
   /** Single source of truth for customer distance matching (km); persisted on vendors.service_radius when saving availability */
   const [travelRadiusKm, setTravelRadiusKm] = useState(7);
+  /** Center/business: service coverage from business location (km), persisted as vendors.service_distance_km */
+  const [serviceDistanceKm, setServiceDistanceKm] = useState(10);
 
   useEffect(() => {
     const s = vendorData?.service_radius ?? vendorData?.serviceRadius;
@@ -270,6 +273,13 @@ export function AdvancedAvailabilityManager({
       setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(s)))));
     }
   }, [vendorData?.service_radius, vendorData?.serviceRadius]);
+
+  useEffect(() => {
+    const d = vendorData?.service_distance_km ?? vendorData?.serviceDistanceKm;
+    if (d != null && d !== '' && !Number.isNaN(Number(d))) {
+      setServiceDistanceKm(Math.min(50, Math.max(0, Math.round(Number(d)))));
+    }
+  }, [vendorData?.service_distance_km, vendorData?.serviceDistanceKm]);
 
   const buildLocationDataForSave = useCallback(
     (slot: TimeSlot): TimeSlot['locationData'] | undefined => {
@@ -411,6 +421,10 @@ export function AdvancedAvailabilityManager({
           const sr = profileRes.vendor.service_radius ?? profileRes.vendor.serviceRadius;
           if (sr != null && sr !== '' && !Number.isNaN(Number(sr))) {
             setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(sr)))));
+          }
+          const sdk = profileRes.vendor.service_distance_km ?? profileRes.vendor.serviceDistanceKm;
+          if (sdk != null && sdk !== '' && !Number.isNaN(Number(sdk))) {
+            setServiceDistanceKm(Math.min(50, Math.max(0, Math.round(Number(sdk)))));
           }
         }
       } catch (e) {
@@ -981,6 +995,17 @@ export function AdvancedAvailabilityManager({
       const holidayCount = holidaysRes?.insertedCount || holidays.length;
       
       toast.success(`Saved: ${slotCount} slots, ${breakCount} breaks, ${holidayCount} holidays`);
+
+      if (!isSoloProvider) {
+        try {
+          await apiClient.put(`/vendor/${vendorId}/profile`, {
+            serviceDistanceKm,
+          } as any);
+        } catch (e) {
+          console.warn('[SAVE] serviceDistanceKm profile update:', e);
+          toast.warning('Schedule saved, but service distance could not be synced to profile. Try Save again.');
+        }
+      }
       
       // Reload data to confirm it persisted
       console.log('[SAVE] Reloading data to verify persistence...');
@@ -1062,9 +1087,8 @@ export function AdvancedAvailabilityManager({
               embeddedInProfile ? 'space-y-6' : 'mx-auto max-w-4xl space-y-6 px-4 py-6'
             }
           >
-        {/* Online Toggle - Solo providers only */}
-        {isSoloProvider && (
-          <div className="bg-white rounded-xl border p-4">
+        {/* Online / offline — same discovery rule for solo and center/business */}
+        <div className="bg-white rounded-xl border p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {isOnline ? (
@@ -1101,8 +1125,7 @@ export function AdvancedAvailabilityManager({
                 )}
               </button>
             </div>
-          </div>
-        )}
+        </div>
 
         {/* Service radius — single source of truth (vendors.service_radius); uses profile address & map coordinates */}
         {isSoloProvider && (
@@ -1132,6 +1155,47 @@ export function AdvancedAvailabilityManager({
                     setTravelRadiusKm(Math.min(500, Math.max(1, v)));
                   }}
                   className="h-9"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isSoloProvider && (
+          <div className="rounded-xl border border-blue-100 bg-blue-50/30 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Service distance (km)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Coverage from your business address for in-person bookings (0–50 km). Saved with{' '}
+                  <span className="font-medium">Save All</span> to your profile for discovery.
+                </p>
+              </div>
+              <div className="shrink-0 w-full sm:w-52 space-y-2">
+                <label htmlFor="service-distance-km" className="sr-only">
+                  Service distance in kilometers
+                </label>
+                <Input
+                  id="service-distance-km"
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={serviceDistanceKm}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isNaN(v)) return;
+                    setServiceDistanceKm(Math.min(50, Math.max(0, v)));
+                  }}
+                  className="h-9"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  value={serviceDistanceKm}
+                  onChange={(e) => setServiceDistanceKm(Number(e.target.value))}
+                  className="w-full accent-[#FF8C42]"
+                  aria-label="Adjust service distance in kilometers"
                 />
               </div>
             </div>

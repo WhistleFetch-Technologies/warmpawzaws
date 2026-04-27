@@ -53,6 +53,8 @@ function SpecIcon({ spec }: { spec: { iconName?: string; iconColor?: string; ico
 
 interface SpecializationSelectorProps {
   roleId?: string;
+  /** When set, loads specs for this catalogue category only (GET /vendor/specializations/by-category). */
+  categoryId?: string | null;
   selected: string[];
   onChange: (specs: string[]) => void;
   /** When this changes (e.g. modal opens), refetch to get latest from Catalog > Categories */
@@ -63,6 +65,7 @@ interface SpecializationSelectorProps {
 
 export function SpecializationSelector({ 
   roleId, 
+  categoryId,
   selected = [], // ✅ FIX: Default to empty array
   onChange,
   refreshTrigger,
@@ -73,8 +76,8 @@ export function SpecializationSelector({
   const [error, setError] = useState<string | null>(null);
 
   const loadSpecializations = async () => {
-    if (!roleId) {
-      setError('Role ID is required');
+    if (!categoryId?.trim() && !roleId) {
+      setError('Category or role is required');
       setLoading(false);
       return;
     }
@@ -82,13 +85,18 @@ export function SpecializationSelector({
     try {
       setLoading(true);
       setError(null);
-      
-      const cleanRoleId = roleId.replace('role_', '');
-      console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
-      // Use specialization_master so admin-created specializations (e.g. hair trimming)
-      // with "show on vendor app" appear. Supports UUID roleId (looked up server-side).
-      const data = await apiClient.get(`/vendor/specializations/${cleanRoleId}`) as any;
+      let data: any;
+      if (categoryId?.trim()) {
+        console.log('[SPEC] Loading specializations for category:', categoryId.trim());
+        data = await apiClient.get(
+          `/vendor/specializations/by-category?categoryId=${encodeURIComponent(categoryId.trim())}`
+        ) as any;
+      } else {
+        const cleanRoleId = (roleId || '').replace('role_', '');
+        console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
+        data = await apiClient.get(`/vendor/specializations/${cleanRoleId}`) as any;
+      }
 
       if (data && data.specializations) {
         console.log('[CENTER SPEC] Loaded specializations:', data.specializations.length, data.specializations);
@@ -111,13 +119,13 @@ export function SpecializationSelector({
   };
 
   useEffect(() => {
-    if (roleId) {
+    if (categoryId?.trim() || roleId) {
       loadSpecializations();
     } else {
       setLoading(false);
-      setError('Role ID is required to load specializations');
+      setError('Select a category or ensure role is set to load specializations');
     }
-  }, [roleId, refreshTrigger]);
+  }, [roleId, categoryId, refreshTrigger]);
 
   const toggleSpec = (specId: string) => {
     if (selected.includes(specId)) {

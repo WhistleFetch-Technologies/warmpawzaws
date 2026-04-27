@@ -304,6 +304,22 @@ export function VendorCustomServiceCreationEnhanced({
   // COMPUTED VALUES
   // ============================================================================
 
+  /** Catalogue category UUID for specialization_master filter (strict with selected category). */
+  const catalogCategoryIdForSpecs = useMemo(() => {
+    if (platformCategoryId?.trim()) return platformCategoryId.trim();
+    if (!categoryName || categoryName === 'other') return null;
+    const row = catalogCategories.find(
+      (c: { id?: string; name?: string }) =>
+        String(c.name || '').toLowerCase() === String(categoryName).toLowerCase()
+    );
+    const idStr = row?.id != null ? String(row.id).trim() : '';
+    return idStr || null;
+  }, [platformCategoryId, categoryName, catalogCategories]);
+
+  useEffect(() => {
+    setSelectedSpecializationIds([]);
+  }, [catalogCategoryIdForSpecs]);
+
   // Determine vendor role category (use role NAME e.g. trainer_solo, groomer_solo - not UUID)
   const vendorRoleCategory = useMemo((): VendorRoleCategory => {
     const roleName = getVendorRoleName(vendorData) || (vendorData?.roleId || vendorData?.role_id || '');
@@ -1171,6 +1187,7 @@ export function VendorCustomServiceCreationEnhanced({
               <Suspense fallback={<div className="py-4 text-sm text-gray-500">Loading specializations...</div>}>
                 <SpecializationSelector
                   roleId={getVendorRoleId(vendorData) || ''}
+                  categoryId={catalogCategoryIdForSpecs}
                   selected={selectedSpecializationIds}
                   onChange={setSelectedSpecializationIds}
                   refreshTrigger={specRefreshKey}
