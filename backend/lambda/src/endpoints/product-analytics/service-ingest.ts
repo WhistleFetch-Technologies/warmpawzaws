@@ -1,6 +1,7 @@
 import { getClient } from '../../database/rds-connection';
 import type { IngestBody } from './schemas';
 import { assertPropertiesSize } from './schemas';
+import { upsertProductErrorCasesForInsertedEvents } from './error-case-ingest';
 
 function toJsonb(o: Record<string, unknown> | undefined): string {
   return JSON.stringify(o ?? {});
@@ -11,6 +12,31 @@ function parseOptionalClientTs(s: string | null | undefined): Date | null {
   const t = Date.parse(s);
   if (Number.isNaN(t)) return null;
   return new Date(t);
+}
+
+/** Admin / screens tab: error rows used to omit screen_name; backfill from properties when missing. */
+function screenNameForIngest(
+  eventType: string,
+  screenName: string | null | undefined,
+  properties: Record<string, unknown> | undefined
+): string | null {
+  const direct = screenName != null && String(screenName).trim() !== '' ? String(screenName).trim() : '';
+  if (direct) {
+    return direct.slice(0, 512);
+  }
+  if (eventType !== 'error') {
+    return null;
+  }
+  const p = properties ?? {};
+  const rk = p.route_key;
+  if (typeof rk === 'string' && rk.trim()) {
+    return rk.trim().slice(0, 512);
+  }
+  const ss = p.shell_screen;
+  if (typeof ss === 'string' && ss.trim()) {
+    return ss.trim().slice(0, 512);
+  }
+  return null;
 }
 
 /**
@@ -77,7 +103,7 @@ export async function ingestProductAnalyticsBatch(body: IngestBody): Promise<{ s
         body.app,
         ev.event_type,
         ev.event_name,
-        ev.screen_name ?? null,
+        screenNameForIngest(ev.event_type, ev.screen_name, ev.properties as Record<string, unknown> | undefined),
         ev.duration_ms ?? null,
         ev.api_name ?? null,
         ev.error_code ?? null,
@@ -88,8 +114,22 @@ export async function ingestProductAnalyticsBatch(body: IngestBody): Promise<{ s
       );
     }
 
-    const sql = `INSERT INTO analytics_events ${cols} VALUES ${placeholders.join(', ')}`;
-    await client.query(sql, params);
+    const sql = `INSERT INTO analytics_events ${cols} VALUES ${placeholders.join(', ')} RETURNING id`;
+    const insertRes = await client.query<{ id: string }>(sql, params);
+
+    const errorRows = insertRes.rows
+      .map((row, i) => ({ id: row.id, ev: events[i] }))
+      .filter((x) => x.ev.event_type === 'error')
+      .map((x) => ({
+        id: x.id,
+        app: body.app,
+        event_name: x.ev.event_name,
+        error_code: x.ev.error_code ?? null,
+        properties: (x.ev.properties ?? {}) as Record<string, unknown>,
+      }));
+    if (errorRows.length > 0) {
+      await upsertProductErrorCasesForInsertedEvents(client, errorRows);
+    }
 
     await client.query('COMMIT');
     return { sessionId, inserted: events.length };

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
+import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
@@ -362,6 +363,11 @@ export function CustomerHomeWrapper({
 
   /** Allyticas: URL + in-app `currentScreen` (e.g. `Home · Vet care` when path is still `/`). */
   useCustomerShellAnalytics(currentScreen, pathname, searchParams);
+
+  useEffect(() => {
+    setClientShellScreenForErrors(currentScreen);
+    return () => setClientShellScreenForErrors(null);
+  }, [currentScreen]);
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);

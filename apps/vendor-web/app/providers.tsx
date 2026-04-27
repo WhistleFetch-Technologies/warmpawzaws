@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { useState } from 'react';
 import { ScrollToTop } from '@/components/ScrollToTop';
+import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
+import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -20,9 +22,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ScrollToTop />
-      <div className="h-full min-h-0">{children}</div>
-      <Toaster position="top-right" />
+      <ClientErrorBoundary>
+        <GlobalClientErrorReporting />
+        <ScrollToTop />
+        <div className="h-full min-h-0">{children}</div>
+        <Toaster position="top-right" />
+      </ClientErrorBoundary>
     </QueryClientProvider>
   );
 }

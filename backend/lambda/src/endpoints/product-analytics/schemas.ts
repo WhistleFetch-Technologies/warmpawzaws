@@ -98,3 +98,15 @@ export function parseIsoRange(start: string, end: string): { startMs: number; en
   }
   return { startMs, endMs };
 }
+
+export const ERROR_CASE_STATUSES = ['open', 'in_progress', 'resolved', 'ignored'] as const;
+export const ERROR_CASE_PRIORITIES = ['p1', 'p2', 'p3', 'p4'] as const;
+
+export const patchErrorCaseBodySchema = z.object({
+  status: z.enum(ERROR_CASE_STATUSES).optional(),
+  priority: z.enum(ERROR_CASE_PRIORITIES).optional(),
+  /** ISO-8601 or null to clear */
+  deadline_at: z.union([z.string(), z.null()]).optional(),
+  assigned_admin_id: z.union([z.string().uuid(), z.null()]).optional(),
+  notes: z.union([z.string().max(10000), z.null()]).optional(),
+});

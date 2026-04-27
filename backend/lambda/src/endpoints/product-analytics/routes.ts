@@ -11,6 +11,9 @@ import {
   DEFAULT_ADMIN_LIMIT,
   MAX_ADMIN_LIMIT,
   MAX_RAW_RANGE_DAYS,
+  patchErrorCaseBodySchema,
+  ERROR_CASE_STATUSES,
+  ERROR_CASE_PRIORITIES,
 } from './schemas';
 import { ingestProductAnalyticsBatch } from './service-ingest';
 
@@ -494,6 +497,328 @@ export function registerProductAnalyticsEndpoints(app: Hono) {
     } catch (e: any) {
       console.error('[product-analytics retention]', e);
       return c.json({ success: false, error: e?.message || 'Query failed' }, 500);
+    }
+  });
+
+  /** ----- Error triage cases ----- */
+
+  app.get('/admin/analytics/error-cases/assignees', async (c) => {
+    const auth = await requireAdminAuth(c);
+    if (!auth.authorized) {
+      return c.json({ success: false, error: auth.error || 'Unauthorized' }, 401);
+    }
+    try {
+      const res = await query(
+        `SELECT id, email, name
+         FROM admins
+         WHERE is_active = true
+         ORDER BY COALESCE(name, '') ASC, email ASC`
+      );
+      return c.json({ success: true, data: res.rows });
+    } catch (e: any) {
+      console.error('[product-analytics error-cases assignees]', e);
+      return c.json({ success: false, error: e?.message || 'Query failed' }, 500);
+    }
+  });
+
+  app.get('/admin/analytics/error-cases', async (c) => {
+    const auth = await requireAdminAuth(c);
+    if (!auth.authorized) {
+      return c.json({ success: false, error: auth.error || 'Unauthorized' }, 401);
+    }
+
+    const start = c.req.query('start');
+    const end = c.req.query('end');
+    const status = c.req.query('status');
+    const priority = c.req.query('priority');
+    const assignedAdminId = c.req.query('assigned_admin_id');
+    const qRaw = c.req.query('q');
+
+    if ((start && !end) || (!start && end)) {
+      return adminBadDate(c, 'Provide both start and end for last_seen filter or neither');
+    }
+    if (start && end) {
+      try {
+        parseIsoRange(start, end);
+      } catch (e: any) {
+        return adminBadDate(c, e?.message || 'Invalid date range');
+      }
+    }
+
+    if (status && !(ERROR_CASE_STATUSES as readonly string[]).includes(status)) {
+      return c.json({ success: false, error: 'Invalid status' }, 400);
+    }
+    if (priority && !(ERROR_CASE_PRIORITIES as readonly string[]).includes(priority)) {
+      return c.json({ success: false, error: 'Invalid priority' }, 400);
+    }
+
+    const page = Math.max(1, parseInt(c.req.query('page') || '1', 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10) || 50));
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = ['1=1'];
+    const params: unknown[] = [];
+
+    if (start && end) {
+      params.push(start, end);
+      conditions.push(
+        `c.last_seen_at >= $${params.length - 1}::timestamptz AND c.last_seen_at <= $${params.length}::timestamptz`
+      );
+    }
+
+    if (status) {
+      params.push(status);
+      conditions.push(`c.status = $${params.length}::analytics_error_case_status_enum`);
+    }
+
+    if (priority) {
+      params.push(priority);
+      conditions.push(`c.priority = $${params.length}::analytics_error_case_priority_enum`);
+    }
+
+    if (assignedAdminId) {
+      if (!/^[0-9a-f-]{36}$/i.test(assignedAdminId)) {
+        return c.json({ success: false, error: 'assigned_admin_id must be a UUID' }, 400);
+      }
+      params.push(assignedAdminId);
+      conditions.push(`c.assigned_admin_id = $${params.length}::uuid`);
+    }
+
+    if (qRaw && qRaw.trim()) {
+      params.push(`%${qRaw.trim()}%`);
+      conditions.push(`(c.title ILIKE $${params.length} OR c.fingerprint ILIKE $${params.length})`);
+    }
+
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+    params.push(limit, offset);
+
+    try {
+      const res = await query(
+        `SELECT c.id,
+                c.fingerprint,
+                c.title,
+                c.status,
+                c.priority,
+                c.deadline_at,
+                c.assigned_admin_id,
+                c.notes,
+                c.first_seen_at,
+                c.last_seen_at,
+                c.created_at,
+                c.updated_at,
+                (SELECT COUNT(*)::bigint FROM error_case_occurrences o WHERE o.case_id = c.id) AS occurrence_count,
+                a.email AS assignee_email,
+                a.name AS assignee_name,
+                COUNT(*) OVER()::bigint AS _full_count
+         FROM product_error_cases c
+         LEFT JOIN admins a ON a.id = c.assigned_admin_id
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY c.last_seen_at DESC
+         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        params
+      );
+
+      const total = res.rows.length > 0 ? Number(res.rows[0]._full_count ?? 0) : 0;
+      const rows = res.rows.map((row: Record<string, unknown>) => {
+        const { _full_count, ...rest } = row;
+        return rest;
+      });
+
+      return c.json({
+        success: true,
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+      });
+    } catch (e: any) {
+      console.error('[product-analytics error-cases list]', e);
+      return c.json({ success: false, error: e?.message || 'Query failed' }, 500);
+    }
+  });
+
+  app.get('/admin/analytics/error-cases/:id', async (c) => {
+    const auth = await requireAdminAuth(c);
+    if (!auth.authorized) {
+      return c.json({ success: false, error: auth.error || 'Unauthorized' }, 401);
+    }
+
+    const id = c.req.param('id');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return c.json({ success: false, error: 'Invalid id' }, 400);
+    }
+
+    try {
+      const caseRow = await query(
+        `SELECT c.id,
+                c.fingerprint,
+                c.title,
+                c.status,
+                c.priority,
+                c.deadline_at,
+                c.assigned_admin_id,
+                c.notes,
+                c.first_seen_at,
+                c.last_seen_at,
+                c.created_at,
+                c.updated_at,
+                (SELECT COUNT(*)::bigint FROM error_case_occurrences o WHERE o.case_id = c.id) AS occurrence_count,
+                a.email AS assignee_email,
+                a.name AS assignee_name
+         FROM product_error_cases c
+         LEFT JOIN admins a ON a.id = c.assigned_admin_id
+         WHERE c.id = $1::uuid`,
+        [id]
+      );
+
+      if (caseRow.rows.length === 0) {
+        return c.json({ success: false, error: 'Not found' }, 404);
+      }
+
+      const occ = await query(
+        `SELECT o.id AS occurrence_id,
+                o.created_at AS linked_at,
+                e.id AS event_id,
+                e.occurred_at,
+                e.screen_name,
+                e.properties,
+                e.environment,
+                e.app,
+                e.event_name,
+                e.error_code,
+                e.session_id,
+                e.actor_id,
+                e.client_ts
+         FROM error_case_occurrences o
+         JOIN analytics_events e ON e.id = o.event_id
+         WHERE o.case_id = $1::uuid
+         ORDER BY e.occurred_at DESC
+         LIMIT 500`,
+        [id]
+      );
+
+      return c.json({
+        success: true,
+        data: {
+          case: caseRow.rows[0],
+          occurrences: occ.rows,
+        },
+      });
+    } catch (e: any) {
+      console.error('[product-analytics error-cases detail]', e);
+      return c.json({ success: false, error: e?.message || 'Query failed' }, 500);
+    }
+  });
+
+  app.patch('/admin/analytics/error-cases/:id', async (c) => {
+    const auth = await requireAdminAuth(c);
+    if (!auth.authorized) {
+      return c.json({ success: false, error: auth.error || 'Unauthorized' }, 401);
+    }
+
+    const id = c.req.param('id');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return c.json({ success: false, error: 'Invalid id' }, 400);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ success: false, error: 'Invalid JSON body' }, 400);
+    }
+
+    const parsed = patchErrorCaseBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { success: false, error: 'Validation failed', details: parsed.error.flatten() },
+        400
+      );
+    }
+
+    const p = parsed.data;
+    const hasUpdate =
+      p.status !== undefined ||
+      p.priority !== undefined ||
+      p.deadline_at !== undefined ||
+      p.assigned_admin_id !== undefined ||
+      p.notes !== undefined;
+
+    if (!hasUpdate) {
+      return c.json({ success: false, error: 'No fields to update' }, 400);
+    }
+
+    if (p.assigned_admin_id !== undefined && p.assigned_admin_id !== null) {
+      try {
+        const chk = await query('SELECT 1 FROM admins WHERE id = $1::uuid LIMIT 1', [p.assigned_admin_id]);
+        if (chk.rows.length === 0) {
+          return c.json({ success: false, error: 'Unknown assignee admin id' }, 400);
+        }
+      } catch (e: any) {
+        console.error('[product-analytics error-cases patch verify admin]', e);
+        return c.json({ success: false, error: e?.message || 'Lookup failed' }, 500);
+      }
+    }
+
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+
+    if (p.status !== undefined) {
+      vals.push(p.status);
+      sets.push(`status = $${vals.length}::analytics_error_case_status_enum`);
+    }
+    if (p.priority !== undefined) {
+      vals.push(p.priority);
+      sets.push(`priority = $${vals.length}::analytics_error_case_priority_enum`);
+    }
+    if (p.deadline_at !== undefined) {
+      if (p.deadline_at === null) {
+        sets.push('deadline_at = NULL');
+      } else {
+        const t = Date.parse(p.deadline_at);
+        if (Number.isNaN(t)) {
+          return c.json({ success: false, error: 'deadline_at must be a valid ISO datetime' }, 400);
+        }
+        vals.push(new Date(t).toISOString());
+        sets.push(`deadline_at = $${vals.length}::timestamptz`);
+      }
+    }
+    if (p.assigned_admin_id !== undefined) {
+      if (p.assigned_admin_id === null) {
+        sets.push('assigned_admin_id = NULL');
+      } else {
+        vals.push(p.assigned_admin_id);
+        sets.push(`assigned_admin_id = $${vals.length}::uuid`);
+      }
+    }
+    if (p.notes !== undefined) {
+      if (p.notes === null) {
+        sets.push('notes = NULL');
+      } else {
+        vals.push(p.notes);
+        sets.push(`notes = $${vals.length}`);
+      }
+    }
+
+    sets.push('updated_at = now()');
+    vals.push(id);
+
+    try {
+      const upd = await query(
+        `UPDATE product_error_cases SET ${sets.join(', ')} WHERE id = $${vals.length}::uuid RETURNING *`,
+        vals
+      );
+      if (upd.rows.length === 0) {
+        return c.json({ success: false, error: 'Case not found' }, 404);
+      }
+      return c.json({ success: true, data: upd.rows[0] });
+    } catch (e: any) {
+      console.error('[product-analytics error-cases patch]', e);
+      return c.json({ success: false, error: e?.message || 'Update failed' }, 500);
     }
   });
 }
