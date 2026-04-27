@@ -406,21 +406,11 @@ export class ApiClient {
       }
     }
 
-    // Same-origin proxy (see app/api/customer/articles/route.ts) — after all `path` mutations
-    // Local dev: /chat/* → /api/bff/chat/* (see app/api/bff/chat/[[...path]]/route.ts) so Next does not
-    // treat /chat/conversations as a missing page and 404.
-    const isLocalhostDev =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.hostname === '[::1]' ||
-        (typeof window.location.hostname === 'string' && window.location.hostname.endsWith('.localhost')));
-
+    // Same-origin proxy for articles only (static export cannot ship App Router BFF routes).
+    // /chat/* always uses API base URL (ensure API Gateway CORS allows localhost in dev).
     const url =
       typeof window !== 'undefined' && path.startsWith('/api/customer/articles')
         ? path
-        : isLocalhostDev && path.startsWith('/chat/')
-        ? `/api/bff/chat/${path.slice(6)}`
         : `${base}${path}`;
     
     let token = this.getAuthToken();
