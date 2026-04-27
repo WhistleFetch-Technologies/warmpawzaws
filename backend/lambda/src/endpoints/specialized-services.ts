@@ -131,7 +131,17 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                OR LOWER(COALESCE(sc.category_name, '')) IN ('blood tests', 'imaging', 'allergy', 'hormone', 'urine', 'stool', 'biopsy'))
         ORDER BY name
       `).catch(() => ({ rows: [] }));
-      const list = (rows.rows || []).map((r: any) => ({ id: (r.id || '').toLowerCase().replace(/\s+/g, '_'), name: r.name || r.id }));
+      // service_catalog sometimes has NULL category_name; COALESCE then surfaces category_id (UUID) as the label — drop those for customer UI.
+      const looksLikeUuid = (s: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || '').trim());
+      const list = (rows.rows || [])
+        .map((r: any) => {
+          const idRaw = (r.id || '').toString();
+          const nameRaw = (r.name || r.id || '').toString();
+          if (looksLikeUuid(nameRaw) || looksLikeUuid(idRaw)) return null;
+          return { id: idRaw.toLowerCase().replace(/\s+/g, '_'), name: nameRaw || idRaw };
+        })
+        .filter((x: any) => x != null) as { id: string; name: string }[];
       const seen = new Set(list.map((x: any) => x.id));
       if (!seen.has('blood') && !seen.has('blood_test')) {
         list.unshift({ id: 'blood', name: 'Blood Test' });
@@ -568,16 +578,32 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const lng = c.req.query('lng') ? parseFloat(c.req.query('lng')!) : null;
       const maxDistance = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : 50;
 
+      const testCategoryCol = await query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'diagnostic_tests' AND column_name = 'test_category' LIMIT 1`
+      );
+      const hasTestCategoryColumn = ((testCategoryCol as any).rows?.length || 0) > 0;
+      const categorySelectSql = hasTestCategoryColumn
+        ? 'COALESCE(category, test_category) AS category'
+        : 'category AS category';
+      const categoryFilterExpr = hasTestCategoryColumn
+        ? "COALESCE(category, test_category, '')"
+        : "COALESCE(category, '')";
+
       let vendorQuery = `
         SELECT v.id, v.business_name, v.city, v.state, v.address, v.latitude, v.longitude, v.rating
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
           AND (
-            (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+            /* Lab roles: canonical + legacy aliases (see db/migrations/522_consolidate_legacy_role_vendors.sql) + service_catalog roleMappings. Normalized spaces → underscores for "diagnostic center" style names. */
+            (LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN (
+              'diagnostics_center', 'diagnostic_center', 'diagnostics', 'diagnostics_provider', 'diagnostics_solo',
+              'laboratory', 'lab_center'
+            ))
             OR (
               (
-                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet')
+                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo')
                 OR (LOWER(TRIM(r.name)) LIKE '%vet%' AND LOWER(TRIM(r.name)) LIKE '%clinic%')
                 OR LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN ('vet_clinic', 'veterinary_clinic')
               )
@@ -619,7 +645,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       for (const v of vendors) {
         let testQuery = `
           SELECT id, test_name, price, duration_minutes,
-                 COALESCE(category, test_category) AS category,
+                 ${categorySelectSql},
                  COALESCE(service_style, 'at_center') AS service_style,
                  is_free_home_collection, home_collection_fee
           FROM diagnostic_tests
@@ -628,7 +654,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         const testParams: any[] = [v.id];
         let ti = 2;
         if (category) {
-          testQuery += ` AND (LOWER(COALESCE(category, test_category, '')) = LOWER($${ti}) OR COALESCE(category, test_category, '') ILIKE $${ti + 1})`;
+          testQuery += ` AND (LOWER(${categoryFilterExpr}) = LOWER($${ti}) OR ${categoryFilterExpr} ILIKE $${ti + 1})`;
           testParams.push(category, `%${category}%`);
           ti += 2;
         }

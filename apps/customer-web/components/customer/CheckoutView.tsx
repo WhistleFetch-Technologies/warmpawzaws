@@ -12,14 +12,16 @@ import {
 import { toast } from 'sonner';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
+import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 
 interface CheckoutViewProps {
   phone: string;
   onBack: () => void;
   onSuccess: (orderId: string) => void;
+  onNavigate?: (screen: string, data?: unknown) => void;
 }
 
-export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
+export function CheckoutView({ phone, onBack, onSuccess, onNavigate }: CheckoutViewProps) {
   const { cart, getTotal, clearCart } = useCart();
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
   const [addresses, setAddresses] = useState<any[]>([]);
@@ -250,6 +252,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
         </div>
 
         <div className="p-4 space-y-4">
+          <CustomerPlacementBanners placement="checkout" onNavigate={onNavigate} />
           {/* Delivery Address */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <div className="flex items-start justify-between mb-3">

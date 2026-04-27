@@ -8,6 +8,7 @@ import { Image, Plus, Edit, Trash2, Calendar, Link as LinkIcon } from 'lucide-re
 import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
 import { validateRequired } from '@/lib/utils';
 import { formatDateForInput } from '@/lib/utils';
+import { normalizeAdminBannersList, adminBannerPositionFromRow } from '@/lib/banner-admin';
 
 // ============================================================================
 // TYPES
@@ -20,6 +21,8 @@ interface Banner {
   image_url?: string;
   cta_text?: string;
   cta_link?: string;
+  /** DB column */
+  type?: string;
   position: 'home_top' | 'home_middle' | 'category' | 'checkout';
   is_active: boolean;
   start_date?: string;
@@ -64,6 +67,7 @@ export default function BannersPage() {
       ...(filterPosition && filterPosition !== 'all' && { position: filterPosition }),
       ...(filterStatus && filterStatus !== 'all' && { isActive: filterStatus }),
     },
+    transformData: (rows) => normalizeAdminBannersList(rows) as unknown as Banner[],
   });
 
   const notifications = useNotifications({ autoClearSuccess: true });
@@ -138,7 +142,7 @@ export default function BannersPage() {
       image_url: banner.image_url || '',
       cta_text: banner.cta_text || '',
       cta_link: banner.cta_link || '',
-      position: banner.position,
+      position: adminBannerPositionFromRow(banner) as BannerFormData['position'],
       is_active: banner.is_active,
       start_date: formatDateForInput(banner.start_date),
       end_date: formatDateForInput(banner.end_date),
@@ -201,10 +205,11 @@ export default function BannersPage() {
 
   const getPositionLabel = (position: string) => {
     const labels: Record<string, string> = {
-      'home_top': 'Home Top',
-      'home_middle': 'Home Middle',
-      'category': 'Category Page',
-      'checkout': 'Checkout Page',
+      main: 'Home Top',
+      home_top: 'Home Top',
+      home_middle: 'Home Middle',
+      category: 'Category (Find All Services)',
+      checkout: 'Checkout',
     };
     return labels[position] || position;
   };

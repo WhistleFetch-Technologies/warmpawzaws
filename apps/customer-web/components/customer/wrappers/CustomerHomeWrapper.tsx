@@ -130,6 +130,7 @@ import { MatingDatingHub } from '../MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../../IntegratedServicesHub';
 import { ProblemGridSelector } from '../ProblemGridSelector';
+import { CustomerPlacementBanners } from '../shared/CustomerPlacementBanners';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { MealPlansList } from '../nutrition/MealPlansList';
@@ -2962,7 +2963,7 @@ export function CustomerHomeWrapper({
       </CustomerScreenWrapper>
     );
   }
-  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
+  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} onNavigate={(screen, data) => handleNavigateToService(screen, data)} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history')
     return (
@@ -3773,6 +3774,14 @@ export function CustomerHomeWrapper({
         roleName={roleInfo.roleName}
         customerId={phone}
         phone={phone}
+        topSlot={
+          pathname === '/services/all' ? (
+            <CustomerPlacementBanners
+              placement="category"
+              onNavigate={(screen, data) => handleNavigateToService(screen, data)}
+            />
+          ) : undefined
+        }
         onBack={() => {
           // Go back to the service that opened problem grid
           if (currentServiceType === 'groomer') setCurrentScreen('grooming');

@@ -382,9 +382,12 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       const matchesSearch = center.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            center.tests.some((t: any) => t.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
                            (center.packages?.length && center.packages.some((p: any) => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase())));
+      const hasAtCenterTest = center.tests.some(
+        (t: any) => (t.service_style || 'at_center') === 'at_center'
+      );
       const matchesFilter = selectedFilter === 'all' ||
                            (selectedFilter === 'home' && center.homeCollectionAvailable) ||
-                           (selectedFilter === 'center' && !center.homeCollectionAvailable);
+                           (selectedFilter === 'center' && (hasAtCenterTest || !center.homeCollectionAvailable));
       const matchesDistance =
         center.distance == null || center.distance <= distanceFilter;
       return matchesSearch && matchesFilter && matchesDistance;
