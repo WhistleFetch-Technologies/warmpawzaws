@@ -27,12 +27,22 @@ export function page(name: string, properties?: Record<string, unknown>) {
   });
 }
 
-export function trackError(code: string, message?: string, properties?: Record<string, unknown>) {
+export function trackError(code: string, message?: string, properties?: Record<string, unknown> | undefined) {
+  const props = { message, ...properties } as Record<string, unknown>;
+  const routeKey = typeof props.route_key === 'string' ? props.route_key.trim() : '';
+  const screenName =
+    routeKey !== ''
+      ? routeKey.slice(0, 512)
+      : typeof window !== 'undefined'
+        ? `${window.location.pathname || '/'}${window.location.search || ''}`.slice(0, 512)
+        : slug(`error_${code}`).slice(0, 512);
+
   enqueueVendor({
     event_type: 'error',
     event_name: slug(`error_${code}`),
     error_code: slug(code, 80),
-    properties: { message, ...properties },
+    screen_name: screenName,
+    properties: props,
   });
 }
 

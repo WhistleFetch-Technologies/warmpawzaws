@@ -1,6 +1,6 @@
 /**
  * Shop Dashboard Screen - Mobile
- * Handles pet shop product browsing, categories, and shopping
+ * Handles browsing pet products, categories, and purchasing
  * Identical functionality to web app
  */
 

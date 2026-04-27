@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, CalendarPlus, Video } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
+import { ApiError } from '@/lib/error-handling';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -168,11 +170,12 @@ export function CommunicationHub({
       if (!silent) setLoading(true);
       setError(null);
 
-      const response = await apiClient.get(`/chat/booking/${bookingId}/conversation`) as any;
-      
-      if (response.success || response.messages) {
+      const path = `/chat/booking/${bookingId}/conversation`;
+      const response = await apiClient.get(path) as any;
+
+      if (response.success || Array.isArray(response.messages)) {
         setMessages(response.messages || []);
-        
+
         // Update booking info from response
         if (response.booking) {
           const b = response.booking as Record<string, any>;
@@ -204,11 +207,20 @@ export function CommunicationHub({
             setIsWithin7Days(daysDiff <= 7);
           }
         }
+      } else if (!silent) {
+        setError('Could not load this chat. Please try again.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!silent) {
-        console.error('Error loading conversation:', err);
-        setError(err.message || 'Failed to load conversation');
+        const base = getApiBaseUrl();
+        if (process.env.NODE_ENV === 'development') {
+          const status =
+            err instanceof ApiError ? err.statusCode : (err as { statusCode?: number })?.statusCode;
+          console.error('Error loading conversation:', { path: `/chat/booking/${bookingId}/conversation`, base, status, err });
+        } else {
+          console.error('Error loading conversation:', err);
+        }
+        setError(formatCustomerApiFailure(err, 'Could not load messages'));
       }
     } finally {
       if (!silent) setLoading(false);

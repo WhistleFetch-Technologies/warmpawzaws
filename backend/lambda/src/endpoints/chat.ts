@@ -27,8 +27,8 @@ import { getDiscoveryRules } from '../lib/rule-engine';
 export function registerChatEndpoints(app: Hono) {
   /**
    * GET /chat/conversations
-   * Get all chat conversations for the authenticated user (query: customerId and/or phone).
-   * Phone matching is normalized (digits only, last-10) so +91/91/0 prefixes do not break matching.
+   * Vendor booking inbox for the customer (query: customerId and/or phone): non-cancelled bookings
+   * with a provider, with or without messages yet. Phone matching is normalized (digits only, last-10).
    */
   app.get("/chat/conversations", async (c) => {
     try {
@@ -42,16 +42,14 @@ export function registerChatEndpoints(app: Hono) {
         ? String(customerPhone).replace(/\D/g, '') || null
         : null;
 
-      // Get conversations: match by customer_id or normalized phone (booking row or linked customers phone)
+      // Vendor booking inbox: provider-assigned rows only (no support-only bookings).
+      // Lists threads with or without messages so customers can open chat before the first send.
       const conversationsResult = await query(`
-        SELECT DISTINCT ON (b.id)
+        SELECT
           b.id as id,
-          CASE
-            WHEN b.vendor_id IS NOT NULL THEN 'vendor'
-            ELSE 'support'
-          END as participant_type,
-          COALESCE(b.vendor_id::text, 'support') as participant_id,
-          COALESCE(v.business_name, v.owner_name, 'Support') as participant_name,
+          'vendor' as participant_type,
+          b.vendor_id::text as participant_id,
+          COALESCE(v.business_name, v.owner_name, 'Provider') as participant_name,
           v.photo_url as participant_avatar,
           cm.message as last_message,
           cm.created_at as last_message_time,
@@ -77,7 +75,8 @@ export function registerChatEndpoints(app: Hono) {
             AND is_read = false
             AND sender_type != 'customer'
         ) unread ON true
-        WHERE EXISTS (SELECT 1 FROM chat_messages WHERE booking_id = b.id)
+        WHERE b.vendor_id IS NOT NULL
+          AND lower(trim(COALESCE(b.status::text, ''))) NOT IN ('cancelled', 'no_show')
           AND (
             ($1::uuid IS NOT NULL AND b.customer_id = $1::uuid)
             OR (
@@ -124,7 +123,7 @@ export function registerChatEndpoints(app: Hono) {
               )
             )
           )
-        ORDER BY b.id, cm.created_at DESC NULLS LAST
+        ORDER BY COALESCE(cm.created_at, b.booking_date::timestamptz, b.created_at::timestamptz) DESC NULLS LAST
         LIMIT 50
       `, [idParam, phoneDigits]).catch(() => ({ rows: [] }));
 
@@ -246,8 +245,7 @@ export function registerChatEndpoints(app: Hono) {
 
   /**
    * GET /chat/customer/:customerId/conversations
-   * Inbox for the customer app: all bookings (with provider) that have chat history, for this customer UUID.
-   * Mirrors /chat/vendor/:id/conversations so the customer list matches the vendor’s thread list.
+   * Inbox for the customer app: vendor bookings for this customer (with or without messages yet).
    */
   app.get("/chat/customer/:customerId/conversations", async (c) => {
     try {
@@ -259,6 +257,8 @@ export function registerChatEndpoints(app: Hono) {
         `SELECT
           b.id as id,
           b.id as booking_id,
+          'vendor' as participant_type,
+          b.vendor_id::text as participant_id,
           COALESCE(v.business_name, v.owner_name, 'Provider') as participant_name,
           v.photo_url as participant_avatar,
           last_msg.message as last_message,
@@ -267,7 +267,6 @@ export function registerChatEndpoints(app: Hono) {
           COALESCE(vs.service_name, b.service_type, 'Service') as booking_service,
           false as is_online
          FROM bookings b
-         INNER JOIN (SELECT DISTINCT booking_id FROM chat_messages) has_msg ON has_msg.booking_id = b.id
          INNER JOIN (SELECT id, phone FROM customers WHERE id = $1::uuid LIMIT 1) me ON (true)
          LEFT JOIN LATERAL (
            SELECT message, created_at FROM chat_messages WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
@@ -278,7 +277,9 @@ export function registerChatEndpoints(app: Hono) {
          ) unread_cnt ON true
          LEFT JOIN vendors v ON b.vendor_id = v.id
          LEFT JOIN vendor_services vs ON b.service_id = vs.id
-         WHERE
+         WHERE b.vendor_id IS NOT NULL
+           AND lower(trim(COALESCE(b.status::text, ''))) NOT IN ('cancelled', 'no_show')
+           AND (
            b.customer_id = me.id
            OR (
              length(regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g')) >= 8
@@ -295,8 +296,9 @@ export function registerChatEndpoints(app: Hono) {
                  regexp_replace(COALESCE(m2.sender_phone, ''), '[^0-9]', '', 'g') = regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g')
                  OR right(regexp_replace(COALESCE(m2.sender_phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(COALESCE(me.phone, ''), '[^0-9]', '', 'g'), 10)
                )
-             )
-         ORDER BY last_msg.created_at DESC NULLS LAST
+           )
+         )
+         ORDER BY COALESCE(last_msg.created_at, b.booking_date::timestamptz, b.created_at::timestamptz) DESC NULLS LAST
          LIMIT 100`,
         [customerId]
       ).catch((e: any) => {

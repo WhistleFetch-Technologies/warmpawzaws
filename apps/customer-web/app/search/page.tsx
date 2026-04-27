@@ -44,17 +44,20 @@ function mapSearchApiToResults(response: any): SearchResult[] {
     imageUrl: v.profile_image ?? v.photoUrl,
   }));
 
-  const services = (servicesRaw || []).map((s: any) => ({
-    id: s.id,
-    type: 'service' as const,
-    name: s.serviceName ?? s.service_name ?? '',
-    category: s.category ?? s.serviceType ?? s.service_type ?? '',
-    rating: 0,
-    reviewCount: 0,
-    city: s.city ?? '',
-    price: parseFloat(s.price ?? s.base_price) || undefined,
-    imageUrl: s.image_url,
-  }));
+  const services = (servicesRaw || []).map((s: any) => {
+    const id = String(s.id ?? s.vendor_service_id ?? s.vendorServiceId ?? '').trim();
+    return {
+      id,
+      type: 'service' as const,
+      name: s.serviceName ?? s.service_name ?? '',
+      category: s.category ?? s.serviceType ?? s.service_type ?? '',
+      rating: 0,
+      reviewCount: 0,
+      city: s.city ?? '',
+      price: parseFloat(s.price ?? s.base_price) || undefined,
+      imageUrl: s.image_url,
+    };
+  }).filter((s: SearchResult) => s.id);
 
   return [...vendors, ...services];
 }

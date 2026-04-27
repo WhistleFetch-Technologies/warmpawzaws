@@ -211,7 +211,15 @@ export const CustomerApi = {
   
   // Services
   searchServices: (params: any) => ApiService.post('/search/vendors', params),
-  getServiceDetails: (serviceId: string) => ApiService.get(`/customer/services/${serviceId}`),
+  /** Published vendor listing id = vendor_services.id; backend resolves via GET /services/:id (not /customer/services/:id). */
+  getServiceDetails: async (serviceId: string) => {
+    const raw = await ApiService.get<any>(`/services/${encodeURIComponent(serviceId)}`);
+    const svc = raw?.service ?? raw;
+    if (__DEV__ && svc && (svc.id || svc.serviceId)) {
+      console.log('[getServiceDetails]', { requestedServiceId: serviceId, resolvedId: String(svc.id ?? svc.serviceId) });
+    }
+    return svc;
+  },
   getServices: (params?: any) => {
     const query = params ? `?${new URLSearchParams(params).toString()}` : '';
     return ApiService.get(`/customer/services${query}`);
@@ -623,6 +631,60 @@ export const SearchApi = {
   getCategories: () => ApiService.get('/search/categories'),
 };
 
+/**
+ * Same contract as customer-web GET /search?q=&category=&limit= — service hits use vendor_services.id.
+ */
+export const EnhancedSearchApi = {
+  search: async (params: {
+    query?: string;
+    category?: string;
+    sortBy?: 'relevance' | 'price_low' | 'price_high' | 'rating';
+    limit?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    const q = (params.query || '').trim();
+    const hasCategory = !!(params.category && params.category !== 'all');
+    if (q) sp.set('q', q);
+    if (hasCategory) sp.set('category', params.category!);
+    if (params.limit != null) sp.set('limit', String(params.limit));
+    else sp.set('limit', '50');
+    if (!q && !hasCategory) {
+      return { services: [] as any[] };
+    }
+    const raw = await ApiService.get<any>(`/search?${sp.toString()}`);
+    const servicesRaw = raw.services ?? raw.data?.services ?? [];
+    const mapped = (Array.isArray(servicesRaw) ? servicesRaw : []).map((s: any) => {
+      const id = String(s.id ?? s.vendor_service_id ?? s.vendorServiceId ?? '').trim();
+      const vendorId = String(s.vendorId ?? s.vendor_id ?? '').trim();
+      const price = parseFloat(String(s.price ?? s.base_price ?? '0')) || 0;
+      return {
+        id,
+        name: s.serviceName ?? s.service_name ?? s.name ?? '',
+        description:
+          s.description ?? s.custom_description ?? s.service_description ?? s.description_text ?? '',
+        category: s.category ?? s.serviceType ?? s.service_type ?? '',
+        price,
+        vendorId,
+        vendorName: s.vendorName ?? s.vendor_name ?? s.business_name ?? '',
+        rating: s.rating != null ? parseFloat(String(s.rating)) : undefined,
+        imageUrl: s.image_url ?? s.imageUrl,
+      };
+    }).filter((s: { id: string }) => s.id);
+    if (__DEV__ && mapped[0]) {
+      console.log('[EnhancedSearchApi] first hit', {
+        searchResultId: mapped[0].id,
+        vendorId: mapped[0].vendorId,
+      });
+    }
+    let out = mapped;
+    const sort = params.sortBy || 'relevance';
+    if (sort === 'price_low') out = [...out].sort((a, b) => a.price - b.price);
+    else if (sort === 'price_high') out = [...out].sort((a, b) => b.price - a.price);
+    else if (sort === 'rating') out = [...out].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    return { services: out, vendors: raw.vendors ?? raw.data?.vendors ?? [] };
+  },
+};
+
 // ✅ NEW: Wallet API (Batch 14 SQL-migrated endpoints)
 export const WalletApi = {
   getWallet: (customerId: string) => ApiService.get(`/customer/${customerId}/wallet`),
@@ -951,6 +1013,17 @@ export const BookingValidationApi = {
 export const SlotAvailabilityApi = {
   getVendorAvailability: (vendorId: string, date: string) => 
     ApiService.get(`/vendor/${vendorId}/availability/${date}`),
+  /** vendorId + vendor_services.id (same id as search / GET /services/:id). */
+  getAvailableSlots: (vendorId: string, serviceId: string, date: string) => {
+    const q = new URLSearchParams({
+      date,
+      serviceId,
+      serviceStyle: 'at_center',
+    });
+    return ApiService.get(
+      `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
+    );
+  },
 };
 
 // ✅ NEW: Refund Policy Engine API (Batch 17 SQL-migrated endpoints)
@@ -1078,8 +1151,16 @@ export const SupportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
-    return ApiService.get(`/support/tickets${query ? `?${query}` : ''}`);
+    if (!params) {
+      return ApiService.get('/support/tickets');
+    }
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      q.set(k, String(v));
+    }
+    const s = q.toString();
+    return ApiService.get(`/support/tickets${s ? `?${s}` : ''}`);
   },
   
   getTicket: (ticketId: string) => ApiService.get(`/support/tickets/${ticketId}`),

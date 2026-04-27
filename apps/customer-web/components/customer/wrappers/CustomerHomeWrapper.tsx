@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
+import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
@@ -123,7 +124,7 @@ import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
 import { MedicalRecordsPage } from '../MedicalRecordsPage';
 import { WalletPage as CustomerWalletPage } from '../WalletPage';
 
-// ✅ MATING & DATING SERVICE - P2P Matchmaking
+// ✅ PEER TO PEER SERVICE - P2P Matchmaking
 import { MatingDatingHub } from '../MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../../IntegratedServicesHub';
@@ -374,6 +375,11 @@ export function CustomerHomeWrapper({
 
   /** Allyticas: URL + in-app `currentScreen` (e.g. `Home · Vet care` when path is still `/`). */
   useCustomerShellAnalytics(currentScreen, pathname, searchParams);
+
+  useEffect(() => {
+    setClientShellScreenForErrors(currentScreen);
+    return () => setClientShellScreenForErrors(null);
+  }, [currentScreen]);
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -3722,7 +3728,7 @@ export function CustomerHomeWrapper({
     onNavigate={handleAccountNavigate}
   />;
 
-  // ✅ MATING & DATING SERVICE - P2P Matchmaking
+  // ✅ PEER TO PEER SERVICE - P2P Matchmaking
   if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
     phone={phone}
     onBack={handleBack}

@@ -154,7 +154,7 @@ const SERVICE_CATALOG = [
   // ========== SERVICES WITHOUT PROBLEM GRIDS ==========
   {
     category_id: 'shop',
-    name: 'Pet Shop',
+    name: 'Pet Products',
     description: 'Food, accessories & medicines',
     icon: 'ShoppingBag',
     icon_color: 'text-pink-500',
@@ -176,7 +176,7 @@ const SERVICE_CATALOG = [
   },
   {
     category_id: 'mating',
-    name: 'Mating & Dating',
+    name: 'Peer to Peer',
     description: 'Find the perfect match',
     icon: 'Heart',
     icon_color: 'text-pink-500',

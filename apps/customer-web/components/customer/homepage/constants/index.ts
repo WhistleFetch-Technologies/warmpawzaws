@@ -23,7 +23,7 @@ export const quickServices = [
     // PRIMARY SERVICES
     { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
     { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
-    { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
+    { icon: ShoppingBag, label: 'Pet Products', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
     { icon: GraduationCapIcon, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
 
     // HEALTHCARE SERVICES
@@ -35,7 +35,7 @@ export const quickServices = [
     { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
     { icon: DoorOpen, label: 'Pet Sitter', color: 'bg-slate-100 text-slate-700', screen: 'pet-sitter', categoryId: 'pet-sitter' },
     { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
+    { icon: Heart, label: 'Peer to Peer', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
     { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafes' },
 
     // SPECIALIZED SERVICES - NEW

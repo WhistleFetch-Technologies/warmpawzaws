@@ -1128,6 +1128,47 @@ export function DynamicVendorOnboardingForm({
       });
     }
 
+    const normFieldType = (t: string | undefined) =>
+      String(t || '')
+        .toLowerCase()
+        .replace(/[-\s]/g, '');
+    const allKycFields: any[] = [];
+    form.sections.forEach((section) => {
+      if (!section.isActive) return;
+      (section.fields || []).forEach((f: any) => {
+        if (f.isActive !== false) allKycFields.push(f);
+      });
+    });
+    if (form.documentSections?.length) {
+      form.documentSections.forEach((section) => {
+        (section.fields || []).forEach((f: any) => {
+          if (f.isActive !== false) allKycFields.push(f);
+        });
+      });
+    }
+    allKycFields.forEach((field) => {
+      const t = normFieldType(field.type);
+      if (t === 'aadhaarotp') {
+        const v = formData[field.name];
+        const digits = typeof v === 'string' ? v.replace(/\D/g, '') : '';
+        if (digits.length >= 12) {
+          const verified = formData[`${field.name}_verified`] === true;
+          if (!verified) {
+            newErrors[field.name] = 'Verify Aadhaar with OTP before submitting';
+          }
+        }
+      }
+      if (t === 'panverify' || field.type === 'pan-verify') {
+        const v = formData[field.name];
+        if (typeof v === 'string' && v.replace(/\s/g, '').length >= 10) {
+          const verified = formData[`${field.name}_verified`] === true;
+          if (!verified) {
+            newErrors[field.name] = 'Verify PAN before submitting';
+          }
+        }
+      }
+    });
+
     // Check terms agreement
     if (!agreedToTerms) {
       console.log('❌ [VALIDATION] Terms not agreed');

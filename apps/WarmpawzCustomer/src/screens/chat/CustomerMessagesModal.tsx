@@ -17,35 +17,11 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { BookingChatApi } from '../../services/api';
 import { ChatScreen } from './ChatScreen';
+import { SupportTicketThreadScreen } from '../support/SupportTicketThreadScreen';
+import { formatInboxRelative, loadUnifiedInbox, SUPPORT_INBOX_LABEL, type UnifiedInboxRow } from './unifiedInbox';
 
 const { height: WINDOW_H } = Dimensions.get('window');
-
-type Row = {
-  id?: string;
-  booking_id?: string;
-  participant_name?: string;
-  booking_service?: string;
-  last_message?: string;
-  last_message_time?: string;
-  unread_count?: number;
-};
-
-function formatRelative(iso?: string): string {
-  if (!iso) return '';
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'Just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
 
 interface CustomerMessagesModalProps {
   visible: boolean;
@@ -66,28 +42,26 @@ export function CustomerMessagesModal({
   senderId,
   onNavigate,
 }: CustomerMessagesModalProps) {
-  const [step, setStep] = useState<'list' | 'chat'>('list');
-  const [rows, setRows] = useState<Row[]>([]);
+  const [step, setStep] = useState<'list' | 'chat' | 'support'>('list');
+  const [rows, setRows] = useState<UnifiedInboxRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [chatBookingId, setChatBookingId] = useState('');
   const [chatRecipient, setChatRecipient] = useState('');
+  const [supportTicketId, setSupportTicketId] = useState('');
 
   useEffect(() => {
     if (!visible) {
       setStep('list');
       setChatBookingId('');
       setChatRecipient('');
+      setSupportTicketId('');
     }
   }, [visible]);
 
   const load = useCallback(async () => {
-    const res: any = await BookingChatApi.getConversations({
-      customerId,
-      phone,
-    });
-    const list = res?.conversations;
-    setRows(Array.isArray(list) ? list : []);
+    const list = await loadUnifiedInbox({ customerId, phone });
+    setRows(list);
   }, [customerId, phone]);
 
   useEffect(() => {
@@ -115,40 +89,59 @@ export function CustomerMessagesModal({
     }
   };
 
-  const openThread = (item: Row) => {
-    const bookingId = (item.booking_id || item.id || '').toString();
+  const openThread = (item: UnifiedInboxRow) => {
+    if (item.kind === 'support') {
+      if (!item.ticketId) return;
+      setSupportTicketId(item.ticketId);
+      setStep('support');
+      return;
+    }
+    const bookingId = item.bookingId;
     if (!bookingId) return;
     setChatRecipient(item.participant_name || 'Provider');
     setChatBookingId(bookingId);
     setStep('chat');
   };
 
-  const renderRow = ({ item }: { item: Row }) => (
+  const renderRow = ({ item }: { item: UnifiedInboxRow }) => {
+    const isSup = item.kind === 'support';
+    const title = isSup ? SUPPORT_INBOX_LABEL : item.participant_name || 'Provider';
+    const subline = isSup
+      ? `${item.idSnippet} · ${item.subject}`
+      : item.booking_service || 'Booking';
+    const previewRaw = isSup
+      ? item.last_message
+      : item.last_message?.trim() ? item.last_message : '';
+    const preview = previewRaw || (isSup ? 'Tap to view thread' : 'No messages yet — tap to chat');
+    const tIso = item.last_message_time;
+    const unread = !isSup && item.unread_count && item.unread_count > 0 ? item.unread_count : 0;
+    return (
     <TouchableOpacity style={styles.row} onPress={() => openThread(item)} activeOpacity={0.75}>
       <View style={styles.avatar}>
-        <Icon name="account" size={22} color={colors.primary} />
+        <Icon name={isSup ? 'headset' : 'account'} size={22} color={colors.primary} />
       </View>
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.participant_name || 'Provider'}
+            {title}
           </Text>
-          <Text style={styles.rowTime}>{formatRelative(item.last_message_time)}</Text>
+          <Text style={styles.rowTime}>{formatInboxRelative(tIso)}</Text>
         </View>
         <Text style={styles.rowService} numberOfLines={1}>
-          {item.booking_service || 'Booking'}
+          {subline}
         </Text>
         <Text style={styles.preview} numberOfLines={2}>
-          {item.last_message || '—'}
+          {preview}
         </Text>
       </View>
-      {!!item.unread_count && item.unread_count > 0 ? (
+      {unread > 0 ? (
         <View style={styles.unreadPill}>
-          <Text style={styles.unreadText}>{item.unread_count}</Text>
+          <Text style={styles.unreadText}>{unread}</Text>
         </View>
       ) : null}
     </TouchableOpacity>
   );
+  };
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -173,7 +166,7 @@ export function CustomerMessagesModal({
               ) : (
                 <FlatList
                   data={rows}
-                  keyExtractor={(item, i) => String(item.booking_id || item.id || i)}
+                  keyExtractor={(item) => item.listKey}
                   renderItem={renderRow}
                   style={styles.listFlex}
                   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -183,7 +176,8 @@ export function CustomerMessagesModal({
                       <Icon name="message-outline" size={48} color={colors.gray['300']} />
                       <Text style={styles.emptyTitle}>No conversations yet</Text>
                       <Text style={styles.emptySub}>
-                        Message a provider from a booking. Threads appear here after the first message.
+                        Active booking chats and your support requests appear here. You can also open a thread from
+                        My bookings or Help and Support.
                       </Text>
                       {onNavigate ? (
                         <TouchableOpacity
@@ -201,7 +195,7 @@ export function CustomerMessagesModal({
                 />
               )}
             </View>
-          ) : (
+          ) : step === 'chat' ? (
             <View style={styles.chatWrap}>
               <ChatScreen
                 key={chatBookingId}
@@ -215,6 +209,19 @@ export function CustomerMessagesModal({
                 onDismissModal={onClose}
                 onBack={() => {
                   setStep('list');
+                  void load();
+                }}
+              />
+            </View>
+          ) : (
+            <View style={styles.chatWrap}>
+              <SupportTicketThreadScreen
+                key={supportTicketId}
+                ticketId={supportTicketId}
+                customerId={customerId}
+                onBack={() => {
+                  setStep('list');
+                  setSupportTicketId('');
                   void load();
                 }}
               />

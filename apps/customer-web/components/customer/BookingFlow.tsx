@@ -280,14 +280,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   };
 
   const loadServiceDetails = async () => {
+    if (!serviceId?.trim() || serviceId === 'placeholder') {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/services/${serviceId}`);
+      const response = await apiClient.get<any>(`/services/${encodeURIComponent(serviceId)}`);
       
       // ✅ FIX: Handle both response formats (service object or flat structure)
       const serviceData = response.service || response;
       
       if (serviceData && (serviceData.id || serviceData.serviceId)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[BookingFlow loadServiceDetails]', {
+            urlServiceId: serviceId,
+            resolvedId: String(serviceData.id ?? serviceData.serviceId ?? ''),
+          });
+        }
         setService(serviceData);
         
         // Determine specialized service type (if any)
