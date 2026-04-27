@@ -47,8 +47,9 @@ export function ServiceDetailScreen({
       const serviceData = await CustomerApi.getServiceDetails(serviceId);
       setService(serviceData);
       
-      if (vendorId || serviceData.vendorId) {
-        const vendorData = await CustomerApi.getVendorDetails(vendorId || serviceData.vendorId);
+      const resolvedVendorId = vendorId || serviceData.vendorId || serviceData.vendor_id;
+      if (resolvedVendorId) {
+        const vendorData = await CustomerApi.getVendorDetails(resolvedVendorId);
         setVendor(vendorData.vendor);
       }
     } catch (error) {
@@ -164,7 +165,11 @@ export function ServiceDetailScreen({
           <TouchableOpacity
             style={styles.bookButton}
             onPress={() =>
-              onBook(serviceId, vendorId || service.vendorId, service.name || service.serviceName)
+              onBook(
+                serviceId,
+                vendorId || service.vendorId || service.vendor_id,
+                service.name || service.serviceName
+              )
             }
           >
             <Text style={styles.bookButtonText}>Book Now</Text>

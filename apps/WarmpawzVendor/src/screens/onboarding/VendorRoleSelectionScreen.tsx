@@ -101,7 +101,7 @@ export function VendorRoleSelectionScreen({ onRoleSelect }: VendorRoleSelectionS
         },
         {
           id: 'pet_product',
-          name: 'Pet Product Seller',
+          name: 'Pet Products Seller',
           description: 'Sell products, manage inventory, create promotions',
           icon: 'retail',
           features: ['📊 Inventory', '📍 Delivery'],

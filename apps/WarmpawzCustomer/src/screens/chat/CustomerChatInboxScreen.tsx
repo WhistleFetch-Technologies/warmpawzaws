@@ -1,5 +1,5 @@
 /**
- * Lists booking chats that already have messages (GET /chat/conversations).
+ * Unified inbox: provider booking chats (GET /chat/conversations) + support tickets (GET /support/tickets).
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -16,17 +16,12 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BookingChatApi } from '../../services/api';
-
-interface Row {
-  id?: string;
-  booking_id?: string;
-  participant_name?: string;
-  booking_service?: string;
-  last_message?: string;
-  last_message_time?: string;
-  unread_count?: number;
-}
+import {
+  formatInboxRelative,
+  loadUnifiedInbox,
+  SUPPORT_INBOX_LABEL,
+  type UnifiedInboxRow,
+} from './unifiedInbox';
 
 interface CustomerChatInboxScreenProps {
   phone: string;
@@ -42,17 +37,13 @@ export function CustomerChatInboxScreen({
   onNavigate,
 }: CustomerChatInboxScreenProps) {
   const insets = useSafeAreaInsets();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<UnifiedInboxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const res: any = await BookingChatApi.getConversations({
-      customerId,
-      phone,
-    });
-    const list = res?.conversations;
-    setRows(Array.isArray(list) ? list : []);
+    const list = await loadUnifiedInbox({ customerId, phone });
+    setRows(list);
   }, [customerId, phone]);
 
   useEffect(() => {
@@ -79,41 +70,59 @@ export function CustomerChatInboxScreen({
     }
   };
 
-  const openThread = (item: Row) => {
-    const bookingId = item.booking_id || item.id;
-    if (!bookingId || !onNavigate) return;
+  const openThread = (item: UnifiedInboxRow) => {
+    if (!onNavigate) return;
+    if (item.kind === 'support') {
+      onNavigate('SupportTicketThread', { ticketId: item.ticketId });
+      return;
+    }
     onNavigate('Chat', {
-      bookingId,
+      bookingId: item.bookingId,
       recipientName: item.participant_name || 'Provider',
     });
   };
 
-  const renderItem = ({ item }: { item: Row }) => (
-    <TouchableOpacity style={styles.row} onPress={() => openThread(item)} activeOpacity={0.7}>
-      <View style={styles.rowIcon}>
-        <Icon name="message-text-outline" size={24} color={colors.primary} />
-      </View>
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.participant_name || 'Provider'}
-          </Text>
-          {!!item.unread_count && item.unread_count > 0 ? (
-            <View style={styles.unreadPill}>
-              <Text style={styles.unreadText}>{item.unread_count}</Text>
-            </View>
-          ) : null}
+  const renderItem = ({ item }: { item: UnifiedInboxRow }) => {
+    const isSup = item.kind === 'support';
+    const title = isSup ? SUPPORT_INBOX_LABEL : item.participant_name || 'Provider';
+    const subline = isSup
+      ? `${item.idSnippet} · ${item.subject}`
+      : item.booking_service || 'Booking';
+    const previewRaw = isSup
+      ? item.last_message
+      : item.last_message?.trim() ? item.last_message : '';
+    const preview = previewRaw || (isSup ? 'Tap to view thread' : 'No messages yet — tap to chat');
+    const tIso = item.last_message_time;
+    const unread = !isSup && item.unread_count && item.unread_count > 0 ? item.unread_count : 0;
+
+    return (
+      <TouchableOpacity style={styles.row} onPress={() => openThread(item)} activeOpacity={0.7}>
+        <View style={styles.rowIcon}>
+          <Icon name={isSup ? 'headset' : 'message-text-outline'} size={24} color={colors.primary} />
         </View>
-        <Text style={styles.rowService} numberOfLines={1}>
-          {item.booking_service || 'Booking'}
-        </Text>
-        <Text style={styles.rowPreview} numberOfLines={2}>
-          {item.last_message || '—'}
-        </Text>
-      </View>
-      <Icon name="chevron-right" size={22} color={colors.textSecondary} />
-    </TouchableOpacity>
-  );
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            {tIso ? <Text style={styles.rowTimeRight}>{formatInboxRelative(tIso)}</Text> : null}
+          </View>
+          <Text style={styles.rowService} numberOfLines={1}>
+            {subline}
+          </Text>
+          <Text style={styles.rowPreview} numberOfLines={2}>
+            {preview}
+          </Text>
+        </View>
+        {unread > 0 ? (
+          <View style={styles.unreadPill}>
+            <Text style={styles.unreadText}>{unread}</Text>
+          </View>
+        ) : null}
+        <Icon name="chevron-right" size={22} color={colors.textSecondary} />
+      </TouchableOpacity>
+    );
+  };
 
   const listBottomPad = Math.max(insets.bottom, spacing.xl);
 
@@ -132,7 +141,7 @@ export function CustomerChatInboxScreen({
         <FlatList
           style={styles.listFlex}
           data={rows}
-          keyExtractor={(item, index) => String(item.booking_id || item.id || index)}
+          keyExtractor={(item) => item.listKey}
           renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={
@@ -145,7 +154,8 @@ export function CustomerChatInboxScreen({
               <Icon name="message-outline" size={48} color={colors.textSecondary} />
               <Text style={styles.emptyTitle}>No conversations yet</Text>
               <Text style={styles.emptySub}>
-                After you message a provider from a booking, it will appear here.
+                Active booking chats and your support requests appear here. You can also start from My bookings or Help
+                and Support.
               </Text>
               <TouchableOpacity
                 style={styles.emptyCta}
@@ -206,11 +216,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginRight: spacing.sm,
   },
+  rowTimeRight: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
   unreadPill: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.full,
     minWidth: 22,
     height: 22,
+    marginRight: spacing.xs,
     paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',

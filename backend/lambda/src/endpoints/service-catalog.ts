@@ -232,11 +232,18 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
   /**
    * GET /services/:serviceId
-   * Get service details by ID (customer-facing endpoint)
+   * Get service details by ID (customer-facing). Bookable vendor listings use vendor_services.id
+   * (same id as GET /search services[] and OpenSearch warmpawz-services documents).
+   *
+   * Resolution order: service_catalog (platform template) → vendor_services.id → vendor_services.service_id.
    */
-  app.get("/services/:serviceId", async (c) => {
+  const handleGetServiceById = async (c: any) => {
     try {
-      const { serviceId } = c.req.param();
+      const serviceId = String(c.req.param('serviceId') || '').trim();
+      // Static export build sentinel (see customer-web app/booking/[serviceId]/page.tsx) — never hit DB with ::uuid cast.
+      if (!serviceId || serviceId === 'placeholder') {
+        return c.json({ error: 'Service not found' }, 404);
+      }
 
       // ✅ FIX: Handle UUID vs text comparison properly
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
@@ -288,21 +295,41 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
-      // 2. Try vendor_services.id (ProblemGridFlowRouter passes vendor_services.id from by-problem)
-      const vsResultById = await query(
-        `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
-         FROM vendor_services vs
-         INNER JOIN vendors v ON vs.vendor_id = v.id
-         WHERE vs.id = $1::uuid AND vs.is_enabled = true`,
-        [serviceId]
-      );
+      // 2. Try vendor_services.id (non-UUID ids must skip ::uuid or Postgres throws → HTTP 500)
+      if (isUUID) {
+        const vsResultById = await query(
+          `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
+           FROM vendor_services vs
+           INNER JOIN vendors v ON vs.vendor_id = v.id
+           WHERE vs.id = $1::uuid AND vs.is_enabled = true`,
+          [serviceId]
+        );
 
-      if (vsResultById.rows.length > 0) {
-        const vs = vsResultById.rows[0];
-        const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
-        return c.json({
-          success: true,
-          service: {
+        if (vsResultById.rows.length > 0) {
+          const vs = vsResultById.rows[0];
+          const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+          return c.json({
+            success: true,
+            service: {
+              id: vs.id,
+              serviceId: vs.id,
+              serviceName: vs.service_name,
+              name: vs.service_name,
+              displayName: vs.service_name,
+              description: vs.custom_description || vs.service_name,
+              vendor_id: vs.vendor_id,
+              vendor_name: vs.vendor_name,
+              vendor_address: vs.vendor_address,
+              service_style: vs.service_style || 'at_center',
+              serviceStyle: vs.service_style || 'at_center',
+              basePrice: price,
+              price,
+              duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              category: vs.category,
+              sub_category: vs.sub_category,
+            },
+            // Also include flat structure for backward compatibility
             id: vs.id,
             serviceId: vs.id,
             serviceName: vs.service_name,
@@ -320,26 +347,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
             category: vs.category,
             sub_category: vs.sub_category,
-          },
-          // Also include flat structure for backward compatibility
-          id: vs.id,
-          serviceId: vs.id,
-          serviceName: vs.service_name,
-          name: vs.service_name,
-          displayName: vs.service_name,
-          description: vs.custom_description || vs.service_name,
-          vendor_id: vs.vendor_id,
-          vendor_name: vs.vendor_name,
-          vendor_address: vs.vendor_address,
-          service_style: vs.service_style || 'at_center',
-          serviceStyle: vs.service_style || 'at_center',
-          basePrice: price,
-          price,
-          duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
-          durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
-          category: vs.category,
-          sub_category: vs.sub_category,
-        });
+          });
+        }
       }
 
       // 3. Fallback: vendor_services.service_id (base service UUID) - in case serviceId is the base service UUID
@@ -404,7 +413,9 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       console.error('Error fetching service:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.get('/services/:serviceId', handleGetServiceById);
 
   /**
    * GET /service-catalog/role/:roleId

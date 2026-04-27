@@ -21,6 +21,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { DatingChatApi, BookingChatApi } from '../../services/api';
+import { NetworkError } from '../../lib/network-resilience';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -112,8 +113,8 @@ export function ChatScreen({
     [phone]
   );
 
-  const loadBookingThread = useCallback(async (): Promise<boolean> => {
-    if (!bookingId) return false;
+  const loadBookingThread = useCallback(async (): Promise<string | null> => {
+    if (!bookingId) return 'Missing booking.';
     try {
       const res: any = await BookingChatApi.getConversation(bookingId);
       if (res?.booking?.vendorName) {
@@ -125,10 +126,23 @@ export function ChatScreen({
         setChatAvailable(res.chatAvailable);
       }
       setMessages(mapBookingRows(res?.messages || []));
-      return true;
-    } catch (e) {
+      return null;
+    } catch (e: unknown) {
       console.error('Error loading booking chat:', e);
-      return false;
+      if (e instanceof NetworkError) {
+        if (e.statusCode === 401) return 'Please sign in again to load messages.';
+        if (e.statusCode === 404) return 'This booking was not found.';
+        const msg = (e.message || '').trim();
+        if (/load failed|network request failed|failed to fetch/i.test(msg)) {
+          return 'Check your internet connection and try again.';
+        }
+        return msg || 'Could not load messages for this booking.';
+      }
+      const msg = typeof (e as Error)?.message === 'string' ? (e as Error).message.trim() : '';
+      if (/load failed|network request failed|failed to fetch/i.test(msg)) {
+        return 'Check your internet connection and try again.';
+      }
+      return msg || 'Could not load messages for this booking.';
     }
   }, [bookingId, recipientName, mapBookingRows]);
 
@@ -155,10 +169,10 @@ export function ChatScreen({
 
     const run = async () => {
       if (bookingMode) {
-        const ok = await loadBookingThread();
+        const loadErr = await loadBookingThread();
         if (cancelled) return;
-        if (!ok) {
-          Alert.alert('Error', 'Could not load messages for this booking.');
+        if (loadErr) {
+          Alert.alert('Error', loadErr);
         }
         if (!cancelled) setLoading(false);
         BookingChatApi.markConversationRead(bookingId).catch(() => {});

@@ -46,12 +46,22 @@ async function resolveCategory(dbQuery: typeof query, raw?: string | null) {
   if (!key) return { category_id, category_text };
 
   if (isUuid(key)) {
-    category_id = key;
     const res = await dbQuery(
-      `SELECT name FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+      `SELECT id, name, category_id AS slug
+       FROM service_categories
+       WHERE id = $1::uuid
+         AND (is_active = true OR is_active IS NULL)
+       LIMIT 1`,
       [key]
     ).catch(() => ({ rows: [] }));
-    category_text = res.rows?.[0]?.name ?? null;
+    const row = res.rows?.[0];
+    if (!row?.id) {
+      return { category_id: null, category_text: null };
+    }
+    category_id = row.id;
+    const rawName = row.name != null ? String(row.name).trim() : '';
+    const rawSlug = row.slug != null ? String(row.slug).trim() : '';
+    category_text = rawName || rawSlug || null;
     return { category_id, category_text };
   }
 
@@ -1826,10 +1836,6 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (!effectiveCategory) {
         return c.json({ error: 'category (or categoryName) is required' }, 400);
       }
-      // Reject UUIDs in category text explicitly
-      if (isUuid(effectiveCategory)) {
-        return c.json({ error: 'Invalid category: UUID provided in category. Use category_id or a human-readable category name.' }, 400);
-      }
 
       const hasServiceName = serviceName != null && String(serviceName).trim() !== '';
       const hasValidPrice = !Number.isNaN(effectivePriceNum) && effectivePriceNum >= 0;
@@ -1858,15 +1864,23 @@ export function registerVendorServicesEndpoints(app: Hono) {
         );
       }
 
-      // Normalize category so UUID never lands in text; prefer category_id + display text
+      // Normalize category: UUIDs resolve to service_categories.id + display name (never store raw UUID in category text)
       const { category_id: normalizedCategoryId, category_text: normalizedCategoryText } =
         await resolveCategory(query, effectiveCategory);
+      if (isUuid(effectiveCategory) && (!normalizedCategoryId || !normalizedCategoryText)) {
+        return c.json(
+          { error: 'Unknown or inactive platform category. Pick a category from the list or use a custom name.' },
+          400
+        );
+      }
       console.log('normalizedCategoryId----------------------------------------->', normalizedCategoryId, normalizedCategoryText, isUuid(effectiveCategory));
+      const displayCategory =
+        normalizedCategoryText ?? (!isUuid(effectiveCategory) ? String(effectiveCategory).trim() : null);
       // Create base service first (use effective price: package price when isPackage, else top-level price)
       const baseService = await insert('services', {
         name: serviceName,
         description: description || null,
-        category: normalizedCategoryText || (isUuid(effectiveCategory) ? null : effectiveCategory),
+        category: displayCategory,
         price: effectivePriceNum,
         duration_minutes: duration || 30,
         is_active: true,
@@ -1904,7 +1918,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         service_id: baseService[0].id,
         service_name: serviceName,
         category_id: normalizedCategoryId || null,
-        category: normalizedCategoryText || (isUuid(effectiveCategory) ? null : effectiveCategory),
+        category: displayCategory,
         sub_category: effectiveSubCategory || null,
         service_style: effectiveServiceStyle,
         price: effectivePriceNum,

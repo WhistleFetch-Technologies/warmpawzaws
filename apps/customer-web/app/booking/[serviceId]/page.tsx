@@ -1,7 +1,7 @@
 import { BookingPageClient } from './BookingPageClient';
 
-// Required for static export with dynamic routes
-// Return placeholder - actual navigation happens client-side
+// `output: 'export'` requires at least one segment; build uses `placeholder` only for the HTML shell.
+// BookingPageClient resolves the real id from `usePathname()` so `/booking/<uuid>` works after client nav or SPA fallback.
 export async function generateStaticParams() {
   return [{ serviceId: 'placeholder' }];
 }
