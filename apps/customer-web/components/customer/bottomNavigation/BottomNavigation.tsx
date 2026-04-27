@@ -25,7 +25,11 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
     }
     if (screen === 'profile') {
-      return currentScreen === 'customer-profile' || currentScreen === 'user-profile';
+      return (
+        currentScreen === 'customer-profile' ||
+        currentScreen === 'user-profile' ||
+        currentScreen === 'my-packages'
+      );
     }
     // For all other screens (like nutritionist, vet, etc.), no tab should be active
     return false;

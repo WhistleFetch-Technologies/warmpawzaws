@@ -12,7 +12,11 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
-import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  getServiceStyleDisplayLabel,
+  formatPriceWithSymbol,
+  customerBookingStatusShowsCheckInOtp,
+} from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
@@ -108,7 +112,10 @@ interface MyBookingsProps {
   onBack: () => void;
   initialBookingId?: string; // To open a specific booking
   onReorderMedicine?: (medications: any[]) => void;
-  onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
+  onNavigate?: (
+    screen: string,
+    data?: { bookingId?: string; packagePurchaseId?: string; meetingId?: string }
+  ) => void;
 }
 
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
@@ -190,7 +197,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       } else {
         rawBookings = result.bookings || result.data?.bookings || [];
       }
-      
+
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
       console.log('[MyBookings] Loaded bookings:', rawBookings.length);
       const diagnosticBookings = rawBookings.filter((b: any) => {
@@ -811,8 +818,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
 
               {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
               {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
-              {(booking.otpCode || booking.completionOTP || booking.startOTP) && 
-               (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') && 
+              {(booking.otpCode || booking.completionOTP || booking.startOTP) &&
+               customerBookingStatusShowsCheckInOtp(booking.status) &&
                !booking.otpVerified && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
                   <div className="flex items-center justify-between bg-orange-50 rounded-lg p-3">
@@ -928,25 +935,27 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                   </div>
                 )}
 
-              {booking.isPackage && booking.packageDetails && (
+              {booking.isPackage && (booking.packageDetails || booking.packagePurchaseId) && (
                 <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm min-w-0">
                     <Package className="w-4 h-4 shrink-0 text-purple-600" />
                     <span className="text-purple-600">
-                      {booking.packageDetails.unlimited
-                        ? 'Unlimited package'
-                        : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`}
+                      {booking.packageDetails
+                        ? booking.packageDetails.unlimited
+                          ? 'Unlimited package'
+                          : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`
+                        : 'Package session'}
                     </span>
                   </div>
-                  {(booking.packagePurchaseId ||
-                    booking.packageDetails?.packagePurchaseId) && (
+                  {(booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId) && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         const pid =
                           booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId;
-                        if (pid) router.push(`/packages/${encodeURIComponent(String(pid))}`);
+                        if (!pid) return;
+                        router.push('/my-packages');
                       }}
                       className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
                     >

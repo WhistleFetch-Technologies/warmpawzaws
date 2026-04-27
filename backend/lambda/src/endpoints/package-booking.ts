@@ -48,6 +48,7 @@ import {
   createRazorpayOrderForVendorPackage,
   verifyRazorpayPaymentSignature,
   vendorPackagePurchaseIdForRazorpayOrder,
+  type VendorPackageComputation,
 } from '../utils/vendor-package-razorpay-flow';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
@@ -81,7 +82,168 @@ function isLikelyCustomerUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || '').trim());
 }
 
-function mapSessionRow(s: any) {
+function uuidOrNull(v: unknown): string | null {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  return isLikelyCustomerUuid(s) ? s : null;
+}
+
+/** Map vendor_services.service_style to bookings.service_type CHECK values. */
+function bookingServiceTypeForPackageStyle(style: string): string {
+  const s = String(style || '').toLowerCase();
+  if (s === 'tele' || s === 'online') return 'tele';
+  if (s === 'at_home') return 'at_home';
+  if (s === 'at_center') return 'at_center';
+  return 'at_vendor';
+}
+
+/**
+ * Package-only checkout creates package_purchases but no bookings row — vendor UIs list `bookings`.
+ * Creates one confirmed "package purchase" booking + vendor notification (best-effort).
+ */
+async function syncVendorPackagePurchaseToBookingAndNotify(params: {
+  customerId: string;
+  vendorId: string;
+  vendorServiceId: string;
+  comp: VendorPackageComputation;
+  purchase: Record<string, unknown>;
+  catalogPackageId: string;
+  sessionSchedule: Array<{ sessionNumber?: number; date?: string; time?: string }>;
+  paymentId: string | null;
+  petId: string | null;
+}): Promise<string | null> {
+  const {
+    customerId,
+    vendorId,
+    vendorServiceId,
+    comp,
+    purchase,
+    catalogPackageId,
+    sessionSchedule,
+    paymentId,
+    petId,
+  } = params;
+  const purchaseRowId = String(purchase.id || '').trim();
+  if (!purchaseRowId) return null;
+
+  try {
+    const dup = await query(`SELECT id FROM bookings WHERE package_purchase_id = $1::uuid LIMIT 1`, [
+      purchaseRowId,
+    ]);
+    if (dup.rows?.length) {
+      return String((dup.rows[0] as { id: string }).id);
+    }
+
+    const first = (sessionSchedule || []).find((s) => s?.date && String(s.date).trim());
+    const bookingDate =
+      first?.date && String(first.date).trim()
+        ? String(first.date).trim().slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+    const rawTime = String(first?.time || '09:00').trim();
+    const bookingTime = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+
+    const serviceType = bookingServiceTypeForPackageStyle(comp.serviceStyle);
+    const amt = Number(comp.priceNum) || 0;
+    const sessionsLabel = comp.unlimitedPurchase
+      ? 'unlimited sessions'
+      : `${comp.totalSessionsForPurchase || comp.totalSessionsNum} session(s)`;
+
+    const notes = `Package purchased — ${sessionsLabel}. Book individual visits from package credits.`;
+
+    const pkgDetails = JSON.stringify({
+      kind: 'vendor_service_package_purchase',
+      vendorServiceId,
+      catalogPackageId,
+      packagePurchaseId: purchaseRowId,
+      unlimited: comp.unlimitedPurchase,
+    });
+
+    const petUuid = uuidOrNull(petId);
+    const payUuid = uuidOrNull(paymentId);
+
+    const ins = await query(
+      `INSERT INTO bookings (
+         customer_id, vendor_id, pet_id, service_id,
+         booking_date, booking_time, service_type,
+         status, payment_status,
+         base_price, discount_amount, tax_amount, total_amount,
+         is_package, package_id, package_details, package_purchase_id,
+         is_package_session, notes, payment_id
+       ) VALUES (
+         $1::uuid, $2::uuid, $3::uuid, $4::uuid,
+         $5::date, $6::time, $7,
+         'confirmed', 'paid',
+         $8::numeric, 0, 0, $8::numeric,
+         true, $9::uuid, $10::jsonb, $11::uuid,
+         false, $12, $13::uuid
+       )
+       RETURNING id`,
+      [
+        customerId,
+        vendorId,
+        petUuid,
+        vendorServiceId,
+        bookingDate,
+        bookingTime,
+        serviceType,
+        amt,
+        catalogPackageId,
+        pkgDetails,
+        purchaseRowId,
+        notes,
+        payUuid,
+      ]
+    );
+    const bookingId = ins.rows?.[0]?.id != null ? String((ins.rows[0] as { id: string }).id) : null;
+
+    if (bookingId && payUuid) {
+      await query(`UPDATE payments SET booking_id = $1::uuid WHERE id = $2::uuid AND booking_id IS NULL`, [
+        bookingId,
+        payUuid,
+      ]).catch(() => undefined);
+    }
+
+    let customerName = 'Customer';
+    try {
+      const cr = await query(`SELECT name FROM customers WHERE id = $1::uuid LIMIT 1`, [customerId]);
+      const n = (cr.rows?.[0] as { name?: string } | undefined)?.name;
+      if (n && String(n).trim()) customerName = String(n).trim();
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      await insert('notifications', {
+        recipient_id: vendorId,
+        recipient_type: 'vendor',
+        notification_type: 'new_booking',
+        title: 'New package purchase',
+        message: `${customerName} bought package "${comp.packageDisplayName}" • ${sessionsLabel} • paid ₹${amt}`,
+        channels: { email: false, sms: false, inApp: true, push: false },
+        data: JSON.stringify({
+          bookingId,
+          packagePurchaseId: purchaseRowId,
+          customerId,
+          customerName,
+          kind: 'package_purchase',
+          vendorServiceId,
+          totalSessions: comp.totalSessionsForPurchase || comp.totalSessionsNum,
+        }),
+        is_read: false,
+        created_at: new Date(),
+      });
+    } catch (notifErr) {
+      console.warn('[purchase-from-vendor-service] vendor notification failed:', notifErr);
+    }
+
+    return bookingId;
+  } catch (e) {
+    console.error('[purchase-from-vendor-service] syncVendorPackagePurchaseToBookingAndNotify:', e);
+    return null;
+  }
+}
+
+function mapSessionRow(s: any, endOtpByBooking?: Map<string, string>) {
   const st = String(s.status || '');
   const bst = s.booking_status != null ? String(s.booking_status) : '';
   let displayStatus = st;
@@ -90,6 +252,31 @@ function mapSessionRow(s: any) {
   } else if (st === 'scheduled' && bst === 'completed') {
     displayStatus = 'completed';
   }
+
+  /** Slot row may be missing `booking_id` when sessions were pre-scheduled; booking still matches by package + session #. */
+  const resolvedBookingId =
+    s.resolved_booking_id != null && String(s.resolved_booking_id).trim()
+      ? String(s.resolved_booking_id).trim()
+      : s.booking_id != null
+        ? String(s.booking_id).trim()
+        : '';
+  const fromToken =
+    resolvedBookingId && endOtpByBooking ? endOtpByBooking.get(resolvedBookingId) : undefined;
+  // completion_otp on bookings is not migrated everywhere; use otp_end_code + otp_tokens only.
+  const completionFromRow =
+    s.booking_otp_end_code ??
+    (fromToken != null && String(fromToken).trim() ? String(fromToken).trim() : null);
+  const otpCodeRaw = s.booking_otp_code != null ? String(s.booking_otp_code).trim() : '';
+  const startRaw =
+    (s.booking_otp_start_code != null && String(s.booking_otp_start_code).trim()) || '';
+  const completionRaw = completionFromRow != null ? String(completionFromRow).trim() : '';
+
+  const otpVerified = Boolean(s.booking_otp_verified);
+  const otpStartVerified = Boolean(s.booking_otp_start_verified);
+  const otpEndVerified = Boolean(s.booking_otp_end_verified);
+  const serviceType = s.booking_service_type != null ? String(s.booking_service_type) : '';
+  const serviceStyle = serviceType || '';
+
   return {
     id: s.id,
     session_number: s.session_number,
@@ -100,8 +287,8 @@ function mapSessionRow(s: any) {
     scheduledDate: s.scheduled_date,
     scheduled_time: s.scheduled_time,
     scheduledTime: s.scheduled_time,
-    booking_id: s.booking_id,
-    bookingId: s.booking_id,
+    booking_id: resolvedBookingId || undefined,
+    bookingId: resolvedBookingId || undefined,
     booking_status: bst || undefined,
     booking_date: s.booking_date,
     bookingDate: s.booking_date,
@@ -109,7 +296,49 @@ function mapSessionRow(s: any) {
     bookingTime: s.booking_time,
     completed_at: s.completed_at,
     completedAt: s.completed_at,
+    /** Linked visit: OTPs for check-in / start / end (customer-only in GET /packages/.../sessions). */
+    service_type: serviceType || undefined,
+    serviceType: serviceType || undefined,
+    service_style: serviceStyle || undefined,
+    serviceStyle: serviceStyle || undefined,
+    otp_code: otpCodeRaw || undefined,
+    otpCode: otpCodeRaw || undefined,
+    start_otp: startRaw || undefined,
+    startOTP: startRaw || undefined,
+    completion_otp: completionRaw || undefined,
+    completionOTP: completionRaw || undefined,
+    otp_verified: otpVerified,
+    otpVerified,
+    otp_start_verified: otpStartVerified,
+    otpStartVerified: otpStartVerified,
+    otp_end_verified: otpEndVerified,
+    otpEndVerified: otpEndVerified,
   };
+}
+
+/** Remove booking OTP fields (vendor / anonymous must not receive customer codes). */
+function stripPackageSessionOtpsFromBody(body: { sessions?: unknown[] }) {
+  const sessions = body?.sessions;
+  if (!Array.isArray(sessions)) return;
+  const keys = [
+    'otpCode',
+    'otp_code',
+    'startOTP',
+    'start_otp',
+    'completionOTP',
+    'completion_otp',
+    'otpVerified',
+    'otp_verified',
+    'otpStartVerified',
+    'otp_start_verified',
+    'otpEndVerified',
+    'otp_end_verified',
+  ];
+  for (const row of sessions) {
+    if (!row || typeof row !== 'object') continue;
+    const s = row as Record<string, unknown>;
+    for (const k of keys) delete s[k];
+  }
 }
 
 /** Standard read model for customer, vendor, and admin UIs. */
@@ -122,12 +351,32 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
     `
         SELECT 
           pss.*,
+          b.id AS resolved_booking_id,
           b.status as booking_status,
           b.booking_date,
           b.booking_time,
-          b.completed_at
+          b.completed_at,
+          b.otp_code as booking_otp_code,
+          b.otp_verified as booking_otp_verified,
+          b.otp_start_code as booking_otp_start_code,
+          b.otp_end_code as booking_otp_end_code,
+          b.otp_start_verified as booking_otp_start_verified,
+          b.otp_end_verified as booking_otp_end_verified,
+          b.service_type as booking_service_type
         FROM package_scheduled_sessions pss
-        LEFT JOIN bookings b ON pss.booking_id = b.id
+        LEFT JOIN bookings b ON b.id = COALESCE(
+          pss.booking_id,
+          (
+            SELECT b2.id
+            FROM bookings b2
+            WHERE b2.package_purchase_id = pss.package_purchase_id
+              AND COALESCE(b2.is_package_session, false) = true
+              AND b2.package_session_number IS NOT NULL
+              AND b2.package_session_number = pss.session_number
+            ORDER BY b2.created_at DESC NULLS LAST, b2.updated_at DESC NULLS LAST
+            LIMIT 1
+          )
+        )
         WHERE pss.package_purchase_id = $1
         ORDER BY pss.session_number ASC
       `,
@@ -148,7 +397,42 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
   if (!pkg) return null;
 
   const rawSessions = result.rows;
-  const sessions = rawSessions.map(mapSessionRow);
+  const bookingIds = [
+    ...new Set(
+      rawSessions
+        .map((r: { booking_id?: string; resolved_booking_id?: string }) => {
+          const id =
+            r?.resolved_booking_id != null && String(r.resolved_booking_id).trim()
+              ? String(r.resolved_booking_id).trim()
+              : r?.booking_id != null
+                ? String(r.booking_id).trim()
+                : '';
+          return id;
+        })
+        .filter(Boolean)
+    ),
+  ];
+  const endOtpByBooking = new Map<string, string>();
+  if (bookingIds.length > 0) {
+    const endRes = await query(
+      `SELECT DISTINCT ON (metadata->>'bookingId')
+         metadata->>'bookingId' AS bid,
+         otp_code
+       FROM otp_tokens
+       WHERE metadata->>'action' = 'end'
+         AND COALESCE(is_used, false) = false
+         AND (expires_at IS NULL OR expires_at > NOW())
+         AND metadata->>'bookingId' = ANY($1::text[])
+       ORDER BY metadata->>'bookingId', created_at DESC`,
+      [bookingIds]
+    ).catch(() => ({ rows: [] as { bid?: string; otp_code?: string }[] }));
+    for (const row of endRes.rows || []) {
+      const id = row.bid != null ? String(row.bid) : '';
+      const code = row.otp_code != null ? String(row.otp_code).trim() : '';
+      if (id && code) endOtpByBooking.set(id, code);
+    }
+  }
+  const sessions = rawSessions.map((r: any) => mapSessionRow(r, endOtpByBooking));
   const completedCount = sessions.filter((s: any) => s.display_status === 'completed' || s.status === 'completed').length;
   const inProgressCount = sessions.filter((s: any) => s.display_status === 'in_progress' || s.status === 'in_progress').length;
   const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
@@ -177,7 +461,7 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
 async function packageSessionsAuthForRequest(
   c: Context,
   pkg: { customer_id?: string; vendor_id?: string }
-): Promise<'ok' | 'anonymous' | 'forbidden'> {
+): Promise<'customer' | 'vendor' | 'anonymous' | 'forbidden'> {
   const authRaw = c.req.header('Authorization') || c.req.header('authorization') || '';
   if (!authRaw.trim()) return 'anonymous';
 
@@ -200,7 +484,8 @@ async function packageSessionsAuthForRequest(
     vendId &&
     pkg.vendor_id != null &&
     String(vendId).toLowerCase() === String(pkg.vendor_id).toLowerCase();
-  if (custOk || vendOk) return 'ok';
+  if (custOk) return 'customer';
+  if (vendOk) return 'vendor';
   return 'forbidden';
 }
 
@@ -727,7 +1012,9 @@ export function registerPackageBookingEndpoints(app: Hono) {
         razorpay_payment_id: razorpayPaymentIdRaw,
         razorpay_signature: razorpaySignatureRaw,
         paymentId: paymentIdRaw,
-      } = body;
+        petId: petIdBody,
+      } = body as Record<string, unknown>;
+      const petIdForBooking = uuidOrNull(petIdBody);
 
       if (!customerRef || !vendorRef || !vendorServiceId) {
         return c.json(
@@ -754,6 +1041,24 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
       const comp = computed.comp;
 
+      if (!comp.unlimitedPurchase && comp.totalSessionsForPurchase > 0) {
+        const schedArr = Array.isArray(sessionSchedule) ? sessionSchedule : [];
+        const firstSlot =
+          schedArr.find((s: { sessionNumber?: number }) => Number(s?.sessionNumber) === 1) ||
+          (schedArr.length === 1 ? schedArr[0] : null);
+        const d = firstSlot?.date != null ? String(firstSlot.date).trim() : '';
+        const t = firstSlot?.time != null ? String(firstSlot.time).trim() : '';
+        if (!d || !t) {
+          return c.json(
+            {
+              error:
+                'For this package, session 1 requires a scheduled date and time (the same time is applied weekly to every session).',
+            },
+            400
+          );
+        }
+      }
+
       const razorpayOrderId = String(razorpayOrderIdRaw || '').trim();
       const razorpayPaymentId = String(razorpayPaymentIdRaw || '').trim();
       const razorpaySignature = String(razorpaySignatureRaw || '').trim();
@@ -772,7 +1077,11 @@ export function registerPackageBookingEndpoints(app: Hono) {
       const unlimitedPurchase = comp.unlimitedPurchase;
       const finiteSessions = unlimitedPurchase ? 0 : comp.finiteSessions;
 
-      const purchaseJson = (purchase: Record<string, unknown>, catalogPackageId: string) => ({
+      const purchaseJson = (
+        purchase: Record<string, unknown>,
+        catalogPackageId: string,
+        vendorBookingId?: string | null
+      ) => ({
         success: true,
         purchase: {
           id: purchase.id,
@@ -783,6 +1092,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           expiresAt: purchase.expires_at,
           servicePackageId: catalogPackageId,
           vendorServiceId: String(vendorServiceId),
+          ...(vendorBookingId ? { vendorBookingId } : {}),
         },
         message: unlimitedPurchase
           ? 'Package purchased! Unlimited sessions for this plan.'
@@ -890,7 +1200,18 @@ export function registerPackageBookingEndpoints(app: Hono) {
           [payRow.id, razorpayPaymentId, razorpaySignature]
         );
 
-        return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId));
+        const vendorBookingId = await syncVendorPackagePurchaseToBookingAndNotify({
+          customerId,
+          vendorId: comp.vendorId,
+          vendorServiceId: String(vendorServiceId),
+          comp,
+          purchase: purchase as Record<string, unknown>,
+          catalogPackageId,
+          sessionSchedule,
+          paymentId: String(payRow.id),
+          petId: petIdForBooking,
+        });
+        return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, vendorBookingId));
       }
 
       const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
@@ -900,7 +1221,18 @@ export function registerPackageBookingEndpoints(app: Hono) {
         sessionSchedule,
       });
 
-      return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId));
+      const vendorBookingIdFree = await syncVendorPackagePurchaseToBookingAndNotify({
+        customerId,
+        vendorId: comp.vendorId,
+        vendorServiceId: String(vendorServiceId),
+        comp,
+        purchase: purchase as Record<string, unknown>,
+        catalogPackageId,
+        sessionSchedule,
+        paymentId: null,
+        petId: petIdForBooking,
+      });
+      return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, vendorBookingIdFree));
     } catch (error: any) {
       console.error('Error in purchase-from-vendor-service:', error);
       return c.json({ error: error.message }, 500);
@@ -992,6 +1324,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
       if (!pkg?.vendor_id || String(pkg.vendor_id).toLowerCase() !== String(vendId).toLowerCase()) {
         return c.json({ success: false, error: 'Forbidden' }, 403);
       }
+      stripPackageSessionOtpsFromBody(body);
       return c.json(body);
     } catch (error: any) {
       console.error('Error fetching vendor package sessions:', error);
@@ -1072,6 +1405,9 @@ export function registerPackageBookingEndpoints(app: Hono) {
       const authz = await packageSessionsAuthForRequest(c, pkg);
       if (authz === 'forbidden') {
         return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
+      if (authz !== 'customer') {
+        stripPackageSessionOtpsFromBody(body);
       }
 
       return c.json(body);

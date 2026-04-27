@@ -161,7 +161,10 @@ export async function linkPackageScheduledSessionToBooking(
         updated_at = NOW()
     WHERE package_purchase_id = $4::uuid
       AND session_number = $5
-      AND status = 'pending'
+      AND (
+        status = 'pending'
+        OR (status = 'scheduled' AND booking_id IS NULL)
+      )
     `,
     [bookingId, bookingDate, bookingTime, packagePurchaseId, sessionNumber]
   );

@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Home, MapPin, Clock, Star, Package, ChevronRight, Zap, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -60,6 +61,7 @@ export function HomeServicesDashboard({
   onNavigate,
   initialService
 }: HomeServicesDashboardProps) {
+  const router = useRouter();
   const [selectedService, setSelectedService] = useState<HomeServiceType | null>(initialService || null);
   const [loading, setLoading] = useState(true);
   const [activeBookings, setActiveBookings] = useState<ActiveBooking[]>([]);
@@ -226,8 +228,9 @@ export function HomeServicesDashboard({
                 <Package className="w-5 h-5 text-purple-600" />
                 Your Packages
               </h2>
-              <button 
-                onClick={() => onNavigate('package-tracking')}
+              <button
+                type="button"
+                onClick={() => router.push('/bookings')}
                 className="text-sm text-purple-600 hover:text-purple-800"
               >
                 View All →
@@ -236,9 +239,11 @@ export function HomeServicesDashboard({
             
             <div className="space-y-2">
               {activePackages.slice(0, 2).map(pkg => (
-                <div 
+                <button
                   key={pkg.id}
-                  className="flex items-center justify-between bg-white rounded-lg p-3"
+                  type="button"
+                  onClick={() => router.push(`/packages/${encodeURIComponent(pkg.id)}`)}
+                  className="flex w-full items-center justify-between rounded-lg bg-white p-3 text-left transition hover:bg-purple-50/80"
                 >
                   <div>
                     <p className="font-medium text-gray-900">{pkg.packageName}</p>
@@ -250,7 +255,7 @@ export function HomeServicesDashboard({
                     </p>
                     <p className="text-xs text-gray-500">sessions left</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </Card>

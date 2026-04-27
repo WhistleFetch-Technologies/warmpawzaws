@@ -55,3 +55,15 @@ export function getServiceStyleDisplayLabel(
   if (style) return style.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   return 'Service';
 }
+
+const TERMINAL_BOOKING_STATUSES_FOR_START_OTP = new Set(['completed', 'cancelled', 'no_show']);
+
+/**
+ * Whether to show the customer check-in / service start OTP for this visit status.
+ * Package rows often stay `scheduled` or `pending` while `otp_code` is already set; we only hide for terminal states.
+ */
+export function customerBookingStatusShowsCheckInOtp(status: string | null | undefined): boolean {
+  const s = String(status ?? '').trim().toLowerCase();
+  if (!s) return true;
+  return !TERMINAL_BOOKING_STATUSES_FOR_START_OTP.has(s);
+}

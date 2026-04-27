@@ -45,6 +45,28 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
 
   const totalSessions =
     Number(pkg?.totalSessions ?? pkg?.total_sessions ?? serviceRow.totalSessions ?? 1) || 1;
+  const sessionsPerDay = Math.max(
+    1,
+    Math.min(
+      24,
+      Number(
+        pkg?.sessionsPerDay ??
+          pkg?.sessions_per_day ??
+          meta?.sessionsPerDay ??
+          meta?.sessions_per_day
+      ) || 1
+    )
+  );
+  const sessionIntervalDays = Math.max(
+    1,
+    Number(
+      pkg?.sessionIntervalDays ??
+        pkg?.session_interval_days ??
+        pkg?.frequencyDays ??
+        meta?.sessionIntervalDays ??
+        meta?.frequencyDays
+    ) || 7
+  );
   const price =
     Number(pkg?.price ?? pkg?.packagePrice ?? serviceRow.price ?? serviceRow.custom_price ?? 0) || 0;
   const duration =
@@ -68,6 +90,8 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     vendorServiceId: vsid,
     serviceName: name,
     totalSessions,
+    sessionsPerDay,
+    sessionIntervalDays,
     price,
     duration,
     serviceType: serviceTypeCategory,

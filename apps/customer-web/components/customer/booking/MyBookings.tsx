@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
@@ -12,7 +12,11 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
-import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  getServiceStyleDisplayLabel,
+  formatPriceWithSymbol,
+  customerBookingStatusShowsCheckInOtp,
+} from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
@@ -20,7 +24,6 @@ import { BookingDetailModal } from '../BookingDetailModal';
 import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
-
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const MEAL_PLAN_ORDERS_ENABLED = false;
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
@@ -93,6 +96,10 @@ interface Booking {
   paymentStatus?: string;
   /** When the booking was marked completed (for tele: aligns with video call end when backend sends it). */
   completedAt?: string;
+  /** True when this row is a visit booked against a package slot. */
+  isPackageSession?: boolean;
+  /** 1-based slot index within the package. */
+  packageSessionNumber?: number;
 }
 
 function isTeleBookingRow(b: { serviceStyle?: string; serviceType?: string; serviceName?: string }) {
@@ -113,7 +120,10 @@ interface MyBookingsProps {
   /** From live tracking etc.: `/bookings?reviewBookingId=` opens rate modal when list loads */
   reviewBookingIdFromUrl?: string | null;
   onReorderMedicine?: (medications: any[]) => void;
-  onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
+  onNavigate?: (
+    screen: string,
+    data?: { bookingId?: string; packagePurchaseId?: string; meetingId?: string }
+  ) => void;
 }
 
 export function MyBookings({
@@ -171,7 +181,6 @@ export function MyBookings({
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
-  const [hasActivePackages, setHasActivePackages] = useState(false);
 
   useEffect(() => {
     console.log('[MyBookings] init', {
@@ -236,6 +245,7 @@ export function MyBookings({
         if (!effectivePhone) {
           console.warn('[MyBookings] No phone available; skipping bookings fetch');
           setBookings([]);
+          setLoading(false);
           return;
         }
       }
@@ -255,16 +265,6 @@ export function MyBookings({
         rawBookings = result;
       } else {
         rawBookings = result.bookings || result.data?.bookings || [];
-      }
-
-      try {
-        const pkgRes = await apiClient.get<any>(
-          `/customer/${encodeURIComponent(effectivePhone)}/packages`
-        );
-        const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
-        setHasActivePackages(pkgs.length > 0);
-      } catch {
-        setHasActivePackages(false);
       }
 
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
@@ -386,11 +386,18 @@ export function MyBookings({
             b.package_details?.packagePurchaseId ||
             b.packageDetails?.packagePurchaseId,
           packageDetails: b.package_details || b.packageDetails,
+          isPackageSession: Boolean(b.is_package_session ?? b.isPackageSession),
+          packageSessionNumber:
+            b.package_session_number != null
+              ? Number(b.package_session_number)
+              : b.packageSessionNumber != null
+                ? Number(b.packageSessionNumber)
+                : undefined,
           occurrences: b.occurrences,
           createdAt: b.created_at || b.createdAt,
           specialInstructions: b.notes || b.special_instructions,
           requiresStartOTP: b.requires_start_otp,
-          startOTP: b.start_otp,
+          startOTP: b.start_otp || b.startOTP,
           startTime: b.start_time,
           endTime: b.end_time,
           actualDuration: b.actual_duration,
@@ -407,11 +414,17 @@ export function MyBookings({
         };
       });
 
-      // Sort: most recent bookings first
+      // Sort: most recent first; same package purchase visits ordered by session number
       mappedBookings.sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
+        if (dateB !== dateA) return dateB - dateA;
+        const ap = String(a.packagePurchaseId || '').toLowerCase();
+        const bp = String(b.packagePurchaseId || '').toLowerCase();
+        if (ap && bp && ap === bp && a.isPackageSession && b.isPackageSession) {
+          return (a.packageSessionNumber || 0) - (b.packageSessionNumber || 0);
+        }
+        return 0;
       });
 
       setBookings(mappedBookings);
@@ -535,6 +548,19 @@ export function MyBookings({
     return true;
   });
 
+  /** Lowest-index active package-session visit (shows OTP here and in the list). */
+  const nextPackageVisit = useMemo(() => {
+    const candidates = bookings.filter(
+      (b) =>
+        b.isPackageSession &&
+        b.packageSessionNumber != null &&
+        b.packagePurchaseId &&
+        !['completed', 'cancelled'].includes(b.status)
+    );
+    if (candidates.length === 0) return null;
+    return [...candidates].sort((a, b) => (a.packageSessionNumber || 0) - (b.packageSessionNumber || 0))[0];
+  }, [bookings]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
@@ -592,23 +618,7 @@ export function MyBookings({
         sheetToneClass="bg-gray-50"
       />
 
-      {hasActivePackages && (
-        <div className="-mt-1 px-4 py-2 bg-purple-50 border-b border-purple-100">
-          <button
-            type="button"
-            onClick={() => onNavigate?.('package-tracking')}
-            className="w-full text-left flex items-center justify-between gap-2 text-sm font-medium text-purple-900"
-          >
-            <span className="inline-flex items-center gap-2">
-              <Package className="w-4 h-4 shrink-0" />
-              My packages
-            </span>
-            <ChevronRight className="w-4 h-4 text-purple-600 shrink-0" />
-          </button>
-        </div>
-      )}
-
-      <div className={`max-w-customer mx-auto${hasActivePackages ? '' : ' -mt-1'}`}>
+      <div className="max-w-customer mx-auto -mt-1">
         {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1); navigation gated by MEAL_PLAN_ORDERS_ENABLED */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
@@ -711,6 +721,145 @@ export function MyBookings({
         className="mx-auto max-w-customer space-y-3 p-4"
         style={{ paddingBottom: 'max(1.25rem, var(--customer-tabbar-content-pad))' }}
       >
+        {nextPackageVisit && activeFilter !== 'completed' ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedBooking(nextPackageVisit)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setSelectedBooking(nextPackageVisit);
+              }
+            }}
+            className="cursor-pointer rounded-xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 p-4 shadow-sm"
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <Package className="h-5 w-5 shrink-0 text-orange-600" />
+              <h3 className="font-semibold text-gray-900">Next package visit</h3>
+              <span className="rounded-full bg-orange-600 px-2 py-0.5 text-xs font-bold text-white">
+                Session {nextPackageVisit.packageSessionNumber}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-900">{nextPackageVisit.serviceName}</p>
+            <p className="text-xs text-gray-600">{nextPackageVisit.vendorName}</p>
+            <p className="mt-1 text-xs text-gray-700">
+              {new Date(nextPackageVisit.bookingDate).toLocaleDateString()} at {nextPackageVisit.bookingTime}
+            </p>
+            <p className="mt-2 text-xs text-orange-800">Tap for details · OTP for this visit is below</p>
+            {(nextPackageVisit.otpCode || nextPackageVisit.completionOTP || nextPackageVisit.startOTP) &&
+              customerBookingStatusShowsCheckInOtp(nextPackageVisit.status) &&
+              !nextPackageVisit.otpVerified && (
+                <div className="mt-3 rounded-lg border border-orange-200 bg-white/90 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Key className="h-4 w-4 text-orange-600" />
+                      <span className="text-sm font-medium text-orange-900">
+                        {nextPackageVisit.serviceStyle === 'at_home' || nextPackageVisit.serviceType === 'at_home'
+                          ? 'Service OTP'
+                          : nextPackageVisit.serviceStyle === 'at_center' || nextPackageVisit.serviceType === 'at_center'
+                            ? 'Check-in OTP'
+                            : 'Visit OTP'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-lg font-bold tracking-wider text-orange-600">
+                        {showOTP === nextPackageVisit.bookingId
+                          ? nextPackageVisit.otpCode || nextPackageVisit.completionOTP || nextPackageVisit.startOTP
+                          : '••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        className="rounded p-1 hover:bg-orange-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOTP(showOTP === nextPackageVisit.bookingId ? null : nextPackageVisit.bookingId);
+                        }}
+                      >
+                        {showOTP === nextPackageVisit.bookingId ? (
+                          <EyeOff className="h-4 w-4 text-orange-600" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-orange-600" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded p-1 hover:bg-orange-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyOTP(
+                            String(
+                              nextPackageVisit.otpCode ||
+                                nextPackageVisit.completionOTP ||
+                                nextPackageVisit.startOTP
+                            ),
+                            nextPackageVisit.bookingId
+                          );
+                        }}
+                      >
+                        {copiedOTP === nextPackageVisit.bookingId ? (
+                          <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Copy className="h-4 w-4 text-orange-600" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            {nextPackageVisit.otpVerified &&
+              nextPackageVisit.status === 'in_progress' &&
+              (nextPackageVisit.serviceStyle === 'at_home' || nextPackageVisit.serviceType === 'at_home') &&
+              (nextPackageVisit.completionOTP || nextPackageVisit.otpCode) && (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 p-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="mb-1 flex items-center gap-2">
+                    <Key className="h-4 w-4 text-amber-900" />
+                    <span className="text-sm font-semibold text-amber-950">End-of-service OTP</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-lg font-bold tracking-wider text-amber-950">
+                      {showCompletionOtpFor === nextPackageVisit.bookingId
+                        ? String(nextPackageVisit.completionOTP || nextPackageVisit.otpCode)
+                        : '••••••'}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="rounded p-1 hover:bg-amber-100"
+                        onClick={() =>
+                          setShowCompletionOtpFor(
+                            showCompletionOtpFor === nextPackageVisit.bookingId ? null : nextPackageVisit.bookingId
+                          )
+                        }
+                      >
+                        {showCompletionOtpFor === nextPackageVisit.bookingId ? (
+                          <EyeOff className="h-4 w-4 text-amber-900" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-amber-900" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded p-1 hover:bg-amber-100"
+                        onClick={() =>
+                          copyOTP(
+                            String(nextPackageVisit.completionOTP || nextPackageVisit.otpCode),
+                            `${nextPackageVisit.bookingId}-pin-end`
+                          )
+                        }
+                      >
+                        {copiedOTP === `${nextPackageVisit.bookingId}-pin-end` ? (
+                          <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Copy className="h-4 w-4 text-amber-900" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+          </div>
+        ) : null}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
@@ -944,7 +1093,7 @@ export function MyBookings({
                 {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
                 {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
                 {(booking.otpCode || booking.completionOTP || booking.startOTP) &&
-                  (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') &&
+                  customerBookingStatusShowsCheckInOtp(booking.status) &&
                   !booking.otpVerified && (
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <div className="flex items-center justify-between bg-orange-50 rounded-lg p-3">
@@ -1082,7 +1231,8 @@ export function MyBookings({
                           e.stopPropagation();
                           const pid =
                             booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId;
-                          if (pid) router.push(`/packages/${encodeURIComponent(String(pid))}`);
+                          if (!pid) return;
+                          router.push('/my-packages');
                         }}
                         className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
                       >

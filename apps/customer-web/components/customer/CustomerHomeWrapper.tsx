@@ -437,6 +437,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
+    else if (path === 'my-packages') router.push('/my-packages');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'appointments') navigateToScreen('appointments');
@@ -545,6 +546,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             phone={phone}
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
+            onViewMyPackages={() => router.push('/my-packages')}
             onNavigate={handleAccountNavigate}
           />
         )}
@@ -893,12 +895,26 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   );
 
   // Other Screens - onNavigate wires View Lab Reports / Track Sample Collection from booking detail
-  if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} onNavigate={(screen, data) => {
-    if (screen === 'booking-details' && data?.bookingId) handleViewBooking(data.bookingId);
-    else if (screen === 'diagnostics-reports' && data?.bookingId) { setSelectedBookingId(data.bookingId); navigateToScreen('diagnostics-reports'); }
-    else if (screen === 'sample-collection-tracking' && data?.bookingId) { setSelectedBookingId(data.bookingId); navigateToScreen('sample-collection-tracking'); }
-    else handleNavigateToService(screen);
-  }} />;
+  if (currentScreen === 'my-bookings') {
+    return (
+      <MyBookings
+        phone={phone}
+        onBack={handleBack}
+        initialBookingId={selectedBookingId || undefined}
+        onReorderMedicine={handleReorderMedicine}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details' && data?.bookingId) handleViewBooking(data.bookingId);
+          else if (screen === 'diagnostics-reports' && data?.bookingId) {
+            setSelectedBookingId(data.bookingId);
+            navigateToScreen('diagnostics-reports');
+          } else if (screen === 'sample-collection-tracking' && data?.bookingId) {
+            setSelectedBookingId(data.bookingId);
+            navigateToScreen('sample-collection-tracking');
+          } else handleNavigateToService(screen);
+        }}
+      />
+    );
+  }
   if (currentScreen === 'appointments') return <AppointmentsList phone={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-details'); }} />;
   if (currentScreen === 'appointment-details') {
     if (selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} phone={phone} onBack={() => navigateToScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { setSelectedAppointmentId(null); navigateToScreen('appointments'); }} />;
@@ -993,6 +1009,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             vendorServiceId: String(w.vendorServiceId),
             serviceName: String(w.serviceName || 'Package'),
             totalSessions: Math.max(1, Number(w.totalSessions) || 1),
+            sessionsPerDay: Math.max(
+              1,
+              Math.min(24, Number(w.sessionsPerDay ?? w.sessions_per_day) || 1)
+            ),
+            sessionIntervalDays: Math.max(
+              1,
+              Math.min(366, Number(w.sessionIntervalDays ?? w.session_interval_days) || 7)
+            ),
             price: Number(w.price) || 0,
             duration: w.duration != null ? Number(w.duration) : 60,
             serviceType: w.serviceType ? String(w.serviceType) : undefined,

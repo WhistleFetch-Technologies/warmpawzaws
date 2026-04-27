@@ -33,6 +33,126 @@ export type VendorPackageSessionScheduleItem = {
   time?: string;
 };
 
+/** Normalize to HH:mm for PostgreSQL `time` (accepts HH:mm or HH:mm:ss). */
+function normalizeScheduleTime(t: unknown): string {
+  const s = String(t ?? '').trim();
+  if (!s) return '09:00';
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return '09:00';
+  const hh = String(Math.min(23, Math.max(0, parseInt(m[1], 10)))).padStart(2, '0');
+  const mm = String(Math.min(59, Math.max(0, parseInt(m[2], 10)))).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/** ISO date YYYY-MM-DD + whole days (UTC calendar). */
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const parts = String(isoDate || '').trim().split('-');
+  if (parts.length < 3) return String(isoDate || '').trim();
+  const y = parseInt(parts[0], 10);
+  const mo = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return String(isoDate || '').trim();
+  const dt = new Date(Date.UTC(y, mo, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Expand client session schedule to one row per session.
+ * - Full explicit list (length >= totalSessions): use mapped rows 1..N.
+ * - Multiple slots on day 1 (sessionsPerDay rows, same date, times only): each next **block** of N sessions
+ *   lands on the **next calendar day** (sessions 1–N day D, N+1–2N day D+1, …). Same times per block.
+ * - Single row session 1: repeat every `intervalDays` (e.g. 7 = weekly) for one session per day.
+ */
+export function expandVendorPackageSessionSchedule(
+  sessionSchedule: VendorPackageSessionScheduleItem[],
+  totalSessions: number,
+  opts?: { sessionsPerDay?: number; intervalDays?: number }
+): VendorPackageSessionScheduleItem[] {
+  const list = Array.isArray(sessionSchedule) ? sessionSchedule : [];
+  if (!Number.isFinite(totalSessions) || totalSessions < 1) {
+    return list;
+  }
+  const sessionsPerDay = Math.max(1, Math.floor(opts?.sessionsPerDay ?? 1));
+  /** Used only when sessionsPerDay === 1 (one visit per calendar day). */
+  const intervalDays = Math.max(1, Math.floor(opts?.intervalDays ?? 7));
+
+  const sorted = [...list].sort(
+    (a, b) =>
+      Number((a as VendorPackageSessionScheduleItem).sessionNumber ?? 0) -
+      Number((b as VendorPackageSessionScheduleItem).sessionNumber ?? 0)
+  ) as VendorPackageSessionScheduleItem[];
+
+  if (sorted.length >= totalSessions) {
+    const bySn = new Map<number, VendorPackageSessionScheduleItem>();
+    for (const it of sorted) {
+      const sn = Number(it.sessionNumber);
+      if (sn >= 1 && sn <= totalSessions) bySn.set(sn, it);
+    }
+    const out: VendorPackageSessionScheduleItem[] = [];
+    for (let i = 1; i <= totalSessions; i++) {
+      const hit = bySn.get(i);
+      if (hit) {
+        out.push({
+          sessionNumber: i,
+          date: String(hit.date || '').trim(),
+          time: normalizeScheduleTime(hit.time),
+        });
+      }
+    }
+    if (out.length === totalSessions) return out;
+  }
+
+  if (
+    sorted.length === sessionsPerDay &&
+    sessionsPerDay > 1 &&
+    totalSessions > sessionsPerDay
+  ) {
+    const dates = sorted.map((r) => String(r.date || '').trim()).filter(Boolean);
+    const uniqDates = [...new Set(dates)];
+    if (uniqDates.length === 1 && uniqDates[0]) {
+      const baseDate = uniqDates[0];
+      const out: VendorPackageSessionScheduleItem[] = [];
+      let sn = 1;
+      /** Multi-slot-per-day: consecutive calendar days per block (not `intervalDays`). */
+      const dayStepBetweenBlocks = 1;
+      for (let block = 0; sn <= totalSessions; block++) {
+        const d = addDaysToIsoDate(baseDate, block * dayStepBetweenBlocks);
+        for (let j = 0; j < sessionsPerDay && sn <= totalSessions; j++) {
+          const tpl = sorted[j];
+          out.push({
+            sessionNumber: sn++,
+            date: d,
+            time: normalizeScheduleTime(tpl?.time),
+          });
+        }
+      }
+      return out;
+    }
+  }
+
+  if (!list.length || totalSessions <= 1) {
+    return list;
+  }
+  const first = sorted[0] as VendorPackageSessionScheduleItem;
+  const sn = Number(first?.sessionNumber);
+  const dateStr = first?.date != null ? String(first.date).trim() : '';
+  const timeStr = first?.time != null ? String(first.time).trim() : '';
+  if (sorted.length === 1 && sn === 1 && dateStr && timeStr && sessionsPerDay === 1) {
+    const timeNorm = normalizeScheduleTime(timeStr);
+    const out: VendorPackageSessionScheduleItem[] = [];
+    for (let i = 1; i <= totalSessions; i++) {
+      out.push({
+        sessionNumber: i,
+        date: addDaysToIsoDate(dateStr, (i - 1) * intervalDays),
+        time: timeNorm,
+      });
+    }
+    return out;
+  }
+  return sorted;
+}
+
 /** Computed purchase shape (no DB writes). */
 export type VendorPackageComputation = {
   customerId: string;
@@ -53,6 +173,10 @@ export type VendorPackageComputation = {
   totalSessionsForPurchase: number;
   packageDisplayName: string;
   expiresAt: Date;
+  /** How many discrete visits land on the same calendar day (UI collects that many times for day 1). */
+  sessionsPerDay: number;
+  /** Days between visits when sessionsPerDay === 1 (default 7 = weekly). Ignored for multi-slot-per-day expansion (consecutive days). */
+  sessionIntervalDays: number;
 };
 
 export async function computeVendorPackagePurchase(params: {
@@ -141,6 +265,26 @@ export async function computeVendorPackagePurchase(params: {
   const totalSessionsForPurchase = unlimitedPurchase ? 0 : finiteSessions;
   const packageDisplayName = resolveServicePackageDisplayName(shadowCatalog);
 
+  const sessionsPerDay = Math.max(
+    1,
+    Math.min(
+      24,
+      Number(details.sessionsPerDay ?? details.sessions_per_day ?? meta.sessionsPerDay ?? 1) || 1
+    )
+  );
+  const sessionIntervalDays = Math.max(
+    1,
+    Math.min(
+      366,
+      Number(
+        details.sessionIntervalDays ??
+          details.session_interval_days ??
+          meta.sessionIntervalDays ??
+          7
+      ) || 7
+    )
+  );
+
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + validityDays);
 
@@ -165,20 +309,24 @@ export async function computeVendorPackagePurchase(params: {
       totalSessionsForPurchase,
       packageDisplayName,
       expiresAt,
+      sessionsPerDay,
+      sessionIntervalDays,
     },
   };
 }
 
 export async function insertVendorServiceCatalogPackage(comp: VendorPackageComputation): Promise<string> {
   const { vendorId, displayName, vendorServiceId, serviceType, priceNum, unlimited, totalSessionsNum, validityDays, serviceStyle } = comp;
+  // Repeated $n without casts can error: inconsistent types deduced for parameter $2
+  // when `name` (text) and `package_name` (varchar) both use the same placeholder.
   const catalogInsert = await query(
     `INSERT INTO service_packages (
        vendor_id, name, package_name, description, service_type, price,
        session_count, total_sessions, sessions_included, validity_days, is_active, service_style,
        created_at, updated_at
      ) VALUES (
-       $1::uuid, $2, $2, $3, $4, $5::numeric,
-       $6, $6, $6, $7::int, true, $8,
+       $1::uuid, $2::text, $2::text, $3::text, $4::text, $5::numeric,
+       $6::int, $6::int, $6::int, $7::int, true, $8::text,
        NOW(), NOW()
      ) RETURNING id`,
     [
@@ -306,8 +454,15 @@ export async function insertPackagePurchaseRows(
   const db = { query } as SqlClient;
   await seedPackageScheduledSessionsIfMissing(db, String(purchase.id));
 
-  for (const sched of sessionSchedule || []) {
-    const sn = Number((sched as any).sessionNumber);
+  const expandedSchedule = unlimitedPurchase
+    ? sessionSchedule || []
+    : expandVendorPackageSessionSchedule(sessionSchedule || [], totalSessionsForPurchase, {
+        sessionsPerDay: comp.sessionsPerDay ?? 1,
+        intervalDays: comp.sessionIntervalDays ?? 7,
+      });
+
+  for (const sched of expandedSchedule) {
+    const sn = Number((sched as VendorPackageSessionScheduleItem).sessionNumber);
     if (!Number.isFinite(sn) || sn < 1) continue;
     await query(
       `UPDATE package_scheduled_sessions
@@ -316,7 +471,12 @@ export async function insertPackagePurchaseRows(
            status = 'scheduled',
            updated_at = NOW()
        WHERE package_purchase_id = $3::uuid AND session_number = $4`,
-      [(sched as any).date || null, (sched as any).time || null, purchase.id, sn]
+      [
+        (sched as VendorPackageSessionScheduleItem).date || null,
+        (sched as VendorPackageSessionScheduleItem).time || null,
+        purchase.id,
+        sn,
+      ]
     );
   }
 
