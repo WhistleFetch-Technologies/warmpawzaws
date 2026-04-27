@@ -3627,11 +3627,28 @@ export function CustomerHomeWrapper({
   // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
   if (currentScreen === 'purchase-package') {
     const walkSession = walkerServiceData?.walkSession ?? null;
+    const vendorPackageIntent =
+      walkerServiceData?.vendorServiceId && walkerServiceData?.vendorId
+        ? {
+            vendorId: String(walkerServiceData.vendorId),
+            vendorServiceId: String(walkerServiceData.vendorServiceId),
+            serviceName: String(walkerServiceData.serviceName || 'Package'),
+            totalSessions: Number(walkerServiceData.totalSessions) || 1,
+            price: Number(walkerServiceData.price ?? 0),
+            duration:
+              walkerServiceData.duration != null ? Number(walkerServiceData.duration) : 60,
+            serviceType: walkerServiceData.serviceType || 'walking',
+            serviceStyle: walkerServiceData.serviceStyle || 'at_home',
+            description: walkerServiceData.description,
+            vendorName: walkerServiceData?.walker?.name,
+          }
+        : null;
     return (
       <PackageBookingPage
         customerPhone={phone}
         customerId={phone}
         petId={selectedPetId || undefined}
+        vendorPackageIntent={vendorPackageIntent}
         walkSessionIntent={walkSession}
         onContinueToChooseWalker={
           walkSession

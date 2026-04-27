@@ -588,6 +588,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         // Don't fail booking completion if earnings creation fails
       }
 
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await completePackageSessionForBooking(db, bookingId);
+      } catch (pssErr: any) {
+        console.warn('[COMPLETE-BOOKING] package session sync:', pssErr?.message);
+      }
+
       return c.json({
         success: true,
         booking: updated[0],

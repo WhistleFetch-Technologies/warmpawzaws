@@ -1272,7 +1272,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/toggle-online
-   * Toggle vendor online status (for solo providers)
+   * Toggle vendor online status (solo, business, and center — same discovery rules).
    */
   app.post("/vendor/:vendorId/toggle-online", async (c) => {
     try {
@@ -1281,6 +1281,11 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       if (typeof isOnline !== 'boolean') {
         return c.json({ error: 'isOnline boolean is required' }, 400);
+      }
+
+      const resolved = await resolveVendorById((vendorId || '').trim());
+      if (!resolved?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
       }
 
       await query(
@@ -1292,7 +1297,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         [
           isOnline,
           isOnline ? null : new Date(),
-          vendorId
+          resolved.id
         ]
       );
 

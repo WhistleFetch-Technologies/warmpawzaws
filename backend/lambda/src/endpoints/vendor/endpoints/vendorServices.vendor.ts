@@ -1876,6 +1876,33 @@ export function registerVendorServicesEndpoints(app: Hono) {
       console.log('normalizedCategoryId----------------------------------------->', normalizedCategoryId, normalizedCategoryText, isUuid(effectiveCategory));
       const displayCategory =
         normalizedCategoryText ?? (!isUuid(effectiveCategory) ? String(effectiveCategory).trim() : null);
+
+      if (effectiveSpecIds.length > 0) {
+        if (!normalizedCategoryId) {
+          return c.json(
+            { error: 'Select a platform category before linking specializations.' },
+            400
+          );
+        }
+        const specRows = await query(
+          `SELECT sm.specialization_id
+           FROM specialization_master sm
+           INNER JOIN service_categories sc ON sc.id = $1::uuid
+           WHERE sm.specialization_id = ANY($2::text[])
+             AND sm.is_active = true
+             AND LOWER(TRIM(COALESCE(sm.category_id, ''))) = LOWER(TRIM(COALESCE(sc.category_id, '')))`,
+          [normalizedCategoryId, effectiveSpecIds]
+        );
+        const okIds = new Set((specRows.rows || []).map((r: any) => String(r.specialization_id)));
+        for (const sid of effectiveSpecIds) {
+          if (!okIds.has(String(sid))) {
+            return c.json(
+              { error: 'Each specialization must belong to the selected service category.' },
+              400
+            );
+          }
+        }
+      }
       // Create base service first (use effective price: package price when isPackage, else top-level price)
       const baseService = await insert('services', {
         name: serviceName,

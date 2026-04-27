@@ -15,7 +15,25 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
+import { toast } from 'sonner';
 import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, IndianRupee, Dog, Footprints } from 'lucide-react';
+
+export type VendorPackageIntent = {
+  vendorId: string;
+  vendorServiceId: string;
+  serviceName: string;
+  totalSessions: number;
+  price: number;
+  duration?: number;
+  serviceType?: string;
+  serviceStyle?: string;
+  description?: string;
+  vendorName?: string;
+};
 
 interface PackageItem {
   id: string;
@@ -30,6 +48,8 @@ interface PackageItem {
   duration: number; // per session in minutes
   category: string;
   popular?: boolean;
+  /** When set, purchase uses POST /packages/purchase-from-vendor-service */
+  vendorServiceId?: string;
 }
 
 interface Session {
@@ -58,11 +78,46 @@ export interface WalkSessionIntent {
   duration: number;
 }
 
+function loadRazorpayCheckoutScript(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  const w = window as unknown as { Razorpay?: unknown };
+  if (w.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      const deadline = Date.now() + 15000;
+      const tick = setInterval(() => {
+        const win = window as unknown as { Razorpay?: unknown };
+        if (win.Razorpay) {
+          clearInterval(tick);
+          resolve();
+        } else if (Date.now() > deadline) {
+          clearInterval(tick);
+          reject(new Error('Razorpay script timeout'));
+        }
+      }, 80);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      const win = window as unknown as { Razorpay?: unknown };
+      if (win.Razorpay) resolve();
+      else reject(new Error('Razorpay unavailable'));
+    };
+    script.onerror = () => reject(new Error('Failed to load Razorpay'));
+    document.body.appendChild(script);
+  });
+}
+
 interface PackageBookingPageProps {
   customerPhone: string;
   customerId: string;
   petId?: string;
   onBack?: () => void;
+  /** Walker / home-service flow: custom vendor_services package + vendor catalog */
+  vendorPackageIntent?: VendorPackageIntent | null;
   /** Single walk (30/60 min) chosen from dog walking — show summary + path back to pick a walker */
   walkSessionIntent?: WalkSessionIntent | null;
   onContinueToChooseWalker?: () => void;
@@ -73,6 +128,7 @@ export function PackageBookingPage({
   customerId,
   petId,
   onBack,
+  vendorPackageIntent,
   walkSessionIntent,
   onContinueToChooseWalker,
 }: PackageBookingPageProps) {
@@ -88,13 +144,12 @@ export function PackageBookingPage({
   useEffect(() => {
     loadPackages();
     loadMyPackages();
-  }, [customerId]);
+  }, [customerId, vendorPackageIntent?.vendorId, vendorPackageIntent?.vendorServiceId]);
 
   const loadPackages = async () => {
     try {
       setLoading(true);
-      
-      // Mock packages - In production, this would fetch from backend
+
       const mockPackages: PackageItem[] = [
         {
           id: 'pkg_training_5',
@@ -154,7 +209,61 @@ export function PackageBookingPage({
         }
       ];
 
-      setPackages(mockPackages);
+      const items: PackageItem[] = [];
+
+      if (vendorPackageIntent?.vendorId) {
+        try {
+          const res = (await apiClient.get(
+            `/vendor/${encodeURIComponent(vendorPackageIntent.vendorId)}/packages`
+          )) as any;
+          const rows = Array.isArray(res?.packages) ? res.packages : [];
+          for (const p of rows) {
+            const sc = Number(p.session_count ?? p.total_sessions ?? p.sessions_included);
+            const ts =
+              !Number.isFinite(sc) || sc <= 0 ? 1 : sc < 0 ? 1 : Math.min(365, Math.floor(sc));
+            const price = Number(p.price ?? 0);
+            items.push({
+              id: String(p.id),
+              vendorId: String(p.vendor_id ?? vendorPackageIntent.vendorId),
+              name: String(p.name ?? p.package_name ?? 'Package'),
+              description: String(p.description ?? ''),
+              vendorName: String(vendorPackageIntent.vendorName || 'Vendor'),
+              totalSessions: ts,
+              pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+              totalPrice: price,
+              duration: Number(
+                p.duration_minutes ?? p.duration ?? vendorPackageIntent.duration ?? 60
+              ),
+              category: String(p.service_type ?? 'walking'),
+              popular: false,
+            });
+          }
+        } catch (e) {
+          console.warn('[PackageBookingPage] vendor packages:', e);
+        }
+      }
+
+      if (vendorPackageIntent?.vendorServiceId) {
+        const p = vendorPackageIntent;
+        const ts = Math.max(1, Number(p.totalSessions ?? 1));
+        const price = Number(p.price ?? 0);
+        items.unshift({
+          id: `vs-${p.vendorServiceId}`,
+          vendorServiceId: p.vendorServiceId,
+          vendorId: p.vendorId,
+          name: p.serviceName,
+          description: p.description ?? '',
+          vendorName: p.vendorName || 'Your provider',
+          totalSessions: ts,
+          pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+          totalPrice: price,
+          duration: p.duration ?? 60,
+          category: p.serviceType ?? 'walking',
+          popular: true,
+        });
+      }
+
+      setPackages(items.length > 0 ? items : mockPackages);
     } catch (err) {
       console.error('Error loading packages:', err);
       setError('Failed to load packages');
@@ -216,23 +325,119 @@ export function PackageBookingPage({
       setBooking(true);
       setError(null);
 
-      const data = await apiClient.post<{ bookingId?: string; parentBookingId?: string }>('/customer/bookings/packages', {
-        customerPhone,
-        customerId,
-        petId,
-        vendorId: selectedPackage.vendorId,
-        packageId: selectedPackage.id,
-        totalSessions: selectedPackage.totalSessions,
-        scheduledDates: scheduledDates.filter(d => d), // Only send filled dates
-        paymentMethod: 'razorpay',
-        transactionId: `txn_${Date.now()}`
-      });
-      
-      alert(`✅ Package booking created successfully!\n\nPackage: ${selectedPackage.name}\nTotal Sessions: ${selectedPackage.totalSessions}\nTotal Amount: ₹${selectedPackage.totalPrice}`);
-      
-      // Reload packages
-      loadMyPackages();
-      setView('my-packages');
+      const sessionSchedule = scheduledDates
+        .map((d, idx) => ({
+          sessionNumber: idx + 1,
+          date: d || undefined,
+          time: '09:00',
+        }))
+        .filter((s) => !!s.date);
+
+      if (selectedPackage.vendorServiceId) {
+        const basePayload = {
+          customerId,
+          vendorId: selectedPackage.vendorId,
+          vendorServiceId: selectedPackage.vendorServiceId,
+          preferSameProvider: true,
+          sessionSchedule,
+        };
+
+        const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;
+        if (!res?.success) {
+          throw new Error(res?.error || 'Purchase failed');
+        }
+
+        if (res.requiresPayment && res.razorpayOrderId && res.razorpayKeyId) {
+          await loadRazorpayCheckoutScript();
+          const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+          const amountRupees = Number(res.amount ?? selectedPackage.totalPrice ?? 0);
+          const paymentIdFromOrder = String(res.paymentId || '').trim();
+
+          let completed = false;
+          await new Promise<void>((resolve) => {
+            const options = buildSanitizedStandardRazorpayCheckoutOptions({
+              key: res.razorpayKeyId,
+              amountPaise: Math.max(1, Math.round(amountRupees * 100)),
+              currency: res.currency || 'INR',
+              name: 'Warmpawz',
+              description: `Package — ${selectedPackage.name}`,
+              order_id: res.razorpayOrderId,
+              customerPhone,
+              customerEmail: checkoutEmail,
+              includeInstrumentBlocks: true,
+              handler: async (response: any) => {
+                try {
+                  const confirm = (await apiClient.post('/packages/purchase-from-vendor-service', {
+                    ...basePayload,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                    ...(paymentIdFromOrder ? { paymentId: paymentIdFromOrder } : {}),
+                  })) as any;
+                  if (!confirm?.success) {
+                    throw new Error(confirm?.error || 'Purchase confirmation failed');
+                  }
+                  completed = true;
+                  toast.success(
+                    confirm.message ||
+                      `Package purchased — ${confirm.purchase?.totalSessions ?? selectedPackage.totalSessions} sessions`
+                  );
+                  await loadMyPackages();
+                  setView('my-packages');
+                } catch (e: any) {
+                  toast.error(e?.message || 'Could not confirm payment');
+                } finally {
+                  resolve();
+                }
+              },
+              theme: { color: '#FF8C42' },
+              modal: {
+                ondismiss: () => resolve(),
+              },
+            });
+            const RazorpayCtor = (window as unknown as { Razorpay?: new (o: Record<string, unknown>) => { open: () => void } })
+              .Razorpay;
+            if (!RazorpayCtor) {
+              toast.error('Payment gateway not available');
+              resolve();
+              return;
+            }
+            const rz = new RazorpayCtor(options);
+            rz.open();
+          });
+          if (completed) return;
+          return;
+        }
+
+        toast.success(
+          res.message ||
+            `Package purchased — ${res.purchase?.totalSessions ?? selectedPackage.totalSessions} sessions`
+        );
+        await loadMyPackages();
+        setView('my-packages');
+        return;
+      }
+
+      const pkgId = selectedPackage.id;
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pkgId)
+      ) {
+        const res = (await apiClient.post('/packages/convert-from-trial', {
+          packageId: pkgId,
+          customerId,
+          preferSameProvider: true,
+          sessionSchedule,
+        })) as any;
+        if (!res?.success) {
+          throw new Error(res?.error || 'Purchase failed');
+        }
+        toast.success(res.message || 'Package purchased');
+        await loadMyPackages();
+        setView('my-packages');
+        return;
+      }
+
+      setError('This package cannot be purchased from this screen. Try again after refresh.');
     } catch (err: any) {
       console.error('Error creating package booking:', err);
       setError(err.message || 'Failed to create booking');
@@ -478,7 +683,10 @@ export function PackageBookingPage({
             </button>
             <button
               onClick={createPackageBooking}
-              disabled={!scheduledDates[0] || booking}
+              disabled={
+                booking ||
+                (!selectedPackage?.vendorServiceId && !scheduledDates[0])
+              }
               className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {booking ? (

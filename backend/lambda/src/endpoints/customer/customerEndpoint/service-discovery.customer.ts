@@ -4928,6 +4928,49 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
       );
 
+      // Strict catalogue category IDs from the `category` query param only (not roleId) — custom services must match.
+      const categoryOnlyKeys: string[] = [];
+      if (category) categoryOnlyKeys.push(String(category));
+      const strictFromUuid = categoryOnlyKeys.filter((k) => isUuid(k));
+      const strictFromText = categoryOnlyKeys
+        .filter((k) => !isUuid(k))
+        .map((k) => k.toLowerCase().trim())
+        .filter(Boolean);
+      let strictCategoryIds: string[] = [...strictFromUuid];
+      if (strictFromText.length > 0) {
+        const slugRes = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [strictFromText]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        for (const row of slugRes.rows || []) {
+          if (row?.id && !strictCategoryIds.includes(row.id)) strictCategoryIds.push(row.id);
+        }
+      }
+      const hasVsCategoryIdCol = await columnExists('vendor_services', 'category_id');
+      const strictCustomDiscoverySql =
+        strictCategoryIds.length > 0 && hasVsCategoryIdCol
+          ? (() => {
+              const UUID_RE =
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+              const clean = strictCategoryIds.filter((id) => UUID_RE.test(String(id).trim()));
+              if (clean.length === 0) return '';
+              const arr = `ARRAY[${clean.map((id) => `'${String(id).trim()}'::uuid`).join(',')}]::uuid[]`;
+              return ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND vs.category_id IS NOT NULL
+      AND vs.category_id = ANY(${arr})
+    )
+  )`;
+            })()
+          : '';
+
       const boardingDiscoverySearchByStyle =
         catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
         (roleId &&
@@ -5043,6 +5086,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
+            ${strictCustomDiscoverySql}
              AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
@@ -5203,6 +5247,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
               )` : ``}
+              ${strictCustomDiscoverySql}
           )
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}
       `;
