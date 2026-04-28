@@ -12,6 +12,7 @@ import { Star, MapPin, Clock, ArrowLeft, Scissors, GraduationCap, Building2, Hom
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface Service {
   id: string;
@@ -315,8 +316,8 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
                  service.serviceStyle === 'at_center' ? 'Center Visit' : 
                  'Tele-consult'}
              </Badge>
-             {service.distance && (
-                <p className="text-xs text-gray-400 text-right">{Number(service.distance || 0).toFixed(1)} km</p>
+             {formatDistanceDisplay(service) && (
+                <p className="text-xs text-gray-400 text-right">{formatDistanceDisplay(service)}</p>
              )}
           </div>
         </div>

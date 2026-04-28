@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 export function SearchResultsPage() {
   const [query, setQuery] = useState('');
@@ -134,8 +135,8 @@ export function SearchResultsPage() {
                   <span className="text-sm">
                     {data.location.area}, {data.location.city}
                   </span>
-                  {result.distance && (
-                    <span className="text-xs text-gray-500">• {result.distance} km away</span>
+                  {formatDistanceDisplay(result) && (
+                    <span className="text-xs text-gray-500">• {formatDistanceDisplay(result)}</span>
                   )}
                 </div>
               )}

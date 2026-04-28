@@ -85,6 +85,7 @@ export function VetServiceRouter({
   const [vendors, setVendors] = useState<any[]>([]);
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [bookingNotes, setBookingNotes] = useState('');
   const vetConfirmationScrollBottom = useTabAwareBottomInset({ includeDeviceSafeBottom: false });
 
@@ -143,7 +144,9 @@ export function VetServiceRouter({
       const response = (await CustomerApi.searchServices({
         serviceType: 'vet',
         serviceStyle: serviceType,
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       })) as { vendors?: any[] };
       setVendors(response.vendors ?? []);
     } catch (error) {
