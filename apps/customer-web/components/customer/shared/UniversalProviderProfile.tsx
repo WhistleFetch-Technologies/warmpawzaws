@@ -16,6 +16,7 @@ import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
+import { StarRating } from './StarRating';
 
 // ============================================================================
 // TYPES
@@ -565,11 +566,12 @@ export function UniversalProviderProfile({
             {/* Stats */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="text-center">
-                <div className="flex items-center justify-center gap-1 text-amber-500">
-                  <Star className="w-4 h-4 fill-current" />
-                  <span className="font-bold">{Number(provider.rating || 0).toFixed(1)}</span>
-                </div>
-                <p className="text-xs text-gray-500">{provider.reviewCount || 0} reviews</p>
+                <StarRating
+                  rating={provider.rating}
+                  reviewCount={provider.reviewCount}
+                  starsClassName="w-4 h-4"
+                  textClassName="text-xs text-gray-500"
+                />
               </div>
               <div className="text-center">
                 <div className="font-bold text-gray-900">{provider.experienceYears || 0}+</div>

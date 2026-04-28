@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from './shared/StarRating';
 
 export function SearchResultsPage() {
   const [query, setQuery] = useState('');
@@ -113,18 +114,9 @@ export function SearchResultsPage() {
               {data.name || data.businessName}
             </h3>
 
-            {/* Rating */}
-            {data.rating > 0 && (
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-semibold text-gray-900">{Number(data.rating || 0).toFixed(1)}</span>
-                </div>
-                {data.reviewCount && (
-                  <span className="text-sm text-gray-600">({data.reviewCount} reviews)</span>
-                )}
-              </div>
-            )}
+            <div className="mb-2">
+              <StarRating rating={data.rating} reviewCount={data.reviewCount} />
+            </div>
 
             {/* Details */}
             <div className="space-y-2 mb-3">

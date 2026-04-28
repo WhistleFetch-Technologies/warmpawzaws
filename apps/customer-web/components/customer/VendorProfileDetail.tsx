@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { StarRating } from './shared/StarRating';
 
 interface VendorProfileDetailProps {
   vendorId: string;
@@ -100,12 +101,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-gray-900 mb-1">{vendorName}</h2>
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                  <span className="font-semibold">{averageRating.toFixed(1)}</span>
-                </div>
-                <span className="text-gray-400">•</span>
-                <span className="text-sm text-gray-600">{totalReviews} reviews</span>
+                <StarRating rating={averageRating} reviewCount={totalReviews} />
               </div>
               {vendor.address && (
                 <div className="flex items-center gap-1 text-sm text-gray-600">
