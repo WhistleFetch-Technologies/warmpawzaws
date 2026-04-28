@@ -386,6 +386,7 @@ const ALLOWED_BANNER_DB_TYPES = new Set([
   'service',
   'home_top',
   'home_middle',
+  'home_lower',
   'checkout',
 ]);
 

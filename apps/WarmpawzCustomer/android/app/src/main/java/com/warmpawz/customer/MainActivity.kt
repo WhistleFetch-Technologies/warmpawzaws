@@ -9,9 +9,11 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
  * React Native host activity. In-app safe areas use the JS `ScreenShell` component and `SafeAreaProvider`.
  *
  * **Razorpay standard checkout:** `RazorpayCheckout.open()` starts `com.razorpay.CheckoutActivity`.
- * That UI is not a React child, so JS `ScreenShell` does not apply. The manifest applies
- * `AppTheme.RazorpayCheckout`: opaque status/nav, `windowLayoutInDisplayCutoutMode=never` (notch),
- * and on API 35+ `windowOptOutEdgeToEdgeEnforcement` so the orange merchant header clears system UI.
+ * That UI is not a React child, so JS `ScreenShell` does not apply. We pass `theme.hide_topbar=true`
+ * from JS (see `applyWarmpawzCustomerToRazorpayOptions`) so Razorpay drops its tall orange merchant
+ * toolbar; the manifest applies `AppTheme.RazorpayCheckout`: white opaque status bar with dark icons,
+ * `windowLayoutInDisplayCutoutMode=never` (notch), and on API 35+ `windowOptOutEdgeToEdgeEnforcement`
+ * so Razorpay's WebView lays out cleanly below the status bar.
  */
 class MainActivity : ReactActivity() {
 

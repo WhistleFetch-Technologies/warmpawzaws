@@ -2096,7 +2096,7 @@ export default function MarketingPromotionsTab() {
 							{editingBanner ? "Edit Banner" : "Create New Banner"}
 						</DialogTitle>
 						<DialogDescription>
-							Choose where the banner appears: home hero, home middle, Find All Services (category), or shop checkout.
+							Choose where the banner appears: home hero, home middle, home lower, Find All Services (category), or shop checkout.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2197,12 +2197,13 @@ export default function MarketingPromotionsTab() {
 									<SelectContent>
 										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
 										<SelectItem value="home_middle">Home Middle</SelectItem>
+										<SelectItem value="home_lower">Home Lower</SelectItem>
 										<SelectItem value="category">Category Page</SelectItem>
 										<SelectItem value="checkout">Checkout Page</SelectItem>
 									</SelectContent>
 								</Select>
 								<p className="text-xs text-gray-500 mt-1.5">
-									Home top and home middle: customer home only. Category: Find All Services. Checkout: shop checkout.
+									Home top, middle, and lower: customer home only. Category: Find All Services. Checkout: shop checkout.
 								</p>
 							</div>
 							<div>
