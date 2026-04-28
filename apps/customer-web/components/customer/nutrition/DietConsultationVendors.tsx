@@ -53,38 +53,53 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
         console.log('Could not get customer location');
       }
 
-      // Fetch vendors with tele style (not services)
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=tele&category=nutritionist&roleId=nutritionist${locationParams}${phoneParam}`
-      ) as any;
-      if (response.success && response.providers) {
-        // Extract vendors from providers (ignore services for now)
-        const vendorList: Vendor[] = response.providers.map((provider: any) => ({
-          id: provider.id || provider.vendorId || provider.providerId,
-          vendorId: provider.id || provider.vendorId || provider.providerId,
-          providerId: provider.id || provider.vendorId || provider.providerId,
-          name: provider.name || provider.businessName || 'Nutritionist',
-          businessName: provider.businessName || provider.name,
-          rating: provider.rating,
-          reviewCount: provider.reviewCount,
-          address: provider.address,
-          city: provider.city,
-          distance: provider.distance,
-          distanceText: provider.distanceText,
-          photoUrl: provider.photoUrl,
-          priceMin: provider.priceMin,
-          priceMax: provider.priceMax,
-          nextAvailable: provider.nextAvailable,
-        }));
+      const nutritionTeleEndpoints = [
+        `/customer/services/by-style?style=tele&category=nutritionist&roleId=nutritionist${locationParams}${phoneParam}`,
+        `/customer/services/by-style?style=tele&category=nutrition${locationParams}${phoneParam}`,
+        `/customer/discover-services?category=nutritionist&serviceStyle=tele${locationParams}${phoneParam}`,
+        `/customer/discover-services?category=nutrition&serviceStyle=tele${locationParams}${phoneParam}`,
+      ];
 
-        setVendors(vendorList);
+      const responses = await Promise.all(
+        nutritionTeleEndpoints.map((url) =>
+          apiClient.get(url).catch((err) => {
+            console.warn('[DietConsultationVendors] discovery call failed:', url, err?.message || err);
+            return null;
+          })
+        )
+      );
 
-        console.log(`✅ Loaded ${vendorList.length} vendors with tele style`);
-      } else {
-        console.warn('⚠️ No vendors found or invalid response');
-        setVendors([]);
+      const providersById = new Map<string, any>();
+      for (const response of responses) {
+        const list = (response as any)?.providers || (response as any)?.vendors || [];
+        for (const provider of list) {
+          const id = String(provider?.id || provider?.vendorId || provider?.providerId || '').trim();
+          if (!id) continue;
+          if (!providersById.has(id)) providersById.set(id, provider);
+        }
       }
+
+      const vendorList: Vendor[] = Array.from(providersById.values()).map((provider: any) => ({
+        id: provider.id || provider.vendorId || provider.providerId,
+        vendorId: provider.id || provider.vendorId || provider.providerId,
+        providerId: provider.id || provider.vendorId || provider.providerId,
+        name: provider.name || provider.businessName || 'Nutritionist',
+        businessName: provider.businessName || provider.name,
+        rating: provider.rating,
+        reviewCount: provider.reviewCount,
+        address: provider.address,
+        city: provider.city,
+        distance: provider.distance,
+        distanceText: provider.distanceText,
+        photoUrl: provider.photoUrl || provider.photo,
+        priceMin: provider.priceMin,
+        priceMax: provider.priceMax,
+        nextAvailable: provider.nextAvailable,
+      }));
+
+      setVendors(vendorList);
+      console.log(`[DietConsultationVendors] Loaded ${vendorList.length} merged tele nutrition vendors`);
     } catch (error: any) {
       console.error('❌ Error loading vendors:', error);
       toast.error('Failed to load vendors. Please try again.');
