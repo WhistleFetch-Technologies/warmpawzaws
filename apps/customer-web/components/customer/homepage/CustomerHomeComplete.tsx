@@ -121,6 +121,14 @@ const COMING_SOON_HOME_SERVICE_SCREENS = new Set(['mating-dating-hub', 'cafes'])
  */
 const AI_FAB_HORIZONTAL_MARGIN = 12;
 
+function normalizeHexColor(value: unknown, fallback: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
+  if (/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return `#${raw}`;
+  return fallback;
+}
+
 function getAiFabClampViewportSize(): { width: number; height: number } {
   if (typeof window === 'undefined') return { width: 400, height: 800 };
   const vv = window.visualViewport;
@@ -389,6 +397,7 @@ export function CustomerHomeComplete({
   // Dynamic content from CMS
   const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
   const [dynamicMiddleBanners, setDynamicMiddleBanners] = useState<any[]>([]);
+  const [dynamicLowerBanners, setDynamicLowerBanners] = useState<any[]>([]);
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
@@ -603,10 +612,11 @@ export function CustomerHomeComplete({
   const loadDynamicContent = async () => {
     try {
       // Fetch all content in parallel with better error handling
-      const [bannersResp, middleBannersResp, articlesResp, announcementsResp, adoptionResp] =
+      const [bannersResp, middleBannersResp, lowerBannersResp, articlesResp, announcementsResp, adoptionResp] =
         await Promise.allSettled([
           apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
           apiClient.get<any>('/customer/banners?position=home_middle&limit=20'),
+          apiClient.get<any>('/customer/banners?position=home_lower&limit=20'),
           apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
           apiClient.get<any>('/customer/announcements?limit=3'),
           apiClient.get<any>('/customer/adoption-stats'),
@@ -659,6 +669,21 @@ export function CustomerHomeComplete({
         const error = middleBannersResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
           console.warn('Failed to load home_middle banners:', error.message);
+        }
+      }
+
+      if (lowerBannersResp.status === 'fulfilled') {
+        const v = lowerBannersResp.value as Record<string, unknown> | null | undefined;
+        const rawList =
+          (Array.isArray(v?.banners) && v.banners) ||
+          (Array.isArray((v?.data as Record<string, unknown>)?.banners) &&
+            (v!.data as { banners: unknown[] }).banners) ||
+          [];
+        setDynamicLowerBanners(rawList.length > 0 ? dedupeBannerList(rawList) : []);
+      } else if (lowerBannersResp.status === 'rejected') {
+        const error = lowerBannersResp.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load home_lower banners:', error.message);
         }
       }
 
@@ -1122,6 +1147,29 @@ export function CustomerHomeComplete({
       };
     });
   }, [dynamicMiddleBanners]);
+
+  const featuredLowerBanners = useMemo(() => {
+    if (dynamicLowerBanners.length === 0) return [];
+    return dynamicLowerBanners.map((b: any) => {
+      const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
+      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const ctaLink = screenFromSlash ?? rawCta;
+      const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
+      const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
+      return {
+        id: b.id,
+        title: b.title,
+        subtitle: b.subtitle,
+        imageUrl: b.imageUrl || b.image_url || '',
+        gradientFrom: normalizeHexColor(b.gradientFrom || b.gradient_from, '#6366f1'),
+        gradientTo: normalizeHexColor(b.gradientTo || b.gradient_to, '#9333ea'),
+        Icon: iconForCustomerHomeApiBanner(b),
+        ctaText: b.ctaText || b.cta_text || 'Learn More',
+        ctaLink,
+        comingSoon,
+      };
+    });
+  }, [dynamicLowerBanners]);
 
   const homeBannerCount = homeCarouselBanners.length;
   const middleBannerCount = featuredMiddleCarouselBanners.length;
@@ -2741,74 +2789,128 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Training Services */}
-        <div className="px-6 mb-6">
-          <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-3xl p-6 text-white">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="font-bold text-lg mb-2">Pet Training Programs</h2>
-                <p className="text-sm text-white/90 mb-4">
-                  Professional trainers for obedience, agility & behavior
-                </p>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-center gap-2">
-                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
-                    Basic Obedience - ₹2,999
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
-                    Advanced Training - ₹4,999
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
-                    Behavior Correction - ₹3,499
-                  </li>
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => handleNavigation('training')}
-                  className="mt-4 bg-white text-purple-600 px-5 py-2.5 rounded-full text-sm font-medium"
+        {featuredLowerBanners.length > 0 ? (
+          <div className="px-6 mb-6 space-y-4">
+            {featuredLowerBanners.map((banner, index) => {
+              const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+              return (
+                <div
+                  key={String(banner.id ?? index)}
+                  className="rounded-3xl p-6 text-white relative overflow-hidden"
+                  style={{
+                    backgroundImage: banner.imageUrl
+                      ? `linear-gradient(135deg, rgba(17,24,39,0.75) 0%, rgba(17,24,39,0.45) 100%), url(${banner.imageUrl})`
+                      : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                  }}
                 >
-                  View Programs
-                </button>
-              </div>
-              <GraduationCap className="w-16 h-16 text-white/80" />
-            </div>
-          </div>
-        </div>
-
-        {/* Boarding Services */}
-        <div className="px-6 mb-6">
-          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-6 text-white">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="font-bold text-lg mb-2">Pet Boarding</h2>
-                <p className="text-sm text-white/90 mb-4">
-                  Safe & comfortable stay for your pets
-                </p>
-                <div className="flex items-center gap-4 mb-4">
-                  <div>
-                    <span className="text-2xl font-bold">₹499</span>
-                    <p className="text-xs text-white/80">per day</p>
-                  </div>
-                  <div className="h-8 w-px bg-white/20"></div>
-                  <div>
-                    <p className="text-lg font-semibold">4.9★</p>
-                    <p className="text-xs text-white/80">250+ reviews</p>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" />
+                  <div className="relative z-10 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="font-bold text-lg mb-2 line-clamp-2">{banner.title}</h2>
+                      {banner.subtitle ? (
+                        <p className="text-sm text-white/90 mb-4 line-clamp-3">{banner.subtitle}</p>
+                      ) : null}
+                      {slotComingSoon ? (
+                        <span className="inline-block bg-white/85 text-[#FF8C42]/70 px-5 py-2.5 rounded-full text-sm font-medium cursor-not-allowed">
+                          {banner.ctaText || 'Learn More'}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (banner.id) {
+                              apiClient
+                                .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
+                                .catch(() => {});
+                            }
+                            banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                          }}
+                          className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
+                        >
+                          {banner.ctaText || 'Learn More'}
+                        </button>
+                      )}
+                    </div>
+                    <banner.Icon className="w-14 h-14 text-white/80 shrink-0" aria-hidden />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleNavigation('boarding')}
-                  className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
-                >
-                  Book Boarding
-                </button>
-              </div>
-              <HomeIcon className="w-16 h-16 text-white/80" />
-            </div>
+              );
+            })}
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Training Services */}
+            <div className="px-6 mb-6">
+              <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-3xl p-6 text-white">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="font-bold text-lg mb-2">Pet Training Programs</h2>
+                    <p className="text-sm text-white/90 mb-4">
+                      Professional trainers for obedience, agility & behavior
+                    </p>
+                    <ul className="space-y-2 text-sm">
+                      <li className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
+                        Basic Obedience - ₹2,999
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
+                        Advanced Training - ₹4,999
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">✓</div>
+                        Behavior Correction - ₹3,499
+                      </li>
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={() => handleNavigation('training')}
+                      className="mt-4 bg-white text-purple-600 px-5 py-2.5 rounded-full text-sm font-medium"
+                    >
+                      View Programs
+                    </button>
+                  </div>
+                  <GraduationCap className="w-16 h-16 text-white/80" />
+                </div>
+              </div>
+            </div>
+
+            {/* Boarding Services */}
+            <div className="px-6 mb-6">
+              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-6 text-white">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="font-bold text-lg mb-2">Pet Boarding</h2>
+                    <p className="text-sm text-white/90 mb-4">
+                      Safe & comfortable stay for your pets
+                    </p>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div>
+                        <span className="text-2xl font-bold">₹499</span>
+                        <p className="text-xs text-white/80">per day</p>
+                      </div>
+                      <div className="h-8 w-px bg-white/20"></div>
+                      <div>
+                        <p className="text-lg font-semibold">4.9★</p>
+                        <p className="text-xs text-white/80">250+ reviews</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleNavigation('boarding')}
+                      className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
+                    >
+                      Book Boarding
+                    </button>
+                  </div>
+                  <HomeIcon className="w-16 h-16 text-white/80" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Bottom CTA */}
         <div className="px-6">

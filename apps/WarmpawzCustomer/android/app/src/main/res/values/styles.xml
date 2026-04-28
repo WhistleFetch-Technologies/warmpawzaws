@@ -9,21 +9,26 @@
     <!--
       Razorpay CheckoutActivity (com.razorpay.CheckoutActivity): native WebView toolbar, not RN safe area.
 
-      Observed fix set (device + API 35 emulator): keep status/nav opaque, do not extend into display cutout,
-      and on API 35 use windowOptOutEdgeToEdgeEnforcement (see values-v35).
+      Goal: with `theme.hide_topbar=true` (passed from JS via applyWarmpawzCustomerToRazorpayOptions),
+      Razorpay's WebView starts directly below the status bar with a WHITE background. We therefore make
+      the system status bar WHITE with DARK icons (windowLightStatusBar=true) so it blends cleanly into
+      the WebView. If a future Razorpay SDK ignores `hide_topbar` and re-renders the orange merchant
+      toolbar, this still keeps the system status bar visually distinct from the toolbar (no longer one
+      tall orange band) and the WebView back button stays inside an easy tap zone below the status bar.
 
-      windowLayoutInDisplayCutoutMode=never: keeps the window out of the notch region so the merchant header
-      lays out below status icons on notched phones (pairs with non-translucent status bar).
+      windowLayoutInDisplayCutoutMode=never: keeps the window out of the notch region so the WebView
+      content lays out below status icons on notched phones (pairs with non-translucent status bar).
     -->
     <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">#FFF57C00</item>
+        <item name="android:statusBarColor">#FFFFFFFF</item>
         <item name="android:navigationBarColor">#FFFFFFFF</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:fitsSystemWindows">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="28">never</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
     </style>
 
 </resources>

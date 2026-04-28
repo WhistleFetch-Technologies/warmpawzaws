@@ -65,8 +65,9 @@ class MainApplication : Application(), ReactApplication {
 /**
  * Razorpay Standard Checkout runs in [com.razorpay.CheckoutActivity], not in React Native.
  * Themes on that activity help, but their WebView chrome can still draw under the status bar.
- * Forcing decor to fit system windows applies top padding at the window level so the orange
- * merchant header clears clock / icons (pairs with [AppTheme.RazorpayCheckout] in styles.xml).
+ * Forcing decor to fit system windows applies top padding at the window level so Razorpay's
+ * WebView (with `theme.hide_topbar=true` from JS) starts cleanly below the system status bar
+ * (pairs with [AppTheme.RazorpayCheckout] in styles.xml — white status bar, dark icons).
  */
 private class RazorpayCheckoutWindowInsetsCallback : ActivityLifecycleCallbacks {
 

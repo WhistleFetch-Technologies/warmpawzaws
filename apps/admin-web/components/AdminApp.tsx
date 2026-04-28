@@ -72,7 +72,7 @@ interface Banner {
   title: string;
   image_url: string;
   link_url: string;
-  position: 'home_top' | 'home_middle' | 'category' | 'checkout';
+  position: 'home_top' | 'home_middle' | 'home_lower' | 'category' | 'checkout';
   is_active: boolean;
   start_date: string;
   end_date: string;
