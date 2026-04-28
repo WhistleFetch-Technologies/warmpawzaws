@@ -297,7 +297,17 @@ export function ProblemGridFlowRouter({
           specializationId: selectedProblem.id,
           categoryHint: selectedProblem.category,
         }) as ServiceStyle[];
-        setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
+        if (sanitized.length > 0) {
+          setAllowedServiceStyles(sanitized);
+        } else {
+          const rid = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
+          const preserved = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
+            roleId: rid,
+            specializationId: selectedProblem.id,
+            categoryHint: selectedProblem.category,
+          }) as ServiceStyle[];
+          setAllowedServiceStyles(preserved);
+        }
       } else {
         const rid = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'veterinarian';
         const sanitized = sanitizeCustomerAllowedServiceStyles(selectedProblem.allowedServiceStyles, {
@@ -305,7 +315,7 @@ export function ProblemGridFlowRouter({
           specializationId: selectedProblem.id,
           categoryHint: selectedProblem.category,
         }) as ServiceStyle[];
-        setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
+        setAllowedServiceStyles(sanitized);
       }
     } catch (error: any) {
       console.error('Error fetching problem details:', error);
@@ -315,7 +325,7 @@ export function ProblemGridFlowRouter({
         specializationId: selectedProblem.id,
         categoryHint: selectedProblem.category,
       }) as ServiceStyle[];
-      setAllowedServiceStyles(sanitized.length > 0 ? sanitized : (['at_home', 'at_center'] as ServiceStyle[]));
+      setAllowedServiceStyles(sanitized);
     } finally {
       setLoadingProblemDetails(false);
     }
@@ -412,7 +422,13 @@ export function ProblemGridFlowRouter({
         break;
       }
       case 'service-style':
-        setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+        setAllowedServiceStyles(
+          sanitizeCustomerAllowedServiceStyles([], {
+            roleId: selectedProblem?.roleId || selectedProblem?.linkedServiceRoles?.[0] || 'veterinarian',
+            specializationId: selectedProblem?.id,
+            categoryHint: selectedProblem?.category,
+          }) as ServiceStyle[]
+        );
         onClose?.();
         break;
       default:
