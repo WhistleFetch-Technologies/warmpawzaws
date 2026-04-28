@@ -1430,6 +1430,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
           packageName: pkg.package_name || pkg.name,
           vendorName: pkg.vendor_name,
           vendorId: pkg.vendor_id,
+          serviceStyle: pkg.service_style || pkg.service_type || null,
           totalSessions: pkg.total_sessions,
           remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
           sessionsUsed: pkg.sessions_used || 0,

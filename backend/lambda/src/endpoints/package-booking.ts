@@ -97,6 +97,98 @@ function bookingServiceTypeForPackageStyle(style: string): string {
   return 'at_vendor';
 }
 
+function normalizeScheduleDateInput(v: unknown): string {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function normalizeScheduleTimeInput(v: unknown): string {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return '';
+  const hh = Math.max(0, Math.min(23, parseInt(m[1], 10)));
+  const mm = Math.max(0, Math.min(59, parseInt(m[2], 10)));
+  const ss = m[3] != null ? Math.max(0, Math.min(59, parseInt(m[3], 10))) : 0;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+async function resolveCanonicalPackageBookingId(
+  db: SqlClient,
+  pkg: Record<string, unknown>,
+  firstScheduled?: { scheduled_date?: unknown; scheduled_time?: unknown }
+): Promise<string> {
+  const packagePurchaseId = String(pkg.id || '').trim();
+  if (!packagePurchaseId) return '';
+
+  const existing = await db.query(
+    `SELECT id
+     FROM bookings
+     WHERE package_purchase_id = $1::uuid
+     ORDER BY CASE WHEN COALESCE(is_package_session, false) = false THEN 0 ELSE 1 END ASC,
+              created_at ASC NULLS LAST,
+              updated_at ASC NULLS LAST
+     LIMIT 1`,
+    [packagePurchaseId]
+  );
+  const existingId =
+    existing.rows?.[0]?.id != null ? String(existing.rows[0].id).trim() : '';
+  if (existingId) return existingId;
+
+  const serviceStyle = String(pkg.service_style || '').toLowerCase();
+  const serviceType = bookingServiceTypeForPackageStyle(serviceStyle);
+  const serviceId = uuidOrNull(pkg.package_id);
+  const bookingDate = String(
+    firstScheduled?.scheduled_date ??
+      (String(pkg.purchased_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10))
+  )
+    .trim()
+    .slice(0, 10);
+  const bookingTime = String(firstScheduled?.scheduled_time ?? '09:00:00').trim();
+  const totalAmount = Number(pkg.package_price ?? pkg.amount ?? 0) || 0;
+  const paymentStatus =
+    String(pkg.payment_status || '').toLowerCase() === 'completed' ? 'paid' : 'pending';
+
+  const ins = await db.query(
+    `INSERT INTO bookings (
+       customer_id, vendor_id, service_id,
+       booking_date, booking_time, service_type,
+       status, payment_status, total_amount,
+       is_package, package_id, package_details, package_purchase_id,
+       is_package_session, notes
+     ) VALUES (
+       $1::uuid, $2::uuid, $3::uuid,
+       $4::date, $5::time, $6,
+       'confirmed', $7, $8::numeric,
+       true, $9::uuid, $10::jsonb, $11::uuid,
+       false, $12
+     )
+     RETURNING id`,
+    [
+      String(pkg.customer_id),
+      String(pkg.vendor_id),
+      serviceId,
+      bookingDate,
+      bookingTime.length === 5 ? `${bookingTime}:00` : bookingTime,
+      serviceType,
+      paymentStatus,
+      totalAmount,
+      serviceId,
+      JSON.stringify({
+        kind: 'package_purchase_backfill',
+        packagePurchaseId,
+      }),
+      packagePurchaseId,
+      'Auto-linked canonical booking for package sessions',
+    ]
+  );
+  return ins.rows?.[0]?.id != null ? String(ins.rows[0].id).trim() : '';
+}
+
 /**
  * Package-only checkout creates package_purchases but no bookings row — vendor UIs list `bookings`.
  * Creates one confirmed "package purchase" booking + vendor notification (best-effort).
@@ -243,7 +335,11 @@ async function syncVendorPackagePurchaseToBookingAndNotify(params: {
   }
 }
 
-function mapSessionRow(s: any, endOtpByBooking?: Map<string, string>) {
+function mapSessionRow(
+  s: any,
+  endOtpByBooking?: Map<string, string>,
+  packageBookingId?: string
+) {
   const st = String(s.status || '');
   const bst = s.booking_status != null ? String(s.booking_status) : '';
   let displayStatus = st;
@@ -259,7 +355,9 @@ function mapSessionRow(s: any, endOtpByBooking?: Map<string, string>) {
       ? String(s.resolved_booking_id).trim()
       : s.booking_id != null
         ? String(s.booking_id).trim()
-        : '';
+        : packageBookingId != null && String(packageBookingId).trim()
+          ? String(packageBookingId).trim()
+          : '';
   const fromToken =
     resolvedBookingId && endOtpByBooking ? endOtpByBooking.get(resolvedBookingId) : undefined;
   // completion_otp on bookings is not migrated everywhere; use otp_end_code + otp_tokens only.
@@ -375,6 +473,13 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
               AND b2.package_session_number = pss.session_number
             ORDER BY b2.created_at DESC NULLS LAST, b2.updated_at DESC NULLS LAST
             LIMIT 1
+          ),
+          (
+            SELECT b3.id
+            FROM bookings b3
+            WHERE b3.package_purchase_id = pss.package_purchase_id
+            ORDER BY b3.created_at DESC NULLS LAST, b3.updated_at DESC NULLS LAST
+            LIMIT 1
           )
         )
         WHERE pss.package_purchase_id = $1
@@ -386,6 +491,13 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
   const packageResult = await query(
     `
         SELECT pp.*, v.business_name as vendor_name
+             , (
+                 SELECT b0.id
+                 FROM bookings b0
+                 WHERE b0.package_purchase_id = pp.id
+                 ORDER BY b0.created_at ASC NULLS LAST, b0.updated_at ASC NULLS LAST
+                 LIMIT 1
+               ) AS package_booking_id
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
         WHERE pp.id = $1
@@ -395,8 +507,28 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
 
   const pkg = packageResult.rows[0];
   if (!pkg) return null;
-
   const rawSessions = result.rows;
+  const firstScheduled = rawSessions.find(
+    (r: Record<string, unknown>) =>
+      r?.scheduled_date != null && String(r.scheduled_date).trim()
+  ) as Record<string, unknown> | undefined;
+  const packageBookingId = await resolveCanonicalPackageBookingId(
+    db,
+    pkg as Record<string, unknown>,
+    firstScheduled
+  );
+
+  if (packageBookingId) {
+    (pkg as Record<string, unknown>).package_booking_id = packageBookingId;
+    await query(
+      `UPDATE package_scheduled_sessions
+       SET booking_id = $2::uuid, updated_at = NOW()
+       WHERE package_purchase_id = $1::uuid
+         AND booking_id IS DISTINCT FROM $2::uuid`,
+      [packagePurchaseId, packageBookingId]
+    ).catch(() => undefined);
+  }
+
   const bookingIds = [
     ...new Set(
       rawSessions
@@ -432,7 +564,9 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
       if (id && code) endOtpByBooking.set(id, code);
     }
   }
-  const sessions = rawSessions.map((r: any) => mapSessionRow(r, endOtpByBooking));
+  const sessions = rawSessions.map((r: any) =>
+    mapSessionRow(r, endOtpByBooking, packageBookingId)
+  );
   const completedCount = sessions.filter((s: any) => s.display_status === 'completed' || s.status === 'completed').length;
   const inProgressCount = sessions.filter((s: any) => s.display_status === 'in_progress' || s.status === 'in_progress').length;
   const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
@@ -1253,40 +1387,74 @@ export function registerPackageBookingEndpoints(app: Hono) {
         return c.json({ error: 'sessions array required' }, 400);
       }
 
+      const db = { query } as SqlClient;
+      await seedPackageScheduledSessionsIfMissing(db, packagePurchaseId);
+
       // Verify package exists
-      const packageResult = await query(`
-        SELECT * FROM package_purchases WHERE id = $1
-      `, [packagePurchaseId]);
+      const packageResult = await query(`SELECT * FROM package_purchases WHERE id = $1::uuid`, [
+        packagePurchaseId,
+      ]);
 
       if (packageResult.rows.length === 0) {
         return c.json({ error: 'Package not found' }, 404);
       }
 
       const pkg = packageResult.rows[0];
-      const scheduledSessions = [];
+      const scheduledSessions: Record<string, unknown>[] = [];
+      const firstIncoming = (sessions as Array<Record<string, unknown>>)
+        .map((s) => ({
+          scheduled_date: normalizeScheduleDateInput(s?.date),
+          scheduled_time: normalizeScheduleTimeInput(s?.time),
+        }))
+        .find((s) => s.scheduled_date && s.scheduled_time);
+      const canonicalBookingId = await resolveCanonicalPackageBookingId(
+        db,
+        pkg as Record<string, unknown>,
+        firstIncoming
+      );
 
       for (const session of sessions) {
-        const { sessionNumber, date, time } = session;
+        const sessionNumber = Number(session?.sessionNumber);
+        const date = normalizeScheduleDateInput(session?.date);
+        const time = normalizeScheduleTimeInput(session?.time);
 
-        if (sessionNumber > pkg.total_sessions) {
+        if (!Number.isFinite(sessionNumber) || sessionNumber < 1) {
+          continue;
+        }
+        if (pkg.total_sessions != null && Number(sessionNumber) > Number(pkg.total_sessions)) {
+          continue; // Skip invalid session numbers
+        }
+        if (!date || !time) {
           continue; // Skip invalid session numbers
         }
 
-        const result = await query(`
+        const result = await query(
+          `
           INSERT INTO package_scheduled_sessions (
-            package_purchase_id, session_number, scheduled_date, scheduled_time, status
-          ) VALUES ($1, $2, $3, $4, 'scheduled')
+            package_purchase_id, session_number, scheduled_date, scheduled_time, booking_id, status
+          ) VALUES ($1::uuid, $2::int, $3::date, $4::time, $5::uuid, 'scheduled')
           ON CONFLICT (package_purchase_id, session_number)
           DO UPDATE SET
             scheduled_date = EXCLUDED.scheduled_date,
             scheduled_time = EXCLUDED.scheduled_time,
+            booking_id = EXCLUDED.booking_id,
             status = 'scheduled',
             updated_at = NOW()
           RETURNING *
-        `, [packagePurchaseId, sessionNumber, date, time]);
+        `,
+          [packagePurchaseId, sessionNumber, date, time, canonicalBookingId || null]
+        );
 
-        scheduledSessions.push(result.rows[0]);
+        scheduledSessions.push({
+          ...result.rows[0],
+          booking_id: canonicalBookingId || null,
+          bookingId: canonicalBookingId || null,
+          sessionNumber,
+          scheduledDate: date,
+          scheduledTime: time,
+        });
       }
+      await reconcileRemainingSessionsForFinitePackage(db, packagePurchaseId);
 
       return c.json({
         success: true,

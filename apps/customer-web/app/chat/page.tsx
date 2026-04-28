@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
 // ============================================================================
@@ -38,7 +39,8 @@ interface Message {
 // MAIN COMPONENT
 // ============================================================================
 
-export default function ChatPage() {
+function ChatPageContent() {
+  const searchParams = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -82,6 +84,17 @@ export default function ChatPage() {
     
     return () => clearInterval(interval);
   }, [activeConversation]);
+
+  useEffect(() => {
+    const bookingId = (searchParams.get('bookingId') || '').trim();
+    if (!bookingId || conversations.length === 0) return;
+    const existing =
+      conversations.find((c) => String(c.booking_id || '').trim() === bookingId) ||
+      conversations.find((c) => String(c.id || '').trim() === bookingId);
+    if (existing) {
+      setActiveConversation(existing);
+    }
+  }, [searchParams, conversations]);
 
   const loadConversations = async () => {
     try {
@@ -355,6 +368,23 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading chat...</p>
+          </div>
+        </div>
+      }
+    >
+      <ChatPageContent />
+    </Suspense>
   );
 }
 

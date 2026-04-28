@@ -138,6 +138,23 @@ export function expandVendorPackageSessionSchedule(
   const sn = Number(first?.sessionNumber);
   const dateStr = first?.date != null ? String(first.date).trim() : '';
   const timeStr = first?.time != null ? String(first.time).trim() : '';
+  if (sorted.length === 1 && sn === 1 && dateStr && timeStr && sessionsPerDay > 1) {
+    const timeNorm = normalizeScheduleTime(timeStr);
+    const out: VendorPackageSessionScheduleItem[] = [];
+    let nextSn = 1;
+    for (let day = 0; nextSn <= totalSessions; day++) {
+      const d = addDaysToIsoDate(dateStr, day);
+      for (let j = 0; j < sessionsPerDay && nextSn <= totalSessions; j++) {
+        out.push({
+          sessionNumber: nextSn++,
+          date: d,
+          time: timeNorm,
+        });
+      }
+    }
+    return out;
+  }
+
   if (sorted.length === 1 && sn === 1 && dateStr && timeStr && sessionsPerDay === 1) {
     const timeNorm = normalizeScheduleTime(timeStr);
     const out: VendorPackageSessionScheduleItem[] = [];

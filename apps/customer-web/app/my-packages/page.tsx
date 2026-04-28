@@ -110,7 +110,7 @@ function MyPackagesPageInner() {
               <p className="mt-5 text-sm font-medium text-gray-600">Loading your packages…</p>
             </div>
           ) : (
-            <MyPackagesTrackingPanel rows={rows} variant="fullPage" />
+            <MyPackagesTrackingPanel rows={rows} customerPhone={phone} variant="fullPage" />
           )}
         </div>
 
