@@ -1501,6 +1501,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
                 AND COALESCE(vs.is_custom_service, false) = false
               )
+              OR (
+                LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
+              )
             )
             ${sittingExcludeNonSittingSql}`
             : '';
@@ -1673,6 +1677,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 AND COALESCE(vs.is_custom_service, false) = false
               )`
           : '';
+      /** Accept common sitter category typos like "pet sittier" while still excluding unrelated categories below. */
+      const sittingCategoryTypoOr =
+        sittingDiscoveryRelaxed
+          ? `OR (
+                LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
+              )`
+          : '';
 
       /** Pet Sitting hub: never surface walker / vet / grooming / custom-boarding rows even if vendor is a sitter. */
       const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
@@ -1713,6 +1725,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${sittingCatalogBoardingNonCustomOr}
+                ${sittingCategoryTypoOr}
               )
               ${sittingExcludeNonSittingSql}`
             : `
@@ -3360,6 +3373,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             OR (
               LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
               AND COALESCE(vs.is_custom_service, false) = false
+            )
+            OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
+              AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
             )
           )
           AND NOT (
