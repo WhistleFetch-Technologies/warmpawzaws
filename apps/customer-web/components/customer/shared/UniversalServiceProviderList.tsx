@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { StarRating } from './StarRating';
 
 // ============================================================================
 // TYPES
@@ -419,11 +420,12 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-              <span className="font-semibold text-gray-700">{Number(provider.rating || 0).toFixed(1)}</span>
-              <span>({provider.reviewCount || 0})</span>
-            </div>
+            <StarRating
+              rating={provider.rating}
+              reviewCount={provider.reviewCount}
+              starsClassName="w-3 h-3"
+              textClassName="text-xs text-gray-500"
+            />
             {provider.experienceYears && (
               <div className="flex items-center gap-1">
                 <Award className="w-3 h-3 text-gray-400" />

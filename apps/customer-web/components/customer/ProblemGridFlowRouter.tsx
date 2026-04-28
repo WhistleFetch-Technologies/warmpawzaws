@@ -46,6 +46,7 @@ import {
   type ByProblemServiceRow,
   type VendorGroupFromProblem,
 } from '@/lib/group-by-problem-vendors';
+import { StarRating } from '@/components/customer/shared/StarRating';
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
@@ -783,10 +784,11 @@ export function ProblemGridFlowRouter({
                       </div>
 
                       <div className="flex items-center gap-3 mt-2 text-sm">
-                        <span className="flex items-center gap-1 text-yellow-600">
-                          ⭐ {vendor.rating.toFixed(1)}
-                          <span className="text-gray-400">({vendor.reviewCount})</span>
-                        </span>
+                        <StarRating
+                          rating={vendor.rating}
+                          reviewCount={vendor.reviewCount}
+                          textClassName="text-xs text-gray-500"
+                        />
                         {selectedServiceStyle !== 'tele' && (
                           <span className="flex items-center gap-1 text-gray-500">
                             <MapPin className="w-3 h-3" />

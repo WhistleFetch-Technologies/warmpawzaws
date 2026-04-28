@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from '../shared/StarRating';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -517,11 +518,11 @@ export function VendorListingByStyle({
                     )}
                     
                     <div className="flex items-center gap-2 text-sm flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-medium">{vendor.rating.toFixed(1)}</span>
-                        <span className="text-gray-400">({vendor.reviewCount})</span>
-                      </div>
+                      <StarRating
+                        rating={vendor.rating}
+                        reviewCount={vendor.reviewCount}
+                        textClassName="text-xs text-gray-500"
+                      />
                       
                       {formatDistanceDisplay(vendor) && (
                         <>

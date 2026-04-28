@@ -2,7 +2,6 @@
 
 import type { MouseEvent } from 'react';
 import {
-  Star,
   MapPin,
   Clock,
   ChevronRight,
@@ -20,6 +19,7 @@ import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from '../shared/StarRating';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -133,9 +133,11 @@ export function BoardingVendorExpandableCard({
               )}
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
-              <span className="font-semibold text-sm text-gray-800">{v.rating}</span>
-              <span className="text-gray-400 text-sm">({v.review_count})</span>
+              <StarRating
+                rating={v.rating}
+                reviewCount={v.review_count}
+                textClassName="text-xs text-gray-500"
+              />
               {formatDistanceDisplay(v as any) && (
                 <>
                   <span className="text-gray-300">•</span>

@@ -20,6 +20,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { StarRating } from '../shared/StarRating';
 
 interface ClinicListViewProps {
   phone: string;
@@ -608,11 +609,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
-                          <span className="font-semibold text-sm text-gray-800">
-                            {clinic.rating.toFixed(1)}
-                          </span>
-                          <span className="text-gray-400 text-sm">({clinic.review_count})</span>
+                          <StarRating
+                            rating={clinic.rating}
+                            reviewCount={clinic.review_count}
+                            textClassName="text-xs text-gray-500"
+                          />
                           {clinic.distanceKm != null && (
                             <>
                               <span className="text-gray-300">•</span>

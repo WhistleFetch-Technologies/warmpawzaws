@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
+import { StarRating } from '../shared/StarRating';
 import {
   normalizeBoardingServiceSlug,
   boardingSlugMatchesText,
@@ -317,12 +318,13 @@ export function BoardingVendorProfileView({
             <h1 className="mb-3 text-2xl font-bold text-gray-900">{vendor.name}</h1>
 
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 rounded-lg bg-orange-50 px-3 py-1.5">
-                <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
-                <span className="text-lg font-bold text-gray-900">
-                  {vendor.rating != null ? vendor.rating.toFixed(1) : '—'}
-                </span>
-                <span className="text-sm text-gray-600">({vendor.review_count} reviews)</span>
+              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                <StarRating
+                  rating={vendor.rating}
+                  reviewCount={vendor.review_count}
+                  starsClassName="h-5 w-5"
+                  textClassName="text-sm text-gray-600"
+                />
               </div>
               {vendor.isVerified ? (
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">

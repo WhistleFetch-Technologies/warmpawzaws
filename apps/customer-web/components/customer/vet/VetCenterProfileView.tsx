@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { formatOperatingHours } from '@/lib/format-utils';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { StarRating } from '../shared/StarRating';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -195,11 +196,12 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <p className="text-sm text-gray-600 mb-0">{facility.address || center.address}</p>
               
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <Star className="w-5 h-5 fill-amber-500 text-amber-500" />
-                  <span className="font-semibold text-lg">{rating?.averageRating?.toFixed(1) || '4.5'}</span>
-                  <span className="text-sm text-gray-500">({rating?.totalReviews || 0} reviews)</span>
-                </div>
+                <StarRating
+                  rating={rating?.averageRating}
+                  reviewCount={rating?.totalReviews}
+                  starsClassName="w-5 h-5"
+                  textClassName="text-sm text-gray-600"
+                />
                 {facility.isPremium && (
                   <span className="px-0 py-0 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-3">
                     <Award className="w-3 h-3" />

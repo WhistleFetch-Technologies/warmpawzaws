@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from './StarRating';
 
 interface SponsoredProvider {
   id: string;
@@ -158,11 +159,12 @@ export function SponsoredProviderCard({
               <p className="text-white/80 text-sm">{provider.adCreative.subtitle}</p>
             )}
             <div className="flex items-center gap-3 mt-1 text-sm text-white/90">
-              <div className="flex items-center gap-1">
-                <Star className="w-4 h-4 fill-white" />
-                <span className="font-semibold">{provider.rating?.toFixed(1)}</span>
-                <span className="opacity-70">({provider.reviewCount})</span>
-              </div>
+              <StarRating
+                rating={provider.rating}
+                reviewCount={provider.reviewCount}
+                starsClassName="w-4 h-4"
+                textClassName="text-sm text-white/90"
+              />
               {formatDistanceDisplay(provider) && (
                 <div className="flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
@@ -236,11 +238,12 @@ export function SponsoredProviderCard({
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-              <span className="font-semibold text-gray-700">{provider.rating?.toFixed(1)}</span>
-              <span>({provider.reviewCount})</span>
-            </div>
+            <StarRating
+              rating={provider.rating}
+              reviewCount={provider.reviewCount}
+              starsClassName="w-3 h-3"
+              textClassName="text-xs text-gray-500"
+            />
             {provider.completedServices && (
               <div className="flex items-center gap-1">
                 <Users className="w-3 h-3 text-gray-400" />
@@ -365,8 +368,12 @@ export function TopProvidersSection({
             <div className="p-2">
               <h4 className="font-semibold text-xs text-gray-900 truncate">{provider.name}</h4>
               <div className="flex items-center gap-1 mt-1">
-                <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                <span className="text-xs font-medium">{provider.rating?.toFixed(1)}</span>
+                <StarRating
+                  rating={provider.rating}
+                  reviewCount={provider.reviewCount}
+                  starsClassName="w-3 h-3"
+                  textClassName="text-xs text-gray-600"
+                />
               </div>
             </div>
           </Card>
