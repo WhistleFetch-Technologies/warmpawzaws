@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface UniversalVendorListViewProps {
   roleId: string;
@@ -235,8 +236,8 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                             {person.rating}
                           </div>
-                          {person.distance && (
-                            <span className="text-xs text-gray-500">• {person.distance} km</span>
+                          {formatDistanceDisplay(person) && (
+                            <span className="text-xs text-gray-500">• {formatDistanceDisplay(person)}</span>
                           )}
                           {(person as any).hasActivePackage && (
                             <Badge variant="outline" className="text-[10px] border-[#FF8C42]/50 text-[#FF8C42] bg-orange-50">
@@ -274,7 +275,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
                       <div className="flex items-center gap-2 text-xs text-gray-500">
                         <MapPin className="w-3 h-3" />
-                        {center.distance ? `${center.distance} km away` : center.city}
+                        {formatDistanceDisplay(center) || center.city}
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(center as any).hasActivePackage && (

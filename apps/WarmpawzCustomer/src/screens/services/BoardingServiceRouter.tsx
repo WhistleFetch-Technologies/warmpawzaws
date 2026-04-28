@@ -17,6 +17,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { formatDistanceDisplay } from '../../utils/distance-display';
 
 type ViewType = 
   | 'landing'
@@ -63,6 +64,7 @@ export function BoardingServiceRouter({
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceCategory: null,
@@ -109,7 +111,9 @@ export function BoardingServiceRouter({
       setLoading(true);
       const response = await CustomerApi.searchServices({
         serviceType: 'boarding',
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       });
       setVendors(response.vendors || []);
     } catch (error) {
@@ -261,9 +265,9 @@ export function BoardingServiceRouter({
                   ⭐ {vendor.rating.toFixed(1)}
                 </Text>
               )}
-              {vendor.distance && (
+              {formatDistanceDisplay(vendor) && (
                 <Text style={styles.vendorDistance}>
-                  📍 {vendor.distance} km away
+                  📍 {formatDistanceDisplay(vendor)}
                 </Text>
               )}
               {vendor.capacity && (

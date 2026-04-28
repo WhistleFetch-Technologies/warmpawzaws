@@ -5,6 +5,7 @@ import { Star, MapPin, Clock, Shield, Sparkles, ChevronRight, Award, Users } fro
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface SponsoredProvider {
   id: string;
@@ -162,10 +163,10 @@ export function SponsoredProviderCard({
                 <span className="font-semibold">{provider.rating?.toFixed(1)}</span>
                 <span className="opacity-70">({provider.reviewCount})</span>
               </div>
-              {provider.distance && (
+              {formatDistanceDisplay(provider) && (
                 <div className="flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
-                  <span>{provider.distance.toFixed(1)} km</span>
+                  <span>{formatDistanceDisplay(provider)}</span>
                 </div>
               )}
             </div>

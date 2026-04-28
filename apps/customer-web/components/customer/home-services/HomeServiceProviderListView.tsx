@@ -689,7 +689,7 @@ export function HomeServiceProviderListView({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 mb-14 max-h-[calc(85vh-3.5rem)] overflow-y-auto bg-white rounded-t-3xl z-50 max-w-md mx-auto"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -772,7 +772,7 @@ export function HomeServiceProviderListView({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3">
+                <div className="sticky bottom-3 bg-white pt-2 flex gap-3">
                   <button
                     onClick={clearFilters}
                     className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium"

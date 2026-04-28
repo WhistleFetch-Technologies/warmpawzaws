@@ -22,6 +22,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { openVendorProfile } from '../../navigation/openVendorProfile';
+import { formatDistanceDisplay } from '../../utils/distance-display';
 
 type StepType = 'select' | 'walkers' | 'confirm';
 
@@ -144,6 +145,8 @@ export function WalkerServiceScreen({
       const response = await CustomerApi.searchServices({
         serviceType: 'walker',
         location: userLocation ? `${userLocation.lat},${userLocation.lng}` : '',
+        latitude: userLocation?.lat,
+        longitude: userLocation?.lng,
       });
       setWalkers(response.vendors || []);
     } catch (error) {
@@ -436,9 +439,9 @@ export function WalkerServiceScreen({
                       {walker.experience} years experience
                     </Text>
                   )}
-                  {walker.distance && (
+                  {formatDistanceDisplay(walker) && (
                     <Text style={styles.walkerDistance}>
-                      📍 {walker.distance} km away
+                      📍 {formatDistanceDisplay(walker)}
                     </Text>
                   )}
                 </View>

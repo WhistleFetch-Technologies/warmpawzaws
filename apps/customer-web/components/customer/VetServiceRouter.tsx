@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
-import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
+import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +51,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     fetchingPlansFor,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
-  const [showBookingHistory, setShowBookingHistory] = useState(false);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
@@ -492,15 +491,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
         {/* Service Types */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center mb-3">
             <h2 className="text-lg font-semibold">Choose Service</h2>
-            <button 
-              className="text-sm text-[#FF8C42] flex items-center gap-1 font-medium"
-              onClick={() => setShowBookingHistory(true)}
-            >
-              <History className="w-4 h-4" />
-              My Bookings
-            </button>
           </div>
           
           <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
