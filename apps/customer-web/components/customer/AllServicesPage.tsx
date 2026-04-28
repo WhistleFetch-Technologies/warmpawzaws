@@ -118,7 +118,7 @@ const SERVICE_CATEGORIES = [
   { 
     id: 'shop', 
     icon: ShoppingBag, 
-    label: 'Pet Shop', 
+    label: 'Pet Products', 
     description: 'Food, accessories & medicines',
     color: 'from-pink-50 to-rose-100/50',
     iconBg: 'bg-white',
@@ -170,7 +170,7 @@ const SERVICE_CATEGORIES = [
   { 
     id: 'mating', 
     icon: Heart, 
-    label: 'Mating & Dating', 
+    label: 'Peer to Peer', 
     description: 'Find the perfect match',
     color: 'from-pink-50 to-fuchsia-100/50',
     iconBg: 'bg-white',

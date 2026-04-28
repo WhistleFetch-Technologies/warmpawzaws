@@ -254,6 +254,8 @@ export function VendorCustomServiceCreationEnhanced({
   const [duration, setDuration] = useState(60);
   const [price, setPrice] = useState(0);
   const [categoryName, setCategoryName] = useState('');
+  /** When set, POST body sends this UUID so backend resolves `service_categories` by primary key (avoids slug mismatches in prod). */
+  const [platformCategoryId, setPlatformCategoryId] = useState<string | null>(null);
   const [subCategoryName, setSubCategoryName] = useState('');
   const [isPackage, setIsPackage] = useState(false);
   const [packageType, setPackageType] = useState<PackageType>('session');
@@ -301,6 +303,22 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
+
+  /** Catalogue category UUID for specialization_master filter (strict with selected category). */
+  const catalogCategoryIdForSpecs = useMemo(() => {
+    if (platformCategoryId?.trim()) return platformCategoryId.trim();
+    if (!categoryName || categoryName === 'other') return null;
+    const row = catalogCategories.find(
+      (c: { id?: string; name?: string }) =>
+        String(c.name || '').toLowerCase() === String(categoryName).toLowerCase()
+    );
+    const idStr = row?.id != null ? String(row.id).trim() : '';
+    return idStr || null;
+  }, [platformCategoryId, categoryName, catalogCategories]);
+
+  useEffect(() => {
+    setSelectedSpecializationIds([]);
+  }, [catalogCategoryIdForSpecs]);
 
   // Determine vendor role category (use role NAME e.g. trainer_solo, groomer_solo - not UUID)
   const vendorRoleCategory = useMemo((): VendorRoleCategory => {
@@ -380,7 +398,10 @@ export function VendorCustomServiceCreationEnhanced({
             id: c.id || '',
             category_id: (c.category_id != null && String(c.category_id).trim()) || '',
             name: c.name || c.categoryName || '',
-          })).filter((c: { id: string; name: string }) => c.id && c.name);
+          })).filter(
+            (c: { id: string; name: string; category_id?: string }) =>
+              c.id && (String(c.name || '').trim() || String(c.category_id || '').trim())
+          );
           setCatalogCategories(list);
         } else {
           // Fallback: build from micro-categories if no catalog
@@ -604,13 +625,15 @@ export function VendorCustomServiceCreationEnhanced({
       const effectiveCategoryName = categoryName === 'other' && subCategoryName.trim()
         ? subCategoryName.trim()
         : categoryName.trim();
-      
+      const categoryForApi = platformCategoryId ?? effectiveCategoryName;
+
       const customService: any = {
         serviceName: serviceName.trim(),
         description: description.trim(),
         duration: isPackage && packageType === 'session' ? sessionDuration : duration,
         price: isPackage ? 0 : price,
-        categoryName: effectiveCategoryName,
+        category: categoryForApi,
+        categoryName: categoryForApi,
         subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined),
         serviceStyle: selectedServiceStyle,
         isPackage,
@@ -754,6 +777,7 @@ export function VendorCustomServiceCreationEnhanced({
     setDuration(60);
     setPrice(0);
     setCategoryName(DEFAULT_CATEGORIES[vendorRoleCategory] || '');
+    setPlatformCategoryId(null);
     setSubCategoryName('');
     setIsPackage(false);
     setPackageType('session');
@@ -1088,9 +1112,19 @@ export function VendorCustomServiceCreationEnhanced({
                 id="categoryName"
                 value={categoryName}
                 onChange={(e) => {
-                  setCategoryName(e.target.value);
+                  const v = e.target.value;
+                  setCategoryName(v);
                   setSubCategoryName('');
                   setSelectedMicroCategory(null);
+                  const trimmedId = v.trim();
+                  const platformRow = catalogCategories.find(
+                    (c: { id?: string }) => c.id && String(c.id).trim() === trimmedId
+                  );
+                  if (platformRow?.id && String(platformRow.id).trim() === trimmedId) {
+                    setPlatformCategoryId(trimmedId);
+                  } else {
+                    setPlatformCategoryId(null);
+                  }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
@@ -1108,14 +1142,20 @@ export function VendorCustomServiceCreationEnhanced({
                 
                 {catalogCategories.length > 0 && (
                   <optgroup label="🗂️ All Platform Categories">
-                    {catalogCategories.map((cat: { id?: string; category_id?: string; name?: string }) => (
-                      <option
-                        key={cat.id || cat.category_id || cat.name}
-                        value={(cat.category_id && String(cat.category_id).trim()) || cat.name || ''}
-                      >
-                        {cat.name}
-                      </option>
-                    ))}
+                    {catalogCategories.map((cat: { id?: string; category_id?: string; name?: string }) => {
+                      const idStr = cat.id && String(cat.id).trim();
+                      const optionValue = idStr
+                        ? idStr
+                        : (cat.category_id && String(cat.category_id).trim()) || cat.name || '';
+                      return (
+                        <option
+                          key={cat.id || cat.category_id || cat.name}
+                          value={optionValue}
+                        >
+                          {cat.name || cat.category_id || 'Category'}
+                        </option>
+                      );
+                    })}
                   </optgroup>
                 )}
                 
@@ -1147,6 +1187,7 @@ export function VendorCustomServiceCreationEnhanced({
               <Suspense fallback={<div className="py-4 text-sm text-gray-500">Loading specializations...</div>}>
                 <SpecializationSelector
                   roleId={getVendorRoleId(vendorData) || ''}
+                  categoryId={catalogCategoryIdForSpecs}
                   selected={selectedSpecializationIds}
                   onChange={setSelectedSpecializationIds}
                   refreshTrigger={specRefreshKey}

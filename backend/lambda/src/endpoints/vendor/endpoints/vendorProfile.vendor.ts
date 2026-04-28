@@ -949,6 +949,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         createdAt: 'created_at',
         updatedAt: 'updated_at',
         availableForInstantTele: 'available_for_instant_tele', // ✅ Added for instant tele toggle
+        serviceDistanceKm: 'service_distance_km',
       };
 
       const updates: any = {};
@@ -992,6 +993,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
         'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
         'service_radius', // km; canonical value updated from Schedule & availability save
+        'service_distance_km', // center/business service radius (km) from business location
         'available_for_instant_tele' // ✅ Added for instant tele availability toggle
       ];
 

@@ -534,9 +534,9 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
       //    (Always show these tiles in Marketing → Dashboard UI even when service_catalog
       //    has no active+published row for that category — e.g. Pet Sitter.)
       const additionalServices = [
-        { id: 'shop', name: 'Pet Shop', icon: '🛍️' },
+        { id: 'shop', name: 'Pet Products', icon: '🛍️' },
         { id: 'adoption', name: 'Adoption', icon: '❤️' },
-        { id: 'mating', name: 'Mating & Dating', icon: '💕' },
+        { id: 'mating', name: 'Peer to Peer', icon: '💕' },
         { id: 'cafes', name: 'Pet Cafes', icon: '☕' },
         { id: 'photography', name: 'Photography', icon: '📷' },
         { id: 'insurance', name: 'Insurance', icon: '🛡️' },

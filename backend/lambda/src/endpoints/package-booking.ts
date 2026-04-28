@@ -39,6 +39,47 @@ import {
   resolveFiniteSessionCountFromServicePackage,
   resolveServicePackageDisplayName,
 } from '../utils/service-package-sessions';
+import { resolveVendorId } from '../utils/vendor-resolve';
+import { getRazorpayConfig } from '../utils/payments/razorpay-client';
+import {
+  computeVendorPackagePurchase,
+  insertVendorServiceCatalogPackage,
+  insertPackagePurchaseRows,
+  createRazorpayOrderForVendorPackage,
+  verifyRazorpayPaymentSignature,
+  vendorPackagePurchaseIdForRazorpayOrder,
+} from '../utils/vendor-package-razorpay-flow';
+
+function parseJsonObject(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return o && typeof o === 'object' && !Array.isArray(o) ? (o as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function resolveCustomerUuidForPackage(customerRef: string): Promise<string | null> {
+  const ref = String(customerRef || '').trim();
+  if (!ref) return null;
+  const r = await query(
+    `SELECT id FROM customers
+     WHERE id::text = $1
+        OR LOWER(REGEXP_REPLACE(TRIM(phone), '\\s', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM($1), '\\s', '', 'g'))
+     LIMIT 1`,
+    [ref]
+  ).catch(() => ({ rows: [] as any[] }));
+  return r.rows?.[0]?.id ? String(r.rows[0].id) : null;
+}
+
+function isLikelyCustomerUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || '').trim());
+}
 
 function mapSessionRow(s: any) {
   const st = String(s.status || '');
@@ -536,6 +577,13 @@ export function registerPackageBookingEndpoints(app: Hono) {
         return c.json({ error: 'packageId and customerId required' }, 400);
       }
 
+      const resolvedCustomerId =
+        (await resolveCustomerUuidForPackage(String(customerId))) ||
+        (isLikelyCustomerUuid(String(customerId)) ? String(customerId).trim() : null);
+      if (!resolvedCustomerId) {
+        return c.json({ error: 'Customer not found for this account' }, 404);
+      }
+
       // Get package details
       const packageResult = await query(`
         SELECT sp.*, v.business_name as vendor_name
@@ -597,8 +645,14 @@ export function registerPackageBookingEndpoints(app: Hono) {
         )
         RETURNING *
       `, [
-        purchaseId, packageId, customerId, pkg.vendor_id,
-        packageDisplayName, pkg.service_type || 'general', pkg.price,
+        purchaseId, packageId, resolvedCustomerId, pkg.vendor_id,
+        packageDisplayName,
+        ['bundle', 'time_based', 'appointment', 'membership', 'subscription'].includes(
+          String(pkg.service_type || '').toLowerCase()
+        )
+          ? String(pkg.service_type).toLowerCase()
+          : 'bundle',
+        pkg.price,
         totalSessionsForPurchase, unlimitedPurchase,
         preferSameProvider ? pkg.vendor_id : null,
         preferSameProvider ? staffId : null,
@@ -651,6 +705,204 @@ export function registerPackageBookingEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error converting trial to package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /packages/purchase-from-vendor-service
+   * Create service_packages + package_purchases + package_scheduled_sessions from a vendor_services
+   * row that has metadata.isPackage + metadata.packageDetails (custom walker/training bundles).
+   */
+  app.post('/packages/purchase-from-vendor-service', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        customerId: customerRef,
+        vendorId: vendorRef,
+        vendorServiceId,
+        preferSameProvider = true,
+        sessionSchedule = [] as Array<{ sessionNumber?: number; date?: string; time?: string }>,
+        razorpay_order_id: razorpayOrderIdRaw,
+        razorpay_payment_id: razorpayPaymentIdRaw,
+        razorpay_signature: razorpaySignatureRaw,
+        paymentId: paymentIdRaw,
+      } = body;
+
+      if (!customerRef || !vendorRef || !vendorServiceId) {
+        return c.json(
+          { error: 'customerId, vendorId, and vendorServiceId are required' },
+          400
+        );
+      }
+
+      const resolvedPurchaseCustomer =
+        (await resolveCustomerUuidForPackage(String(customerRef))) ||
+        (isLikelyCustomerUuid(String(customerRef)) ? String(customerRef).trim() : null);
+      if (!resolvedPurchaseCustomer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+      const customerId = resolvedPurchaseCustomer;
+
+      const computed = await computeVendorPackagePurchase({
+        customerId,
+        vendorIdRaw: String(vendorRef),
+        vendorServiceId: String(vendorServiceId),
+      });
+      if (!computed.ok) {
+        return c.json({ error: computed.error }, computed.status as 400 | 403 | 404);
+      }
+      const comp = computed.comp;
+
+      const razorpayOrderId = String(razorpayOrderIdRaw || '').trim();
+      const razorpayPaymentId = String(razorpayPaymentIdRaw || '').trim();
+      const razorpaySignature = String(razorpaySignatureRaw || '').trim();
+      const hasRazorpayProof = Boolean(razorpayOrderId && razorpayPaymentId && razorpaySignature);
+      const anyRazorpayField = Boolean(razorpayOrderId || razorpayPaymentId || razorpaySignature);
+      if (anyRazorpayField && !hasRazorpayProof) {
+        return c.json(
+          {
+            error:
+              'To confirm payment, send razorpay_order_id, razorpay_payment_id, and razorpay_signature together',
+          },
+          400
+        );
+      }
+
+      const unlimitedPurchase = comp.unlimitedPurchase;
+      const finiteSessions = unlimitedPurchase ? 0 : comp.finiteSessions;
+
+      const purchaseJson = (purchase: Record<string, unknown>, catalogPackageId: string) => ({
+        success: true,
+        purchase: {
+          id: purchase.id,
+          purchaseId: purchase.purchase_id,
+          packageName: purchase.package_name,
+          totalSessions: purchase.total_sessions,
+          remainingSessions: purchase.remaining_sessions,
+          expiresAt: purchase.expires_at,
+          servicePackageId: catalogPackageId,
+          vendorServiceId: String(vendorServiceId),
+        },
+        message: unlimitedPurchase
+          ? 'Package purchased! Unlimited sessions for this plan.'
+          : `Package purchased! ${finiteSessions} sessions available.`,
+      });
+
+      if (comp.priceNum > 0 && !hasRazorpayProof) {
+        try {
+          const order = await createRazorpayOrderForVendorPackage({
+            customerId,
+            vendorId: comp.vendorId,
+            vendorServiceId: String(vendorServiceId),
+            amount: comp.priceNum,
+          });
+          return c.json({
+            success: true,
+            requiresPayment: true,
+            razorpayOrderId: order.orderId,
+            razorpayKeyId: order.keyId,
+            amount: order.amount,
+            currency: order.currency,
+            paymentId: order.paymentId,
+            vendorId: comp.vendorId,
+            vendorServiceId: String(vendorServiceId),
+          });
+        } catch (e: any) {
+          console.error('vendor package Razorpay create-order:', e);
+          return c.json({ error: e?.message || 'Failed to start payment' }, 502);
+        }
+      }
+
+      if (comp.priceNum > 0 && hasRazorpayProof) {
+        const cfg = await getRazorpayConfig();
+        if (!cfg?.keySecret) {
+          return c.json({ error: 'Razorpay is not configured' }, 500);
+        }
+        if (
+          !verifyRazorpayPaymentSignature(
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
+            cfg.keySecret
+          )
+        ) {
+          return c.json({ error: 'Invalid Razorpay signature' }, 400);
+        }
+
+        const deterministicPurchaseId = vendorPackagePurchaseIdForRazorpayOrder(razorpayOrderId);
+        const existing = await query(
+          `SELECT pp.* FROM package_purchases pp WHERE pp.purchase_id = $1 LIMIT 1`,
+          [deterministicPurchaseId]
+        );
+        if (existing.rows[0]?.id) {
+          const purchase = existing.rows[0] as Record<string, unknown>;
+          const catId = String(purchase.package_id || '');
+          await query(
+            `UPDATE payments SET payment_status = 'completed', razorpay_payment_id = $2, razorpay_signature = $3,
+                 completed_at = NOW(), updated_at = NOW()
+             WHERE razorpay_order_id = $1 AND customer_id = $4::uuid`,
+            [razorpayOrderId, razorpayPaymentId, razorpaySignature, customerId]
+          );
+          return c.json(purchaseJson(purchase, catId));
+        }
+
+        let payRow: Record<string, unknown> | undefined;
+        if (paymentIdRaw && isLikelyCustomerUuid(String(paymentIdRaw))) {
+          const pr = await query(
+            `SELECT * FROM payments WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
+            [String(paymentIdRaw).trim(), customerId]
+          );
+          payRow = pr.rows[0] as Record<string, unknown> | undefined;
+        }
+        if (!payRow) {
+          const pr2 = await query(
+            `SELECT * FROM payments WHERE razorpay_order_id = $1 AND customer_id = $2::uuid
+             ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+            [razorpayOrderId, customerId]
+          );
+          payRow = pr2.rows[0] as Record<string, unknown> | undefined;
+        }
+        if (!payRow?.id) {
+          return c.json({ error: 'Payment record not found for this order' }, 404);
+        }
+        if (String(payRow.vendor_id || '').toLowerCase() !== String(comp.vendorId).toLowerCase()) {
+          return c.json({ error: 'Payment does not match this vendor' }, 400);
+        }
+        const paidAmt = Number(payRow.amount);
+        if (!Number.isFinite(paidAmt) || Math.abs(paidAmt - comp.priceNum) > 0.02) {
+          return c.json({ error: 'Payment amount mismatch' }, 400);
+        }
+
+        const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
+        const { purchase } = await insertPackagePurchaseRows(comp, catalogPackageId, {
+          paymentStatus: 'completed',
+          preferSameProvider: Boolean(preferSameProvider),
+          sessionSchedule,
+          razorpayOrderId,
+          paymentId: String(payRow.id),
+        });
+
+        await query(
+          `UPDATE payments SET payment_status = 'completed', razorpay_payment_id = $2, razorpay_signature = $3,
+               completed_at = NOW(), updated_at = NOW()
+           WHERE id = $1::uuid`,
+          [payRow.id, razorpayPaymentId, razorpaySignature]
+        );
+
+        return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId));
+      }
+
+      const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
+      const { purchase } = await insertPackagePurchaseRows(comp, catalogPackageId, {
+        paymentStatus: 'completed',
+        preferSameProvider: Boolean(preferSameProvider),
+        sessionSchedule,
+      });
+
+      return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId));
+    } catch (error: any) {
+      console.error('Error in purchase-from-vendor-service:', error);
       return c.json({ error: error.message }, 500);
     }
   });

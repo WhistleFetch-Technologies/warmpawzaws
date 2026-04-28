@@ -68,6 +68,75 @@ function safeParseOperatingHours(raw: any): Record<string, any> | null {
   }
 }
 
+/** Parse vendor_services.metadata (JSONB or string) for customer listings. */
+function parseVendorServiceMetadataForCustomer(vsMetadata: unknown): Record<string, any> {
+  if (!vsMetadata) return {};
+  if (typeof vsMetadata === 'object' && !Array.isArray(vsMetadata)) {
+    return vsMetadata as Record<string, any>;
+  }
+  if (typeof vsMetadata === 'string') {
+    try {
+      const p = JSON.parse(vsMetadata);
+      return typeof p === 'object' && p !== null && !Array.isArray(p) ? (p as Record<string, any>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/**
+ * Custom vendor packages store flags under metadata.isPackage and sessions under metadata.packageDetails.
+ * Aligns customer API with vendor dashboard shape (business + solo).
+ */
+function vendorServicePackagePresentationForCustomer(
+  metadata: Record<string, any>,
+  durationFallback: number
+): { isPackage: boolean; packageDetails: Record<string, any> | undefined } {
+  const pdRaw = metadata?.packageDetails;
+  const pkg =
+    pdRaw && typeof pdRaw === 'object' && !Array.isArray(pdRaw) ? ({ ...pdRaw } as Record<string, any>) : {};
+  const pkgSessions = pkg.totalSessions ?? pkg.total_sessions;
+  const legacySessions = metadata?.totalSessions ?? metadata?.total_sessions;
+  const totalSessionsNum = Number(pkgSessions ?? legacySessions);
+  const hasSessionBundle = Number.isFinite(totalSessionsNum) && totalSessionsNum > 0;
+  const isPackage =
+    Boolean(metadata?.isPackage) ||
+    metadata?.type === 'package' ||
+    metadata?.packageType === 'session' ||
+    hasSessionBundle;
+
+  if (!isPackage) return { isPackage: false, packageDetails: undefined };
+
+  const validityDays =
+    pkg.validityDays ??
+    pkg.validity_days ??
+    metadata?.validityDays ??
+    metadata?.validity_days ??
+    pkg.packageDuration;
+  const sessionDuration =
+    Number(
+      pkg.sessionDuration ??
+        pkg.session_duration ??
+        metadata?.sessionDuration ??
+        durationFallback
+    ) || durationFallback;
+  const priceNum = Number(pkg.price ?? pkg.packagePrice ?? metadata?.price);
+  const packageDetails: Record<string, any> = {
+    ...pkg,
+    totalSessions:
+      Number.isFinite(totalSessionsNum) && totalSessionsNum > 0
+        ? totalSessionsNum
+        : pkg.totalSessions ?? pkg.total_sessions,
+    validityDays: validityDays ?? undefined,
+    sessionDuration,
+  };
+  if (Number.isFinite(priceNum) && !Number.isNaN(priceNum)) {
+    packageDetails.price = priceNum;
+  }
+  return { isPackage: true, packageDetails };
+}
+
 /**
  * SQL predicate: vendor row is eligible for customer-facing discovery.
  * Case-insensitive status; solo providers may remain `pending` until fully approved.
@@ -704,6 +773,45 @@ function deduplicateServices(services: any[]): any[] {
   return Array.from(seen.values());
 }
 
+/**
+ * Enrich vendor_services rows for customer discovery lists (by-style, discover-services)
+ * with the same isPackage / packageDetails semantics as GET /customer/vendor/:id/services.
+ */
+function mapVendorServiceRowForCustomerDiscoveryList(s: any): any {
+  const rawPrice =
+    s.custom_price != null && s.custom_price !== ''
+      ? parseFloat(String(s.custom_price))
+      : parseFloat(String(s.price ?? 0));
+  const duration = Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 30) || 30;
+  const metadata = parseVendorServiceMetadataForCustomer(s.vs_metadata);
+  const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(metadata, duration);
+  let price = Number.isFinite(rawPrice) ? rawPrice : 0;
+  if (isPackage && packageDetails) {
+    const pkgPrice = Number(packageDetails.price);
+    if (Number.isFinite(pkgPrice) && pkgPrice >= 0 && (!Number.isFinite(price) || price <= 0)) {
+      price = pkgPrice;
+    }
+  }
+  return {
+    id: s.id,
+    serviceId: s.service_id,
+    name: s.service_name,
+    serviceName: s.service_name,
+    price,
+    duration,
+    description: cleanDescription(s.description),
+    category: s.category_name,
+    categoryName: s.category_name,
+    serviceStyle: s.service_style || null,
+    service_style: s.service_style || null,
+    metadata,
+    isPackage,
+    packageDetails: isPackage ? packageDetails : undefined,
+    publishStatus: s.publish_status,
+    isEnabled: s.is_enabled !== false && s.is_enabled !== 'f' && s.is_enabled !== 'false',
+  };
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -1238,14 +1346,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       /** Solo sitters often lack vendor_availability_v2 rows; still show them if they have published at_home services. */
-      const sittingDiscoveryRelaxed =
+      const sittingDiscoveryRelaxed = Boolean(
         catTextExact.some((c) =>
           ['sitting', 'pet_sitter', 'sitter', 'sitter_solo'].includes(c)
         ) ||
-        (roleId &&
-          ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
-            String(roleId).toLowerCase().replace(/-/g, '_')
-          ));
+          (Boolean(roleId) &&
+            ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
+              String(roleId).toLowerCase().replace(/-/g, '_')
+            ))
+      );
 
       /** Pet boarding list uses category=boarding / roleId=pet_boarding; some centers have at_center rows with empty vs.category */
       const boardingDiscoverySearch =
@@ -1291,6 +1400,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             )`
           : '';
 
+      /**
+       * Boarding discovery: custom rows may store the hub only in `vendor_services.category_id` (text `vs.category` empty).
+       * Text filters alone miss those rows — especially for pet_sitter / multi-role vendors offering at_center boarding.
+       */
+      const hasVsCategoryIdDiscover = await columnExists('vendor_services', 'category_id');
+      let boardingCustomCategoryIdOrSql = '';
+      if (boardingDiscoverySearch && hasVsCategoryIdDiscover) {
+        const slugRes = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['boarding', 'pet_boarding', 'pet boarding']]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        const ids = (slugRes.rows || []).map((r: any) => r?.id).filter(Boolean);
+        const UUID_RE =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const clean = ids.filter((id: string) => UUID_RE.test(String(id).trim()));
+        if (clean.length > 0) {
+          const uuidList = clean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+          boardingCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidList}]::uuid[])
+                )`;
+        }
+      }
+
       // 3) Helpers
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
@@ -1309,9 +1449,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Fetch only matching services (style + category; published/auto_published)
       const fetchServices = async (vendorId: string, _vendorRoleName?: string | null) => {
         /**
-         * Main vendor SQL already restricted rows to sitting (category/role). Do not require the same
-         * match again here — vendors with legacy/custom `roles.name` values were passing the EXISTS
-         * clause via `vs.category` but then dropped here with zero services (customer sees no sitters).
+         * Pet Sitting uses relaxed calendar rules but must still filter **services** by sitting-relevant
+         * categories (same as vendor EXISTS). Previously `sitterRoleBypass` skipped all category SQL and
+         * returned every at_home row for sitters (dog walk / vet / custom boarding leaked into the hub).
          */
         const sitterRoleBypass = sittingDiscoveryRelaxed;
 
@@ -1346,8 +1486,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSql}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
+            ${boardingCustomCategoryIdOrSql}
           )
         `
+            : '';
+        const sittingRelaxedFetchCategorySql =
+          sitterRoleBypass && sittingDiscoveryRelaxed && (catTextExact.length + catUUIDs.length > 0)
+            ? `
+            AND (
+              ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($3::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($4::text[])` : `FALSE`}
+              ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
+              ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
+              OR (
+                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+                AND COALESCE(vs.is_custom_service, false) = false
+              )
+            )
+            ${sittingExcludeNonSittingSql}`
             : '';
         const styleMatchSql =
           sitterRoleBypass && !isAtCenter
@@ -1356,6 +1511,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const vsDiscoverSql = sqlVendorServiceDiscoverable('vs', sitterRoleBypass);
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
+                 vs.custom_price,
+                 vs.metadata AS vs_metadata,
+                 vs.service_style,
+                 vs.publish_status,
+                 vs.is_enabled,
                  COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                  COALESCE(
                    vs.custom_description,
@@ -1370,13 +1530,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE vs.vendor_id = $1
              AND ${styleMatchSql}
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
-            ${categoryFilterSql}
+            ${categoryFilterSql}${sittingRelaxedFetchCategorySql}
              AND ${vsDiscoverSql}
           ORDER BY vs.price ASC
         `;
         const params =
           sitterRoleBypass
-            ? [vendorId, acceptableStyles]
+            ? sittingRelaxedFetchCategorySql
+              ? catTextExact.length > 0
+                ? catUUIDs.length > 0
+                  ? [vendorId, acceptableStyles, catTextExact, catTextLike, catUUIDs]
+                  : [vendorId, acceptableStyles, catTextExact, catTextLike]
+                : [vendorId, acceptableStyles, [], [], catUUIDs]
+              : [vendorId, acceptableStyles]
             : (catTextExact.length + catUUIDs.length > 0)
               ? (catTextExact.length > 0
                 ? (catUUIDs.length > 0
@@ -1386,15 +1552,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               : [vendorId, acceptableStyles];
         const res = await query(sql, params).catch(() => ({ rows: [] }));
 
-        return deduplicateServices(res.rows.map((s: any) => ({
-          id: s.id,
-          serviceId: s.service_id,
-          name: s.service_name,
-          price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
-          description: cleanDescription(s.description),
-          category: s.category_name,
-        })));
+        return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
 
       // Enrichment
@@ -1505,14 +1663,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
-       * Service catalog seeds pet-sitting rows with category `boarding` (not `sitting`).
-       * Style is already restricted to at_home above, so boarding+at_home ≈ sitting catalog — without this,
-       * dev/prod sitters using default catalog rows vanish from Pet Sitting discovery.
+       * Catalog historically used `boarding` for some at_home sitting products. Only treat **non-custom**
+       * `boarding` rows as sitting — custom services tagged Boarding belong in the Boarding hub, not Pet Sitting.
        */
-      const sittingCatalogCategoryOr =
+      const sittingCatalogBoardingNonCustomOr =
         sittingDiscoveryRelaxed
-          ? `OR LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'`
+          ? `OR (
+                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+                AND COALESCE(vs.is_custom_service, false) = false
+              )`
           : '';
+
+      /** Pet Sitting hub: never surface walker / vet / grooming / custom-boarding rows even if vendor is a sitter. */
+      const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
+        ? `
+              AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+        : '';
 
       const boardingRoleUncategorizedOr =
         !sittingDiscoveryRelaxed && boardingDiscoverySearch
@@ -1536,9 +1712,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
                 ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                OR LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-                ${sittingCatalogCategoryOr}
-              )`
+                ${sittingCatalogBoardingNonCustomOr}
+              )
+              ${sittingExcludeNonSittingSql}`
             : `
               AND (
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
@@ -1548,6 +1724,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
+                ${boardingCustomCategoryIdOrSql}
               )`
           : '';
 
@@ -3172,23 +3349,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'walking' ||
           catLower === 'dog_walker' ||
           catLower === 'pet_walker';
+        const boardingBookingCategoryRequest =
+          catLower === 'boarding' || catLower === 'pet_boarding';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
+          /** Align with discover-services: catalog-only legacy `boarding` at_home counts as sitting; never all at_home rows for sitters. */
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR (
-              (vs.service_style = 'at_home' OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')
-              AND EXISTS (
-                SELECT 1 FROM vendors v_sit
-                LEFT JOIN roles r_sit ON v_sit.role_id = r_sit.id
-                WHERE v_sit.id = vs.vendor_id
-                  AND (
-                    LOWER(REPLACE(TRIM(COALESCE(r_sit.display_name, r_sit.name, '')), ' ', '_')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-                    OR (LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) LIKE '%sitter%' AND LOWER(TRIM(COALESCE(r_sit.display_name, r_sit.name, ''))) NOT LIKE '%babysitter%')
-                    OR (r_sit.id IS NULL AND LOWER(COALESCE(v_sit.vendor_type, '')) LIKE '%sitter%')
-                  )
-              )
+              LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+              AND COALESCE(vs.is_custom_service, false) = false
+            )
+          )
+          AND NOT (
+            LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+              'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+              'vet','veterinary','veterinarian','vet care','vet_care',
+              'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+            ]::text[])
+            OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+              AND COALESCE(vs.is_custom_service, false) = true
             )
           )`;
         } else if (walkerBookingCategoryRequest) {
@@ -3209,6 +3391,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
               )
             )
+          )`;
+        } else if (boardingBookingCategoryRequest) {
+          let boardingCatIdOr = '';
+          const hasVsCatColBooking = await columnExists('vendor_services', 'category_id');
+          if (hasVsCatColBooking) {
+            const brSlug = await query(
+              `SELECT id::text FROM service_categories
+               WHERE COALESCE(is_active, true) = true
+                 AND (
+                   LOWER(TRIM(category_id)) = ANY($1::text[])
+                   OR LOWER(TRIM(name)) = ANY($1::text[])
+                 )`,
+              [['boarding', 'pet_boarding', 'pet boarding']]
+            ).catch(() => ({ rows: [] as { id: string }[] }));
+            const bids = (brSlug.rows || []).map((r: any) => r?.id).filter(Boolean);
+            const UUID_RE_B =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+            const bclean = bids.filter((id: string) => UUID_RE_B.test(String(id).trim()));
+            if (bclean.length > 0) {
+              const uuidListB = bclean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+              boardingCatIdOr = `
+            OR (
+              COALESCE(vs.is_custom_service, false) = true
+              AND vs.category_id IS NOT NULL
+              AND vs.category_id = ANY(ARRAY[${uuidListB}]::uuid[])
+            )`;
+            }
+          }
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            ${boardingCatIdOr}
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
@@ -3235,16 +3448,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const shortDescription = description.length > 200 ? description.slice(0, 200) + '…' : description;
         const rawSpec = row.catalog_specialization_ids;
         const specializationIds = Array.isArray(rawSpec) ? rawSpec : (rawSpec != null ? [].concat(rawSpec) : []);
-        let metadata: any = {};
-        try {
-          metadata = typeof row.vs_metadata === 'string' ? (row.vs_metadata ? JSON.parse(row.vs_metadata) : {}) : (row.vs_metadata || {});
-        } catch (_) { }
-        const isPackage = !!metadata?.isPackage || metadata?.type === 'package';
-        const packageDetails = isPackage && (metadata?.totalSessions != null || metadata?.validityDays != null) ? {
-          totalSessions: metadata.totalSessions ?? null,
-          validityDays: metadata.validityDays ?? null,
-          sessionDuration: metadata.sessionDuration ?? duration,
-        } : undefined;
+        const metadata = parseVendorServiceMetadataForCustomer(row.vs_metadata);
+        const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(metadata, duration);
         const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
         const couponEligible = metadata?.couponEligible !== false;
         const inActivePackage = includedVendorServiceIds.has(row.id) || includedLegacyServiceIds.has(row.service_id);
@@ -3268,6 +3473,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
+          metadata,
           isPackage,
           packageDetails,
           taxCategoryId,
@@ -3281,27 +3487,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       });
 
-      let services = formattedServices.filter((s: any) => !s.isPackage);
-      const packages = formattedServices.filter((s: any) => s.isPackage);
+      let combined = formattedServices;
       const hasActivePackageForVendor = includedVendorServiceIds.size > 0 || includedLegacyServiceIds.size > 0;
 
-      // ✅ FIX: Filter services by serviceStyle if provided - ensure only matching services are returned
-      // This is a critical filter to ensure SQL query results match the requested serviceStyle
+      // ✅ Filter by serviceStyle on the full list (packages + one-offs) so custom packages are not dropped.
       if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
 
-        console.log(`[Vendor Services] Before filter: ${services.length} services`);
+        console.log(`[Vendor Services] Before filter: ${combined.length} rows`);
         console.log(`[Vendor Services] Filtering by serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
 
-        // Log all service styles before filtering
-        const serviceStylesBefore = services.map((s: any) => ({
+        const serviceStylesBefore = combined.map((s: any) => ({
           id: s.id,
           name: s.name,
           style: s.serviceStyle || s.service_style
         }));
         console.log(`[Vendor Services] Service styles before filter:`, serviceStylesBefore);
 
-        services = services.filter((s: any) => {
+        combined = combined.filter((s: any) => {
           const style = s.serviceStyle || s.service_style;
           const matches = acceptableStyles.includes(style);
           if (!matches) {
@@ -3310,8 +3513,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           return matches;
         });
 
-        console.log(`[Vendor Services] After filter: ${services.length} services`);
-        const serviceStylesAfter = services.map((s: any) => ({
+        console.log(`[Vendor Services] After filter: ${combined.length} rows`);
+        const serviceStylesAfter = combined.map((s: any) => ({
           id: s.id,
           name: s.name,
           style: s.serviceStyle || s.service_style
@@ -3319,11 +3522,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[Vendor Services] Service styles after filter:`, serviceStylesAfter);
       }
 
+      const packages = combined.filter((s: any) => s.isPackage);
+      const services = combined;
+
       return c.json({
         success: true,
         services,
         packages,
-        count: services.length + packages.length,
+        count: combined.length,
         hasActivePackage: hasActivePackageForVendor,
       });
 
@@ -4811,21 +5017,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const servicesResult = await query(servicesQuery, params);
 
-      const services = servicesResult.rows.map(s => {
-        const meta = typeof s.package_details === 'string' ? (s.package_details ? JSON.parse(s.package_details) : {}) : (s.package_details || {});
-        const isPackage = !!(meta?.isPackage || meta?.type === 'package');
+      const services = servicesResult.rows.map((s) => {
+        const meta = parseVendorServiceMetadataForCustomer(s.package_details);
+        const dur = s.duration || 30;
+        const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(meta, dur);
         return {
           id: s.id,
           serviceId: s.service_id,
           serviceName: s.service_name || s.base_service_name,
           description: cleanDescription(s.description) || cleanDescription(s.base_description) || '',
           price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
+          duration: dur,
           serviceStyle: s.service_style,
           categoryName: s.category_name || s.category,
           subCategoryName: s.sub_category_name || s.sub_category,
+          metadata: meta,
           isPackage,
-          packageDetails: isPackage && (meta?.totalSessions != null || meta?.validityDays != null) ? { totalSessions: meta.totalSessions, validityDays: meta.validityDays, sessionDuration: meta.sessionDuration } : meta,
+          packageDetails: isPackage ? packageDetails : undefined,
           isEnabled: s.is_enabled,
           publishStatus: s.publish_status,
         };
@@ -4933,6 +5141,95 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
 
+      // Strict catalogue category IDs from the `category` query param only (not roleId) — custom services must match.
+      const categoryOnlyKeys: string[] = [];
+      if (category) categoryOnlyKeys.push(String(category));
+      const strictFromUuid = categoryOnlyKeys.filter((k) => isUuid(k));
+      const strictFromText = categoryOnlyKeys
+        .filter((k) => !isUuid(k))
+        .map((k) => k.toLowerCase().trim())
+        .filter(Boolean);
+      let strictCategoryIds: string[] = [...strictFromUuid];
+      if (strictFromText.length > 0) {
+        const slugRes = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [strictFromText]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        for (const row of slugRes.rows || []) {
+          if (row?.id && !strictCategoryIds.includes(row.id)) strictCategoryIds.push(row.id);
+        }
+      }
+      const hasVsCategoryIdCol = await columnExists('vendor_services', 'category_id');
+      const strictCustomDiscoverySql =
+        strictCategoryIds.length > 0 && hasVsCategoryIdCol
+          ? (() => {
+              const UUID_RE =
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+              const clean = strictCategoryIds.filter((id) => UUID_RE.test(String(id).trim()));
+              if (clean.length === 0) return '';
+              const arr = `ARRAY[${clean.map((id) => `'${String(id).trim()}'::uuid`).join(',')}]::uuid[]`;
+              if (boardingDiscoverySearchByStyle) {
+                return ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND (
+        (vs.category_id IS NOT NULL AND vs.category_id = ANY(${arr}))
+        OR LOWER(TRIM(COALESCE(vs.category, ''))) IN ('boarding', 'pet_boarding', 'pet boarding')
+      )
+    )
+  )`;
+              }
+              return ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND vs.category_id IS NOT NULL
+      AND vs.category_id = ANY(${arr})
+    )
+  )`;
+            })()
+          : boardingDiscoverySearchByStyle && hasVsCategoryIdCol
+            ? ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND LOWER(TRIM(COALESCE(vs.category, ''))) IN ('boarding', 'pet_boarding', 'pet boarding')
+    )
+  )`
+            : '';
+
+      let boardingCustomCategoryIdOrByStyleSql = '';
+      if (boardingDiscoverySearchByStyle && hasVsCategoryIdCol) {
+        const slugResByStyle = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['boarding', 'pet_boarding', 'pet boarding']]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        const idB = (slugResByStyle.rows || []).map((r: any) => r?.id).filter(Boolean);
+        const UUID_RE_BS =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const cleanB = idB.filter((id: string) => UUID_RE_BS.test(String(id).trim()));
+        if (cleanB.length > 0) {
+          const uuidListBs = cleanB.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+          boardingCustomCategoryIdOrByStyleSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidListBs}]::uuid[])
+                )`;
+        }
+      }
+
       const nutritionDiscoverySearchByStyle =
         catTextExact.some(
           (c) =>
@@ -5024,10 +5321,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSqlByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
+            ${boardingCustomCategoryIdOrByStyleSql}
           )
         ` : '';
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
+                  vs.custom_price,
+                  vs.metadata AS vs_metadata,
+                  vs.service_style,
+                  vs.publish_status,
+                  vs.is_enabled,
                   COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                   COALESCE(
                     vs.custom_description,
@@ -5043,6 +5346,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
+            ${strictCustomDiscoverySql}
              AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
@@ -5056,15 +5360,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : [vendorId, acceptableStyles];
         const res = await query(sql, params).catch(() => ({ rows: [] }));
 
-        return deduplicateServices(res.rows.map((s: any) => ({
-          id: s.id,
-          serviceId: s.service_id,
-          name: s.service_name,
-          price: parseFloat(s.price || 0),
-          duration: s.duration || 30,
-          description: cleanDescription(s.description),
-          category: s.category_name,
-        })));
+        return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
 
       /**
@@ -5202,7 +5498,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
+                ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
+              ${strictCustomDiscoverySql}
           )
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}
       `;

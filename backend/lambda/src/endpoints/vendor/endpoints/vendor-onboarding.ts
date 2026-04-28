@@ -11,6 +11,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { select, insert, update, query } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { assertApplicationKycComplete } from '../../../utils/vendor-onboarding-kyc';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY
@@ -710,6 +711,11 @@ class SubmitApplicationHandler extends BaseHandler {
       });
     } else {
       uploaded_documents = [];
+    }
+
+    const kycGate = assertApplicationKycComplete(application_payload as Record<string, unknown>);
+    if (!kycGate.ok) {
+      return this.error(kycGate.message, 400);
     }
 
     try {

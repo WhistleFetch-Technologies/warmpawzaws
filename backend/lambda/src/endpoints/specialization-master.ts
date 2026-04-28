@@ -1080,6 +1080,58 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   }
 
   /**
+   * GET /vendor/specializations/by-category?categoryId=<uuid|slug>
+   * Lists specialization_master rows for one catalogue category (custom service / package creation).
+   */
+  app.get('/vendor/specializations/by-category', async (c) => {
+    try {
+      const categoryId = (c.req.query('categoryId') || '').trim();
+      if (!categoryId) {
+        return c.json({ success: false, error: 'categoryId is required', specializations: [] }, 400);
+      }
+      const catResult = await query(
+        `SELECT id::text, category_id FROM service_categories
+         WHERE (id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)))
+           AND COALESCE(is_active, true) = true
+         LIMIT 1`,
+        [categoryId]
+      );
+      const catRow = catResult.rows?.[0];
+      if (!catRow?.category_id) {
+        return c.json({ success: true, specializations: [], categorySlug: null });
+      }
+      const slug = String(catRow.category_id).trim();
+      const smResult = await query(
+        `SELECT sm.*
+         FROM specialization_master sm
+         WHERE sm.is_active = true
+           AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+           AND LOWER(TRIM(COALESCE(sm.category_id, ''))) = LOWER(TRIM($1))
+         ORDER BY sm.display_order, sm.name`,
+        [slug]
+      );
+      const rows = smResult.rows || [];
+      return c.json({
+        success: true,
+        categorySlug: slug,
+        specializations: rows.map((row: any) => ({
+          id: row.specialization_id,
+          name: row.name,
+          displayName: row.display_name || row.name,
+          description: row.description,
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          categoryId: row.category_id,
+          shortDescription: row.short_description || row.description,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] by-category error:', error.message);
+      return c.json({ success: false, error: error.message, specializations: [] }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/specializations/:roleId
    * 360° dynamic: Role → services (service_catalog) → categories (service masters) → specializations.
    * Vendor has role ID; role has services (service_catalog.applicable_roles). Categories are service masters

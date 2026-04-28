@@ -145,6 +145,31 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const chatRules = await getDiscoveryRules('all', 'chat');
       const chatDays = chatRules.chat_available_days_post_appointment ?? 7;
 
+      const packagePurchaseIds = Array.from(
+        new Set(
+          (result.rows || [])
+            .map((b: any) => b.package_purchase_id)
+            .filter((id: unknown): id is string => id != null && String(id).trim() !== '')
+        )
+      );
+      let packageByPurchaseId = new Map<string, any>();
+      if (packagePurchaseIds.length > 0) {
+        try {
+          const pkgRows = await query(
+            `SELECT id, package_name, total_sessions, remaining_sessions, unlimited_usage
+             FROM package_purchases
+             WHERE id = ANY($1::uuid[])`,
+            [packagePurchaseIds]
+          );
+          for (const row of pkgRows.rows || []) {
+            packageByPurchaseId.set(String(row.id), row);
+          }
+        } catch (e) {
+          console.warn('[VENDOR-BOOKINGS] package_purchases batch lookup failed:', e);
+          packageByPurchaseId = new Map();
+        }
+      }
+
       // Enrich bookings with customer, service, vendor, and related data (prescriptions, medical records, chat)
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
@@ -185,6 +210,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
           const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
           const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          const ppId = booking.package_purchase_id ? String(booking.package_purchase_id) : '';
+          const packagePurchase = ppId ? packageByPurchaseId.get(ppId) : null;
           return {
             ...booking,
             total_amount: vendorVisibleAmount,
@@ -192,6 +219,16 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             price: vendorVisibleAmount,
             base_price: vendorVisibleAmount,
             basePrice: vendorVisibleAmount,
+            packagePurchaseId: booking.package_purchase_id || null,
+            packageSessionNumber:
+              booking.package_session_number != null ? Number(booking.package_session_number) : null,
+            packageName: packagePurchase?.package_name || null,
+            packageTotalSessions:
+              packagePurchase?.total_sessions != null ? Number(packagePurchase.total_sessions) : null,
+            packageRemainingSessions:
+              packagePurchase?.remaining_sessions != null ? Number(packagePurchase.remaining_sessions) : null,
+            packageUnlimitedUsage: Boolean(packagePurchase?.unlimited_usage),
+            isPackageSession: Boolean(booking.is_package_session ?? booking.is_package),
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name,

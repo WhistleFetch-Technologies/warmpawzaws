@@ -524,8 +524,8 @@ export function CustomerHomeComplete({
     vet: 'Vet Care',
     walking: 'Dog Walker',
     walker: 'Dog Walker',
-    shop: 'Pet Shop',
-    marketplace: 'Pet Shop',
+    shop: 'Pet Products',
+    marketplace: 'Pet Products',
     'pet-sitter': 'Pet Sitter',
     pet_sitter: 'Pet Sitter',
     sitting: 'Pet Sitter',
@@ -796,7 +796,7 @@ export function CustomerHomeComplete({
           if (featuredProducts.length > 0) {
             const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => ({
               id: p.id,
-              title: p.name || 'Pet Product',
+              title: p.name || 'Pet Products',
               price: `₹${p.salePrice || p.price || 999}`,
               originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
               discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
@@ -2692,13 +2692,13 @@ export function CustomerHomeComplete({
           <div className="grid grid-cols-2 gap-3">
             <div
               className="relative bg-gradient-to-br from-rose-50/90 to-pink-50/90 rounded-2xl p-4 border border-rose-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.12]"
-              aria-label="Mating and Dating — coming soon"
+              aria-label="Peer to Peer — coming soon"
             >
               <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
                 Soon
               </span>
               <Users className="w-8 h-8 text-rose-600/80 mb-2" />
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Mating & Dating</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Peer to Peer</h3>
               <p className="text-xs text-gray-600 mb-3">Find perfect match for your pet</p>
               <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
             </div>
