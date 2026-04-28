@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { normalizeAdminBannersList } from '@/lib/banner-admin';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
 import { TaxManagement } from './admin/finance/TaxManagement';
@@ -324,7 +325,7 @@ export function AdminApp() {
   const loadBanners = async () => {
     try {
       const response = await apiClient.get<any>('/admin/banners');
-      setBanners(response.banners || []);
+      setBanners(normalizeAdminBannersList(response.banners || []) as unknown as Banner[]);
     } catch (err) {
       console.error('Error loading banners:', err);
     }

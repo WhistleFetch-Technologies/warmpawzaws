@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from '../shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from '../shared/FeaturedVendorSpotlights';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -1060,8 +1061,11 @@ export function HomeServiceRouter({
               </Card>
             )}
 
-            {/* Promotions */}
-            <PromotionBanner service={serviceType} onNavigate={onNavigate} />
+            {/* Promotions + vendor spotlights (same service context) */}
+            <div className="space-y-4">
+              <FeaturedVendorSpotlights service={serviceType} onNavigate={onNavigate} />
+              <PromotionBanner service={serviceType} onNavigate={onNavigate} />
+            </div>
 
             {/* Last Booked Providers */}
             {lastBookedProviders.length > 0 && (

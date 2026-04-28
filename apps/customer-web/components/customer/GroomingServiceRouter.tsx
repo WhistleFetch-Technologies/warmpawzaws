@@ -10,6 +10,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -311,8 +312,9 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           )}
 
-          {/* PHASE 1.2: Promotion Banners (from Admin Marketing) */}
+          {/* PHASE 1.2: Vendor spotlights + promotion banners (from Admin Marketing) */}
           <div className="space-y-3">
+            <FeaturedVendorSpotlights service="grooming" onNavigate={onNavigate} className="mb-1" />
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>

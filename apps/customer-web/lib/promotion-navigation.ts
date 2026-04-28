@@ -3,6 +3,7 @@
  * (handleNavigateToService / setCurrentScreen).
  */
 
+/** Normalized service slugs / aliases → screen id. Kept in sync with `backend/lambda/src/utils/featured-vendor-service-context.ts` for GET /customer/featured-vendors. */
 const SLUG_TO_SCREEN: Record<string, string> = {
   shop: 'shop',
   ecommerce: 'shop',
@@ -181,7 +182,10 @@ export function resolvePromotionDestination(
   return 'home';
 }
 
-/** Role ids from `spotlight_offers.role_id` (admin seed) → CustomerHomeWrapper screen ids */
+/**
+ * Role ids from `spotlight_offers.role_id` (admin seed) → CustomerHomeWrapper screen ids.
+ * **Keep in sync** with `backend/lambda/src/utils/featured-vendor-service-context.ts` (featured-vendors API filter).
+ */
 const ROLE_ID_TO_SCREEN: Record<string, string> = {
   veterinarian: 'vet',
   vet: 'vet',

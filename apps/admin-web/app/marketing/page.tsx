@@ -51,6 +51,11 @@ import {
 	AlertCircle,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import {
+	normalizeAdminBannersList,
+	formatAdminBannerPlacementLabel,
+	adminBannerPositionFromRow,
+} from "@/lib/banner-admin";
 import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
@@ -533,7 +538,7 @@ export default function MarketingPromotionsTab() {
 		try {
 			const data = await apiClient.get("/admin/banners");
 			const bannersList = Array.isArray((data as any).banners) ? (data as any).banners : [];
-			setBanners(bannersList);
+			setBanners(normalizeAdminBannersList(bannersList));
 		} catch (error) {
 			console.error("Error loading banners:", error);
 			setBanners([]);
@@ -620,7 +625,7 @@ export default function MarketingPromotionsTab() {
 			image_url: banner.image_url || banner.imageUrl || "",
 			cta_text: banner.cta_text || banner.ctaText || "Shop Now",
 			cta_link: banner.cta_link || banner.linkUrl || "",
-			position: banner.position || "home_top",
+			position: (banner.position as string) || adminBannerPositionFromRow(banner),
 			is_active: banner.is_active !== false,
 			start_date: banner.start_date ? new Date(banner.start_date).toISOString().split("T")[0] : "",
 			end_date: banner.end_date ? new Date(banner.end_date).toISOString().split("T")[0] : "",
@@ -1529,9 +1534,9 @@ export default function MarketingPromotionsTab() {
 							<div className="space-y-6">
 								<div className="flex justify-between items-center">
 									<div>
-										<h3 className="text-lg font-medium">Home Banners</h3>
+										<h3 className="text-lg font-medium">Banners by placement</h3>
 										<p className="text-sm text-gray-500">
-											Manage promotional banners displayed on customer home screen
+											Home hero and middle, Find All Services (category), and shop checkout each use their own placement
 										</p>
 									</div>
 									<Button
@@ -1569,7 +1574,9 @@ export default function MarketingPromotionsTab() {
 														{banner.is_active ? 'Active' : 'Inactive'}
 													</Badge>
 													<Badge className="absolute top-2 left-2 bg-blue-500">
-														{banner.position?.replace('_', ' ') || 'home_top'}
+														{formatAdminBannerPlacementLabel(
+															(banner.position as string) || (banner.type as string)
+														)}
 													</Badge>
 												</div>
 												<div className="p-4">
@@ -2089,7 +2096,7 @@ export default function MarketingPromotionsTab() {
 							{editingBanner ? "Edit Banner" : "Create New Banner"}
 						</DialogTitle>
 						<DialogDescription>
-							Configure promotional banner for customer home screen
+							Choose where the banner appears: home hero, home middle, Find All Services (category), or shop checkout.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2194,6 +2201,9 @@ export default function MarketingPromotionsTab() {
 										<SelectItem value="checkout">Checkout Page</SelectItem>
 									</SelectContent>
 								</Select>
+								<p className="text-xs text-gray-500 mt-1.5">
+									Home top and home middle: customer home only. Category: Find All Services. Checkout: shop checkout.
+								</p>
 							</div>
 							<div>
 								<Label>Display Order</Label>

@@ -16,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { PromotionBanner } from "./shared/PromotionBanner";
+import { FeaturedVendorSpotlights } from "./shared/FeaturedVendorSpotlights";
 import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
 import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandableCard";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
@@ -262,6 +263,7 @@ export function PetSitterServiceRouter({
       >
         <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
+            <FeaturedVendorSpotlights service="sitting" onNavigate={onNavigate} />
             <PromotionBanner
               service="sitting"
               maxPromotions={3}

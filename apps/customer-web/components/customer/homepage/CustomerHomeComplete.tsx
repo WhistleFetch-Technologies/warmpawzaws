@@ -10,8 +10,7 @@ import {
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical, MessageSquare,
-  type LucideIcon,
+  Navigation, AlertCircle, FlaskConical,   MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -37,7 +36,8 @@ import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from '.
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
-import { customerPathToScreen, resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
+import { customerPathToScreen } from '@/lib/promotion-navigation';
+import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/lib/customer-banner-icons';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import {
   mapCatalogSlugToLaunchServiceId,
@@ -195,6 +195,8 @@ export function CustomerHomeComplete({
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [userProfilePhoto, setUserProfilePhoto] = useState<string>('');
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [currentMiddleBanner, setCurrentMiddleBanner] = useState(0);
+  const middleBannerTouchStartX = useRef<number | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
@@ -386,38 +388,10 @@ export function CustomerHomeComplete({
 
   // Dynamic content from CMS
   const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
+  const [dynamicMiddleBanners, setDynamicMiddleBanners] = useState<any[]>([]);
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
-  const [featuredVendors, setFeaturedVendors] = useState<any[]>([]); // Spotlight/featured from admin
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
-
-  /** Featured spotlight vendor CTA → internal route or external URL. */
-  const navigateFromFeaturedVendorMeta = useCallback(
-    (v: Record<string, unknown>, extraNavigateData?: Record<string, unknown>) => {
-      const dest = resolveFeaturedVendorDestination(v);
-      const rawId = v.vendorId ?? v.vendor_id ?? v.id;
-      const base =
-        rawId != null && String(rawId).trim() !== ''
-          ? { ...v, vendorId: String(rawId) }
-          : { ...v };
-      const data =
-        extraNavigateData != null && Object.keys(extraNavigateData).length > 0
-          ? { ...base, ...extraNavigateData }
-          : base;
-
-      if (dest.kind === 'external') {
-        window.location.assign(dest.url);
-        return;
-      }
-      if (dest.kind === 'router') {
-        const path = dest.path.startsWith('/') ? dest.path : `/${dest.path}`;
-        router.push(path);
-        return;
-      }
-      onNavigate?.(dest.screen, data);
-    },
-    [onNavigate, router]
-  );
 
   /** Single entry for home CTAs: internal screens → onNavigate; paths → router; http(s) / mailto / tel → window. */
   const handleNavigation = useCallback(
@@ -629,13 +603,30 @@ export function CustomerHomeComplete({
   const loadDynamicContent = async () => {
     try {
       // Fetch all content in parallel with better error handling
-      const [bannersResp, articlesResp, announcementsResp, adoptionResp, featuredResp] = await Promise.allSettled([
-        apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
-        apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
-        apiClient.get<any>('/customer/announcements?limit=3'),
-        apiClient.get<any>('/customer/adoption-stats'),
-        apiClient.get<any>('/customer/featured-vendors?limit=6'),
-      ]);
+      const [bannersResp, middleBannersResp, articlesResp, announcementsResp, adoptionResp] =
+        await Promise.allSettled([
+          apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
+          apiClient.get<any>('/customer/banners?position=home_middle&limit=20'),
+          apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
+          apiClient.get<any>('/customer/announcements?limit=3'),
+          apiClient.get<any>('/customer/adoption-stats'),
+        ]);
+
+      const dedupeBannerList = (rawList: unknown[]): any[] => {
+        const seen = new Set<string>();
+        return (rawList as unknown[]).filter((item) => {
+          const id =
+            item &&
+            typeof item === 'object' &&
+            'id' in item &&
+            (item as { id: unknown }).id != null
+              ? String((item as { id: unknown }).id)
+              : '';
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        }) as any[];
+      };
 
       // Handle banners (support alternate response shapes; dedupe by id)
       if (bannersResp.status === 'fulfilled') {
@@ -646,26 +637,28 @@ export function CustomerHomeComplete({
             (v!.data as { banners: unknown[] }).banners) ||
           [];
         if (rawList.length > 0) {
-          const seen = new Set<string>();
-          const unique = (rawList as unknown[]).filter((item) => {
-            const id =
-              item &&
-              typeof item === 'object' &&
-              'id' in item &&
-              (item as { id: unknown }).id != null
-                ? String((item as { id: unknown }).id)
-                : '';
-            if (!id || seen.has(id)) return false;
-            seen.add(id);
-            return true;
-          });
-          setDynamicBanners(unique as any[]);
+          setDynamicBanners(dedupeBannerList(rawList));
         }
       } else if (bannersResp.status === 'rejected') {
         const error = bannersResp.reason;
         // Only log non-CORS errors to reduce console noise
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
           console.warn('Failed to load banners:', error.message);
+        }
+      }
+
+      if (middleBannersResp.status === 'fulfilled') {
+        const v = middleBannersResp.value as Record<string, unknown> | null | undefined;
+        const rawList =
+          (Array.isArray(v?.banners) && v.banners) ||
+          (Array.isArray((v?.data as Record<string, unknown>)?.banners) &&
+            (v!.data as { banners: unknown[] }).banners) ||
+          [];
+        setDynamicMiddleBanners(rawList.length > 0 ? dedupeBannerList(rawList) : []);
+      } else if (middleBannersResp.status === 'rejected') {
+        const error = middleBannersResp.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load home_middle banners:', error.message);
         }
       }
 
@@ -707,10 +700,6 @@ export function CustomerHomeComplete({
         }
       }
 
-      // Featured/spotlight vendors (admin-configured)
-      if (featuredResp.status === 'fulfilled' && featuredResp.value?.vendors?.length > 0) {
-        setFeaturedVendors(featuredResp.value.vendors);
-      }
     } catch (error: any) {
       // Only log if it's not a CORS error
       if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1071,88 +1060,6 @@ export function CustomerHomeComplete({
 
   /** Map API + defaults for hero; dedupe defaults by CTA vertical; icons from CTA / metadata */
   const homeCarouselBanners = useMemo(() => {
-    const normalizeBannerTarget = (link: unknown): string => {
-      const raw = String(link ?? '').toLowerCase().trim();
-      if (!raw) return '';
-      const path = raw.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
-      const segments = path.split(/[/?#]/).map((s) => s.toLowerCase());
-      const hay = `${path} ${segments.join(' ')}`;
-
-      const pick = (slug: string) => (hay.includes(slug) ? slug : '');
-
-      if (pick('grooming') || pick('groom')) return 'grooming';
-      if (pick('lab-diagnostics') || pick('diagnostics') || pick('diagnostic')) return 'lab-diagnostics';
-      if ((pick('vet') || pick('veterinary')) && !hay.includes('walker')) return 'vet';
-      if (pick('walker') || pick('walking')) return 'walker';
-      if (pick('training') || pick('trainer')) return 'training';
-      if (pick('boarding') || pick('board')) return 'boarding';
-      if (pick('adoption') || pick('breeder')) return 'adoption';
-      if (pick('cafes') || pick('cafe')) return 'cafes';
-      if (pick('insurance')) return 'insurance';
-      if (pick('photography') || pick('photo')) return 'photography';
-      if (pick('pharmacy') || pick('shop') || pick('ecom')) return 'shop';
-      if (pick('relocation')) return 'relocation';
-      if (pick('resort')) return 'resort';
-      if (pick('holiday')) return 'holiday';
-      if (pick('sunset')) return 'sunset';
-      if (pick('ambulance') || pick('emergency')) return 'ambulance';
-      if (pick('nutritionist') || pick('nutrition')) return 'nutritionist';
-      if (pick('behaviorist') || pick('behavior')) return 'behaviorist';
-      if (pick('mating')) return 'mating-dating-hub';
-
-      const head = (segments[0] || path).toLowerCase();
-      return head || raw;
-    };
-
-    const iconForTarget = (target: string): LucideIcon => {
-      switch (target) {
-        case 'shop':
-          return Bone;
-        case 'grooming':
-          return Scissors;
-        case 'vet':
-          return Stethoscope;
-        case 'training':
-          return GraduationCap;
-        case 'walker':
-          return Dog;
-        case 'boarding':
-          return HomeIcon;
-        case 'adoption':
-          return Heart;
-        case 'cafes':
-          return Coffee;
-        case 'insurance':
-          return Shield;
-        case 'photography':
-          return Users;
-        case 'lab-diagnostics':
-          return FlaskConical;
-        case 'relocation':
-          return MapPin;
-        case 'resort':
-        case 'holiday':
-          return Palmtree;
-        case 'ambulance':
-          return Phone;
-        case 'nutritionist':
-          return Wheat;
-        case 'behaviorist':
-          return Heart;
-        case 'mating-dating-hub':
-          return Heart;
-        case 'sunset':
-          return Sparkles;
-        default:
-          return Sparkles;
-      }
-    };
-
-    const iconForApiBanner = (b: Record<string, unknown>): LucideIcon => {
-      const target = normalizeBannerTarget(b.ctaLink ?? b.cta_link);
-      return iconForTarget(target || 'generic');
-    };
-
     if (dynamicBanners.length === 0) {
       return defaultBanners;
     }
@@ -1169,7 +1076,7 @@ export function CustomerHomeComplete({
         subtitle: b.subtitle,
         gradientFrom: b.gradientFrom || '#FF8C42',
         gradientTo: b.gradientTo || '#FF6B35',
-        Icon: iconForApiBanner(b),
+        Icon: iconForCustomerHomeApiBanner(b),
         ctaText: b.ctaText || b.cta_text || 'Learn More',
         ctaLink,
         comingSoon,
@@ -1177,14 +1084,14 @@ export function CustomerHomeComplete({
     });
 
     const coveredTargets = new Set(
-      fromApi.map((b) => normalizeBannerTarget(b.ctaLink)).filter(Boolean)
+      fromApi.map((b) => normalizeCustomerBannerTarget(b.ctaLink)).filter(Boolean)
     );
     const coveredTitles = new Set(
       fromApi.map((b) => String(b.title || '').toLowerCase().trim()).filter(Boolean)
     );
 
     const defaultsNotInApi = defaultBanners.filter((d) => {
-      const key = normalizeBannerTarget(d.ctaLink);
+      const key = normalizeCustomerBannerTarget(d.ctaLink);
       if (key && coveredTargets.has(key)) return false;
       if (coveredTitles.has(String(d.title || '').toLowerCase().trim())) return false;
       return true;
@@ -1193,7 +1100,31 @@ export function CustomerHomeComplete({
     return [...fromApi, ...defaultsNotInApi].slice(0, 20);
   }, [dynamicBanners]);
 
+  /** Featured Services wide slot — home_middle only; not merged into hero or ForYouSection */
+  const featuredMiddleCarouselBanners = useMemo(() => {
+    if (dynamicMiddleBanners.length === 0) return [];
+    return dynamicMiddleBanners.map((b: any) => {
+      const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
+      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const ctaLink = screenFromSlash ?? rawCta;
+      const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
+      const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
+      return {
+        id: b.id,
+        title: b.title,
+        subtitle: b.subtitle,
+        gradientFrom: b.gradientFrom || b.gradient_from || '#9333ea',
+        gradientTo: b.gradientTo || b.gradient_to || '#ec4899',
+        Icon: iconForCustomerHomeApiBanner(b),
+        ctaText: b.ctaText || b.cta_text || 'Learn More',
+        ctaLink,
+        comingSoon,
+      };
+    });
+  }, [dynamicMiddleBanners]);
+
   const homeBannerCount = homeCarouselBanners.length;
+  const middleBannerCount = featuredMiddleCarouselBanners.length;
 
   useEffect(() => {
     setCurrentBanner((prev) =>
@@ -1208,6 +1139,20 @@ export function CustomerHomeComplete({
     }, 4000);
     return () => window.clearInterval(id);
   }, [homeBannerCount]);
+
+  useEffect(() => {
+    setCurrentMiddleBanner((prev) =>
+      middleBannerCount > 0 ? prev % middleBannerCount : 0
+    );
+  }, [middleBannerCount]);
+
+  useEffect(() => {
+    if (middleBannerCount <= 1) return undefined;
+    const id = window.setInterval(() => {
+      setCurrentMiddleBanner((prev) => (prev + 1) % middleBannerCount);
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [middleBannerCount]);
 
   // Load active bookings with tracking for "Attention" section
   useEffect(() => {
@@ -2365,40 +2310,153 @@ export function CustomerHomeComplete({
             <p className="text-xs text-gray-600">Popular choices for your pet</p>
           </div>
           <div className="px-6 grid grid-cols-2 gap-3">
-            {/* Large Featured Item - Spans 2 columns */}
-            <div className="col-span-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl p-6 text-white relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-              <div className="relative z-10">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <span className="text-xs bg-white/20 px-2 py-1 rounded-full">TRENDING</span>
-                    <h3 className="text-lg font-bold mt-2">Complete Health Package</h3>
-                    <p className="text-sm text-white/90 mb-3">Full checkup + vaccination + grooming</p>
-                  </div>
-                  <Sparkles className="w-8 h-8" />
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <span className="text-xs line-through text-white/70">₹3,999</span>
-                    <div className="text-2xl font-bold">₹2,499</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const url = buildTeleInstantAutoPayBookingUrl({
-                        offerName: 'Complete Health Package',
-                        price: 2499,
-                        desc: 'Full checkup + vaccination + grooming',
-                      });
-                      console.log('[CustomerHomeComplete] Complete Health Package Book Now →', url);
-                      router.push(url);
-                    }}
-                    className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
+            {/* Large Featured Item - Spans 2 columns: CMS home_middle carousel or static Complete Health Package */}
+            {featuredMiddleCarouselBanners.length > 0 ? (
+              <div
+                className="col-span-2 relative min-h-[188px] rounded-3xl overflow-hidden shadow-md text-white"
+                onTouchStart={(e) => {
+                  middleBannerTouchStartX.current = e.touches[0]?.clientX ?? null;
+                }}
+                onTouchEnd={(e) => {
+                  const start = middleBannerTouchStartX.current;
+                  middleBannerTouchStartX.current = null;
+                  if (start == null || middleBannerCount <= 1) return;
+                  const end = e.changedTouches[0]?.clientX ?? start;
+                  const dx = end - start;
+                  if (dx < -48) {
+                    setCurrentMiddleBanner((prev) => (prev + 1) % middleBannerCount);
+                  } else if (dx > 48) {
+                    setCurrentMiddleBanner((prev) => (prev - 1 + middleBannerCount) % middleBannerCount);
+                  }
+                }}
+              >
+                {featuredMiddleCarouselBanners.map((banner, index) => {
+                  const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+                  return (
+                    <div
+                      key={String(banner.id ?? index)}
+                      className={`absolute inset-0 transition-opacity duration-500 ${
+                        currentMiddleBanner === index
+                          ? 'z-[1] opacity-100'
+                          : 'z-0 opacity-0 pointer-events-none'
+                      }`}
+                      style={{
+                        background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                      }}
+                      aria-hidden={currentMiddleBanner !== index}
+                    >
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 pointer-events-none" />
+                      <div
+                        className={`relative z-10 h-full min-h-[188px] p-6 flex flex-col justify-between ${
+                          slotComingSoon ? 'opacity-90 pointer-events-none select-none' : ''
+                        }`}
+                      >
+                        {slotComingSoon && (
+                          <span
+                            className="absolute top-4 right-4 z-[1] text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5 shadow-sm"
+                            aria-label="Coming soon"
+                          >
+                            SOON
+                          </span>
+                        )}
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="min-w-0">
+                            <span className="text-xs bg-white/20 px-2 py-1 rounded-full">FEATURED</span>
+                            <h3 className="text-lg font-bold mt-2 line-clamp-2">{banner.title}</h3>
+                            {banner.subtitle ? (
+                              <p className="text-sm text-white/90 mt-1 line-clamp-2">{banner.subtitle}</p>
+                            ) : null}
+                          </div>
+                          <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />
+                        </div>
+                        <div className="flex items-end justify-end pt-2">
+                          {slotComingSoon ? (
+                            <span
+                              role="button"
+                              aria-disabled
+                              tabIndex={-1}
+                              className="inline-block bg-white/85 text-[#FF8C42]/70 px-4 py-2 rounded-full text-sm font-semibold cursor-not-allowed"
+                            >
+                              {banner.ctaText || 'Learn More'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-semibold shadow-sm"
+                              onClick={() => {
+                                if (banner.id) {
+                                  apiClient
+                                    .post(`/banners/${banner.id}/click`, { source: 'home_middle_featured' })
+                                    .catch(() => {});
+                                }
+                                banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                              }}
+                            >
+                              {banner.ctaText || 'Learn More'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {middleBannerCount > 1 ? (
+                  <div
+                    className="absolute bottom-3 left-0 right-0 z-[2] flex justify-center gap-2"
+                    role="tablist"
+                    aria-label="Featured service offers"
                   >
-                    Book Now
-                  </button>
+                    {featuredMiddleCarouselBanners.map((banner, index) => (
+                      <button
+                        key={String(banner.id ?? index)}
+                        type="button"
+                        role="tab"
+                        aria-selected={currentMiddleBanner === index}
+                        aria-label={`Featured offer ${index + 1} of ${middleBannerCount}`}
+                        className={`h-1.5 min-w-[6px] rounded-full transition-all ${
+                          currentMiddleBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/70'
+                        }`}
+                        onClick={() => setCurrentMiddleBanner(index)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="col-span-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl p-6 text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
+                <div className="relative z-10">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <span className="text-xs bg-white/20 px-2 py-1 rounded-full">TRENDING</span>
+                      <h3 className="text-lg font-bold mt-2">Complete Health Package</h3>
+                      <p className="text-sm text-white/90 mb-3">Full checkup + vaccination + grooming</p>
+                    </div>
+                    <Sparkles className="w-8 h-8" />
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <span className="text-xs line-through text-white/70">₹3,999</span>
+                      <div className="text-2xl font-bold">₹2,499</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const url = buildTeleInstantAutoPayBookingUrl({
+                          offerName: 'Complete Health Package',
+                          price: 2499,
+                          desc: 'Full checkup + vaccination + grooming',
+                        });
+                        console.log('[CustomerHomeComplete] Complete Health Package Book Now →', url);
+                        router.push(url);
+                      }}
+                      className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
+                    >
+                      Book Now
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Training */}
             <button
@@ -2503,44 +2561,6 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
-
-        {/* Featured providers (spotlight from admin) */}
-        {featuredVendors.length > 0 && (
-          <div className="mb-6">
-            <div className="px-6 mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                <h2 className="text-black font-semibold">Featured providers</h2>
-              </div>
-              <p className="text-xs text-gray-600">Hand-picked by us</p>
-            </div>
-            <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-              {featuredVendors.map((v: any) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => navigateFromFeaturedVendorMeta(v)}
-                  className="flex-shrink-0 w-36 bg-white rounded-2xl border border-gray-200 p-4 text-left shadow-sm hover:shadow-md hover:border-amber-200 transition-all"
-                >
-                  <div className="w-full aspect-square rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 mb-3 overflow-hidden">
-                    {v.imageUrl ? (
-                      <img src={v.imageUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Star className="w-8 h-8 text-amber-400" />
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="text-sm font-semibold text-gray-800 truncate">{v.vendorName || v.title}</h3>
-                  {v.subtitle && <p className="text-xs text-gray-600 truncate mt-0.5">{v.subtitle}</p>}
-                  <span className="text-xs text-amber-600 font-medium mt-2 inline-flex items-center gap-1">
-                    {v.ctaText || 'Book'} <ChevronRight className="w-3 h-3" />
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Adoption — full section coming soon (not launched) */}
         <div className="mb-6" aria-label="Adoption — coming soon">

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -349,8 +350,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </Card>
           )}
 
-          {/* Promotion Banner - Phase 0.1 Integration */}
-          <PromotionBanner service="training" maxPromotions={3} onNavigate={onNavigate} />
+          {/* Vendor spotlights + promotion banner - Phase 0.1 Integration */}
+          <div className="space-y-4">
+            <FeaturedVendorSpotlights service="training" onNavigate={onNavigate} />
+            <PromotionBanner service="training" maxPromotions={3} onNavigate={onNavigate} />
+          </div>
 
           {/* Service Types */}
           <div>

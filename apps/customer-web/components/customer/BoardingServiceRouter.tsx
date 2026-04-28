@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
@@ -225,6 +226,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       <div className="flex-1 -mt-4 overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
         <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
+            <FeaturedVendorSpotlights service="boarding" onNavigate={onNavigate} />
             <PromotionBanner service="boarding" maxPromotions={3} onNavigate={onNavigate} />
 
             {previousFacility && (

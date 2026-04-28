@@ -15,6 +15,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
+import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 
 interface CartItem {
   id: string;
@@ -416,6 +417,10 @@ export default function CheckoutPage() {
             })}
           </div>
         </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 pt-4">
+        <CustomerPlacementBanners placement="checkout" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">

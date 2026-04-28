@@ -619,6 +619,115 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     }
   });
 
+  // GET /customer/diagnostic-packages - MUST come before /customer/:customerId
+  // ============================================
+  // DIAGNOSTIC PACKAGES ENDPOINT
+  // ============================================
+  app.get('/customer/diagnostic-packages', async (c) => {
+    try {
+      // Get popular diagnostic packages
+      const { rows: packages } = await query(`
+        SELECT 
+          dt.id,
+          dt.test_name as name,
+          dt.description,
+          dt.price,
+          dt.category,
+          dt.sample_type,
+          dt.turnaround_time_hours,
+          dt.is_package_available,
+          dt.package_price,
+          dt.package_test_count,
+          dt.is_free_home_collection,
+          dt.home_collection_fee,
+          v.business_name as vendor_name,
+          v.id as vendor_id
+        FROM diagnostic_tests dt
+        LEFT JOIN vendors v ON v.id = dt.vendor_id
+        WHERE dt.is_available = true 
+          AND dt.is_package_available = true
+        ORDER BY dt.price ASC
+        LIMIT 20
+      `);
+
+      // Format as health packages
+      const formattedPackages = packages.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        tests: p.package_test_count ? [`Includes ${p.package_test_count} tests`] : [p.category || 'General'],
+        price: p.package_price || p.price,
+        originalPrice: p.price > (p.package_price || p.price) ? p.price : undefined,
+        homeCollection: p.is_free_home_collection || p.home_collection_fee === 0,
+        turnaroundHours: p.turnaround_time_hours || 24,
+        vendorName: p.vendor_name,
+        vendorId: p.vendor_id,
+      }));
+
+      // If no packages found, return mock data
+      if (formattedPackages.length === 0) {
+        return c.json({
+          success: true,
+          packages: [
+            {
+              id: 'pkg-mock-1',
+              name: 'Full Body Health Checkup',
+              description: 'Comprehensive pet health screening',
+              tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
+              price: 2499,
+              originalPrice: 3500,
+              homeCollection: true,
+              turnaroundHours: 24
+            },
+            {
+              id: 'pkg-mock-2',
+              name: 'Senior Pet Package',
+              description: 'For pets above 7 years',
+              tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
+              price: 3999,
+              originalPrice: 5500,
+              homeCollection: true,
+              turnaroundHours: 48
+            },
+            {
+              id: 'pkg-mock-3',
+              name: 'Basic Blood Panel',
+              description: 'Essential blood tests',
+              tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
+              price: 799,
+              originalPrice: 1200,
+              homeCollection: true,
+              turnaroundHours: 12
+            }
+          ]
+        });
+      }
+
+      return c.json({
+        success: true,
+        packages: formattedPackages,
+      });
+    } catch (error: any) {
+      console.error('Error getting diagnostic packages:', error);
+      // Return mock packages on error
+      return c.json({
+        success: true,
+        packages: [
+          {
+            id: 'pkg-mock-1',
+            name: 'Full Body Health Checkup',
+            description: 'Comprehensive pet health screening',
+            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
+            price: 2499,
+            originalPrice: 3500,
+            homeCollection: true,
+            turnaroundHours: 24
+          }
+        ]
+      });
+    }
+  });
+
   // Parameterized route - MUST come after specific routes
   app.get('/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -1741,114 +1850,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         hasActiveSubscription: false, 
         subscriptions: [],
         error: error.message 
-      });
-    }
-  });
-
-  // ============================================
-  // DIAGNOSTIC PACKAGES ENDPOINT
-  // ============================================
-  app.get('/customer/diagnostic-packages', async (c) => {
-    try {
-      // Get popular diagnostic packages
-      const { rows: packages } = await query(`
-        SELECT 
-          dt.id,
-          dt.test_name as name,
-          dt.description,
-          dt.price,
-          dt.category,
-          dt.sample_type,
-          dt.turnaround_time_hours,
-          dt.is_package_available,
-          dt.package_price,
-          dt.package_test_count,
-          dt.is_free_home_collection,
-          dt.home_collection_fee,
-          v.business_name as vendor_name,
-          v.id as vendor_id
-        FROM diagnostic_tests dt
-        LEFT JOIN vendors v ON v.id = dt.vendor_id
-        WHERE dt.is_available = true 
-          AND dt.is_package_available = true
-        ORDER BY dt.price ASC
-        LIMIT 20
-      `);
-
-      // Format as health packages
-      const formattedPackages = packages.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        tests: p.package_test_count ? [`Includes ${p.package_test_count} tests`] : [p.category || 'General'],
-        price: p.package_price || p.price,
-        originalPrice: p.price > (p.package_price || p.price) ? p.price : undefined,
-        homeCollection: p.is_free_home_collection || p.home_collection_fee === 0,
-        turnaroundHours: p.turnaround_time_hours || 24,
-        vendorName: p.vendor_name,
-        vendorId: p.vendor_id,
-      }));
-
-      // If no packages found, return mock data
-      if (formattedPackages.length === 0) {
-        return c.json({
-          success: true,
-          packages: [
-            {
-              id: 'pkg-mock-1',
-              name: 'Full Body Health Checkup',
-              description: 'Comprehensive pet health screening',
-              tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-              price: 2499,
-              originalPrice: 3500,
-              homeCollection: true,
-              turnaroundHours: 24
-            },
-            {
-              id: 'pkg-mock-2',
-              name: 'Senior Pet Package',
-              description: 'For pets above 7 years',
-              tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-              price: 3999,
-              originalPrice: 5500,
-              homeCollection: true,
-              turnaroundHours: 48
-            },
-            {
-              id: 'pkg-mock-3',
-              name: 'Basic Blood Panel',
-              description: 'Essential blood tests',
-              tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-              price: 799,
-              originalPrice: 1200,
-              homeCollection: true,
-              turnaroundHours: 12
-            }
-          ]
-        });
-      }
-
-      return c.json({
-        success: true,
-        packages: formattedPackages,
-      });
-    } catch (error: any) {
-      console.error('Error getting diagnostic packages:', error);
-      // Return mock packages on error
-      return c.json({
-        success: true,
-        packages: [
-          {
-            id: 'pkg-mock-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          }
-        ]
       });
     }
   });

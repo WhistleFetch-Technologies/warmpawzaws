@@ -15,6 +15,10 @@
 
 import { Hono } from 'hono';
 import { query, select } from '../../../database/rds-connection';
+import {
+  resolveFeaturedVendorsRequestScreen,
+  canonicalScreenForSpotlightRow,
+} from '../../../utils/featured-vendor-service-context';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -32,7 +36,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
 
       const now = new Date().toISOString();
 
-      // Home hero: admin uses type `home_top`, `home_middle`, or legacy `main` — all roll into one carousel.
+      // home_top (mapped to `main` for this query): legacy `main` + `home_top` only — not `home_middle`.
+      // position=home_middle uses type = 'home_middle' via the third branch.
       const bannersResult = await query(
         `SELECT 
           id,
@@ -50,7 +55,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
         WHERE is_active = true
         AND (
           $1::text = 'all'
-          OR ($1::text = 'main' AND type IN ('main', 'home_top', 'home_middle'))
+          OR ($1::text = 'main' AND type IN ('main', 'home_top'))
           OR (type = $1::text)
         )
         AND (start_date IS NULL OR start_date <= $2)
@@ -89,7 +94,10 @@ export function registerCustomerContentEndpoints(app: Hono) {
         imageUrl: b.image_url,
         ctaText: b.cta_text || 'Learn More',
         ctaLink: b.cta_link,
-        position: b.type || 'main',
+        position:
+          b.type === 'main' || b.type === 'home_top'
+            ? 'home_top'
+            : b.type || 'home_top',
         displayOrder: b.display_order || 0,
         gradientFrom: (meta.gradient_from as string) || '#FF8C42',
         gradientTo: (meta.gradient_to as string) || '#FF6B35',
@@ -427,26 +435,43 @@ export function registerCustomerContentEndpoints(app: Hono) {
 
   /**
    * GET /customer/featured-vendors
-   * Get spotlight/featured vendors for customer home "Featured" block.
+   * Spotlight/featured vendor cards for service dashboards only (not global home).
+   * Query: `service` — required for a non-empty list (e.g. grooming, vet, boarding, training, sitting, veterinary).
+   *        Mirrors PromotionBanner `service` and promotion-navigation slugs. Omit or unknown → { vendors: [] }.
    * Reads from spotlight_offers (admin-configured); does not use payment policy.
    */
   app.get("/customer/featured-vendors", async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '6', 10);
+      const serviceQ = c.req.query('service') ?? c.req.query('Service');
+      const requested = resolveFeaturedVendorsRequestScreen(
+        Array.isArray(serviceQ) ? serviceQ[0] : serviceQ
+      );
+      if (!requested) {
+        return c.json({ success: true, vendors: [], total: 0 });
+      }
+
       const now = new Date().toISOString();
 
       const result = await query(
-        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order
+        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order, created_at
          FROM spotlight_offers
          WHERE is_active = true
          AND (start_date IS NULL OR start_date <= $1)
          AND (end_date IS NULL OR end_date >= $1)
-         ORDER BY display_order ASC, created_at DESC
-         LIMIT $2`,
-        [now, limit]
+         ORDER BY display_order ASC, created_at DESC`,
+        [now]
       ).catch(() => ({ rows: [] }));
 
-      const vendors = (result.rows || []).map((r: any) => ({
+      const rows = (result.rows || []) as any[];
+      const matched: any[] = [];
+      for (const r of rows) {
+        if (matched.length >= limit) break;
+        const bucket = canonicalScreenForSpotlightRow(r.service_category, r.role_id);
+        if (bucket === requested) matched.push(r);
+      }
+
+      const vendors = matched.map((r) => ({
         id: r.id,
         vendorId: r.metadata?.vendorId || null,
         vendorName: r.metadata?.vendorName || r.title,

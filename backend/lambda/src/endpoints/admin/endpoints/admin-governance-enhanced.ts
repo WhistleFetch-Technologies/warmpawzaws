@@ -405,6 +405,12 @@ function resolveBannerTypeFromBody(type: unknown, position: unknown): string {
   return normalizeBannerTypeForDb(raw);
 }
 
+function positionAliasForAdminBannerRow(type: string | null | undefined): string {
+  const t = (type || 'main').toString().toLowerCase();
+  if (t === 'main') return 'home_top';
+  return t;
+}
+
 class GetBannersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const queryParams = context.event.queryStringParameters || {};
@@ -416,9 +422,14 @@ class GetBannersHandler extends BaseHandler {
       let paramIndex = 1;
 
       if (position) {
-        // Check if position is a valid banner type, otherwise use it as-is
-        queryStr += ` AND type = $${paramIndex}::text`;
-        params.push(position);
+        // UI "home top" = DB main OR home_top; filter by both
+        if (String(position).toLowerCase() === 'home_top') {
+          queryStr += ` AND type = ANY($${paramIndex}::text[])`;
+          params.push(['main', 'home_top']);
+        } else {
+          queryStr += ` AND type = $${paramIndex}::text`;
+          params.push(position);
+        }
         paramIndex++;
       }
 
@@ -432,8 +443,12 @@ class GetBannersHandler extends BaseHandler {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const banners = rows.map((r: any) => ({
+        ...r,
+        position: positionAliasForAdminBannerRow(r.type),
+      }));
 
-      return this.success({ banners: rows, total: rows.length });
+      return this.success({ banners, total: banners.length });
     } catch (error: any) {
       console.error('Error fetching banners:', error);
       // If table doesn't exist, return empty array instead of error

@@ -11,7 +11,7 @@
  * - Uses consistent lucide-react icons instead of emojis
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle, 
   Stethoscope, Syringe, Bone, Heart, Activity, AlertTriangle, 
   Scissors, Droplets, Sparkles, Hand, Wind, Brush,
@@ -169,6 +169,8 @@ interface ProblemGridSelectorProps {
   onProblemSelect: (problem: any) => void;
   customerId: string;
   phone: string;
+  /** e.g. category placement banners on Find All Services */
+  topSlot?: ReactNode;
 }
 
 export function ProblemGridSelector({
@@ -177,7 +179,8 @@ export function ProblemGridSelector({
   onBack,
   onProblemSelect,
   customerId,
-  phone
+  phone,
+  topSlot,
 }: ProblemGridSelectorProps) {
   const [problems, setProblems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -317,7 +320,8 @@ export function ProblemGridSelector({
 
       {/* Main Content - White Card with Top Radius */}
       <div className="bg-white rounded-t-[32px] px-6 pt-6 min-h-[calc(100vh-140px)] pb-12">
-        
+        {topSlot ? <div className="mb-4">{topSlot}</div> : null}
+
         {/* Search Bar */}
         <div className="mb-6">
           <div className="relative">
