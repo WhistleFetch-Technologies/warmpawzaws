@@ -1490,6 +1490,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
         `
             : '';
+        const sittingRoleUncategorizedForFetch =
+          sitterRoleBypass &&
+          sittingDiscoveryRelaxed &&
+          _vendorRoleName &&
+          SITTER_ROLE_NAMES_LOWER.includes(String(_vendorRoleName).toLowerCase())
+            ? ` OR (
+                TRIM(COALESCE(vs.category, '')) = ''
+                AND COALESCE(vs.is_custom_service, false) = false
+              )`
+            : '';
         const sittingRelaxedFetchCategorySql =
           sitterRoleBypass && sittingDiscoveryRelaxed && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -1505,6 +1515,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
                 AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
               )
+              OR (
+                COALESCE(vs.is_custom_service, false) = true
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
+              )
+              ${sittingRoleUncategorizedForFetch}
             )
             ${sittingExcludeNonSittingSql}`
             : '';
@@ -1685,6 +1701,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
               )`
           : '';
+      /** Keep legacy non-custom sitter rows visible when category is blank on sitter-role accounts. */
+      const sittingRoleUncategorizedOr =
+        sittingDiscoveryRelaxed
+          ? `OR (
+                TRIM(COALESCE(vs.category, '')) = ''
+                AND COALESCE(vs.is_custom_service, false) = false
+                AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
+              )`
+          : '';
+      /** Include custom sitter services even when vendor entered non-standard category text. */
+      const sittingCustomNameOr =
+        sittingDiscoveryRelaxed
+          ? `OR (
+                COALESCE(vs.is_custom_service, false) = true
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
+              )`
+          : '';
 
       /** Pet Sitting hub: never surface walker / vet / grooming / custom-boarding rows even if vendor is a sitter. */
       const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
@@ -1726,6 +1760,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${sittingCatalogBoardingNonCustomOr}
                 ${sittingCategoryTypoOr}
+                ${sittingRoleUncategorizedOr}
+                ${sittingCustomNameOr}
               )
               ${sittingExcludeNonSittingSql}`
             : `
@@ -3377,6 +3413,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             OR (
               LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
               AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
+            )
+            OR (
+              COALESCE(vs.is_custom_service, false) = true
+              AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
+              AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
+            )
+            OR (
+              TRIM(COALESCE(vs.category, '')) = ''
+              AND COALESCE(vs.is_custom_service, false) = false
+              AND EXISTS (
+                SELECT 1 FROM vendors v_sit
+                LEFT JOIN roles r_sit ON v_sit.role_id = r_sit.id
+                WHERE v_sit.id = vs.vendor_id
+                  AND LOWER(COALESCE(TRIM(r_sit.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
+              )
             )
           )
           AND NOT (
