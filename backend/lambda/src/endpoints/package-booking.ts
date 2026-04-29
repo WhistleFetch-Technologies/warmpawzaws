@@ -133,17 +133,18 @@ async function resolvePackageCadenceConfig(
   pkg: Record<string, unknown>
 ): Promise<{ sessionsPerDay: number; sessionIntervalDays: number }> {
   const snapshot = parseJsonObject(pkg.package_snapshot);
+  const snapshotPackageDetails = parseJsonObject(snapshot?.packageDetails);
   const snapSpd = Number(
     snapshot?.sessionsPerDay ??
       snapshot?.sessions_per_day ??
-      snapshot?.packageDetails?.sessionsPerDay ??
-      snapshot?.packageDetails?.sessions_per_day
+      snapshotPackageDetails?.sessionsPerDay ??
+      snapshotPackageDetails?.sessions_per_day
   );
   const snapInterval = Number(
     snapshot?.sessionIntervalDays ??
       snapshot?.session_interval_days ??
-      snapshot?.packageDetails?.sessionIntervalDays ??
-      snapshot?.packageDetails?.session_interval_days
+      snapshotPackageDetails?.sessionIntervalDays ??
+      snapshotPackageDetails?.session_interval_days
   );
   if (Number.isFinite(snapSpd) && snapSpd > 0) {
     return {
@@ -696,6 +697,8 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
         db,
         pkg as Record<string, unknown>,
         firstScheduled
+          ? { scheduled_date: firstScheduled.date, scheduled_time: firstScheduled.time }
+          : undefined
       );
 
       if (packageBookingId) {
@@ -808,6 +811,8 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
     db,
     pkg as Record<string, unknown>,
     firstScheduled
+      ? { scheduled_date: firstScheduled.date, scheduled_time: firstScheduled.time }
+      : undefined
   );
 
   if (packageBookingId) {
