@@ -117,6 +117,132 @@ function normalizeScheduleTimeInput(v: unknown): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const base = normalizeScheduleDateInput(isoDate);
+  if (!base) return '';
+  const d = new Date(`${base}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function resolvePackageCadenceConfig(
+  db: SqlClient,
+  pkg: Record<string, unknown>
+): Promise<{ sessionsPerDay: number; sessionIntervalDays: number }> {
+  const snapshot = parseJsonObject(pkg.package_snapshot);
+  const snapSpd = Number(
+    snapshot?.sessionsPerDay ??
+      snapshot?.sessions_per_day ??
+      snapshot?.packageDetails?.sessionsPerDay ??
+      snapshot?.packageDetails?.sessions_per_day
+  );
+  const snapInterval = Number(
+    snapshot?.sessionIntervalDays ??
+      snapshot?.session_interval_days ??
+      snapshot?.packageDetails?.sessionIntervalDays ??
+      snapshot?.packageDetails?.session_interval_days
+  );
+  if (Number.isFinite(snapSpd) && snapSpd > 0) {
+    return {
+      sessionsPerDay: Math.max(1, Math.min(24, Math.floor(snapSpd))),
+      sessionIntervalDays:
+        Number.isFinite(snapInterval) && snapInterval > 0
+          ? Math.max(1, Math.min(366, Math.floor(snapInterval)))
+          : 7,
+    };
+  }
+
+  const serviceId = await resolveCanonicalServiceIdForPackage(db, pkg);
+  if (!serviceId) {
+    return { sessionsPerDay: 1, sessionIntervalDays: 7 };
+  }
+  const vs = await db.query(
+    `SELECT metadata FROM vendor_services WHERE id = $1::uuid LIMIT 1`,
+    [serviceId]
+  );
+  const meta = parseJsonObject(vs.rows?.[0]?.metadata);
+  const details = parseJsonObject(meta?.packageDetails);
+  const spd = Number(
+    details?.sessionsPerDay ?? details?.sessions_per_day ?? meta?.sessionsPerDay ?? meta?.sessions_per_day
+  );
+  const interval = Number(
+    details?.sessionIntervalDays ??
+      details?.session_interval_days ??
+      meta?.sessionIntervalDays ??
+      meta?.session_interval_days
+  );
+  return {
+    sessionsPerDay: Number.isFinite(spd) && spd > 0 ? Math.max(1, Math.min(24, Math.floor(spd))) : 1,
+    sessionIntervalDays:
+      Number.isFinite(interval) && interval > 0 ? Math.max(1, Math.min(366, Math.floor(interval))) : 7,
+  };
+}
+
+async function resolveCanonicalServiceIdForPackage(
+  db: SqlClient,
+  pkg: Record<string, unknown>
+): Promise<string | null> {
+  const vendorId = String(pkg.vendor_id || '').trim();
+  const direct = uuidOrNull(pkg.package_id);
+  if (direct) {
+    const vr = await db.query(
+      `SELECT id FROM vendor_services WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+      [direct, vendorId]
+    );
+    if (vr.rows?.[0]?.id) return String(vr.rows[0].id);
+  }
+
+  const snapshot = parseJsonObject(pkg.package_snapshot);
+  const fromSnapshot = uuidOrNull(
+    snapshot?.vendorServiceId ??
+      snapshot?.vendor_service_id ??
+      snapshot?.serviceId ??
+      snapshot?.service_id
+  );
+  if (fromSnapshot) {
+    const vr = await db.query(
+      `SELECT id FROM vendor_services WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+      [fromSnapshot, vendorId]
+    );
+    if (vr.rows?.[0]?.id) return String(vr.rows[0].id);
+  }
+
+  if (direct) {
+    const sp = await db.query(
+      `SELECT description
+       FROM service_packages
+       WHERE id = $1::uuid
+       LIMIT 1`,
+      [direct]
+    );
+    if (sp.rows?.[0]) {
+      const row = sp.rows[0] as Record<string, unknown>;
+      const desc = String(row.description || '').trim();
+      const m = desc.match(/vendor_service:([0-9a-fA-F-]{36})/);
+      const fromDesc = m?.[1] ? uuidOrNull(m[1]) : null;
+      const candidate = fromDesc;
+      if (candidate) {
+        const vr = await db.query(
+          `SELECT id FROM vendor_services WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+          [candidate, vendorId]
+        );
+        if (vr.rows?.[0]?.id) return String(vr.rows[0].id);
+      }
+    }
+  }
+
+  const fallback = await db.query(
+    `SELECT id
+     FROM vendor_services
+     WHERE vendor_id = $1::uuid
+     ORDER BY created_at ASC NULLS LAST
+     LIMIT 1`,
+    [vendorId]
+  );
+  return fallback.rows?.[0]?.id ? String(fallback.rows[0].id) : null;
+}
+
 async function resolveCanonicalPackageBookingId(
   db: SqlClient,
   pkg: Record<string, unknown>,
@@ -141,14 +267,16 @@ async function resolveCanonicalPackageBookingId(
 
   const serviceStyle = String(pkg.service_style || '').toLowerCase();
   const serviceType = bookingServiceTypeForPackageStyle(serviceStyle);
-  const serviceId = uuidOrNull(pkg.package_id);
-  const bookingDate = String(
-    firstScheduled?.scheduled_date ??
-      (String(pkg.purchased_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10))
-  )
-    .trim()
-    .slice(0, 10);
-  const bookingTime = String(firstScheduled?.scheduled_time ?? '09:00:00').trim();
+  const serviceId = await resolveCanonicalServiceIdForPackage(db, pkg);
+  if (!serviceId) {
+    throw new Error('Unable to resolve vendor service for canonical package booking');
+  }
+  const bookingDate =
+    normalizeScheduleDateInput(firstScheduled?.scheduled_date) ||
+    normalizeScheduleDateInput(pkg.purchased_at) ||
+    new Date().toISOString().slice(0, 10);
+  const bookingTime =
+    normalizeScheduleTimeInput(firstScheduled?.scheduled_time) || '09:00:00';
   const totalAmount = Number(pkg.package_price ?? pkg.amount ?? 0) || 0;
   const paymentStatus =
     String(pkg.payment_status || '').toLowerCase() === 'completed' ? 'paid' : 'pending';
@@ -157,13 +285,15 @@ async function resolveCanonicalPackageBookingId(
     `INSERT INTO bookings (
        customer_id, vendor_id, service_id,
        booking_date, booking_time, service_type,
-       status, payment_status, total_amount,
+       status, payment_status,
+       base_price, discount_amount, tax_amount, total_amount,
        is_package, package_id, package_details, package_purchase_id,
        is_package_session, notes
      ) VALUES (
        $1::uuid, $2::uuid, $3::uuid,
        $4::date, $5::time, $6,
-       'confirmed', $7, $8::numeric,
+       'confirmed', $7,
+       $8::numeric, 0, 0, $8::numeric,
        true, $9::uuid, $10::jsonb, $11::uuid,
        false, $12
      )
@@ -445,8 +575,10 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
   await seedPackageScheduledSessionsIfMissing(db, packagePurchaseId);
   await reconcileRemainingSessionsForFinitePackage(db, packagePurchaseId);
 
-  const result = await query(
-    `
+  const loadRawSessions = async () =>
+    (
+      await query(
+        `
         SELECT 
           pss.*,
           b.id AS resolved_booking_id,
@@ -485,8 +617,11 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
         WHERE pss.package_purchase_id = $1
         ORDER BY pss.session_number ASC
       `,
-    [packagePurchaseId]
-  );
+        [packagePurchaseId]
+      )
+    ).rows as Array<Record<string, unknown>>;
+
+  let rawSessions = await loadRawSessions();
 
   const packageResult = await query(
     `
@@ -507,11 +642,141 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
 
   const pkg = packageResult.rows[0];
   if (!pkg) return null;
-  const rawSessions = result.rows;
-  const firstScheduled = rawSessions.find(
-    (r: Record<string, unknown>) =>
-      r?.scheduled_date != null && String(r.scheduled_date).trim()
-  ) as Record<string, unknown> | undefined;
+  const seededSessions = rawSessions
+    .filter(
+      (r) =>
+        r?.scheduled_date != null &&
+        String(r.scheduled_date).trim() &&
+        r?.scheduled_time != null &&
+        String(r.scheduled_time).trim()
+    )
+    .map((r) => ({
+      sessionNumber: Number(r.session_number ?? 0),
+      date: normalizeScheduleDateInput(r.scheduled_date),
+      time: normalizeScheduleTimeInput(r.scheduled_time),
+    }))
+    .filter((r) => Number.isFinite(r.sessionNumber) && r.sessionNumber >= 1 && r.date && r.time)
+    .sort((a, b) => a.sessionNumber - b.sessionNumber);
+
+  const firstScheduled = seededSessions[0];
+  if (firstScheduled) {
+    const firstDate = firstScheduled.date;
+    const sameDaySlots = seededSessions.filter((r) => r.date === firstDate);
+    if (sameDaySlots.length < 2) {
+      // Do not propagate a single anchor time to all missing sessions.
+      // Multi-slot patterns should come from explicit scheduling input.
+      const packageBookingId = await resolveCanonicalPackageBookingId(
+        db,
+        pkg as Record<string, unknown>,
+        firstScheduled
+      );
+
+      if (packageBookingId) {
+        (pkg as Record<string, unknown>).package_booking_id = packageBookingId;
+        await query(
+          `UPDATE package_scheduled_sessions
+           SET booking_id = $2::uuid, updated_at = NOW()
+           WHERE package_purchase_id = $1::uuid
+             AND booking_id IS DISTINCT FROM $2::uuid`,
+          [packagePurchaseId, packageBookingId]
+        ).catch(() => undefined);
+      }
+
+      const bookingIds = [
+        ...new Set(
+          rawSessions
+            .map((r: { booking_id?: string; resolved_booking_id?: string }) => {
+              const id =
+                r?.resolved_booking_id != null && String(r.resolved_booking_id).trim()
+                  ? String(r.resolved_booking_id).trim()
+                  : r?.booking_id != null
+                    ? String(r.booking_id).trim()
+                    : '';
+              return id;
+            })
+            .filter(Boolean)
+        ),
+      ];
+      const endOtpByBooking = new Map<string, string>();
+      if (bookingIds.length > 0) {
+        const endRes = await query(
+          `SELECT DISTINCT ON (metadata->>'bookingId')
+             metadata->>'bookingId' AS bid,
+             otp_code
+           FROM otp_tokens
+           WHERE metadata->>'action' = 'end'
+             AND COALESCE(is_used, false) = false
+             AND (expires_at IS NULL OR expires_at > NOW())
+             AND metadata->>'bookingId' = ANY($1::text[])
+           ORDER BY metadata->>'bookingId', created_at DESC`,
+          [bookingIds]
+        ).catch(() => ({ rows: [] as { bid?: string; otp_code?: string }[] }));
+        for (const row of endRes.rows || []) {
+          const id = row.bid != null ? String(row.bid) : '';
+          const code = row.otp_code != null ? String(row.otp_code).trim() : '';
+          if (id && code) endOtpByBooking.set(id, code);
+        }
+      }
+      const sessions = rawSessions.map((r: any) =>
+        mapSessionRow(r, endOtpByBooking, packageBookingId)
+      );
+      const completedCount = sessions.filter((s: any) => s.display_status === 'completed' || s.status === 'completed').length;
+      const inProgressCount = sessions.filter((s: any) => s.display_status === 'in_progress' || s.status === 'in_progress').length;
+      const scheduledCount = sessions.filter((s: any) => s.status === 'scheduled').length;
+      const pendingCount = sessions.filter((s: any) => s.status === 'pending').length;
+      const totalSessions = pkg?.total_sessions != null ? Number(pkg.total_sessions) : rawSessions.length;
+      const denom = totalSessions > 0 ? totalSessions : 1;
+      const remainingSessions =
+        pkg?.remaining_sessions != null ? Number(pkg.remaining_sessions) : Math.max(0, totalSessions - completedCount);
+
+      return {
+        success: true,
+        package: pkg,
+        sessions,
+        summary: {
+          total: totalSessions,
+          completed: completedCount,
+          in_progress: inProgressCount,
+          scheduled: scheduledCount,
+          pending: pendingCount,
+          remaining: remainingSessions,
+          progressPercent: Math.round((completedCount / denom) * 100),
+        },
+      };
+    }
+    const slotTimes =
+      sameDaySlots.length > 0
+        ? sameDaySlots.map((s) => s.time)
+        : [firstScheduled.time];
+    const slotsPerDay = Math.max(1, slotTimes.length);
+    const anchorNumber = firstScheduled.sessionNumber;
+    const anchorDayIndex = Math.floor((anchorNumber - 1) / slotsPerDay);
+
+    for (const row of rawSessions) {
+      const hasDate = row?.scheduled_date != null && String(row.scheduled_date).trim();
+      const hasTime = row?.scheduled_time != null && String(row.scheduled_time).trim();
+      if (hasDate && hasTime) continue;
+      const sessionNumber = Number(row?.session_number ?? 0);
+      if (!Number.isFinite(sessionNumber) || sessionNumber < 1) continue;
+      const dayIndex = Math.floor((sessionNumber - 1) / slotsPerDay);
+      const dayOffset = dayIndex - anchorDayIndex;
+      const slotIndex = (sessionNumber - 1) % slotsPerDay;
+      const derivedDate = addDaysToIsoDate(firstDate, dayOffset);
+      const derivedTime = slotTimes[slotIndex] || slotTimes[0] || '';
+      if (!derivedDate || !derivedTime) continue;
+
+      await query(
+        `UPDATE package_scheduled_sessions
+         SET scheduled_date = COALESCE(scheduled_date, $2::date),
+             scheduled_time = COALESCE(scheduled_time, $3::time),
+             updated_at = NOW()
+         WHERE id = $1::uuid`,
+        [String(row.id), derivedDate, derivedTime]
+      );
+    }
+    rawSessions = await loadRawSessions();
+  }
+
   const packageBookingId = await resolveCanonicalPackageBookingId(
     db,
     pkg as Record<string, unknown>,
@@ -1177,19 +1442,36 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       if (!comp.unlimitedPurchase && comp.totalSessionsForPurchase > 0) {
         const schedArr = Array.isArray(sessionSchedule) ? sessionSchedule : [];
-        const firstSlot =
-          schedArr.find((s: { sessionNumber?: number }) => Number(s?.sessionNumber) === 1) ||
-          (schedArr.length === 1 ? schedArr[0] : null);
-        const d = firstSlot?.date != null ? String(firstSlot.date).trim() : '';
-        const t = firstSlot?.time != null ? String(firstSlot.time).trim() : '';
-        if (!d || !t) {
+        const normalized = schedArr
+          .map((s: { sessionNumber?: number; date?: string; time?: string }) => ({
+            sessionNumber: Number(s?.sessionNumber),
+            date: normalizeScheduleDateInput(s?.date),
+            time: normalizeScheduleTimeInput(s?.time),
+          }))
+          .filter((s) => Number.isFinite(s.sessionNumber) && s.sessionNumber >= 1 && s.date && s.time)
+          .sort((a, b) => a.sessionNumber - b.sessionNumber);
+        const firstSlot = normalized.find((s) => s.sessionNumber === 1);
+        if (!firstSlot) {
           return c.json(
             {
               error:
-                'For this package, session 1 requires a scheduled date and time (the same time is applied weekly to every session).',
+                'For this package, session 1 requires a scheduled date and time.',
             },
             400
           );
+        }
+        if (comp.sessionsPerDay > 1) {
+          const firstDaySlots = normalized.filter(
+            (s) => s.sessionNumber >= 1 && s.sessionNumber <= comp.sessionsPerDay && s.date === firstSlot.date
+          );
+          if (firstDaySlots.length < comp.sessionsPerDay) {
+            return c.json(
+              {
+                error: `This package has ${comp.sessionsPerDay} sessions per day. Please provide all first-day time slots (sessions 1 to ${comp.sessionsPerDay}) on the same date.`,
+              },
+              400
+            );
+          }
         }
       }
 
@@ -1280,15 +1562,49 @@ export function registerPackageBookingEndpoints(app: Hono) {
           [deterministicPurchaseId]
         );
         if (existing.rows[0]?.id) {
-          const purchase = existing.rows[0] as Record<string, unknown>;
-          const catId = String(purchase.package_id || '');
+          const existingPurchase = existing.rows[0] as Record<string, unknown>;
+          const catId = String(existingPurchase.package_id || '').trim();
           await query(
             `UPDATE payments SET payment_status = 'completed', razorpay_payment_id = $2, razorpay_signature = $3,
                  completed_at = NOW(), updated_at = NOW()
              WHERE razorpay_order_id = $1 AND customer_id = $4::uuid`,
             [razorpayOrderId, razorpayPaymentId, razorpaySignature, customerId]
           );
-          return c.json(purchaseJson(purchase, catId));
+
+          const payByOrder = await query(
+            `SELECT id
+             FROM payments
+             WHERE razorpay_order_id = $1 AND customer_id = $2::uuid
+             ORDER BY created_at DESC NULLS LAST
+             LIMIT 1`,
+            [razorpayOrderId, customerId]
+          ).catch(() => ({ rows: [] as Array<{ id?: string }> }));
+          const paymentIdForExisting =
+            payByOrder.rows?.[0]?.id != null ? String(payByOrder.rows[0].id).trim() : null;
+
+          // Re-apply schedule payload for idempotent payment confirmations so submitted times are not ignored.
+          const { purchase } = await insertPackagePurchaseRows(comp, catId, {
+            paymentStatus: 'completed',
+            preferSameProvider: Boolean(preferSameProvider),
+            sessionSchedule,
+            razorpayOrderId,
+            paymentId: paymentIdForExisting,
+          });
+
+          const vendorBookingIdExisting = await syncVendorPackagePurchaseToBookingAndNotify({
+            customerId,
+            vendorId: comp.vendorId,
+            vendorServiceId: String(vendorServiceId),
+            comp,
+            purchase: purchase as Record<string, unknown>,
+            catalogPackageId: catId,
+            sessionSchedule,
+            paymentId: paymentIdForExisting,
+            petId: petIdForBooking,
+          });
+          return c.json(
+            purchaseJson(purchase as Record<string, unknown>, catId, vendorBookingIdExisting)
+          );
         }
 
         let payRow: Record<string, unknown> | undefined;
@@ -1400,7 +1716,71 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
 
       const pkg = packageResult.rows[0];
+      const cadence = await resolvePackageCadenceConfig(db, pkg as Record<string, unknown>);
       const scheduledSessions: Record<string, unknown>[] = [];
+      const normalizedInput = (sessions as Array<Record<string, unknown>>)
+        .map((session) => ({
+          sessionNumber: Number(session?.sessionNumber),
+          date: normalizeScheduleDateInput(session?.date),
+          time: normalizeScheduleTimeInput(session?.time),
+        }))
+        .filter(
+          (s) =>
+            Number.isFinite(s.sessionNumber) &&
+            s.sessionNumber >= 1 &&
+            Boolean(s.date) &&
+            Boolean(s.time)
+        ) as Array<{ sessionNumber: number; date: string; time: string }>;
+
+      let effectiveSessions = normalizedInput;
+      const totalSessions = Number(pkg.total_sessions ?? 0);
+      const firstInput = normalizedInput[0];
+      if (totalSessions > 1 && firstInput) {
+        if (cadence.sessionsPerDay > 1) {
+          const firstDaySeeds = normalizedInput
+            .filter(
+              (s) =>
+                s.sessionNumber >= 1 &&
+                s.sessionNumber <= cadence.sessionsPerDay &&
+                s.date === firstInput.date
+            )
+            .sort((a, b) => a.sessionNumber - b.sessionNumber);
+          if (
+            normalizedInput.length === totalSessions
+          ) {
+            effectiveSessions = normalizedInput;
+          } else if (firstDaySeeds.length >= cadence.sessionsPerDay) {
+            const slotTimes = firstDaySeeds
+              .slice(0, cadence.sessionsPerDay)
+              .map((s) => s.time);
+            effectiveSessions = Array.from({ length: totalSessions }, (_, idx) => {
+              const sessionNumber = idx + 1;
+              const dayIndex = Math.floor(idx / cadence.sessionsPerDay);
+              const slotIndex = idx % cadence.sessionsPerDay;
+              return {
+                sessionNumber,
+                date: addDaysToIsoDate(firstInput.date, dayIndex),
+                time: slotTimes[slotIndex] || slotTimes[0],
+              };
+            });
+          } else if (normalizedInput.length < totalSessions) {
+            return c.json(
+              {
+                error: `This package requires ${cadence.sessionsPerDay} session slots per day. Provide sessions 1..${cadence.sessionsPerDay} for the first date.`,
+              },
+              400
+            );
+          }
+        } else if (normalizedInput.length === 1 && firstInput.sessionNumber === 1) {
+          effectiveSessions = Array.from({ length: totalSessions }, (_, idx) => ({
+            sessionNumber: idx + 1,
+            date: addDaysToIsoDate(firstInput.date, idx * cadence.sessionIntervalDays),
+            time: firstInput.time,
+          }));
+        } else if (normalizedInput.length === totalSessions) {
+          effectiveSessions = normalizedInput;
+        }
+      }
       const firstIncoming = (sessions as Array<Record<string, unknown>>)
         .map((s) => ({
           scheduled_date: normalizeScheduleDateInput(s?.date),
@@ -1413,10 +1793,10 @@ export function registerPackageBookingEndpoints(app: Hono) {
         firstIncoming
       );
 
-      for (const session of sessions) {
-        const sessionNumber = Number(session?.sessionNumber);
-        const date = normalizeScheduleDateInput(session?.date);
-        const time = normalizeScheduleTimeInput(session?.time);
+      for (const session of effectiveSessions) {
+        const sessionNumber = Number(session.sessionNumber);
+        const date = normalizeScheduleDateInput(session.date);
+        const time = normalizeScheduleTimeInput(session.time);
 
         if (!Number.isFinite(sessionNumber) || sessionNumber < 1) {
           continue;

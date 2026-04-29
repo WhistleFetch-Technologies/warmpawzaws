@@ -41,6 +41,7 @@ interface Message {
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
+  const bookingIdParam = (searchParams.get('bookingId') || '').trim();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -86,7 +87,7 @@ function ChatPageContent() {
   }, [activeConversation]);
 
   useEffect(() => {
-    const bookingId = (searchParams.get('bookingId') || '').trim();
+    const bookingId = bookingIdParam;
     if (!bookingId || conversations.length === 0) return;
     const existing =
       conversations.find((c) => String(c.booking_id || '').trim() === bookingId) ||
@@ -94,7 +95,23 @@ function ChatPageContent() {
     if (existing) {
       setActiveConversation(existing);
     }
-  }, [searchParams, conversations]);
+  }, [searchParams, conversations, bookingIdParam]);
+
+  useEffect(() => {
+    if (!bookingIdParam || activeConversation) return;
+    setActiveConversation({
+      id: `booking:${bookingIdParam}`,
+      participant_type: 'vendor',
+      participant_id: bookingIdParam,
+      participant_name: 'Vendor',
+      last_message: '',
+      last_message_time: new Date().toISOString(),
+      unread_count: 0,
+      booking_id: bookingIdParam,
+      booking_service: 'Booking chat',
+      is_online: false,
+    });
+  }, [bookingIdParam, activeConversation]);
 
   const loadConversations = async () => {
     try {
@@ -105,7 +122,9 @@ function ChatPageContent() {
       setConversations(response.conversations || response || []);
     } catch (err: any) {
       console.error('Error loading conversations:', err);
-      setError(err.message || 'Failed to load conversations');
+      if (!bookingIdParam) {
+        setError(err.message || 'Failed to load conversations');
+      }
     } finally {
       setLoading(false);
     }
@@ -114,9 +133,27 @@ function ChatPageContent() {
   const loadMessages = async (conversationId: string, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      
-      const response = await apiClient.get<any>(`/chat/conversations/${conversationId}/messages`);
-      setMessages(response.messages || response || []);
+      if (bookingIdParam && activeConversation?.id === `booking:${bookingIdParam}`) {
+        const response = await apiClient.get<any>(`/chat/booking/${bookingIdParam}/messages`);
+        const list = Array.isArray(response?.messages) ? response.messages : [];
+        setMessages(
+          list.map((m: any) => ({
+            id: String(m.id ?? `m-${Date.now()}`),
+            conversation_id: `booking:${bookingIdParam}`,
+            sender_type: (m.sender_type || m.sender || 'system') as Message['sender_type'],
+            sender_id: String(m.sender_id || m.senderId || ''),
+            content: String(m.content ?? m.message ?? ''),
+            content_type: (m.content_type || 'text') as Message['content_type'],
+            attachment_url: m.attachment_url,
+            attachment_name: m.attachment_name,
+            created_at: String(m.created_at || m.timestamp || new Date().toISOString()),
+            read_at: m.read_at,
+          }))
+        );
+      } else {
+        const response = await apiClient.get<any>(`/chat/conversations/${conversationId}/messages`);
+        setMessages(response.messages || response || []);
+      }
     } catch (err) {
       if (!silent) console.error('Error loading messages:', err);
     } finally {
@@ -159,10 +196,17 @@ function ChatPageContent() {
       setMessages(prev => [...prev, optimisticMessage]);
       setNewMessage('');
       
-      await apiClient.post(`/chat/conversations/${activeConversation.id}/messages`, {
-        content: newMessage,
-        content_type: 'text',
-      });
+      if (bookingIdParam && activeConversation.id === `booking:${bookingIdParam}`) {
+        await apiClient.post(`/chat/booking/${bookingIdParam}/send`, {
+          message: newMessage,
+          senderType: 'customer',
+        });
+      } else {
+        await apiClient.post(`/chat/conversations/${activeConversation.id}/messages`, {
+          content: newMessage,
+          content_type: 'text',
+        });
+      }
       
       loadMessages(activeConversation.id, true);
     } catch (err: any) {

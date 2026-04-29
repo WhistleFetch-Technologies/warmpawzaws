@@ -160,11 +160,18 @@ export function MyPackagesTrackingPanel({
       if (!bookingId) {
         const ses = (await apiClient.get(
           `/packages/${encodeURIComponent(row.id)}/sessions`
-        )) as { sessions?: Array<{ bookingId?: string; booking_id?: string }> };
+        )) as {
+          sessions?: Array<{ bookingId?: string; booking_id?: string }>;
+          package?: { package_booking_id?: string; packageBookingId?: string; booking_id?: string; bookingId?: string };
+        };
         const sessions = Array.isArray(ses?.sessions) ? ses.sessions : [];
         bookingId = String(
           sessions.find((s) => String(s?.bookingId ?? s?.booking_id ?? '').trim())?.bookingId ??
             sessions.find((s) => String(s?.bookingId ?? s?.booking_id ?? '').trim())?.booking_id ??
+            ses?.package?.package_booking_id ??
+            ses?.package?.packageBookingId ??
+            ses?.package?.booking_id ??
+            ses?.package?.bookingId ??
             ''
         ).trim();
       }

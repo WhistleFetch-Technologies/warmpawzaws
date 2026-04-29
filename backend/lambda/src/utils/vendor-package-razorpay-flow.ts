@@ -138,23 +138,6 @@ export function expandVendorPackageSessionSchedule(
   const sn = Number(first?.sessionNumber);
   const dateStr = first?.date != null ? String(first.date).trim() : '';
   const timeStr = first?.time != null ? String(first.time).trim() : '';
-  if (sorted.length === 1 && sn === 1 && dateStr && timeStr && sessionsPerDay > 1) {
-    const timeNorm = normalizeScheduleTime(timeStr);
-    const out: VendorPackageSessionScheduleItem[] = [];
-    let nextSn = 1;
-    for (let day = 0; nextSn <= totalSessions; day++) {
-      const d = addDaysToIsoDate(dateStr, day);
-      for (let j = 0; j < sessionsPerDay && nextSn <= totalSessions; j++) {
-        out.push({
-          sessionNumber: nextSn++,
-          date: d,
-          time: timeNorm,
-        });
-      }
-    }
-    return out;
-  }
-
   if (sorted.length === 1 && sn === 1 && dateStr && timeStr && sessionsPerDay === 1) {
     const timeNorm = normalizeScheduleTime(timeStr);
     const out: VendorPackageSessionScheduleItem[] = [];
@@ -477,6 +460,27 @@ export async function insertPackagePurchaseRows(
         sessionsPerDay: comp.sessionsPerDay ?? 1,
         intervalDays: comp.sessionIntervalDays ?? 7,
       });
+
+  if (!unlimitedPurchase && (comp.sessionsPerDay ?? 1) > 1 && totalSessionsForPurchase > 1) {
+    const spd = Math.max(1, Math.floor(comp.sessionsPerDay ?? 1));
+    const normalized = (sessionSchedule || [])
+      .map((s) => ({
+        sessionNumber: Number(s?.sessionNumber),
+        date: String(s?.date || '').trim(),
+        time: normalizeScheduleTime(s?.time),
+      }))
+      .filter((s) => Number.isFinite(s.sessionNumber) && s.sessionNumber >= 1 && s.date && s.time);
+    const first = normalized.find((s) => s.sessionNumber === 1);
+    const firstDate = first?.date || '';
+    const firstDaySeedCount = normalized.filter(
+      (s) => s.sessionNumber >= 1 && s.sessionNumber <= spd && s.date === firstDate
+    ).length;
+    if (expandedSchedule.length < totalSessionsForPurchase && firstDaySeedCount < spd) {
+      throw new Error(
+        `Package requires ${spd} time slots per day. Provide sessions 1..${spd} for the first day.`
+      );
+    }
+  }
 
   for (const sched of expandedSchedule) {
     const sn = Number((sched as VendorPackageSessionScheduleItem).sessionNumber);

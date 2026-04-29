@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, CheckCircle2, Clock, Key, Loader2, Lock, RefreshCw } from 'lucide-react';
+import { Calendar, Check, CheckCircle2, Clock, Copy, Eye, EyeOff, Key, Loader2, Lock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
@@ -169,6 +169,8 @@ export function PackageSessionTrackingPanel({
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [showOtpForSession, setShowOtpForSession] = useState<number | null>(null);
+  const [copiedOtpForSession, setCopiedOtpForSession] = useState<number | null>(null);
 
   const loadSessions = async () => {
     try {
@@ -238,6 +240,19 @@ export function PackageSessionTrackingPanel({
     router.push(href);
   };
 
+  const copyOtp = async (otp: string, sessionNumber: number) => {
+    const val = String(otp || '').trim();
+    if (!val) return;
+    try {
+      await navigator.clipboard.writeText(val);
+      setCopiedOtpForSession(sessionNumber);
+      window.setTimeout(() => setCopiedOtpForSession((cur) => (cur === sessionNumber ? null : cur)), 1400);
+      toast.success('OTP copied');
+    } catch {
+      toast.error('Unable to copy OTP');
+    }
+  };
+
   const openSessionDirections = async (row: SessionItem) => {
     const bookingId = await resolveBookingIdForRow(row);
     if (!bookingId) {
@@ -300,7 +315,7 @@ export function PackageSessionTrackingPanel({
           row.status !== 'completed';
         const isCurrent = firstPendingSession === row.sessionNumber && row.status !== 'completed';
         const otpValue = row.completionOtp || row.otpCode || '';
-        const style = (row.serviceStyle || row.serviceType || packageServiceStyle || '').toLowerCase();
+        const style = (packageServiceStyle || row.serviceStyle || row.serviceType || '').toLowerCase();
         const isAtCenter = style === 'at_center';
         const isAtHome = style === 'at_home';
 
@@ -375,10 +390,49 @@ export function PackageSessionTrackingPanel({
               <div className="mt-3 space-y-2">
                 <p className="inline-flex items-center gap-1 text-xs font-medium text-gray-700">
                   <Key className="h-3.5 w-3.5 text-orange-600" />
-                  OTP for active session
+                  {isAtCenter ? 'Check-in OTP' : 'OTP for active session'}
                 </p>
                 {otpValue ? (
-                  <p className="font-mono text-base font-bold tracking-widest text-gray-900">{otpValue}</p>
+                  <div className="rounded-lg bg-orange-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-mono text-base font-bold tracking-widest text-gray-900">
+                        {showOtpForSession === row.sessionNumber ? otpValue : '••••••'}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowOtpForSession((cur) => (cur === row.sessionNumber ? null : row.sessionNumber))
+                          }
+                          className="rounded p-1 hover:bg-orange-100"
+                          aria-label={showOtpForSession === row.sessionNumber ? 'Hide OTP' : 'Show OTP'}
+                        >
+                          {showOtpForSession === row.sessionNumber ? (
+                            <EyeOff className="h-4 w-4 text-orange-700" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-orange-700" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void copyOtp(otpValue, row.sessionNumber)}
+                          className="rounded p-1 hover:bg-orange-100"
+                          aria-label="Copy OTP"
+                        >
+                          {copiedOtpForSession === row.sessionNumber ? (
+                            <Check className="h-4 w-4 text-green-700" />
+                          ) : (
+                            <Copy className="h-4 w-4 text-orange-700" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600">
+                      {isAtCenter
+                        ? 'Share this OTP with the vendor at check-in.'
+                        : 'Share this OTP with the provider for this session.'}
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-gray-500">
                     OTP not available yet. Use refresh after provider starts this session.
