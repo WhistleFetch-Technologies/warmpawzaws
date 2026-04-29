@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { StarRating } from './StarRating';
 
 // ============================================================================
 // TYPES
@@ -125,7 +126,7 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
       <div
-        className="bg-white w-full max-w-lg rounded-t-3xl max-h-[80vh] overflow-y-auto"
+        className="bg-white w-full max-w-lg rounded-t-3xl max-h-[calc(80vh-3.5rem)] mb-14 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-white p-4 border-b flex items-center justify-between">
@@ -248,7 +249,7 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white p-4 border-t flex gap-3">
+        <div className="sticky bottom-3 bg-white p-4 border-t flex gap-3">
           <Button
             variant="outline"
             className="flex-1"
@@ -419,11 +420,12 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-              <span className="font-semibold text-gray-700">{Number(provider.rating || 0).toFixed(1)}</span>
-              <span>({provider.reviewCount || 0})</span>
-            </div>
+            <StarRating
+              rating={provider.rating}
+              reviewCount={provider.reviewCount}
+              starsClassName="w-3 h-3"
+              textClassName="text-xs text-gray-500"
+            />
             {provider.experienceYears && (
               <div className="flex items-center gap-1">
                 <Award className="w-3 h-3 text-gray-400" />
@@ -693,7 +695,12 @@ export function UniversalServiceProviderList({
     if (filters.experienceMin && (p.experienceYears || 0) < filters.experienceMin) return false;
 
     // Distance filter
-    if (filters.maxDistance && p.distance && p.distance > filters.maxDistance) return false;
+    if (
+      filters.maxDistance &&
+      p.distance !== null &&
+      p.distance !== undefined &&
+      p.distance > filters.maxDistance
+    ) return false;
 
     // Specialization filter
     if (filters.specialization && p.specialization !== filters.specialization) return false;

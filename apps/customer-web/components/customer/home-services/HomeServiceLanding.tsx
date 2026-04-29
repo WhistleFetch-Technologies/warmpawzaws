@@ -35,6 +35,7 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import { StarRating } from '../shared/StarRating';
 
 // Map config roleId to roleId used in specialization_master applicable_roles
 const ROLE_ID_FOR_PROBLEM_GRID: Record<string, string> = {
@@ -402,11 +403,12 @@ export function HomeServiceLanding({
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">{provider.name || 'Provider'}</h3>
                       <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{provider.rating?.toFixed(1) || '4.5'}</span>
-                          <span className="text-gray-400">({provider.reviewCount || 0})</span>
-                        </div>
+                        <StarRating
+                          rating={provider.rating}
+                          reviewCount={provider.reviewCount}
+                          starsClassName="w-3 h-3"
+                          textClassName="text-xs text-gray-500"
+                        />
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
                           <span>{provider.distance?.toFixed(1) || '2.0'} km</span>
@@ -453,8 +455,12 @@ export function HomeServiceLanding({
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate text-center">{provider.name}</p>
                   <div className="flex items-center justify-center gap-1 mt-1">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs text-gray-600">{provider.rating?.toFixed(1) || '4.5'}</span>
+                    <StarRating
+                      rating={provider.rating}
+                      reviewCount={provider.reviewCount}
+                      starsClassName="w-3 h-3"
+                      textClassName="text-xs text-gray-600"
+                    />
                   </div>
                   <p className="text-xs text-gray-400 mt-1 text-center">{provider.lastVisit}</p>
                 </Card>

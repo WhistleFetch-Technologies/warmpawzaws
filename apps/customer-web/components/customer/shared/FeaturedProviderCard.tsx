@@ -1,17 +1,15 @@
 'use client';
 
-import { Star, Clock, MapPin } from 'lucide-react';
+import { Clock, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import type { FeaturedProvider } from '@/lib/featured-provider';
+import { StarRating } from './StarRating';
 
 export interface FeaturedProviderCardProps {
   provider: FeaturedProvider;
   onClick?: () => void;
   className?: string;
 }
-
-/** Shown when API returns 0 — matches Featured Vets reference cards */
-const DEFAULT_RATING_DISPLAY = '4.5';
 
 function formatDistance(km: number): string {
   if (!Number.isFinite(km) || km < 0) return '';
@@ -30,11 +28,6 @@ export function FeaturedProviderCard({
   className = '',
 }: FeaturedProviderCardProps) {
   const initial = provider.displayName?.charAt(0)?.toUpperCase() || 'P';
-
-  const ratingShown =
-    provider.rating > 0
-      ? Number(provider.rating).toFixed(1)
-      : DEFAULT_RATING_DISPLAY;
 
   const experienceYears = provider.experienceYears ?? 5;
 
@@ -71,11 +64,12 @@ export function FeaturedProviderCard({
           {provider.subtitle}
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <div className="flex items-center gap-1 text-amber-500">
-            <Star className="h-3 w-3 fill-current" />
-            <span className="font-semibold">{ratingShown}</span>
-            <span className="text-gray-400">({provider.reviewCount})</span>
-          </div>
+          <StarRating
+            rating={provider.rating}
+            reviewCount={provider.reviewCount}
+            starsClassName="h-3 w-3"
+            textClassName="text-xs text-gray-500"
+          />
           <div className="flex items-center gap-1 text-gray-500">
             <Clock className="h-3 w-3 shrink-0" />
             <span>{experienceYears}+ years</span>

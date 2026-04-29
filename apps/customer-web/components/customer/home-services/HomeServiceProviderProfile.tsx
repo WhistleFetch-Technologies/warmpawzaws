@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { StarRating } from '../shared/StarRating';
 import {
   Star,
   MapPin,
@@ -548,10 +549,13 @@ export function HomeServiceProviderProfile({
             </div>
 
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 rounded-lg bg-orange-50 px-3 py-1.5">
-                <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
-                <span className="text-lg font-bold text-gray-900">{provider.rating.toFixed(1)}</span>
-                <span className="text-sm text-gray-600">({provider.reviewCount} reviews)</span>
+              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                <StarRating
+                  rating={provider.rating}
+                  reviewCount={provider.reviewCount}
+                  starsClassName="h-5 w-5"
+                  textClassName="text-sm text-gray-600"
+                />
               </div>
               {provider.isVerified ? (
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">

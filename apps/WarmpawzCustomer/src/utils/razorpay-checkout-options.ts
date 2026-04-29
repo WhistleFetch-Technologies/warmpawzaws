@@ -5,6 +5,11 @@
  *   Razorpay may hide UPI collect when `prefill.email` is absent.
  * - `config.display.blocks.upi` with `flows: ['collect','intent','qr']` + `method: { upi: true }` so UPI ID
  *   (collect) is preferred where supported, with intent and QR as fallbacks.
+ * - `theme.hide_topbar: true` removes the orange Razorpay merchant toolbar (the tall "W Warmpawz"
+ *   header) at the top of `com.razorpay.CheckoutActivity`. On phones the merchant toolbar +
+ *   system status bar were stacking into one tall band that pushed the WebView back button into
+ *   the status-bar tap zone. Hiding it lets Razorpay's UI start right below the status bar; the
+ *   Android system back button still dismisses checkout.
  */
 
 const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
@@ -76,6 +81,9 @@ export function applyWarmpawzCustomerToRazorpayOptions(
   const existingConfig =
     typeof options.config === 'object' && options.config !== null ? options.config : {};
 
+  const existingTheme =
+    typeof options.theme === 'object' && options.theme !== null ? options.theme : {};
+
   const out: Record<string, any> = {
     ...options,
     prefill,
@@ -84,6 +92,10 @@ export function applyWarmpawzCustomerToRazorpayOptions(
       display,
     },
     method: { upi: true },
+    theme: {
+      ...existingTheme,
+      hide_topbar: true,
+    },
   };
 
   console.log('Razorpay options:', out);

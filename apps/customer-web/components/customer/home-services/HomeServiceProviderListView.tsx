@@ -11,20 +11,16 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, type CSSProperties, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
   Search, 
-  Filter, 
   MapPin, 
-  Star, 
   Clock, 
   ChevronRight,
   X,
   SlidersHorizontal,
-  Navigation,
-  CheckCircle2,
   BadgeCheck
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -34,6 +30,7 @@ import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 interface ServiceConfig {
   roleId: string;
@@ -398,11 +395,6 @@ export function HomeServiceProviderListView({
     verifiedOnly
   ].filter(Boolean).length;
 
-  const accentSoft: CSSProperties = {
-    backgroundColor: `color-mix(in srgb, ${config.primaryColor} 14%, white)`,
-  };
-  const accentFg: CSSProperties = { color: config.primaryColor };
-
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
       {/* Header – standard orange to match vet dashboard (forensic theme compliance) */}
@@ -582,15 +574,11 @@ export function HomeServiceProviderListView({
 
                     {/* Rating & Reviews */}
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center gap-1 rounded-full px-2 py-0.5" style={accentSoft}>
-                        <Star className="h-3.5 w-3.5 fill-current" style={accentFg} />
-                        <span className="text-sm font-medium" style={accentFg}>
-                          {provider.rating.toFixed(1)}
-                        </span>
-                      </div>
-                      <span className="text-sm text-gray-500">
-                        ({provider.reviewCount} reviews)
-                      </span>
+                      <StarRating
+                        rating={provider.rating}
+                        reviewCount={provider.reviewCount}
+                        textClassName="text-xs text-gray-500"
+                      />
                     </div>
 
                     {/* Location & Distance */}
@@ -689,7 +677,7 @@ export function HomeServiceProviderListView({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 mb-14 max-h-[calc(85vh-3.5rem)] overflow-y-auto bg-white rounded-t-3xl z-50 max-w-md mx-auto"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -772,7 +760,7 @@ export function HomeServiceProviderListView({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3">
+                <div className="sticky bottom-3 bg-white pt-2 flex gap-3">
                   <button
                     onClick={clearFilters}
                     className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium"

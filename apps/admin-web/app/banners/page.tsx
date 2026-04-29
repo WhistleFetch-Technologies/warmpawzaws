@@ -23,7 +23,7 @@ interface Banner {
   cta_link?: string;
   /** DB column */
   type?: string;
-  position: 'home_top' | 'home_middle' | 'category' | 'checkout';
+  position: 'home_top' | 'home_middle' | 'home_lower' | 'category' | 'checkout';
   is_active: boolean;
   start_date?: string;
   end_date?: string;
@@ -208,6 +208,7 @@ export default function BannersPage() {
       main: 'Home Top',
       home_top: 'Home Top',
       home_middle: 'Home Middle',
+      home_lower: 'Home Lower',
       category: 'Category (Find All Services)',
       checkout: 'Checkout',
     };
@@ -266,6 +267,7 @@ export default function BannersPage() {
                       <SelectItem value="all">All Positions</SelectItem>
                       <SelectItem value="home_top">Home Top</SelectItem>
                       <SelectItem value="home_middle">Home Middle</SelectItem>
+                      <SelectItem value="home_lower">Home Lower</SelectItem>
                       <SelectItem value="category">Category Page</SelectItem>
                       <SelectItem value="checkout">Checkout Page</SelectItem>
                     </SelectContent>
@@ -463,6 +465,7 @@ export default function BannersPage() {
                   <SelectContent>
                     <SelectItem value="home_top">Home Top</SelectItem>
                     <SelectItem value="home_middle">Home Middle</SelectItem>
+                    <SelectItem value="home_lower">Home Lower</SelectItem>
                     <SelectItem value="category">Category Page</SelectItem>
                     <SelectItem value="checkout">Checkout Page</SelectItem>
                   </SelectContent>

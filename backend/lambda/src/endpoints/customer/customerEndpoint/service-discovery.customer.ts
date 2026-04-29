@@ -1436,7 +1436,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
 
       const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (!customerLat || !customerLng || !lat || !lng) return null;
+        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
         return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
       };
       const fmtDistance = (km: number | null): string | null => {
@@ -4258,6 +4258,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photoUrl: await getVendorPhotoUrl(row),
           rating,
           reviewCount,
+          distance: distanceKm,
           distanceKm,
           distanceText,
           specializations,
@@ -5352,7 +5353,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       /** Haversine distance in km — null when coordinates are missing */
       const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (!customerLat || !customerLng || !lat || !lng) return null;
+        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
         return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
       };
       /** Human-readable distance label */

@@ -33,6 +33,7 @@ import { apiClient } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { StarRating } from './shared/StarRating';
 import { toast } from 'sonner';
 
 interface DiagnosticsServicesLandingProps {
@@ -748,11 +749,12 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                         </div>
                         <p className="text-xs text-gray-500 truncate mt-1">{center.address}</p>
                         <div className="flex items-center gap-3 text-xs mt-1">
-                          <div className="flex items-center gap-1 text-amber-500">
-                            <Star className="w-3 h-3 fill-current" />
-                            <span className="font-semibold">{center.rating}</span>
-                            <span className="text-gray-400">({center.reviewCount})</span>
-                          </div>
+                          <StarRating
+                            rating={center.rating}
+                            reviewCount={center.reviewCount}
+                            starsClassName="w-3 h-3"
+                            textClassName="text-xs text-gray-500"
+                          />
                           <div className="flex items-center gap-1 text-gray-500">
                             <MapPin className="w-3 h-3" />
                             <span>{center.distance != null ? `${center.distance} km` : '—'}</span>

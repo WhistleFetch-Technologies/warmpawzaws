@@ -8,6 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface EmergencyBookingPageProps {
   phone?: string;
@@ -156,10 +157,10 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
                         <Stethoscope className="w-5 h-5 text-red-600" />
                         <h3 className="font-semibold text-gray-900">{vet.name}</h3>
                       </div>
-                      {vet.distance && (
+                      {formatDistanceDisplay(vet) && (
                         <div className="flex items-center gap-1 text-sm text-gray-600 mb-2">
                           <MapPin className="w-4 h-4" />
-                          {vet.distance} away
+                          {formatDistanceDisplay(vet)}
                         </div>
                       )}
                       <div className="flex items-center gap-1 text-sm text-gray-600">

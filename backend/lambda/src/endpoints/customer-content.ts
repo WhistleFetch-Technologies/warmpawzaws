@@ -94,7 +94,10 @@ export function registerCustomerContentEndpoints(app: Hono) {
         imageUrl: b.image_url,
         ctaText: b.cta_text || 'Learn More',
         ctaLink: b.cta_link,
-        position: b.type || 'main',
+        position:
+          b.type === 'main' || b.type === 'home_top'
+            ? 'home_top'
+            : b.type || 'home_top',
         displayOrder: b.display_order || 0,
         gradientFrom: (meta.gradient_from as string) || '#FF8C42',
         gradientTo: (meta.gradient_to as string) || '#FF6B35',

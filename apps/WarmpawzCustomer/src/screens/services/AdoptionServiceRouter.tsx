@@ -55,6 +55,7 @@ export function AdoptionServiceRouter({
   const [loading, setLoading] = useState(false);
   const [customerId, setCustomerId] = useState<string>('');
   const [centers, setCenters] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [selectedCenter, setSelectedCenter] = useState<any | null>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
@@ -106,7 +107,9 @@ export function AdoptionServiceRouter({
       setLoading(true);
       const response = await CustomerApi.searchServices({
         serviceType: 'adoption',
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       });
       setCenters(response.vendors || []);
       setCurrentView('center_list');

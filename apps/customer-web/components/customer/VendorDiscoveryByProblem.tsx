@@ -13,6 +13,7 @@ import { ArrowLeft, MapPin, Star, Phone, Clock, Building2, ChevronRight, User, C
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -567,12 +568,12 @@ function VendorCard({
                 <Star className="w-4 h-4 fill-current" />
                 <span className="text-sm font-medium">{vendor.rating || '4.5'}</span>
               </div>
-              {vendor.distance && (
+              {formatDistanceDisplay(vendor) && (
                 <>
                   <span className="text-gray-300">•</span>
                   <div className="flex items-center gap-1 text-gray-500">
                     <MapPin className="w-4 h-4" />
-                    <span className="text-sm">{Number(vendor.distance || 0).toFixed(1)} km</span>
+                    <span className="text-sm">{formatDistanceDisplay(vendor)}</span>
                   </div>
                 </>
               )}
