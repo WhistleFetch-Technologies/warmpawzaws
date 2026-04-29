@@ -5,6 +5,7 @@ import { ArrowLeft, AlertTriangle, Phone, MapPin, Clock, Stethoscope } from 'luc
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 import { formatDistanceDisplay } from '@/lib/distance-display';
@@ -78,7 +79,9 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
       } catch {
         servicesResponse = await apiClient.get<any>(`/vendor/${vetId}/services`);
       }
-      const allServices = servicesResponse?.services || servicesResponse || [];
+      const allServices = Array.isArray(servicesResponse?.services)
+        ? mergeCustomerVendorServicesPayload(servicesResponse)
+        : servicesResponse || [];
       const emergencyService = allServices.find((s: any) => 
         s.serviceType === 'emergency' || 
         s.name?.toLowerCase().includes('emergency') ||

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { requestLocationPermission } from '@/lib/runtime-permissions';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -565,6 +566,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       // Get selected address details for the booking
       const selectedAddressData = selectedAddress ? addresses.find(a => a.id === selectedAddress) : undefined;
 
+      /** Full list price on the booking row — never the net-after-wallet amount (server debits wallet against gross). */
+      const listPriceRupee = Math.round((Number(service?.price) || 0) * 100) / 100;
+      const walletAmountToApply =
+        useWallet && wallet && !subscriptionCoverage?.covered
+          ? Math.round(Math.min(Number(wallet.balance) || 0, listPriceRupee) * 100) / 100
+          : 0;
+
       // ✅ FIX GAP 3.1: Build booking data with camelCase to match backend Zod schema
       // Backend expects: customerId, vendorId, serviceId, bookingDate, bookingTime, serviceType, etc.
       const bookingData: any = {
@@ -578,7 +586,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         
         // Optional fields - camelCase
         petId: selectedPet || undefined,
-        amount: calculateTotal(),
+        amount: subscriptionCoverage?.covered ? 0 : listPriceRupee,
         notes: notes || '',
         
         // Address fields for home services
@@ -591,8 +599,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
           longitude: selectedAddressData.longitude,
         }),
         
-        // Wallet usage
-        useWallet: useWallet,
+        // Wallet usage (walletAmount required so server can debit even when list price equals wallet balance)
+        useWallet: useWallet && !subscriptionCoverage?.covered,
+        ...(walletAmountToApply > 0 ? { walletAmount: walletAmountToApply } : {}),
         
         // Legacy snake_case for backward compatibility with older endpoints
         customer_phone: customerPhone,
@@ -683,8 +692,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         orderRes = await apiClient.post<any>('/razorpay/create-order', {
           bookingId: newBookingId,
           amount: amountToPay,
-          useWallet: useWallet,
-          walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
+          useWallet: useWallet && !subscriptionCoverage?.covered,
+          walletAmount: walletAmountToApply,
         }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
@@ -1816,9 +1825,15 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     apartmentName: '',
   });
 
-  const detectCurrentLocation = () => {
+  const detectCurrentLocation = async () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    const permission = await requestLocationPermission();
+    if (permission === 'denied') {
+      alert('Location permission denied. Please allow location access and try again.');
       return;
     }
 

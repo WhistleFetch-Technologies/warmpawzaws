@@ -411,6 +411,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleVetNavigate = (screen: string, data?: any) => {
+    if (screen === 'purchase-package') {
+      setWalkerServiceData(data);
+      navigateToScreen('package-booking');
+      return;
+    }
     setVetServiceData(data);
     if (screen === 'vet-booking') navigateToScreen('vet-booking');
     else if (screen === 'vet-doctor-details') navigateToScreen('vet-doctor-details');
@@ -432,6 +437,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
+    else if (path === 'my-packages') router.push('/my-packages');
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'appointments') navigateToScreen('appointments');
@@ -540,6 +546,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             phone={phone}
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
+            onViewMyPackages={() => router.push('/my-packages')}
             onNavigate={handleAccountNavigate}
           />
         )}
@@ -608,6 +615,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         clinicProfileBackScreen: data?.clinicProfileBackScreen ?? 'vet-clinic-list',
       });
       navigateToScreen('vet-clinic-profile');
+    } else if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
     } else if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         vendorId: data?.vendorId || data?.clinicId,
@@ -626,7 +635,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'appointment' || screen === 'vet-booking') {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+    } else if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         vendorId: data?.clinicId || data?.vendorId || vetServiceData?.id,
         clinicId: data?.clinicId || vetServiceData?.id,
@@ -884,12 +895,26 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   );
 
   // Other Screens - onNavigate wires View Lab Reports / Track Sample Collection from booking detail
-  if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} onNavigate={(screen, data) => {
-    if (screen === 'booking-details' && data?.bookingId) handleViewBooking(data.bookingId);
-    else if (screen === 'diagnostics-reports' && data?.bookingId) { setSelectedBookingId(data.bookingId); navigateToScreen('diagnostics-reports'); }
-    else if (screen === 'sample-collection-tracking' && data?.bookingId) { setSelectedBookingId(data.bookingId); navigateToScreen('sample-collection-tracking'); }
-    else handleNavigateToService(screen);
-  }} />;
+  if (currentScreen === 'my-bookings') {
+    return (
+      <MyBookings
+        phone={phone}
+        onBack={handleBack}
+        initialBookingId={selectedBookingId || undefined}
+        onReorderMedicine={handleReorderMedicine}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details' && data?.bookingId) handleViewBooking(data.bookingId);
+          else if (screen === 'diagnostics-reports' && data?.bookingId) {
+            setSelectedBookingId(data.bookingId);
+            navigateToScreen('diagnostics-reports');
+          } else if (screen === 'sample-collection-tracking' && data?.bookingId) {
+            setSelectedBookingId(data.bookingId);
+            navigateToScreen('sample-collection-tracking');
+          } else handleNavigateToService(screen);
+        }}
+      />
+    );
+  }
   if (currentScreen === 'appointments') return <AppointmentsList phone={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-details'); }} />;
   if (currentScreen === 'appointment-details') {
     if (selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} phone={phone} onBack={() => navigateToScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { setSelectedAppointmentId(null); navigateToScreen('appointments'); }} />;
@@ -976,11 +1001,36 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Package Booking (includes purchase-package from WalkerService via same screen + walkerServiceData)
   if (currentScreen === 'package-booking') {
     const walkSession = walkerServiceData?.walkSession ?? null;
+    const w = walkerServiceData;
+    const vendorPackageIntent =
+      w?.vendorServiceId && w?.vendorId
+        ? {
+            vendorId: String(w.vendorId),
+            vendorServiceId: String(w.vendorServiceId),
+            serviceName: String(w.serviceName || 'Package'),
+            totalSessions: Math.max(1, Number(w.totalSessions) || 1),
+            sessionsPerDay: Math.max(
+              1,
+              Math.min(24, Number(w.sessionsPerDay ?? w.sessions_per_day) || 1)
+            ),
+            sessionIntervalDays: Math.max(
+              1,
+              Math.min(366, Number(w.sessionIntervalDays ?? w.session_interval_days) || 7)
+            ),
+            price: Number(w.price) || 0,
+            duration: w.duration != null ? Number(w.duration) : 60,
+            serviceType: w.serviceType ? String(w.serviceType) : undefined,
+            serviceStyle: w.serviceStyle ? String(w.serviceStyle) : undefined,
+            description: w.description != null ? String(w.description) : undefined,
+            vendorName: w.walker?.name || w.vendorName,
+          }
+        : null;
     return (
       <PackageBookingPage
         customerPhone={phone}
         customerId={phone}
         petId={selectedPetId || undefined}
+        vendorPackageIntent={vendorPackageIntent}
         walkSessionIntent={walkSession}
         onContinueToChooseWalker={
           walkSession

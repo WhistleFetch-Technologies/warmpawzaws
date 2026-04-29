@@ -13,6 +13,11 @@ import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -85,10 +90,14 @@ export function VetBookingRouter({
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
   const initialStep: BookingStep = hasServiceContext ? 'details' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
-  
+  // Map 'clinic' to 'at_center'; must be declared before effects that reference it (dependency arrays run during render).
+  const normalizedServiceType =
+    (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
+
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to details
@@ -96,6 +105,36 @@ export function VetBookingRouter({
       initializedRef.current = true;
     }
   }, [serviceId, serviceType, serviceStyle, step]);
+
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = doctorId || vendorId;
+    if (!vid) return;
+    const fromList = (selectedServices || []).filter(Boolean) as any[];
+    const pkgRow =
+      fromList.find((r) => isVendorServicePackageRow(r)) ||
+      (selectedService && isVendorServicePackageRow(selectedService) ? selectedService : null);
+    if (!pkgRow) return;
+    packageRedirectRef.current = true;
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: vendorNameProp || doctor?.name,
+      serviceRow: pkgRow as Record<string, unknown>,
+      serviceTypeCategory: 'vet',
+      serviceStyle: String(serviceStyle || normalizedServiceType || 'at_home'),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    doctorId,
+    vendorId,
+    selectedServices,
+    selectedService,
+    vendorNameProp,
+    doctor,
+    serviceStyle,
+    normalizedServiceType,
+    onNavigate,
+  ]);
   
   // ✅ Sync allSelectedServices when selectedServices prop changes
   useEffect(() => {
@@ -113,8 +152,6 @@ export function VetBookingRouter({
   }, [selectedServices, serviceStyle, serviceType]);
   
   const [loading, setLoading] = useState(false);
-  // ✅ FIX: Map 'clinic' to 'at_center', use serviceStyle if provided, otherwise fall back to serviceType
-  const normalizedServiceType = (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
   const [selectedServiceType, setSelectedServiceType] = useState(normalizedServiceType);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
@@ -223,6 +260,7 @@ export function VetBookingRouter({
         serviceStyle: style,
         icon: style === 'tele' ? Video : style === 'at_home' ? Home : Building2,
         color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -470,7 +508,7 @@ export function VetBookingRouter({
               ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
-            services = servicesResponse.services;
+            services = mergeCustomerVendorServicesPayload(servicesResponse);
           }
         } else if (servicesResponse.allServices) {
           services = servicesResponse.allServices;
@@ -685,6 +723,28 @@ export function VetBookingRouter({
   };
 
   const handleNext = () => {
+    if (step === 'service' && selectedServiceType && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (s: any) =>
+          String(s.serviceId || s.service_id) === String(selectedServiceType) ||
+          String(s.id) === String(selectedServiceType)
+      );
+      const vid = doctorId || vendorId;
+      if (vs && isVendorServicePackageRow(vs) && vid) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vid),
+          vendorName: vendorNameProp || doctor?.name,
+          serviceRow: vs as Record<string, unknown>,
+          serviceTypeCategory: 'vet',
+          serviceStyle: String((vs as any).serviceStyle || (vs as any).service_style || selectedServiceType),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
+    }
+
     const steps: BookingStep[] = selectedServiceType === 'at_home'
       ? ['service', 'details', 'address', 'summary', 'payment', 'confirmation']
       : ['service', 'details', 'summary', 'payment', 'confirmation'];
@@ -1098,7 +1158,29 @@ export function VetBookingRouter({
                         });
                         console.log('✅ Service selected (fallback):', serviceOption.serviceId);
                       }
-                      
+
+                      const rawForPackage =
+                        actualService ||
+                        (serviceOption.vendorServiceId
+                          ? vendorServices.find(
+                              (s: any) => String(s.id) === String(serviceOption.vendorServiceId)
+                            )
+                          : null);
+                      const vid = doctorId || vendorId;
+                      if (rawForPackage && isVendorServicePackageRow(rawForPackage) && vid) {
+                        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+                          vendorId: String(vid),
+                          vendorName: vendorNameProp || doctor?.name,
+                          serviceRow: rawForPackage as Record<string, unknown>,
+                          serviceTypeCategory: 'vet',
+                          serviceStyle: String(serviceOption.serviceStyle || selectedServiceType),
+                        });
+                        if (nav) {
+                          onNavigate('purchase-package', nav);
+                          return;
+                        }
+                      }
+
                       // Auto-advance to details after selection
                       setTimeout(() => setStep('details'), 100);
                     }}

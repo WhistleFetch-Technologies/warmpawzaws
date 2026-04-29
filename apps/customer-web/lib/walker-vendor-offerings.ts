@@ -3,6 +3,8 @@
  * GET /customer/vendor/:vendorId/services { services, packages }.
  */
 
+import { mergeCustomerVendorServicesPayload } from './customer-vendor-services-merge';
+
 const WALK_BOOKING_HOME_STYLES = new Set(['at_home', 'home', 'home_visit']);
 
 export function vendorServiceRowDedupeKey(
@@ -104,9 +106,7 @@ export function rowQualifiesForWalkingModal(s: Record<string, any> | null | unde
 export function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | null | undefined): any[] {
   if (!svcRes || typeof svcRes !== 'object') return [];
   const root = servicesPayloadRoot(svcRes);
-  const rawServices = Array.isArray(root.services) ? root.services : [];
-  const rawPackages = Array.isArray(root.packages) ? root.packages : [];
-  return [...rawServices, ...rawPackages];
+  return mergeCustomerVendorServicesPayload(root);
 }
 
 /** Router: merge services + packages, filter by selected walk style (at_home / outdoor / …). */
@@ -115,9 +115,7 @@ export function getWalkerRouterOfferingsForStyle(
   bookingStyle: string
 ): any[] {
   if (!svcRes || typeof svcRes !== 'object') return [];
-  const rawServices = Array.isArray(svcRes.services) ? svcRes.services : [];
-  const rawPackages = Array.isArray(svcRes.packages) ? svcRes.packages : [];
-  const all = [...rawServices, ...rawPackages];
+  const all = mergeCustomerVendorServicesPayload(svcRes);
   return all.filter((s) => walkerOfferingMatchesRouterStyle(s, bookingStyle));
 }
 
@@ -131,6 +129,9 @@ export type WalkerServiceOption = {
   serviceStyle: string;
   isPackage: boolean;
   totalSessions?: number;
+  /** From packageDetails / metadata when row is a multi-session bundle. */
+  sessionsPerDay?: number;
+  sessionIntervalDays?: number;
   priceLabel: string;
   subPriceHint?: string;
   iconColor: 'green' | 'orange' | 'purple' | 'blue';
@@ -152,8 +153,21 @@ export function mapWalkerApiRowToOption(
       s.metadata?.isPackage ||
       s.metadata?.type === 'package'
   );
-  const pd = (s.packageDetails || s.package_details || s.metadata?.packageDetails) as
-    | { totalSessions?: number; sessionDuration?: number; validityDays?: number }
+  const metaObj =
+    s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+      ? (s.metadata as Record<string, unknown>)
+      : undefined;
+  const pd = (s.packageDetails || s.package_details || metaObj?.packageDetails) as
+    | {
+        totalSessions?: number;
+        sessionDuration?: number;
+        validityDays?: number;
+        sessionsPerDay?: number;
+        sessions_per_day?: number;
+        sessionIntervalDays?: number;
+        session_interval_days?: number;
+        frequencyDays?: number;
+      }
     | undefined;
   const name =
     s.name || s.service_name || s.serviceName || (isPackage ? 'Walk bundle' : 'Walk');
@@ -172,7 +186,32 @@ export function mapWalkerApiRowToOption(
     typeof stRaw === 'string' && stRaw.trim()
       ? String(stRaw).trim()
       : bookingServiceStyle;
-  const totalSessions = pd?.totalSessions ?? s.metadata?.totalSessions;
+  const totalSessions = pd?.totalSessions ?? metaObj?.totalSessions;
+  const sessionsPerDay = Math.max(
+    1,
+    Math.min(
+      24,
+      Number(
+        pd?.sessionsPerDay ??
+          pd?.sessions_per_day ??
+          metaObj?.sessionsPerDay ??
+          metaObj?.sessions_per_day
+      ) || 1
+    )
+  );
+  const sessionIntervalDays = Math.max(
+    1,
+    Math.min(
+      366,
+      Number(
+        pd?.sessionIntervalDays ??
+          pd?.session_interval_days ??
+          pd?.frequencyDays ??
+          metaObj?.sessionIntervalDays ??
+          metaObj?.frequencyDays
+      ) || 7
+    )
+  );
   let priceLabel: string;
   let subPriceHint: string | undefined;
   if (isPackage && totalSessions != null && totalSessions > 1) {
@@ -196,6 +235,8 @@ export function mapWalkerApiRowToOption(
     serviceStyle: normalizedStyle,
     isPackage,
     totalSessions: totalSessions != null ? Number(totalSessions) : undefined,
+    sessionsPerDay: isPackage ? sessionsPerDay : undefined,
+    sessionIntervalDays: isPackage ? sessionIntervalDays : undefined,
     priceLabel,
     subPriceHint,
     iconColor: iconColorForPackage(isPackage, bookingServiceStyle),

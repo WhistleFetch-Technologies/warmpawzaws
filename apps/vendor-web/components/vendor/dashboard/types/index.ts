@@ -85,6 +85,8 @@ export interface ScheduleItem {
     packagePurchaseId?: string;
     packageSessionNumber?: number;
     packageTotalSessions?: number;
+    /** True when this booking row is a scheduled package session (not the purchase-level parent placeholder). */
+    isPackageSession?: boolean;
 }
 
 export interface WatchlistItem {

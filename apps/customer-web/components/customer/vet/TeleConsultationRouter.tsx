@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
@@ -937,7 +938,9 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
       const response = await apiClient.get<any>(
         `/customer/vendor/${vendorId}/services?serviceStyle=tele`
       );
-      let list = response?.services || response?.tele?.services || [];
+      let list = Array.isArray(response?.services)
+        ? mergeCustomerVendorServicesPayload(response)
+        : response?.tele?.services || [];
       if (Array.isArray(response) && response.length) list = response;
       const mapped: PlatformService[] = (list || []).map((s: any) => ({
         id: s.id || s.service_id,

@@ -15,12 +15,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
 } from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
-import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, IndianRupee, Dog, Footprints } from 'lucide-react';
+import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
 
 export type VendorPackageIntent = {
   vendorId: string;
@@ -33,6 +34,10 @@ export type VendorPackageIntent = {
   serviceStyle?: string;
   description?: string;
   vendorName?: string;
+  /** Visits per calendar day (e.g. 2 → customer picks two times on the first day). */
+  sessionsPerDay?: number;
+  /** Days between day-blocks (default 7 = same weekday next week). */
+  sessionIntervalDays?: number;
 };
 
 interface PackageItem {
@@ -50,6 +55,8 @@ interface PackageItem {
   popular?: boolean;
   /** When set, purchase uses POST /packages/purchase-from-vendor-service */
   vendorServiceId?: string;
+  sessionsPerDay?: number;
+  sessionIntervalDays?: number;
 }
 
 interface Session {
@@ -132,19 +139,171 @@ export function PackageBookingPage({
   walkSessionIntent,
   onContinueToChooseWalker,
 }: PackageBookingPageProps) {
-  const [view, setView] = useState<'browse' | 'schedule' | 'my-packages'>('browse');
+  const [view, setView] = useState<'browse' | 'schedule' | 'review' | 'my-packages'>('browse');
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [myPackages, setMyPackages] = useState<PackageBooking[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<PackageItem | null>(null);
-  const [scheduledDates, setScheduledDates] = useState<string[]>([]);
+  /** First session calendar date; all sessions use this cadence weekly at `startingSessionTime`. */
+  const [startingSessionDate, setStartingSessionDate] = useState('');
+  /** Same clock time for every session when `sessionsPerDay` is 1; otherwise first row only. */
+  const [startingSessionTime, setStartingSessionTime] = useState('');
+  /** When package has N sessions per day: N time values for the first calendar day (same order repeats each block). */
+  const [perDaySessionTimes, setPerDaySessionTimes] = useState<string[]>(['']);
+  const [schedulePets, setSchedulePets] = useState<PetUi[]>([]);
+  const [petsLoading, setPetsLoading] = useState(false);
+  const [localPetId, setLocalPetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Server pricing quote (GST + platform fee) — same shape as UniversalPaymentPage. */
+  const [priceQuote, setPriceQuote] = useState<{
+    basePrice: number;
+    tax: number;
+    discount?: number;
+    finalPrice: number;
+    taxBreakdown?: Array<{ name: string; rate: number; amount: number }>;
+    platformFee?: number;
+    convenienceFee?: number;
+    deliveryFee?: number;
+    packagingFee?: number;
+    totalAmount?: number;
+  } | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [packagePolicy, setPackagePolicy] = useState<{
+    cancellationPolicy: string;
+    refundPolicy: string;
+    version: string;
+  } | null>(null);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
 
   useEffect(() => {
     loadPackages();
     loadMyPackages();
   }, [customerId, vendorPackageIntent?.vendorId, vendorPackageIntent?.vendorServiceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!customerPhone) return;
+      setPetsLoading(true);
+      try {
+        let res: unknown = null;
+        try {
+          res = await apiClient.get(`/customer/pets/${encodeURIComponent(customerPhone)}`);
+        } catch {
+          try {
+            res = await apiClient.get(`/customer/pets?phone=${encodeURIComponent(customerPhone)}`);
+          } catch {
+            if (customerId && customerId !== customerPhone) {
+              try {
+                res = await apiClient.get(`/customer/${encodeURIComponent(customerId)}/pets`);
+              } catch {
+                res = null;
+              }
+            }
+          }
+        }
+        if (cancelled) return;
+        const list = petsFromApiResponse(res);
+        setSchedulePets(list);
+        setLocalPetId((prev) => {
+          if (prev && list.some((p) => p.id === prev)) return prev;
+          if (petId && list.some((p) => p.id === petId)) return petId;
+          try {
+            const last = sessionStorage.getItem(`warmpawz_last_pet_${customerPhone}`);
+            if (last && list.some((p) => p.id === last)) return last;
+          } catch {
+            /* ignore */
+          }
+          if (list.length === 1) return list[0].id;
+          return null;
+        });
+      } catch {
+        if (!cancelled) setSchedulePets([]);
+      } finally {
+        if (!cancelled) setPetsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerPhone, customerId, petId]);
+
+  useEffect(() => {
+    if (!petId || localPetId) return;
+    if (schedulePets.some((p) => p.id === petId)) setLocalPetId(petId);
+  }, [petId, schedulePets, localPetId]);
+
+  useEffect(() => {
+    if (view !== 'review') {
+      setPriceQuote(null);
+      setPackagePolicy(null);
+      setPolicyAccepted(false);
+      return;
+    }
+    if (!selectedPackage?.vendorServiceId) return;
+    let cancelled = false;
+    (async () => {
+      setQuoteLoading(true);
+      try {
+        // Server-of-truth: same pipeline (taxCalculationService + calculateFinalFees)
+        // is used here AND for the Razorpay order amount, guaranteeing parity.
+        const res = (await apiClient.post('/packages/quote', {
+          customerId,
+          vendorId: selectedPackage.vendorId,
+          vendorServiceId: selectedPackage.vendorServiceId,
+        })) as {
+          success?: boolean;
+          basePrice?: number;
+          tax?: number;
+          discount?: number;
+          finalPrice?: number;
+          totalAmount?: number;
+          taxBreakdown?: Array<{ name: string; rate: number; amount: number }>;
+          platformFee?: number;
+          convenienceFee?: number;
+          deliveryFee?: number;
+          packagingFee?: number;
+          policy?: { cancellationPolicy?: string; refundPolicy?: string; version?: string };
+        };
+        if (cancelled) return;
+        if (res?.success && res.finalPrice != null) {
+          setPriceQuote({
+            basePrice: Number(res.basePrice) || 0,
+            tax: Number(res.tax) || 0,
+            discount: Number(res.discount) || 0,
+            finalPrice: Number(res.finalPrice ?? res.totalAmount) || 0,
+            taxBreakdown: Array.isArray(res.taxBreakdown) ? res.taxBreakdown : [],
+            platformFee: Number(res.platformFee) || 0,
+            convenienceFee: Number(res.convenienceFee) || 0,
+            deliveryFee: Number(res.deliveryFee) || 0,
+            packagingFee: Number(res.packagingFee) || 0,
+            totalAmount: Number(res.totalAmount ?? res.finalPrice) || 0,
+          });
+          if (res.policy) {
+            setPackagePolicy({
+              cancellationPolicy: String(res.policy.cancellationPolicy || ''),
+              refundPolicy: String(res.policy.refundPolicy || ''),
+              version: String(res.policy.version || ''),
+            });
+          }
+        } else {
+          setPriceQuote(null);
+          setPackagePolicy(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setPriceQuote(null);
+          setPackagePolicy(null);
+        }
+      } finally {
+        if (!cancelled) setQuoteLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, selectedPackage?.vendorServiceId, selectedPackage?.vendorId, selectedPackage?.id, customerId]);
 
   const loadPackages = async () => {
     try {
@@ -222,6 +381,43 @@ export function PackageBookingPage({
             const ts =
               !Number.isFinite(sc) || sc <= 0 ? 1 : sc < 0 ? 1 : Math.min(365, Math.floor(sc));
             const price = Number(p.price ?? 0);
+            const meta =
+              p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+                ? (p.metadata as Record<string, unknown>)
+                : undefined;
+            const pd = (p.packageDetails ??
+              p.package_details ??
+              meta?.packageDetails) as Record<string, unknown> | undefined;
+            const spd = Math.max(
+              1,
+              Math.min(
+                24,
+                Number(
+                  p.sessions_per_day ??
+                    p.sessionsPerDay ??
+                    pd?.sessions_per_day ??
+                    pd?.sessionsPerDay ??
+                    meta?.sessions_per_day ??
+                    meta?.sessionsPerDay
+                ) || 1
+              )
+            );
+            const intv = Math.max(
+              1,
+              Math.min(
+                366,
+                Number(
+                  p.session_interval_days ??
+                    p.sessionIntervalDays ??
+                    pd?.session_interval_days ??
+                    pd?.sessionIntervalDays ??
+                    pd?.frequencyDays ??
+                    meta?.session_interval_days ??
+                    meta?.sessionIntervalDays ??
+                    meta?.frequencyDays
+                ) || 7
+              )
+            );
             items.push({
               id: String(p.id),
               vendorId: String(p.vendor_id ?? vendorPackageIntent.vendorId),
@@ -236,6 +432,8 @@ export function PackageBookingPage({
               ),
               category: String(p.service_type ?? 'walking'),
               popular: false,
+              sessionsPerDay: spd,
+              sessionIntervalDays: intv,
             });
           }
         } catch (e) {
@@ -247,6 +445,8 @@ export function PackageBookingPage({
         const p = vendorPackageIntent;
         const ts = Math.max(1, Number(p.totalSessions ?? 1));
         const price = Number(p.price ?? 0);
+        const spd = Math.max(1, Math.min(24, Number(p.sessionsPerDay) || 1));
+        const intv = Math.max(1, Math.min(366, Number(p.sessionIntervalDays) || 7));
         items.unshift({
           id: `vs-${p.vendorServiceId}`,
           vendorServiceId: p.vendorServiceId,
@@ -260,6 +460,8 @@ export function PackageBookingPage({
           duration: p.duration ?? 60,
           category: p.serviceType ?? 'walking',
           popular: true,
+          sessionsPerDay: spd,
+          sessionIntervalDays: intv,
         });
       }
 
@@ -305,19 +507,118 @@ export function PackageBookingPage({
 
   const handlePackageSelect = (pkg: PackageItem) => {
     setSelectedPackage(pkg);
-    setScheduledDates(new Array(pkg.totalSessions).fill(''));
+    setStartingSessionDate('');
+    setStartingSessionTime('');
+    const spd = Math.max(1, Math.min(24, Number(pkg.sessionsPerDay) || 1));
+    setPerDaySessionTimes(Array.from({ length: spd }, () => ''));
+    setPriceQuote(null);
     setView('schedule');
+    setError(null);
   };
 
-  const updateScheduledDate = (index: number, date: string) => {
-    const newDates = [...scheduledDates];
-    newDates[index] = date;
-    setScheduledDates(newDates);
+  /** HH:mm for API (from `<input type="time" />`). */
+  const normalizeTimeForApi = (t: string) => {
+    const s = t.trim();
+    if (!s) return '';
+    const m = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return s.slice(0, 5);
+    const hh = String(Math.min(23, Math.max(0, parseInt(m[1], 10)))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, parseInt(m[2], 10)))).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  const chosenPetId = localPetId || petId || null;
+
+  const validateScheduleForSubmit = (): string | null => {
+    if (!selectedPackage) return 'Select a package';
+    if (!chosenPetId) return 'Please select a pet first';
+    const isVendorCatalog = Boolean(selectedPackage.vendorServiceId);
+    const sessionsPerDay = Math.max(1, Math.min(24, Number(selectedPackage.sessionsPerDay) || 1));
+    if (isVendorCatalog) {
+      if (!startingSessionDate.trim()) return 'Please choose the first session date.';
+      if (sessionsPerDay === 1) {
+        if (!startingSessionTime.trim()) return 'Please choose a time for your sessions.';
+      } else {
+        const missing = perDaySessionTimes.slice(0, sessionsPerDay).some((t) => !String(t || '').trim());
+        if (missing) {
+          return `This package has ${sessionsPerDay} sessions per day — please choose a time for each slot on the first day.`;
+        }
+      }
+    } else if (!startingSessionDate.trim()) {
+      return 'Please choose the first session date.';
+    }
+    return null;
+  };
+
+  /** True when date + time(s) are filled for the current package (vendor multi-slot uses perDaySessionTimes, not startingSessionTime). */
+  const isScheduleStepReady = (): boolean => {
+    if (!selectedPackage) return false;
+    if (selectedPackage.vendorServiceId) {
+      if (!startingSessionDate.trim()) return false;
+      const spd = Math.max(1, Math.min(24, Number(selectedPackage.sessionsPerDay) || 1));
+      if (spd === 1) return !!startingSessionTime.trim();
+      return !perDaySessionTimes.slice(0, spd).some((t) => !String(t || '').trim());
+    }
+    return !!startingSessionDate.trim();
+  };
+
+  const formatDateLabel = (isoDate: string) => {
+    const d = String(isoDate || '').trim();
+    if (!d) return '—';
+    const parsed = new Date(`${d}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return d;
+    return parsed.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const formatTimeDisplay = (timeVal: string) => {
+    const t = normalizeTimeForApi(String(timeVal || '').trim());
+    if (!t) return '—';
+    const [h, m] = t.split(':').map((x) => parseInt(x, 10));
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return t;
+    const dt = new Date();
+    dt.setHours(h, m, 0, 0);
+    return dt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const continueToReview = () => {
+    const err = validateScheduleForSubmit();
+    if (err) {
+      setError(err);
+      return;
+    }
+    setError(null);
+    setView('review');
+  };
+
+  const pickPetAndRemember = (id: string) => {
+    setLocalPetId(id);
+    setError(null);
+    try {
+      sessionStorage.setItem(`warmpawz_last_pet_${customerPhone}`, id);
+    } catch {
+      /* ignore */
+    }
   };
 
   const createPackageBooking = async () => {
-    if (!selectedPackage || !petId) {
-      setError('Please select a pet first');
+    const vErr = validateScheduleForSubmit();
+    if (vErr) {
+      setError(vErr);
+      return;
+    }
+    if (!selectedPackage) return;
+
+    const isVendorCatalog = Boolean(selectedPackage.vendorServiceId);
+    const sessionsPerDay = Math.max(1, Math.min(24, Number(selectedPackage.sessionsPerDay) || 1));
+
+    // Hard gate: vendor packages require explicit policy acceptance before pay.
+    if (isVendorCatalog && !policyAccepted) {
+      setError('Please accept the cancellation and refund policy to continue.');
       return;
     }
 
@@ -325,13 +626,22 @@ export function PackageBookingPage({
       setBooking(true);
       setError(null);
 
-      const sessionSchedule = scheduledDates
-        .map((d, idx) => ({
+      const timeForApi = normalizeTimeForApi(startingSessionTime);
+      const sessionSchedule = (() => {
+        if (!startingSessionDate.trim()) return [];
+        if (!isVendorCatalog) {
+          return [{ sessionNumber: 1, date: startingSessionDate.trim(), time: timeForApi || '09:00' }];
+        }
+        if (sessionsPerDay === 1) {
+          return [{ sessionNumber: 1, date: startingSessionDate.trim(), time: timeForApi }];
+        }
+        const times = perDaySessionTimes.slice(0, sessionsPerDay).map((t) => normalizeTimeForApi(String(t)));
+        return times.map((time, idx) => ({
           sessionNumber: idx + 1,
-          date: d || undefined,
-          time: '09:00',
-        }))
-        .filter((s) => !!s.date);
+          date: startingSessionDate.trim(),
+          time,
+        }));
+      })();
 
       if (selectedPackage.vendorServiceId) {
         const basePayload = {
@@ -340,6 +650,9 @@ export function PackageBookingPage({
           vendorServiceId: selectedPackage.vendorServiceId,
           preferSameProvider: true,
           sessionSchedule,
+          ...(chosenPetId ? { petId: chosenPetId } : {}),
+          policyAccepted: true,
+          ...(packagePolicy?.version ? { policyVersion: packagePolicy.version } : {}),
         };
 
         const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;
@@ -520,6 +833,7 @@ export function PackageBookingPage({
       {/* View Tabs */}
       <div className="flex gap-2 mb-6">
         <button
+          type="button"
           onClick={() => setView('browse')}
           className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
             view === 'browse'
@@ -530,6 +844,7 @@ export function PackageBookingPage({
           Browse Packages
         </button>
         <button
+          type="button"
           onClick={() => setView('my-packages')}
           className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
             view === 'my-packages'
@@ -624,8 +939,15 @@ export function PackageBookingPage({
           {/* Package Summary */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-3">{selectedPackage.name}</h3>
+            <p className="text-sm text-gray-800 mb-4 rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+              <span className="font-semibold text-orange-800">
+                You get {selectedPackage.totalSessions}{' '}
+                {selectedPackage.totalSessions === 1 ? 'session' : 'sessions'}
+              </span>{' '}
+              with this package. You can book each session from your package later.
+            </p>
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-gray-600">Total Sessions</span>
+              <span className="text-sm text-gray-600">Sessions in package</span>
               <span className="font-semibold text-gray-900">{selectedPackage.totalSessions}</span>
             </div>
             <div className="flex items-center justify-between">
@@ -634,69 +956,429 @@ export function PackageBookingPage({
             </div>
           </div>
 
+          {/* Pet selection */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Dog className="w-5 h-5 text-orange-500 shrink-0" />
+              Pet for this package
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">Choose which pet this purchase is for.</p>
+            {petsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-600 py-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-orange-500" />
+                Loading your pets…
+              </div>
+            ) : schedulePets.length === 0 ? (
+              <p className="text-sm text-gray-600">
+                No pets found on your account. Add a pet from your profile, then return here to book.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {schedulePets.map((p) => {
+                  const selected = chosenPetId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => pickPetAndRemember(p.id)}
+                      className={`w-full text-left rounded-lg border px-3 py-3 flex items-center gap-3 transition-colors ${
+                        selected
+                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-200'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                          selected ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
+                        }`}
+                      >
+                        {selected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-gray-900">{p.name}</div>
+                        {(p.breed || p.species) && (
+                          <div className="text-xs text-gray-500 truncate">
+                            {[p.breed, p.species !== 'pet' ? p.species : null].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-700">
-                <p className="font-semibold mb-1">Schedule Sessions (Optional)</p>
-                <p>You can schedule all sessions now or schedule them later. Only the first session needs to be scheduled to book the package.</p>
+                <p className="font-semibold mb-1">
+                  {selectedPackage.vendorServiceId ? 'Session schedule (required)' : 'Starting session (optional)'}
+                </p>
+                <p>
+                  {selectedPackage.vendorServiceId ? (
+                    <>
+                      Pick the <strong>first day</strong> and{' '}
+                      {(Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
+                        <>
+                          <strong>{Number(selectedPackage.sessionsPerDay) || 1} time slots</strong> on your first
+                          day (multiple sessions that day). The next block of sessions uses the{' '}
+                          <strong>next calendar day</strong>, then the day after that, and so on — same times each
+                          day (e.g. sessions 1–2 on the 27th, 3–4 on the 28th, 5–6 on the 29th).
+                        </>
+                      ) : (
+                        <>
+                          the <strong>time</strong> for your visits. We repeat that time every{' '}
+                          <strong>{Number(selectedPackage.sessionIntervalDays) || 7} days</strong> for each
+                          remaining session.
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      Choose a date for your <strong>first</strong> session, or leave blank and schedule later
+                      after payment where allowed.
+                    </>
+                  )}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Session Scheduling */}
-          <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-semibold text-gray-900 mb-4">Schedule Sessions</h3>
-            
-            <div className="space-y-3">
-              {Array.from({ length: selectedPackage.totalSessions }).map((_, index) => (
-                <div key={index} className="border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-gray-900">Session {index + 1}</span>
-                    {index === 0 && (
-                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">
-                        Required
-                      </span>
-                    )}
-                  </div>
-                  
+          <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
+            <div>
+              <h3 className="font-semibold text-gray-900 mb-1">
+                {selectedPackage.vendorServiceId ? 'First session date' : 'First session date (optional)'}
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                {selectedPackage.vendorServiceId
+                  ? (Number(selectedPackage.sessionsPerDay) || 1) > 1
+                    ? 'Required — first calendar day for sessions 1–N; later sessions move forward one day per block with the same daily times.'
+                    : 'Required — later sessions repeat every calendar interval (e.g. weekly) at the same time.'
+                  : 'Optional for some package types.'}
+              </p>
+              <input
+                type="date"
+                min={getMinDate()}
+                value={startingSessionDate}
+                onChange={(e) => {
+                  setStartingSessionDate(e.target.value);
+                  setError(null);
+                }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            {selectedPackage.vendorServiceId ? (
+              (Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-900 mb-1">
+                    Times on the first day ({Number(selectedPackage.sessionsPerDay) || 1} slots)
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Each group of {Number(selectedPackage.sessionsPerDay) || 1} sessions stays on one calendar day;
+                    the next group is the <strong>next day</strong>, until all {selectedPackage.totalSessions} sessions
+                    are scheduled.
+                  </p>
+                  {perDaySessionTimes.slice(0, Number(selectedPackage.sessionsPerDay) || 1).map((t, idx) => (
+                    <div key={idx}>
+                      <label className="text-xs text-gray-600 mb-1 block">Session slot {idx + 1}</label>
+                      <input
+                        type="time"
+                        value={t}
+                        onChange={(e) => {
+                          const next = [...perDaySessionTimes];
+                          next[idx] = e.target.value;
+                          setPerDaySessionTimes(next);
+                          setError(null);
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        required
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-1">Time for every session</h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Same clock time every {Number(selectedPackage.sessionIntervalDays) || 7} days for all{' '}
+                    {selectedPackage.totalSessions} sessions.
+                  </p>
                   <input
-                    type="date"
-                    min={getMinDate()}
-                    value={scheduledDates[index] || ''}
-                    onChange={(e) => updateScheduledDate(index, e.target.value)}
+                    type="time"
+                    value={startingSessionTime}
+                    onChange={(e) => {
+                      setStartingSessionTime(e.target.value);
+                      setError(null);
+                    }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    required
                   />
                 </div>
-              ))}
-            </div>
+              )
+            ) : null}
           </div>
 
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => setView('browse')}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold transition-colors"
             >
               Back
             </button>
             <button
+              type="button"
+              onClick={continueToReview}
+              disabled={booking || !chosenPetId || !isScheduleStepReady()}
+              className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              Continue to summary
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Booking summary — after schedule, before payment */}
+      {view === 'review' && selectedPackage && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2 mb-3">
+              <Receipt className="w-5 h-5 text-orange-500 shrink-0" />
+              <h2 className="text-lg font-bold text-gray-900">Booking summary</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Review your package and charges, then proceed to secure payment.
+            </p>
+
+            <div className="space-y-3 text-sm border-t border-gray-100 pt-3">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-600">Package</span>
+                <span className="font-semibold text-gray-900 text-right">{selectedPackage.name}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-600">Pet</span>
+                <span className="font-medium text-gray-900 text-right">
+                  {schedulePets.find((p) => p.id === chosenPetId)?.name || '—'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-600">Sessions</span>
+                <span className="font-medium text-gray-900">{selectedPackage.totalSessions}</span>
+              </div>
+              {selectedPackage.vendorServiceId ? (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-gray-600">First day</span>
+                    <span className="font-medium text-gray-900 text-right">
+                      {formatDateLabel(startingSessionDate)}
+                    </span>
+                  </div>
+                  {(Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
+                    <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
+                      <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                        Times on first day
+                      </div>
+                      {perDaySessionTimes
+                        .slice(0, Number(selectedPackage.sessionsPerDay) || 1)
+                        .map((t, idx) => (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span className="text-gray-600">Slot {idx + 1}</span>
+                            <span className="font-medium text-gray-900">{formatTimeDisplay(t)}</span>
+                          </div>
+                        ))}
+                      <p className="text-xs text-gray-500 pt-1">
+                        Next sessions use <strong>consecutive calendar days</strong> (same times each day).
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-gray-600">Time (all sessions)</span>
+                      <span className="font-medium text-gray-900">{formatTimeDisplay(startingSessionTime)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex justify-between gap-2">
+                  <span className="text-gray-600">First session</span>
+                  <span className="font-medium text-gray-900 text-right">
+                    {formatDateLabel(startingSessionDate)}{' '}
+                    {startingSessionTime.trim()
+                      ? `· ${formatTimeDisplay(startingSessionTime)}`
+                      : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-3">Price breakdown</h3>
+            {selectedPackage.vendorServiceId && quoteLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-600 py-4">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-orange-500" />
+                Calculating taxes…
+              </div>
+            ) : selectedPackage.vendorServiceId && priceQuote ? (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Service amount</span>
+                  <span className="font-medium text-gray-900">₹{Math.round(priceQuote.basePrice).toLocaleString('en-IN')}</span>
+                </div>
+                {(priceQuote.discount ?? 0) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Discount</span>
+                    <span>− ₹{Math.round(priceQuote.discount ?? 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {(priceQuote.taxBreakdown?.length ?? 0) > 0 ? (
+                  (priceQuote.taxBreakdown ?? []).map((row, i) => (
+                    <div key={i} className="flex justify-between text-gray-700">
+                      <span>
+                        {row.name || 'GST'}
+                        {row.rate != null && Number(row.rate) > 0 ? ` (${Number(row.rate)}%)` : ''}
+                      </span>
+                      <span>₹{Math.round(row.amount || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  ))
+                ) : priceQuote.tax > 0 ? (
+                  <div className="flex justify-between text-gray-700">
+                    <span>GST / taxes</span>
+                    <span>₹{Math.round(priceQuote.tax).toLocaleString('en-IN')}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-gray-600">
+                    <span>GST / taxes</span>
+                    <span className="text-gray-500">Included or nil</span>
+                  </div>
+                )}
+                {/* Same fee categories as UniversalPaymentPage / normal bookings. */}
+                {Number(priceQuote.platformFee) > 0 && (
+                  <div className="flex justify-between text-gray-700 pt-2 border-t border-gray-100">
+                    <span>Platform fee</span>
+                    <span>₹{Math.round(priceQuote.platformFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {Number(priceQuote.convenienceFee) > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>Convenience fee</span>
+                    <span>₹{Math.round(priceQuote.convenienceFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {Number(priceQuote.deliveryFee) > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>Delivery fee</span>
+                    <span>₹{Math.round(priceQuote.deliveryFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-2 border-t border-gray-200">
+                  <span className="font-semibold text-gray-900">Total payable</span>
+                  <span className="text-xl font-bold text-orange-600">
+                    ₹{Math.round(priceQuote.finalPrice).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  This is the exact amount that will be charged on Razorpay.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Package total</span>
+                  <span className="font-semibold text-gray-900">
+                    ₹{selectedPackage.totalPrice.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Detailed tax lines appear when available for your provider. Final amount is confirmed at payment.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {selectedPackage.vendorServiceId && (
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <h3 className="font-semibold text-gray-900 mb-2">Cancellation & refund policy</h3>
+              {packagePolicy?.cancellationPolicy || packagePolicy?.refundPolicy ? (
+                <div className="space-y-2 text-sm text-gray-700">
+                  {packagePolicy?.cancellationPolicy && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Cancellation
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">
+                        {packagePolicy.cancellationPolicy}
+                      </p>
+                    </div>
+                  )}
+                  {packagePolicy?.refundPolicy && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Refund
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">
+                        {packagePolicy.refundPolicy}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  Standard Warmpawz cancellation and refund terms apply for this package.
+                </p>
+              )}
+              <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  checked={policyAccepted}
+                  onChange={(e) => setPolicyAccepted(e.target.checked)}
+                  aria-label="I have read and accept the cancellation and refund policy"
+                />
+                <span>
+                  I have read and agree to the cancellation and refund policy for this package.
+                </span>
+              </label>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setView('schedule');
+                setError(null);
+              }}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
               onClick={createPackageBooking}
               disabled={
                 booking ||
-                (!selectedPackage?.vendorServiceId && !scheduledDates[0])
+                (Boolean(selectedPackage.vendorServiceId) && !policyAccepted)
+              }
+              title={
+                Boolean(selectedPackage.vendorServiceId) && !policyAccepted
+                  ? 'Accept the cancellation & refund policy to continue'
+                  : undefined
               }
               className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {booking ? (
                 <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  Booking...
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                  Processing…
                 </>
               ) : (
                 <>
-                  Confirm Booking
+                  Proceed to payment
                   <ChevronRight className="w-5 h-5" />
                 </>
               )}

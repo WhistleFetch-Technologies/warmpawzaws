@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2, Calendar, Award, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface VetDoctorDetailsProps {
   phone: string;
@@ -56,7 +61,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
       let services: any[] = [];
       const servicesData = servicesResponse as any;
       if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = servicesData.services;
+        services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
         services = [
           ...(servicesData.services.at_home?.services || []),
@@ -71,14 +76,18 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
         services = servicesData;
       }
       
-      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
+      // id = vendor_services row (matches discovery API); serviceId = catalog/service UUID
       const mappedServices = services.map((s: any) => ({
-        id: s.serviceId || s.service_id, // ✅ UUID from services table
-        serviceId: s.serviceId || s.service_id, // ✅ UUID
+        id: s.id,
+        serviceId: s.serviceId || s.service_id,
+        vendorServiceId: s.id,
         name: s.serviceName || s.name || s.service_name,
         price: parseFloat(s.price || '0'),
         duration: s.duration || s.duration_minutes || 30,
         service_style: s.serviceStyle || s.service_style || 'at_center',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
+        packageDetails: s.packageDetails,
+        metadata: s.metadata,
       }));
       
       console.log('✅ Loaded doctor details:', {
@@ -111,27 +120,37 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
   };
 
   const handleBookService = (serviceId: string, serviceStyle: string) => {
-    // ✅ CRITICAL: Find service and use service_id (UUID) not numeric id
-    const service = doctor?.services?.find((s: any) => 
-      s.id === serviceId || 
-      s.serviceId === serviceId ||
-      (s.serviceId || s.service_id) === serviceId
+    const service = doctor?.services?.find(
+      (s: any) =>
+        s.id === serviceId ||
+        s.serviceId === serviceId ||
+        s.vendorServiceId === serviceId ||
+        (s.serviceId || s.service_id) === serviceId
     );
-    
-    // ✅ CRITICAL: Use service_id (UUID) from service object
     const serviceObj = service as any;
+    if (!serviceObj || !doctor?.id) return;
+
+    if (isVendorServicePackageRow(serviceObj)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(doctor.id),
+        vendorName: doctor.name,
+        serviceRow: serviceObj as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle,
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
+
     const finalServiceId = serviceObj?.serviceId || serviceObj?.service_id || serviceId;
-    
-    console.log('✅ Booking service with UUID:', {
-      inputServiceId: serviceId,
-      finalServiceId,
-      service
-    });
-    
+
     onNavigate('vet-booking', {
       doctorId: doctor?.id,
       doctor: doctor,
-      serviceId: finalServiceId, // ✅ UUID from services table
+      service: serviceObj,
+      serviceId: finalServiceId,
       serviceType: serviceStyle,
       serviceStyle: serviceStyle,
       serviceName: service?.name,
@@ -343,7 +362,14 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                       {getServiceIcon(service.service_style)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-gray-900 leading-snug">{service.name}</h3>
+                      <h3 className="font-semibold text-gray-900 leading-snug flex flex-wrap items-center gap-2">
+                        {service.name}
+                        {(service as any).isPackage && (
+                          <span className="rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                            Package
+                          </span>
+                        )}
+                      </h3>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5 shrink-0" />

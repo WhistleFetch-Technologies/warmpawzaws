@@ -119,8 +119,6 @@ import { ReturnRequestPage } from '../ReturnRequestPage';
 import { RewardsLoyaltyPage } from '../RewardsLoyaltyPage';
 import { ReferralSystemPage } from '../ReferralSystemPage';
 import { PackageBookingPage } from '../PackageBookingPage';
-import { PackageTrackingDashboard } from '../packages/PackageTrackingDashboard';
-import { PackagePurchaseSessionsView } from '../packages/PackagePurchaseSessionsView';
 import { EmergencyBookingPage } from '../EmergencyBookingPage';
 import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
 import { MedicalRecordsPage } from '../MedicalRecordsPage';
@@ -316,6 +314,20 @@ function customerBoardingProfileVendorIdFromNavigateData(data: unknown): string 
   return firstNonEmptyString(d.vendorId, d.vendor_id);
 }
 
+/** Legacy shell screen `package-tracking` → full URL package progress or My Bookings hub. */
+function PackageTrackingShellRedirect() {
+  const r = useRouter();
+  useEffect(() => {
+    r.replace('/bookings');
+  }, [r]);
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 bg-gray-50 px-6 text-center text-sm text-gray-600">
+      <p>Redirecting to My Bookings…</p>
+      <p className="text-xs text-gray-400">Use “My packages and tracking” to open session progress.</p>
+    </div>
+  );
+}
+
 export function CustomerHomeWrapper({
   phone,
   onNavigate,
@@ -405,8 +417,6 @@ export function CustomerHomeWrapper({
   >('walker');
   const [diagnosticsPackageHint, setDiagnosticsPackageHint] = useState<{ name?: string; testLabels?: string[] } | null>(null);
   const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
-  /** When set with `package-tracking`, shows single-purchase session view instead of the packages list. */
-  const [packageTrackingPurchaseId, setPackageTrackingPurchaseId] = useState<string | null>(null);
   /** Screen to return to when leaving My Pets (embedded list), if opened via navigateToPets */
   const [screenBeforePets, setScreenBeforePets] = useState<ScreenType | null>(null);
   /** Pet Sitting hub: back returns here when opened from another in-app screen (not a full `handleBack` reset). */
@@ -773,13 +783,20 @@ export function CustomerHomeWrapper({
     else if (service === 'booking-messages') openMessages();
     else if (service === 'purchase-package') {
       setPreviousScreen(currentScreen);
-      setCurrentScreen('package-booking');
+      const vid = String((data as any)?.vendorId ?? '').trim();
+      const vsid = String((data as any)?.vendorServiceId ?? '').trim();
+      if (vsid && vid) {
+        setWalkerServiceData(data ?? null);
+        setCurrentScreen('purchase-package');
+      } else {
+        setCurrentScreen('package-booking');
+      }
     }
     else if (service === 'package-tracking') {
-      setPreviousScreen(currentScreen);
       const pid = data?.packagePurchaseId ?? data?.package_purchase_id;
-      setPackageTrackingPurchaseId(pid != null && String(pid).trim() !== '' ? String(pid) : null);
-      setCurrentScreen('package-tracking');
+      const id = pid != null && String(pid).trim() !== '' ? String(pid).trim() : '';
+      if (id) router.push(`/packages/${encodeURIComponent(id)}`);
+      else router.push('/bookings');
     }
     else if (service === 'services') setCurrentScreen('services');
     else if (service === 'help' || service === 'support_help') setCurrentScreen('support_help');
@@ -901,14 +918,21 @@ export function CustomerHomeWrapper({
     }
     else if (screen === 'purchase-package') {
       setPreviousScreen(currentScreen);
-      setVetServiceData((prev: any) => ({ ...prev, ...data }));
-      setCurrentScreen('package-booking');
+      const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
+      const vsid = String(data?.vendorServiceId ?? '').trim();
+      if (vsid && vid) {
+        setWalkerServiceData(data ?? null);
+        setCurrentScreen('purchase-package');
+      } else {
+        setVetServiceData((prev: any) => ({ ...prev, ...data }));
+        setCurrentScreen('package-booking');
+      }
     }
     else if (screen === 'package-tracking') {
-      setPreviousScreen(currentScreen);
       const pid = data?.packagePurchaseId ?? data?.package_purchase_id;
-      setPackageTrackingPurchaseId(pid != null && String(pid).trim() !== '' ? String(pid) : null);
-      setCurrentScreen('package-tracking');
+      const id = pid != null && String(pid).trim() !== '' ? String(pid).trim() : '';
+      if (id) router.push(`/packages/${encodeURIComponent(id)}`);
+      else router.push('/bookings');
     }
     else {
       // ✅ FIX: Fallback - try to navigate to the screen directly
@@ -1090,6 +1114,7 @@ export function CustomerHomeWrapper({
     else if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
+    else if (path === 'my-packages') router.push('/my-packages');
     else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
     else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'appointments') setCurrentScreen('appointments');
@@ -1285,6 +1310,7 @@ export function CustomerHomeWrapper({
         onClose={() => setUserSidebarOpen(false)}
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
+        onViewMyPackages={() => router.push('/my-packages')}
         onNavigate={handleAccountNavigate}
       />
     ) : null;
@@ -2160,7 +2186,13 @@ export function CustomerHomeWrapper({
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
-          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          const vid = String(data?.vendorId ?? '').trim();
+          const vsid = String(data?.vendorServiceId ?? '').trim();
+          if (vsid && vid) {
+            setWalkerServiceData(data ?? null);
+          } else {
+            setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          }
           setCurrentScreen('purchase-package');
         } else if (screen === 'grooming-vendor-profile' && data?.vendorId) {
           const style = String(data.serviceStyle || 'at_center').toLowerCase();
@@ -2217,7 +2249,13 @@ export function CustomerHomeWrapper({
           setCurrentScreen('customer-profile');
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
-          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          const vid = String(data?.vendorId ?? '').trim();
+          const vsid = String(data?.vendorServiceId ?? '').trim();
+          if (vsid && vid) {
+            setWalkerServiceData(data ?? null);
+          } else {
+            setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          }
           setCurrentScreen('purchase-package');
         } else {
           console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
@@ -3074,7 +3112,7 @@ export function CustomerHomeWrapper({
           onBack={backToAccountMenu}
           onCloseToHome={handleBack}
           initialBookingId={selectedBookingId || undefined} 
-          onReorderMedicine={handleReorderMedicine} 
+          onReorderMedicine={handleReorderMedicine}
           onNavigate={(screen, data) => { 
             if (data?.bookingId) setSelectedBookingId(data.bookingId); 
             if (screen === 'diagnostics-reports' || screen === 'sample-collection-tracking') setPreviousScreen('my-bookings');
@@ -3087,6 +3125,10 @@ export function CustomerHomeWrapper({
               setTrackingBookingId(data?.bookingId ?? null);
               setPreviousScreen('my-bookings');
               setCurrentScreen('gps-tracking');
+            } else if (screen === 'package-tracking' && (data as { packagePurchaseId?: string })?.packagePurchaseId) {
+              router.push(
+                `/packages/${encodeURIComponent(String((data as { packagePurchaseId: string }).packagePurchaseId))}`
+              );
             } else {
               setCurrentScreen(screen as ScreenType);
             }
@@ -3575,7 +3617,7 @@ export function CustomerHomeWrapper({
       />
     );
 
-  // Package tracking (list or single purchase sessions)
+  // Legacy: deep links that still set `package-tracking` → My Bookings (package progress uses `/packages/:id`).
   if (currentScreen === 'package-tracking') {
     return (
       <CustomerScreenWrapper
@@ -3584,33 +3626,7 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        {packageTrackingPurchaseId ? (
-          <PackagePurchaseSessionsView
-            packagePurchaseId={packageTrackingPurchaseId}
-            phone={phone}
-            onBack={() => {
-              setPackageTrackingPurchaseId(null);
-              setCurrentScreen(previousScreen || 'home');
-              setPreviousScreen(null);
-            }}
-          />
-        ) : (
-          <PackageTrackingDashboard
-            phone={phone}
-            onBack={() => {
-              setPackageTrackingPurchaseId(null);
-              setCurrentScreen(previousScreen || 'home');
-              setPreviousScreen(null);
-            }}
-            onNavigate={(s, navData) => {
-              if (s === 'package-tracking' && (navData as any)?.packagePurchaseId) {
-                setPackageTrackingPurchaseId(String((navData as any).packagePurchaseId));
-              } else {
-                handleNavigateToService(s, navData);
-              }
-            }}
-          />
-        )}
+        <PackageTrackingShellRedirect />
       </CustomerScreenWrapper>
     );
   }
@@ -3628,20 +3644,28 @@ export function CustomerHomeWrapper({
   // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
   if (currentScreen === 'purchase-package') {
     const walkSession = walkerServiceData?.walkSession ?? null;
+    const w = walkerServiceData;
     const vendorPackageIntent =
-      walkerServiceData?.vendorServiceId && walkerServiceData?.vendorId
+      w?.vendorServiceId && w?.vendorId
         ? {
-            vendorId: String(walkerServiceData.vendorId),
-            vendorServiceId: String(walkerServiceData.vendorServiceId),
-            serviceName: String(walkerServiceData.serviceName || 'Package'),
-            totalSessions: Number(walkerServiceData.totalSessions) || 1,
-            price: Number(walkerServiceData.price ?? 0),
-            duration:
-              walkerServiceData.duration != null ? Number(walkerServiceData.duration) : 60,
-            serviceType: walkerServiceData.serviceType || 'walking',
-            serviceStyle: walkerServiceData.serviceStyle || 'at_home',
-            description: walkerServiceData.description,
-            vendorName: walkerServiceData?.walker?.name,
+            vendorId: String(w.vendorId),
+            vendorServiceId: String(w.vendorServiceId),
+            serviceName: String(w.serviceName || 'Package'),
+            totalSessions: Number(w.totalSessions) || 1,
+            sessionsPerDay: Math.max(
+              1,
+              Math.min(24, Number(w.sessionsPerDay ?? w.sessions_per_day) || 1)
+            ),
+            sessionIntervalDays: Math.max(
+              1,
+              Math.min(366, Number(w.sessionIntervalDays ?? w.session_interval_days) || 7)
+            ),
+            price: Number(w.price ?? 0),
+            duration: w.duration != null ? Number(w.duration) : 60,
+            serviceType: w.serviceType || 'walking',
+            serviceStyle: w.serviceStyle || 'at_home',
+            description: w.description,
+            vendorName: w?.walker?.name,
           }
         : null;
     return (

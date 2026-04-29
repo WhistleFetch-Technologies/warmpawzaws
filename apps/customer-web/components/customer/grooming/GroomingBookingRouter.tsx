@@ -14,6 +14,11 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -97,6 +102,7 @@ export function GroomingBookingRouter({
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to datetime
@@ -171,6 +177,53 @@ export function GroomingBookingRouter({
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
     new Set(selectedServices?.map(s => s.id || s.serviceId) || (serviceId ? [serviceId] : []))
   );
+
+  /** Deep link / profile context: vendor package rows must go to purchase-package, not one-off booking. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = vendorId;
+    if (!vid) return;
+
+    const fromList = (selectedServices || []).filter(Boolean) as Record<string, unknown>[];
+    let pkgRow: Record<string, unknown> | null =
+      (fromList.find((r) => isVendorServicePackageRow(r)) as Record<string, unknown> | null) || null;
+
+    if (!pkgRow && serviceId && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (row: any) =>
+          String(row?.id) === String(serviceId) || String(row?.serviceId || row?.service_id) === String(serviceId)
+      );
+      if (vs && isVendorServicePackageRow(vs)) pkgRow = vs as Record<string, unknown>;
+    }
+
+    if (!pkgRow && selectedVendorService && isVendorServicePackageRow(selectedVendorService)) {
+      pkgRow = selectedVendorService as Record<string, unknown>;
+    }
+
+    if (!pkgRow) return;
+
+    packageRedirectRef.current = true;
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: vendorNameProp || groomer?.name,
+      serviceRow: pkgRow,
+      serviceTypeCategory: 'grooming',
+      serviceStyle: String(serviceStyle || serviceType || selectedServiceType || 'at_home'),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    selectedServices,
+    serviceId,
+    vendorServices,
+    selectedVendorService,
+    vendorNameProp,
+    groomer,
+    serviceStyle,
+    serviceType,
+    selectedServiceType,
+    onNavigate,
+  ]);
   
   // Package awareness state
   const [activePackage, setActivePackage] = useState<any>(null);
@@ -236,6 +289,7 @@ export function GroomingBookingRouter({
         serviceStyle: style,
         icon: style === 'at_home' ? Home : Building2,
         color: style === 'at_home' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -408,8 +462,9 @@ export function GroomingBookingRouter({
       // Load actual vendor grooming services
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=grooming`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
-        console.log('Loaded vendor services:', servicesResponse.services.length);
+        const merged = mergeCustomerVendorServicesPayload(servicesResponse);
+        setVendorServices(merged);
+        console.log('Loaded vendor services:', merged.length);
       }
     } catch (error) {
       console.error('Error loading vendor services:', error);
@@ -553,6 +608,30 @@ export function GroomingBookingRouter({
   };
 
   const handleNext = () => {
+    if (step === 'service' && vendorId && vendorServices.length > 0) {
+      const rawIds = Array.from(selectedServiceIds);
+      const packageRows = rawIds
+        .map((id) =>
+          vendorServices.find(
+            (vs: any) => String(vs.id) === String(id) || String(vs.serviceId || vs.service_id) === String(id)
+          )
+        )
+        .filter(Boolean)
+        .filter((vs: any) => isVendorServicePackageRow(vs));
+      if (packageRows.length > 0) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vendorId),
+          vendorName: vendorNameProp || groomer?.name,
+          serviceRow: packageRows[0] as Record<string, unknown>,
+          serviceTypeCategory: 'grooming',
+          serviceStyle: String(selectedServiceType),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
+    }
     if (step === 'service') {
       setStep('datetime');
     }

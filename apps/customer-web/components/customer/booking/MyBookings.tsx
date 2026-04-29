@@ -12,7 +12,11 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
-import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  getServiceStyleDisplayLabel,
+  formatPriceWithSymbol,
+  customerBookingStatusShowsCheckInOtp,
+} from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
@@ -20,7 +24,6 @@ import { BookingDetailModal } from '../BookingDetailModal';
 import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
-
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const MEAL_PLAN_ORDERS_ENABLED = false;
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
@@ -93,6 +96,10 @@ interface Booking {
   paymentStatus?: string;
   /** When the booking was marked completed (for tele: aligns with video call end when backend sends it). */
   completedAt?: string;
+  /** True when this row is a visit booked against a package slot. */
+  isPackageSession?: boolean;
+  /** 1-based slot index within the package. */
+  packageSessionNumber?: number;
 }
 
 function isTeleBookingRow(b: { serviceStyle?: string; serviceType?: string; serviceName?: string }) {
@@ -113,7 +120,10 @@ interface MyBookingsProps {
   /** From live tracking etc.: `/bookings?reviewBookingId=` opens rate modal when list loads */
   reviewBookingIdFromUrl?: string | null;
   onReorderMedicine?: (medications: any[]) => void;
-  onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
+  onNavigate?: (
+    screen: string,
+    data?: { bookingId?: string; packagePurchaseId?: string; meetingId?: string }
+  ) => void;
 }
 
 export function MyBookings({
@@ -171,7 +181,6 @@ export function MyBookings({
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
-  const [hasActivePackages, setHasActivePackages] = useState(false);
 
   useEffect(() => {
     console.log('[MyBookings] init', {
@@ -236,6 +245,7 @@ export function MyBookings({
         if (!effectivePhone) {
           console.warn('[MyBookings] No phone available; skipping bookings fetch');
           setBookings([]);
+          setLoading(false);
           return;
         }
       }
@@ -255,16 +265,6 @@ export function MyBookings({
         rawBookings = result;
       } else {
         rawBookings = result.bookings || result.data?.bookings || [];
-      }
-
-      try {
-        const pkgRes = await apiClient.get<any>(
-          `/customer/${encodeURIComponent(effectivePhone)}/packages`
-        );
-        const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
-        setHasActivePackages(pkgs.length > 0);
-      } catch {
-        setHasActivePackages(false);
       }
 
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
@@ -386,11 +386,18 @@ export function MyBookings({
             b.package_details?.packagePurchaseId ||
             b.packageDetails?.packagePurchaseId,
           packageDetails: b.package_details || b.packageDetails,
+          isPackageSession: Boolean(b.is_package_session ?? b.isPackageSession),
+          packageSessionNumber:
+            b.package_session_number != null
+              ? Number(b.package_session_number)
+              : b.packageSessionNumber != null
+                ? Number(b.packageSessionNumber)
+                : undefined,
           occurrences: b.occurrences,
           createdAt: b.created_at || b.createdAt,
           specialInstructions: b.notes || b.special_instructions,
           requiresStartOTP: b.requires_start_otp,
-          startOTP: b.start_otp,
+          startOTP: b.start_otp || b.startOTP,
           startTime: b.start_time,
           endTime: b.end_time,
           actualDuration: b.actual_duration,
@@ -407,14 +414,18 @@ export function MyBookings({
         };
       });
 
-      // Sort: most recent bookings first
-      mappedBookings.sort((a, b) => {
+      // Hide package child session rows from My Bookings: a package purchase is
+      // surfaced as ONE parent canonical booking. Per-session OTPs / tracker /
+      // directions live on /my-packages → PackageSessionTrackingPanel, NOT here.
+      const visibleBookings = mappedBookings.filter((b) => !b.isPackageSession);
+
+      visibleBookings.sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return dateB - dateA;
       });
 
-      setBookings(mappedBookings);
+      setBookings(visibleBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
@@ -592,23 +603,7 @@ export function MyBookings({
         sheetToneClass="bg-gray-50"
       />
 
-      {hasActivePackages && (
-        <div className="-mt-1 px-4 py-2 bg-purple-50 border-b border-purple-100">
-          <button
-            type="button"
-            onClick={() => onNavigate?.('package-tracking')}
-            className="w-full text-left flex items-center justify-between gap-2 text-sm font-medium text-purple-900"
-          >
-            <span className="inline-flex items-center gap-2">
-              <Package className="w-4 h-4 shrink-0" />
-              My packages
-            </span>
-            <ChevronRight className="w-4 h-4 text-purple-600 shrink-0" />
-          </button>
-        </div>
-      )}
-
-      <div className={`max-w-customer mx-auto${hasActivePackages ? '' : ' -mt-1'}`}>
+      <div className="max-w-customer mx-auto -mt-1">
         {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1); navigation gated by MEAL_PLAN_ORDERS_ENABLED */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
@@ -854,8 +849,13 @@ export function MyBookings({
 
                 {/* ✅ Tracker button for at_home services (replaces Directions) - check both serviceType and serviceStyle */}
                 {/* ✅ Hide tracker when vendor has arrived or service is completed */}
+                {/* ✅ Hide tracker for package parent rows — per-session tracker lives on /my-packages */}
                 {(() => {
                   const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
+                  const isPackageParent = Boolean(
+                    (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                  );
+                  if (isPackageParent) return false;
                   // Show tracker for: confirmed, in_progress, vendor_on_way, on_way, in_transit
                   // Hide tracker for: arrived, completed, cancelled, pending
                   const showTrackerStatuses = ['confirmed', 'in_progress', 'vendor_on_way', 'on_way', 'in_transit', 'arrived'];
@@ -943,8 +943,12 @@ export function MyBookings({
 
                 {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
                 {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
-                {(booking.otpCode || booking.completionOTP || booking.startOTP) &&
-                  (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') &&
+                {/* Hide for package parent rows — per-session OTP lives on /my-packages */}
+                {!(
+                  (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                ) &&
+                  (booking.otpCode || booking.completionOTP || booking.startOTP) &&
+                  customerBookingStatusShowsCheckInOtp(booking.status) &&
                   !booking.otpVerified && (
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <div className="flex items-center justify-between bg-orange-50 rounded-lg p-3">
@@ -994,18 +998,25 @@ export function MyBookings({
                     </div>
                   )}
 
-                {/* OTP Verified Badge */}
-                {booking.otpVerified && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-green-700">
-                      <Check className="w-4 h-4" />
-                      <span className="text-sm">Check-in completed</span>
+                {/* OTP Verified Badge — hidden for package parent rows */}
+                {booking.otpVerified &&
+                  !(
+                    (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                  ) && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-green-700">
+                        <Check className="w-4 h-4" />
+                        <span className="text-sm">Check-in completed</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* End-of-service OTP: shown after vendor used start OTP (walker / at-home in_progress) */}
-                {booking.otpVerified &&
+                {/* Hide for package parent rows — per-session end OTP lives on /my-packages */}
+                {!(
+                  (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                ) &&
+                  booking.otpVerified &&
                   booking.status === 'in_progress' &&
                   (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') &&
                   (booking.completionOTP || booking.otpCode) && (
@@ -1082,7 +1093,8 @@ export function MyBookings({
                           e.stopPropagation();
                           const pid =
                             booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId;
-                          if (pid) router.push(`/packages/${encodeURIComponent(String(pid))}`);
+                          if (!pid) return;
+                          router.push('/my-packages');
                         }}
                         className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
                       >

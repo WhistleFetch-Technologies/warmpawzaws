@@ -1932,7 +1932,34 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (isPackageService && packageDetails && typeof packageDetails === 'object') {
         metadata.isPackage = true;
         metadata.packageType = serviceData.packageType || undefined;
-        metadata.packageDetails = packageDetails;
+        // Preserve cancellation/refund/T&C policies from EnhancedPackageCreationModal
+        // alongside packageDetails so quote + payment flows can surface them and
+        // require customer acceptance before payment.
+        const enrichedPackageDetails: Record<string, unknown> = { ...packageDetails };
+        if (
+          enrichedPackageDetails.cancellationPolicy == null &&
+          (serviceData as any).cancellationPolicy
+        ) {
+          enrichedPackageDetails.cancellationPolicy = (serviceData as any).cancellationPolicy;
+        }
+        if (
+          enrichedPackageDetails.refundPolicy == null &&
+          ((serviceData as any).refundPolicy ?? (serviceData as any).cancellationPolicy)
+        ) {
+          enrichedPackageDetails.refundPolicy =
+            (serviceData as any).refundPolicy ?? (serviceData as any).cancellationPolicy;
+        }
+        if (
+          enrichedPackageDetails.termsAndConditions == null &&
+          (serviceData as any).termsAndConditions
+        ) {
+          enrichedPackageDetails.termsAndConditions = (serviceData as any).termsAndConditions;
+        }
+        metadata.packageDetails = enrichedPackageDetails;
+        if (enrichedPackageDetails.cancellationPolicy)
+          metadata.cancellationPolicy = enrichedPackageDetails.cancellationPolicy;
+        if (enrichedPackageDetails.refundPolicy)
+          metadata.refundPolicy = enrichedPackageDetails.refundPolicy;
       }
       if (effectiveSpecIds.length > 0) {
         metadata.specialization_ids = effectiveSpecIds;
@@ -2558,6 +2585,43 @@ export function registerVendorServicesEndpoints(app: Hono) {
         await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+
+      const existingService = await query(
+        `SELECT id, is_enabled, publish_status
+           FROM vendor_services
+          WHERE id = $1 AND vendor_id = $2
+          LIMIT 1`,
+        [serviceId, vendorId]
+      );
+      if (existingService.rowCount === 0) {
+        return c.json({ error: 'Service not found' }, 404);
+      }
+
+      const bookingReferenceCheck = await query(
+        `SELECT COUNT(*)::int AS count
+           FROM bookings
+          WHERE service_id = $1`,
+        [serviceId]
+      );
+      const referencedBookingCount = Number(bookingReferenceCheck.rows?.[0]?.count || 0);
+
+      if (referencedBookingCount > 0) {
+        await query(
+          `UPDATE vendor_services
+              SET is_enabled = false,
+                  publish_status = 'draft',
+                  updated_at = NOW()
+            WHERE id = $1
+              AND vendor_id = $2`,
+          [serviceId, vendorId]
+        );
+
+        return c.json({
+          success: true,
+          softDeleted: true,
+          message: 'Service has existing bookings, so it was disabled instead of deleted.',
+        });
       }
 
       await query(

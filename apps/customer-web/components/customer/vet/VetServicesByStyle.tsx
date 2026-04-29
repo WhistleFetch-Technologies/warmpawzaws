@@ -15,6 +15,10 @@ import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -233,6 +237,24 @@ export function VetServicesByStyle({
       providerName: provider.name,
     };
 
+    const vendorIdForPkg =
+      provider.providerType === 'vendor'
+        ? String(provider.providerId || provider.vendorId || '')
+        : String(provider.vendorId || provider.providerId || '');
+    if (isVendorServicePackageRow(service as any) && vendorIdForPkg) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vendorIdForPkg,
+        vendorName: provider.vendorName || provider.name,
+        serviceRow: service as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle,
+      });
+      if (pkgNav) {
+        onNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
+
     if (provider.providerType === 'vendor') {
       bookingData.vendorId = provider.providerId;
       bookingData.vendorName = provider.name;
@@ -287,6 +309,27 @@ export function VetServicesByStyle({
         const only = selectedServicesData[0];
         handleSelectService(profileProvider, only);
         return;
+      }
+
+      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      if (pkgRow && profileProvider) {
+        const vid =
+          profileProvider.providerType === 'vendor'
+            ? String(profileProvider.providerId || profileProvider.vendorId || '')
+            : String(profileProvider.vendorId || profileProvider.providerId || '');
+        if (vid) {
+          const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+            vendorId: vid,
+            vendorName: profileProvider.vendorName || profileProvider.name,
+            serviceRow: pkgRow as Record<string, unknown>,
+            serviceTypeCategory: 'vet',
+            serviceStyle,
+          });
+          if (pkgNav) {
+            onNavigate('purchase-package', pkgNav);
+            return;
+          }
+        }
       }
 
       // ✅ FIX: Pass all selected services, not just the first one

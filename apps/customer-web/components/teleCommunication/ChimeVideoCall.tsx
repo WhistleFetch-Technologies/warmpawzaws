@@ -32,6 +32,10 @@ import {
   Paperclip, FileText, SwitchCamera,
 } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import {
+  requestCameraMicrophonePermission,
+  requiresUserGestureForMediaPrompt,
+} from '@/lib/runtime-permissions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -244,7 +248,13 @@ export function ChimeVideoCall({
 
   // Auto-join when SDK is ready (e.g. customer accepted call or opened video from booking)
   useEffect(() => {
-    if (status !== 'ready' || !bookingId || !participantId || hasAutoJoinedRef.current) return;
+    if (
+      status !== 'ready' ||
+      !bookingId ||
+      !participantId ||
+      hasAutoJoinedRef.current ||
+      requiresUserGestureForMediaPrompt()
+    ) return;
     hasAutoJoinedRef.current = true;
     joinMeeting();
   }, [status, bookingId, participantId]);
@@ -619,21 +629,7 @@ export function ChimeVideoCall({
   }, [showSettings, refreshDeviceLists]);
 
   const primeDevicePermissions = async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
-    const stopTracks = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      stopTracks(stream);
-    } catch {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stopTracks(stream);
-      } catch { }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stopTracks(stream);
-      } catch { }
-    }
+    await requestCameraMicrophonePermission();
   };
 
   const setupMediaDevices = async (meetingSession: any) => {
@@ -1514,6 +1510,14 @@ export function ChimeVideoCall({
   };
 
   const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
+  const handleJoinTap = async () => {
+    const perm = await requestCameraMicrophonePermission();
+    if (perm === 'denied') {
+      toast.error('Camera/Microphone permission denied. Please allow access and try again.');
+      return;
+    }
+    void joinMeeting();
+  };
 
   // ============================================================================
   // RENDER
@@ -1572,7 +1576,7 @@ export function ChimeVideoCall({
           <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
 
           <Button
-            onClick={() => joinMeeting()}
+            onClick={handleJoinTap}
             className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-500/30"
           >
             <Phone className="w-5 h-5 mr-2" />

@@ -48,6 +48,7 @@ import {
 } from '../../../utils/package-session-sync';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1578,7 +1579,50 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           insertedBooking?.id &&
           customerId
         ) {
-          const gross = Math.round((parseFloat(String(insertedBooking.total_amount ?? 0)) || 0) * 100) / 100;
+          // Ensure a wallet row exists so balance SELECT + debit are not fooled by a missing row.
+          await client.query('SAVEPOINT sp_ensure_customer_wallet');
+          try {
+            await client.query(
+              `INSERT INTO customer_wallets (customer_id, balance, currency) VALUES ($1::uuid, 0, 'INR') ON CONFLICT (customer_id) DO NOTHING`,
+              [customerId]
+            );
+            await client.query('RELEASE SAVEPOINT sp_ensure_customer_wallet');
+          } catch {
+            await client.query('ROLLBACK TO SAVEPOINT sp_ensure_customer_wallet').catch(() => {});
+            try {
+              await client.query(
+                `INSERT INTO customer_wallets (customer_id, balance) VALUES ($1::uuid, 0) ON CONFLICT (customer_id) DO NOTHING`,
+                [customerId]
+              );
+            } catch {
+              /* non-fatal — debit path may still upsert */
+            }
+          }
+
+          let gross = Math.round((parseFloat(String(insertedBooking.total_amount ?? 0)) || 0) * 100) / 100;
+          // Legacy clients sent net-after-wallet as amount → total_amount 0 but useWallet + walletAmount set.
+          if (gross <= 0) {
+            const fromBody = Math.round(
+              (parseFloat(String(rawBookingBody.amount ?? rawBookingBody.totalAmount ?? 0)) || 0) * 100
+            ) / 100;
+            const candidate = Math.max(fromBody, Math.round(reqWalletAmt * 100) / 100);
+            if (candidate > 0) {
+              await client.query('SAVEPOINT sp_wallet_sync_total');
+              try {
+                await client.query(
+                  `UPDATE bookings SET total_amount = $1::numeric, updated_at = NOW() WHERE id = $2::uuid`,
+                  [candidate, insertedBooking.id]
+                );
+                await client.query('RELEASE SAVEPOINT sp_wallet_sync_total');
+                gross = candidate;
+                (insertedBooking as any).total_amount = candidate;
+              } catch (syncErr) {
+                await client.query('ROLLBACK TO SAVEPOINT sp_wallet_sync_total').catch(() => {});
+                console.warn('[BOOKING] wallet: could not sync total_amount from client amount:', (syncErr as any)?.message);
+              }
+            }
+          }
+
           if (gross > 0) {
             const cap = reqWalletAmt > 0 ? Math.min(reqWalletAmt, gross) : gross;
             try {
@@ -1588,15 +1632,18 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               );
               const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
               const chunk = Math.round(Math.min(cap, bal, gross) * 100) / 100;
+              let debitedActual = 0;
               if (chunk > 0) {
-                await debitCustomerWalletForBookingInTransaction(client, {
+                const d = await debitCustomerWalletForBookingInTransaction(client, {
                   customerId,
                   bookingId: String(insertedBooking.id),
                   amount: chunk,
                   idempotencyKey: `booking-create-${insertedBooking.id}`,
                 });
+                debitedActual = Math.round((d?.debited ?? chunk) * 100) / 100;
               }
-              if (chunk + 1e-6 >= gross) {
+              // Tolerate tiny float drift so PAID + confirmed is set whenever wallet covers list total.
+              if (debitedActual + 0.02 >= gross) {
                 await client.query(
                   `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1::uuid`,
                   [insertedBooking.id]
@@ -1611,7 +1658,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                     booking_id: insertedBooking.id,
                     customer_id: customerId,
                     vendor_id: insertedBooking.vendor_id,
-                    amount: chunk,
+                    amount: debitedActual > 0 ? debitedActual : chunk,
                     currency: 'INR',
                     payment_method: 'wallet',
                     payment_status: 'completed',
@@ -2278,6 +2325,8 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
     }
+
+    await reconcileBookingPayments([booking]);
 
     // Build enriched response
     const enrichedBooking = {

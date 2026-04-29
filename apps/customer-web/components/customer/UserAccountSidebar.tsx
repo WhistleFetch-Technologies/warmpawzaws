@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
   Camera, Edit2, Save, X, User, Calendar, 
-  MessageSquare, Heart, Settings, ChevronRight, Package,
+  MessageSquare, Heart, Settings, ChevronRight, Package, Package2,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
@@ -462,12 +462,25 @@ interface UserAccountSidebarProps {
   onViewBooking?: (bookingId: string, petId: string) => void;
   onViewAppointments?: () => void;
   onViewWallet?: () => void;
+  /** Full-page `/my-packages` (same pattern as wallet). */
+  onViewMyPackages?: () => void;
   onNavigate?: (path: string) => void;
 }
 
-export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooking, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
+export function UserAccountSidebar({
+  phone,
+  onClose,
+  onNavigateHome,
+  onViewBooking,
+  onViewAppointments,
+  onViewWallet,
+  onViewMyPackages,
+  onNavigate,
+}: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'>('menu');
+  const [activeView, setActiveView] = useState<
+    'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
+  >('menu');
   
   // Profile states
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -1198,6 +1211,13 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
 
   const menuItems = [
     { icon: User, label: 'My Profile', color: 'from-blue-100 to-blue-200 text-blue-600', view: 'profile' as const },
+    {
+      icon: Package2,
+      label: 'My packages',
+      color: 'from-orange-100 to-orange-200 text-orange-600',
+      action: 'my-packages' as const,
+      isExternal: true,
+    },
     { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: true },
     { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
     { icon: Award, label: 'Rewards & Loyalty', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
@@ -1268,6 +1288,9 @@ export function UserAccountSidebar({ phone, onClose, onNavigateHome, onViewBooki
                     if (item.isExternal) {
                       if (item.action === 'appointments' && onViewAppointments) {
                         onViewAppointments();
+                        handleClose();
+                      } else if (item.action === 'my-packages' && onViewMyPackages) {
+                        onViewMyPackages();
                         handleClose();
                       } else if (item.action === 'wallet' && onViewWallet) {
                         onViewWallet();

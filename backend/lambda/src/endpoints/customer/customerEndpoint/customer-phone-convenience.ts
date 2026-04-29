@@ -437,6 +437,9 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       }
 
       // Build query (join package_purchases for same packageDetails / isPackage as customer/:id/bookings)
+      // Children of a package purchase (`is_package_session = true`) are surfaced in
+      // the dedicated session tracker (/my-packages → PackageSessionTrackingPanel),
+      // NOT in My Bookings — only the canonical parent row appears here.
       let bookingQuery = `
         SELECT b.*,
                ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
@@ -450,6 +453,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
         WHERE b.customer_id = $1
+          AND COALESCE(b.is_package_session, false) = false
       `;
 
       const params: any[] = [customerId];
@@ -1430,6 +1434,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
           packageName: pkg.package_name || pkg.name,
           vendorName: pkg.vendor_name,
           vendorId: pkg.vendor_id,
+          serviceStyle: pkg.service_style || pkg.service_type || null,
           totalSessions: pkg.total_sessions,
           remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
           sessionsUsed: pkg.sessions_used || 0,

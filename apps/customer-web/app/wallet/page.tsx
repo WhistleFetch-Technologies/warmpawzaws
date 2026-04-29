@@ -21,12 +21,14 @@ export default function WalletPage() {
     setPhone(storedPhone);
   }, []);
 
+  const pageOuter =
+    'flex h-[100dvh] max-h-[100dvh] min-h-0 w-full justify-center overflow-hidden bg-[#FAF6F0]';
   const shellClass =
-    'w-full max-w-customer min-h-[100dvh] mx-auto flex flex-col bg-[#FAF6F0] rounded-t-3xl overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
+    'flex h-full min-h-0 w-full max-w-customer flex-col overflow-hidden rounded-t-3xl bg-[#FAF6F0] shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
 
   if (!phone) {
     return (
-      <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
+      <div className={pageOuter}>
         <div className={shellClass}>
           <header className="shrink-0 rounded-b-[1.75rem] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top cw-header-safe-x pb-4 md:pb-5">
             <div className="flex items-center gap-2">
@@ -43,7 +45,7 @@ export default function WalletPage() {
               <h1 className="text-xl font-bold">Wallet</h1>
             </div>
           </header>
-          <div className="flex-1 flex flex-col items-center justify-center px-6 pb-8 text-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-8 text-center">
             <p className="text-gray-600">Please login to view your wallet</p>
             <Link
               href="/auth"
@@ -80,7 +82,7 @@ export default function WalletPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
+    <div className={pageOuter}>
       <div className={shellClass}>
         <header className="shrink-0 rounded-b-[1.75rem] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md cw-header-safe-top cw-header-safe-x pb-4 md:pb-5">
           <div className="flex items-center gap-2">
@@ -98,7 +100,7 @@ export default function WalletPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-y-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           <CustomerWallet customerPhone={phone} onNavigate={handleInAppNavigate} />
         </div>
       </div>

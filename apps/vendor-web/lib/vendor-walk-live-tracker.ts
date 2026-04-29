@@ -9,9 +9,21 @@ const NON_WALK_HOME_HINT =
 /**
  * Bookings that should use `/bookings/home-service?bookingId=` (single live journey UI: start travel → map → OTP).
  * Catalog names may omit the word "walk"; walker + at_home is a strong signal.
+ *
+ * Package canonical parent rows (purchase-level placeholder; not a real
+ * session) MUST NOT expose the live tracker — sessions are the only bookable
+ * unit and they each carry their own live tracker. The parent row is only a
+ * grouping container for chat / progress.
  */
 export function bookingNeedsWalkLiveTracker(booking: Record<string, any> | null | undefined, vendorData?: any): boolean {
   if (!booking) return false;
+  const packagePurchaseId =
+    booking.packagePurchaseId ?? booking.package_purchase_id ?? null;
+  const isPackageSession = Boolean(
+    booking.isPackageSession ?? booking.is_package_session
+  );
+  // Parent canonical package booking → not a session; hide the live tracker.
+  if (packagePurchaseId && !isPackageSession) return false;
   const name = String(booking.serviceName || booking.service_name || '').toLowerCase();
   const cat = String(booking.serviceCategory || booking.service_category || '').toLowerCase();
   const hay = `${name} ${cat}`;

@@ -431,10 +431,22 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         body.useWallet === true ||
         body.useWallet === 'true' ||
         String(body.useWallet || '').toLowerCase() === 'true';
-      const walletAmountCreateOrder = Math.max(
+      let walletAmountCreateOrder = Math.max(
         0,
         parseFloat(String(body.walletAmount ?? body.wallet_amount ?? '0')) || 0
       );
+      if (
+        booking &&
+        useWalletCreateOrder &&
+        walletAmountCreateOrder <= 0.009 &&
+        customerIdFinal
+      ) {
+        const grossBk =
+          Math.round((parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100) / 100;
+        if (grossBk > 0) {
+          walletAmountCreateOrder = grossBk;
+        }
+      }
       if (
         booking &&
         bookingId &&
@@ -496,6 +508,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             const vals = cols.map((k) => pdata[k]);
             const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
             await client.query(`INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`, vals);
+            const paidW = Math.round((deb.debited ?? 0) * 100) / 100;
+            const razorpayRemainRupee = Math.round((Number(amount) || 0) * 100) / 100;
+            if (gross > 0 && paidW + 0.02 >= gross) {
+              await client.query(
+                `UPDATE bookings SET payment_status = 'paid', status = CASE WHEN status = 'pending_payment' THEN 'confirmed' ELSE status END, updated_at = NOW() WHERE id = $1::uuid`,
+                [String(bookingId)]
+              );
+            }
+            if (razorpayRemainRupee < 0.01 && gross > 0 && paidW + 0.02 >= gross) {
+              await client.query(
+                `UPDATE payments SET payment_status = 'completed', payment_method = 'wallet', updated_at = NOW()
+                 WHERE id = (SELECT id FROM payments WHERE booking_id = $1::uuid ORDER BY created_at DESC LIMIT 1)`,
+                [String(bookingId)]
+              );
+            }
           });
         } catch (e: any) {
           console.error('[RAZORPAY-CREATE-ORDER] wallet slice + orphan payment failed:', e?.message || e);
@@ -503,6 +530,32 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             e?.message || 'Could not apply wallet balance to this booking. Check your wallet balance and try again.',
             400
           );
+        }
+      }
+
+      // Wallet covered full booking and client sent ₹0 Razorpay remainder — do not call Razorpay with 0 paise.
+      if (
+        booking &&
+        bookingId &&
+        !isPharmacyOrder &&
+        !isDiagnosticsOrder &&
+        !isBookingPrepaid &&
+        !isWalletTopup &&
+        Number(amount) < 0.01
+      ) {
+        const paidCheck = await query(
+          `SELECT payment_status::text AS ps FROM bookings WHERE id = $1::uuid LIMIT 1`,
+          [String(bookingId)]
+        );
+        const ps = String(paidCheck.rows?.[0]?.ps || '').toLowerCase();
+        if (ps === 'paid') {
+          return this.success({
+            orderId: 'wallet-only',
+            amount: 0,
+            currency: currency || 'INR',
+            keyId: config.keyId,
+            paidByWallet: true,
+          });
         }
       }
 

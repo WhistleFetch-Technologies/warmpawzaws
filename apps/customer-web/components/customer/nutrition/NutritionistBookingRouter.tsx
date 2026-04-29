@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
@@ -208,7 +209,7 @@ export function NutritionistBookingRouter({
       const servicesResponse = await apiClient.get(`/customer/vendor/${effectiveVendorId}/services${serviceStyleParam}`) as any;
       console.log('servicesResponse--------------------->', servicesResponse);
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
+        setVendorServices(mergeCustomerVendorServicesPayload(servicesResponse));
         console.log('✅ Loaded vendor services:', servicesResponse.services.length);
       } else {
         console.warn('⚠️ No services found or invalid response');

@@ -435,6 +435,8 @@ export function WalkerBookingRouter({
           serviceType: 'walking',
           serviceName: sel.name,
           totalSessions: sel.totalSessions ?? 1,
+          sessionsPerDay: sel.sessionsPerDay,
+          sessionIntervalDays: sel.sessionIntervalDays,
           price: sel.price,
           duration: sel.duration,
           description: sel.desc,

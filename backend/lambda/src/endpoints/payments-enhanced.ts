@@ -354,7 +354,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           );
           const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
           const targetDebit = Math.min(walletCap, bal, totalAmount);
-          if (targetDebit > 0.009) {
+          if (targetDebit > 0) {
             const idem =
               idempotencyKey != null && String(idempotencyKey).trim() !== ''
                 ? String(idempotencyKey).trim()
@@ -510,6 +510,68 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           }
         } catch (error) {
           console.error('[PAYMENT-CREATE] Wallet full-payment booking update failed:', error);
+        }
+      }
+
+      // Wallet covered the booking row total but /payments total (tax + platform fees) left a Razorpay remainder —
+      // payment row stays "pending" while the customer already paid the slot via wallet. Confirm the booking.
+      const bookingServiceTotal =
+        Math.round(
+          (parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100
+        ) / 100;
+      const walletCoversBookingService =
+        bookingServiceTotal > 0 &&
+        walletDebitedAmount > 0 &&
+        walletDebitedAmount + 0.02 >= bookingServiceTotal;
+      if (
+        walletCoversBookingService &&
+        payment.booking_id &&
+        payment.payment_status !== 'completed' &&
+        String(booking.status || '').toLowerCase() === 'pending_payment'
+      ) {
+        try {
+          let bookingToNotify: string | null = null;
+          let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+          await withTransaction(async (client) => {
+            const { rows: bookingRows } = await client.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
+              [payment.booking_id]
+            );
+            if (bookingRows.length > 0) {
+              const bRow = bookingRows[0];
+              const previousStatus = bRow.status || null;
+              if (String(previousStatus || '').toLowerCase() !== 'pending_payment') return;
+              await client.query(
+                `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+                [bRow.id]
+              );
+              bookingToNotify = bRow.id;
+              bookingStatusChange = { bookingId: bRow.id, from: previousStatus, to: 'confirmed' };
+            }
+          });
+          if (bookingStatusChange) {
+            try {
+              await logBookingStatusChange(
+                bookingStatusChange.bookingId,
+                bookingStatusChange.from,
+                bookingStatusChange.to,
+                'system',
+                'system',
+                'Wallet covered booking total (fees may remain on payment row)'
+              );
+            } catch (auditErr) {
+              console.error('[PAYMENT-CREATE] Failed to log booking confirm after wallet/service parity:', auditErr);
+            }
+          }
+          if (bookingToNotify) {
+            try {
+              await notifyBookingCreated(bookingToNotify, requestId);
+            } catch (notifyErr) {
+              console.error('[PAYMENT-CREATE] Failed to notify after wallet/service parity:', notifyErr);
+            }
+          }
+        } catch (e) {
+          console.error('[PAYMENT-CREATE] Wallet vs booking-total confirm failed:', e);
         }
       }
 

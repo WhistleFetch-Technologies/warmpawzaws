@@ -22,6 +22,11 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -152,6 +157,7 @@ export function BoardingBookingRouter({
   const beganWithPreselectedVendorServiceRef = useRef(Boolean(hasServiceContext));
 
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       setStep('datetime');
@@ -393,6 +399,35 @@ export function BoardingBookingRouter({
     setCheckOutDate(checkInDate);
   }, [isPetSitting, sittingSameDay, checkInDate]);
 
+  /** Profile/deep link: preselected vendor_services row is a multi-session package → purchase flow. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    if (!vendorId || !serviceId || vendorServices.length === 0) return;
+    const row = vendorServices.find(
+      (vs: any) =>
+        String(vs?.id) === String(serviceId) || String(vs?.serviceId || vs?.service_id) === String(serviceId)
+    );
+    if (!row || !isVendorServicePackageRow(row)) return;
+    packageRedirectRef.current = true;
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vendorId),
+      vendorName: facility?.name,
+      serviceRow: row as Record<string, unknown>,
+      serviceTypeCategory: packageServiceType,
+      serviceStyle: String(row.serviceStyle ?? row.service_style ?? serviceStyle ?? serviceType ?? ''),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    serviceId,
+    vendorServices,
+    facility?.name,
+    packageServiceType,
+    serviceStyle,
+    serviceType,
+    onNavigate,
+  ]);
+
   const loadVendorServices = async () => {
     if (!vendorId) return;
 
@@ -412,7 +447,7 @@ export function BoardingBookingRouter({
 
       let list: any[] =
         servicesResponse?.success && Array.isArray(servicesResponse.services)
-          ? servicesResponse.services
+          ? mergeCustomerVendorServicesPayload(servicesResponse)
           : [];
 
       /** If sitting filter returns nothing, refetch without category and keep at_home rows (DB category/style quirks). */
@@ -420,7 +455,7 @@ export function BoardingBookingRouter({
         try {
           const fallback = (await apiClient.get(`/customer/vendor/${vendorId}/services`)) as any;
           if (fallback?.success && Array.isArray(fallback.services)) {
-            list = filterAtHomeForSitting(fallback.services);
+            list = filterAtHomeForSitting(mergeCustomerVendorServicesPayload(fallback));
           }
         } catch {
           /* keep empty */
@@ -591,6 +626,32 @@ export function BoardingBookingRouter({
     if (step === 'pet') {
       handleCreateBookingForPayment();
       return;
+    }
+
+    if (
+      step === 'service' &&
+      vendorId &&
+      selectedServiceType &&
+      vendorServices.length > 0
+    ) {
+      const row = vendorServices.find(
+        (vs: any) =>
+          String(vs?.id) === String(selectedServiceType) ||
+          String(vs?.serviceId || vs?.service_id) === String(selectedServiceType)
+      );
+      if (row && isVendorServicePackageRow(row)) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vendorId),
+          vendorName: facility?.name,
+          serviceRow: row as Record<string, unknown>,
+          serviceTypeCategory: packageServiceType,
+          serviceStyle: String(row.serviceStyle ?? row.service_style ?? serviceStyle ?? serviceType ?? ''),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
     }
 
     if (currentIdx < steps.length - 1) {

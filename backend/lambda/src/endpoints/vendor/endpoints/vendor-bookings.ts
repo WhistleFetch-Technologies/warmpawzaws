@@ -727,6 +727,22 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           console.log(`📋 [BOOKING-DETAILS] Extracted pet_id from special_instructions: ${petIdToUse}`);
         }
       }
+      // Package umbrella rows often omit pet_id; if customer has exactly one pet, use it for display.
+      if (!petIdToUse && booking.customer_id) {
+        try {
+          const pr = await query(
+            `SELECT id FROM pets WHERE customer_id = $1::uuid ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 2`,
+            [booking.customer_id]
+          );
+          const rows = pr.rows || [];
+          if (rows.length === 1 && rows[0]?.id) {
+            petIdToUse = String(rows[0].id);
+            console.log(`📋 [BOOKING-DETAILS] Single-pet fallback for customer: ${petIdToUse}`);
+          }
+        } catch (petFallbackErr) {
+          console.warn('[BOOKING-DETAILS] Single-pet fallback failed:', petFallbackErr);
+        }
+      }
 
       // Package purchase (when booking is a package session) - fetch in parallel with others
       const packagePurchaseId = (booking as any).package_purchase_id;

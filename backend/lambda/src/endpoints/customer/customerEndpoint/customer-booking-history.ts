@@ -98,6 +98,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON s.id = b.service_id
         WHERE b.customer_id = $1
+          AND COALESCE(b.is_package_session, false) = false
       `;
 
       const params: any[] = [customerId];
@@ -334,6 +335,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         'SELECT * FROM reviews WHERE booking_id = $1 AND customer_id = $2',
         [bookingId, booking.customer_id]
       );
+
+      await reconcileBookingPayments([booking]);
 
       return c.json({
         success: true,

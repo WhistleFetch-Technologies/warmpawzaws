@@ -11,6 +11,7 @@ import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav'
 import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 import { MedicalHistoryModal } from './MedicalHistoryModal';
+import { PackagePurchaseSessionsVendorView } from '@/components/vendor/PackagePurchaseSessionsVendorView';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
 import { DiagnosticsReportUpload } from './diagnostics/DiagnosticsReportUpload';
 import { CommunicationHub } from '../communication/CommunicationHub';
@@ -106,7 +107,14 @@ interface Booking {
 
 interface Activity {
   id: string;
-  type: 'status_change' | 'prescription' | 'chat' | 'note' | 'follow_up';
+  type:
+    | 'status_change'
+    | 'prescription'
+    | 'medical_record'
+    | 'diagnostic_report'
+    | 'chat'
+    | 'note'
+    | 'follow_up';
   description: string;
   timestamp: string;
   actor: string;
@@ -140,6 +148,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showReportUploadModal, setShowReportUploadModal] = useState(false);
+  /** Full-screen overlay: package session list (avoids static-export /packages/:id navigation issues). */
+  const [packageSessionsOverlayId, setPackageSessionsOverlayId] = useState<string | null>(null);
   const [showTracking, setShowTracking] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
   const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
@@ -298,10 +308,15 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         customerName: rawBooking.customerName || 'Unknown Customer',
         customerPhone: rawBooking.customerPhone || '',
         // Pet info  
-        petName: rawBooking.petName || 'Unknown Pet',
-        petType: rawBooking.petType || rawBooking.petSpecies || '',
-        petBreed: rawBooking.petBreed || '',
-        petAge: rawBooking.petAge ? `${rawBooking.petAge} years` : '',
+        petName: rawBooking.pet?.name || rawBooking.petName || 'Unknown Pet',
+        petType: rawBooking.pet?.species || rawBooking.petType || rawBooking.petSpecies || '',
+        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || '',
+        petAge:
+          rawBooking.petAge != null && rawBooking.petAge !== ''
+            ? `${rawBooking.petAge} years`
+            : rawBooking.pet?.age != null
+              ? `${rawBooking.pet.age} years`
+              : '',
         // Service info (details API may put label on nested service; list uses service?.name first)
         serviceName:
           rawBooking.serviceName ||
@@ -630,6 +645,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     (serviceName && (serviceName.includes('tele') || serviceName.includes('video') || serviceName.includes('consultation')));
   
   const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
+
+  /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
+  const isPackageCanonicalParentRow = Boolean(
+    (booking?.packagePurchaseId || (booking as any)?.package_purchase_id) &&
+      !(booking?.isPackageSession || (booking as any)?.is_package_session)
+  );
 
   // Helper to format booking time
   const formatBookingTime = (time: string | null | undefined): string => {
@@ -1425,7 +1446,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                   
                   {/* ✅ ACTION BUTTONS based on status */}
-                  {booking.status === 'confirmed' && (
+                  {booking.status === 'confirmed' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -1476,7 +1497,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       Accept Booking
                     </button>
                   )}
-                  {booking.status === 'in_progress' && (
+                  {booking.status === 'in_progress' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: For tele/video consultations, complete directly (no OTP needed)
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -1657,7 +1678,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                           type="button"
                           className="mt-2 text-left text-xs font-semibold text-amber-900 underline hover:text-amber-950"
                           onClick={() =>
-                            router.push(`/packages/${encodeURIComponent(String(booking.packagePurchaseId))}`)
+                            setPackageSessionsOverlayId(String(booking.packagePurchaseId))
                           }
                         >
                           View all package sessions
@@ -2008,8 +2029,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   Video Call
                 </button>
               )}
-              {/* Home style: Start Travel, etc. (all providers) - mounted near Chat */}
-              {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+              {/*
+               * Home style: Start Travel, etc. — but NOT for package canonical
+               * parent rows. The parent is a purchase-level placeholder; each
+               * session child carries its own home-flow actions (live journey,
+               * start session OTP, complete OTP). Treating the parent as a
+               * journey would generate phantom GPS state for the whole package.
+               */}
+              {isHomeStyle &&
+                booking.status !== 'completed' &&
+                booking.status !== 'cancelled' &&
+                !isPackageCanonicalParentRow && (
                 <>
                   {/* Walker / walk-style home: single live journey page (map + start travel there). Others: in-modal GPS. */}
                   {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&
@@ -2645,6 +2675,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             setSelectedPrescriptionForA4(null);
           }}
         />
+      )}
+
+      {packageSessionsOverlayId && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-amber-300 text-amber-900"
+              onClick={() => setPackageSessionsOverlayId(null)}
+            >
+              Close
+            </Button>
+            <span className="text-sm font-semibold text-gray-900">Package sessions</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PackagePurchaseSessionsVendorView packagePurchaseId={packageSessionsOverlayId} />
+          </div>
+        </div>
       )}
     </>
   );
