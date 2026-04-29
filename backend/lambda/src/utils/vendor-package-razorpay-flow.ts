@@ -356,6 +356,14 @@ export function vendorPackagePurchaseIdForRazorpayOrder(razorpayOrderId: string)
   return deterministicPurchaseIdFromOrder(razorpayOrderId);
 }
 
+export type PackagePurchasePolicyInput = {
+  cancellationPolicy?: string;
+  refundPolicy?: string;
+  policyVersion?: string;
+  policyAcceptedAt?: string | Date | null;
+  policyAcceptedMeta?: Record<string, unknown> | null;
+};
+
 export async function insertPackagePurchaseRows(
   comp: VendorPackageComputation,
   catalogPackageId: string,
@@ -365,6 +373,10 @@ export async function insertPackagePurchaseRows(
     sessionSchedule: VendorPackageSessionScheduleItem[];
     razorpayOrderId?: string | null;
     paymentId?: string | null;
+    /** Snapshot persisted onto `package_purchases` for compliance (migration 740). */
+    policy?: PackagePurchasePolicyInput | null;
+    /** Optional total charged including GST + platform fees, written to `total_with_tax`. */
+    totalCharged?: number | null;
   }
 ): Promise<{ purchase: Record<string, unknown> }> {
   const {
@@ -377,6 +389,11 @@ export async function insertPackagePurchaseRows(
     expiresAt,
   } = comp;
   const { paymentStatus, preferSameProvider, sessionSchedule, razorpayOrderId, paymentId } = opts;
+  const policy = opts.policy || null;
+  const totalCharged =
+    opts.totalCharged != null && Number.isFinite(Number(opts.totalCharged))
+      ? Math.round(Number(opts.totalCharged) * 100) / 100
+      : null;
 
   const purchaseId = razorpayOrderId
     ? deterministicPurchaseIdFromOrder(razorpayOrderId)
@@ -432,6 +449,37 @@ export async function insertPackagePurchaseRows(
       vals.push(paymentId);
     }
 
+    if (policy) {
+      if (policy.cancellationPolicy != null) {
+        cols.push('cancellation_policy');
+        vals.push(String(policy.cancellationPolicy));
+      }
+      if (policy.refundPolicy != null) {
+        cols.push('refund_policy');
+        vals.push(String(policy.refundPolicy));
+      }
+      if (policy.policyVersion != null) {
+        cols.push('policy_version');
+        vals.push(String(policy.policyVersion));
+      }
+      if (policy.policyAcceptedAt != null) {
+        cols.push('policy_accepted_at');
+        vals.push(
+          policy.policyAcceptedAt instanceof Date
+            ? policy.policyAcceptedAt.toISOString()
+            : String(policy.policyAcceptedAt)
+        );
+      }
+      if (policy.policyAcceptedMeta != null) {
+        cols.push('policy_accepted_meta');
+        vals.push(JSON.stringify(policy.policyAcceptedMeta));
+      }
+    }
+    if (totalCharged != null) {
+      cols.push('total_with_tax');
+      vals.push(totalCharged);
+    }
+
     const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
     const ins = await query(
       `INSERT INTO package_purchases (${cols.join(', ')})
@@ -441,6 +489,47 @@ export async function insertPackagePurchaseRows(
       vals
     );
     purchase = ins.rows[0] as Record<string, unknown> | undefined;
+  } else if (policy || totalCharged != null) {
+    // Idempotent re-finalize: stamp policy snapshot + total once when the row pre-exists
+    // but the previous attempt didn't carry policy / totals (e.g. legacy flow).
+    const updates: string[] = [];
+    const updateVals: unknown[] = [];
+    let i = 1;
+    if (policy?.cancellationPolicy != null) {
+      updates.push(`cancellation_policy = COALESCE(cancellation_policy, $${i++})`);
+      updateVals.push(String(policy.cancellationPolicy));
+    }
+    if (policy?.refundPolicy != null) {
+      updates.push(`refund_policy = COALESCE(refund_policy, $${i++})`);
+      updateVals.push(String(policy.refundPolicy));
+    }
+    if (policy?.policyVersion != null) {
+      updates.push(`policy_version = COALESCE(policy_version, $${i++})`);
+      updateVals.push(String(policy.policyVersion));
+    }
+    if (policy?.policyAcceptedAt != null) {
+      updates.push(`policy_accepted_at = COALESCE(policy_accepted_at, $${i++})`);
+      updateVals.push(
+        policy.policyAcceptedAt instanceof Date
+          ? policy.policyAcceptedAt.toISOString()
+          : String(policy.policyAcceptedAt)
+      );
+    }
+    if (policy?.policyAcceptedMeta != null) {
+      updates.push(`policy_accepted_meta = COALESCE(policy_accepted_meta, $${i++}::jsonb)`);
+      updateVals.push(JSON.stringify(policy.policyAcceptedMeta));
+    }
+    if (totalCharged != null) {
+      updates.push(`total_with_tax = COALESCE(total_with_tax, $${i++})`);
+      updateVals.push(totalCharged);
+    }
+    if (updates.length > 0) {
+      updateVals.push(String(purchase.id));
+      await query(
+        `UPDATE package_purchases SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}::uuid`,
+        updateVals
+      ).catch(() => undefined);
+    }
   }
 
   if (!purchase?.id) {
@@ -508,12 +597,24 @@ function isValidUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
+export type PackageRazorpayFeeBreakdown = {
+  basePrice: number;
+  gstAmount?: number;
+  platformFee?: number;
+  convenienceFee?: number;
+  deliveryFee?: number;
+  packagingFee?: number;
+};
+
 export async function createRazorpayOrderForVendorPackage(params: {
   customerId: string;
   vendorId: string;
   vendorServiceId: string;
+  /** Total charged amount (base + GST + fees). REQUIRED to match `payments-enhanced` parity. */
   amount: number;
   currency?: string;
+  /** Persist fee/tax breakdown on the payments row so settlements match normal bookings. */
+  feeBreakdown?: PackageRazorpayFeeBreakdown;
 }): Promise<{
   orderId: string;
   amount: number;
@@ -521,7 +622,7 @@ export async function createRazorpayOrderForVendorPackage(params: {
   keyId: string;
   paymentId: string;
 }> {
-  const { customerId, vendorId, vendorServiceId, amount, currency = 'INR' } = params;
+  const { customerId, vendorId, vendorServiceId, amount, currency = 'INR', feeBreakdown } = params;
   const config = await getRazorpayConfig();
   if (!config?.keyId || !config?.keySecret) {
     throw new Error('Razorpay is not configured');
@@ -556,16 +657,29 @@ export async function createRazorpayOrderForVendorPackage(params: {
     throw new Error('Failed to create Razorpay order');
   }
 
-  const payRows = await insert('payments', {
+  const baseForPayments =
+    feeBreakdown && Number.isFinite(Number(feeBreakdown.basePrice))
+      ? Math.round(Number(feeBreakdown.basePrice) * 100) / 100
+      : amt;
+
+  const paymentRow: Record<string, unknown> = {
     booking_id: null,
     customer_id: customerId,
     vendor_id: vendorId,
     razorpay_order_id: razorpayOrder.id,
-    amount: amt,
+    // `amount` keeps the legacy "base service amount" semantics shared with payments-enhanced.
+    amount: baseForPayments,
     currency,
     payment_method: 'razorpay',
     payment_status: 'pending',
-  });
+  };
+  if (feeBreakdown) {
+    if (feeBreakdown.gstAmount != null) paymentRow.gst_amount = feeBreakdown.gstAmount;
+    if (feeBreakdown.platformFee != null) paymentRow.platform_fee = feeBreakdown.platformFee;
+    if (feeBreakdown.convenienceFee != null) paymentRow.convenience_fee = feeBreakdown.convenienceFee;
+    paymentRow.total_amount = amt;
+  }
+  const payRows = await insert('payments', paymentRow);
 
   const row = Array.isArray(payRows) ? payRows[0] : payRows;
   const paymentId = row?.id != null ? String(row.id) : '';

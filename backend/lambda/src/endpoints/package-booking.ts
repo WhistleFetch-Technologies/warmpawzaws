@@ -50,6 +50,8 @@ import {
   vendorPackagePurchaseIdForRazorpayOrder,
   type VendorPackageComputation,
 } from '../utils/vendor-package-razorpay-flow';
+import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/package-pricing';
+import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -232,15 +234,9 @@ async function resolveCanonicalServiceIdForPackage(
     }
   }
 
-  const fallback = await db.query(
-    `SELECT id
-     FROM vendor_services
-     WHERE vendor_id = $1::uuid
-     ORDER BY created_at ASC NULLS LAST
-     LIMIT 1`,
-    [vendorId]
-  );
-  return fallback.rows?.[0]?.id ? String(fallback.rows[0].id) : null;
+  // Strict: no silent fallback to "first vendor_services row". Caller must surface
+  // a 400 with a clear error so the package row never points at an arbitrary service.
+  return null;
 }
 
 async function resolveCanonicalPackageBookingId(
@@ -505,6 +501,19 @@ function mapSessionRow(
   const serviceType = s.booking_service_type != null ? String(s.booking_service_type) : '';
   const serviceStyle = serviceType || '';
 
+  const parentBookingId =
+    s.booking_parent_id != null && String(s.booking_parent_id).trim()
+      ? String(s.booking_parent_id).trim()
+      : packageBookingId != null && String(packageBookingId).trim()
+        ? String(packageBookingId).trim()
+        : undefined;
+  const packagePurchaseIdOnRow =
+    s.package_purchase_id != null && String(s.package_purchase_id).trim()
+      ? String(s.package_purchase_id).trim()
+      : s.booking_package_purchase_id != null && String(s.booking_package_purchase_id).trim()
+        ? String(s.booking_package_purchase_id).trim()
+        : undefined;
+
   return {
     id: s.id,
     session_number: s.session_number,
@@ -517,11 +526,24 @@ function mapSessionRow(
     scheduledTime: s.scheduled_time,
     booking_id: resolvedBookingId || undefined,
     bookingId: resolvedBookingId || undefined,
+    parent_booking_id: parentBookingId,
+    parentBookingId,
+    package_purchase_id: packagePurchaseIdOnRow,
+    packagePurchaseId: packagePurchaseIdOnRow,
     booking_status: bst || undefined,
     booking_date: s.booking_date,
     bookingDate: s.booking_date,
     booking_time: s.booking_time,
     bookingTime: s.booking_time,
+    /** ISO datetime convenience for vendor calendars. */
+    session_date_time:
+      s.scheduled_date && s.scheduled_time
+        ? `${String(s.scheduled_date).slice(0, 10)}T${String(s.scheduled_time)}`
+        : undefined,
+    sessionDateTime:
+      s.scheduled_date && s.scheduled_time
+        ? `${String(s.scheduled_date).slice(0, 10)}T${String(s.scheduled_time)}`
+        : undefined,
     completed_at: s.completed_at,
     completedAt: s.completed_at,
     /** Linked visit: OTPs for check-in / start / end (customer-only in GET /packages/.../sessions). */
@@ -592,7 +614,9 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
           b.otp_end_code as booking_otp_end_code,
           b.otp_start_verified as booking_otp_start_verified,
           b.otp_end_verified as booking_otp_end_verified,
-          b.service_type as booking_service_type
+          b.service_type as booking_service_type,
+          b.parent_booking_id as booking_parent_id,
+          b.package_purchase_id as booking_package_purchase_id
         FROM package_scheduled_sessions pss
         LEFT JOIN bookings b ON b.id = COALESCE(
           pss.booking_id,
@@ -603,6 +627,7 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
               AND COALESCE(b2.is_package_session, false) = true
               AND b2.package_session_number IS NOT NULL
               AND b2.package_session_number = pss.session_number
+              AND b2.parent_booking_id IS NOT NULL
             ORDER BY b2.created_at DESC NULLS LAST, b2.updated_at DESC NULLS LAST
             LIMIT 1
           ),
@@ -630,6 +655,8 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
                  SELECT b0.id
                  FROM bookings b0
                  WHERE b0.package_purchase_id = pp.id
+                   AND COALESCE(b0.is_package_session, false) = false
+                   AND b0.parent_booking_id IS NULL
                  ORDER BY b0.created_at ASC NULLS LAST, b0.updated_at ASC NULLS LAST
                  LIMIT 1
                ) AS package_booking_id
@@ -1401,18 +1428,21 @@ export function registerPackageBookingEndpoints(app: Hono) {
   app.post('/packages/purchase-from-vendor-service', async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        customerId: customerRef,
-        vendorId: vendorRef,
-        vendorServiceId,
-        preferSameProvider = true,
-        sessionSchedule = [] as Array<{ sessionNumber?: number; date?: string; time?: string }>,
-        razorpay_order_id: razorpayOrderIdRaw,
-        razorpay_payment_id: razorpayPaymentIdRaw,
-        razorpay_signature: razorpaySignatureRaw,
-        paymentId: paymentIdRaw,
-        petId: petIdBody,
-      } = body as Record<string, unknown>;
+      const bodyObj = body as Record<string, unknown>;
+      const customerRef = bodyObj.customerId as string | undefined;
+      const vendorRef = bodyObj.vendorId as string | undefined;
+      const vendorServiceId = bodyObj.vendorServiceId as string | undefined;
+      const preferSameProvider = bodyObj.preferSameProvider != null ? Boolean(bodyObj.preferSameProvider) : true;
+      const sessionSchedule = (Array.isArray(bodyObj.sessionSchedule)
+        ? bodyObj.sessionSchedule
+        : []) as Array<{ sessionNumber?: number; date?: string; time?: string }>;
+      const razorpayOrderIdRaw = bodyObj.razorpay_order_id;
+      const razorpayPaymentIdRaw = bodyObj.razorpay_payment_id;
+      const razorpaySignatureRaw = bodyObj.razorpay_signature;
+      const paymentIdRaw = bodyObj.paymentId;
+      const petIdBody = bodyObj.petId;
+      const policyAcceptedRaw = bodyObj.policyAccepted;
+      const policyVersionRaw = bodyObj.policyVersion;
       const petIdForBooking = uuidOrNull(petIdBody);
 
       if (!customerRef || !vendorRef || !vendorServiceId) {
@@ -1439,6 +1469,16 @@ export function registerPackageBookingEndpoints(app: Hono) {
         return c.json({ error: computed.error }, computed.status as 400 | 403 | 404);
       }
       const comp = computed.comp;
+
+      // Strict: no silent service fallback. The vendor_services row used for the
+      // package MUST exist and resolve to a real id (it's the same id we already
+      // computed in `computeVendorPackagePurchase`, but assert anyway).
+      if (!uuidOrNull(comp.vendorServiceId)) {
+        return c.json(
+          { error: 'Vendor service for this package could not be resolved (no fallback allowed).' },
+          400
+        );
+      }
 
       if (!comp.unlimitedPurchase && comp.totalSessionsForPurchase > 0) {
         const schedArr = Array.isArray(sessionSchedule) ? sessionSchedule : [];
@@ -1515,30 +1555,126 @@ export function registerPackageBookingEndpoints(app: Hono) {
           : `Package purchased! ${finiteSessions} sessions available.`,
       });
 
+      // Server-computed totals using the SAME pipeline as normal bookings
+      // (taxCalculationService + calculateFinalFees). This is what we charge.
+      let pricing: Awaited<ReturnType<typeof quotePackagePricing>> | null = null;
+      try {
+        pricing = comp.priceNum > 0 ? await quotePackagePricing(comp) : null;
+      } catch (e: any) {
+        console.error('[purchase-from-vendor-service] pricing failed:', e);
+        return c.json({ error: e?.message || 'Failed to compute package pricing' }, 400);
+      }
+
+      const policy = resolvePackagePolicySnapshot(comp);
+      const policyAcceptedFlag = Boolean(policyAcceptedRaw);
+      const policyVersionFromClient =
+        typeof policyVersionRaw === 'string' && policyVersionRaw.trim()
+          ? policyVersionRaw.trim()
+          : null;
+
+      const buildOrderResponse = (
+        order: { orderId: string; keyId: string; amount: number; currency: string; paymentId: string }
+      ) => ({
+        success: true,
+        requiresPayment: true,
+        razorpayOrderId: order.orderId,
+        razorpayKeyId: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        paymentId: order.paymentId,
+        vendorId: comp.vendorId,
+        vendorServiceId: String(vendorServiceId),
+        pricing: pricing
+          ? {
+              basePrice: pricing.basePrice,
+              gstAmount: pricing.gstAmount,
+              taxBreakdown: pricing.taxBreakdown,
+              platformFee: pricing.platformFee,
+              convenienceFee: pricing.convenienceFee,
+              deliveryFee: pricing.deliveryFee,
+              packagingFee: pricing.packagingFee,
+              totalAmount: pricing.totalAmount,
+              businessServiceType: pricing.businessServiceType,
+            }
+          : null,
+        policy: {
+          cancellationPolicy: policy.cancellationPolicy,
+          refundPolicy: policy.refundPolicy,
+          version: policy.version,
+        },
+      });
+
       if (comp.priceNum > 0 && !hasRazorpayProof) {
+        // Acceptance gate: never start a Razorpay order without explicit consent.
+        if (!policyAcceptedFlag) {
+          return c.json(
+            {
+              success: false,
+              error: 'POLICY_NOT_ACCEPTED',
+              message:
+                'Customer must accept cancellation and refund policy before initiating payment.',
+              policy: {
+                cancellationPolicy: policy.cancellationPolicy,
+                refundPolicy: policy.refundPolicy,
+                version: policy.version,
+              },
+            },
+            400
+          );
+        }
+        if (policyVersionFromClient && policyVersionFromClient !== policy.version) {
+          return c.json(
+            {
+              success: false,
+              error: 'POLICY_VERSION_MISMATCH',
+              message: 'Policy text has changed since you read it. Please review again.',
+              policy: {
+                cancellationPolicy: policy.cancellationPolicy,
+                refundPolicy: policy.refundPolicy,
+                version: policy.version,
+              },
+            },
+            400
+          );
+        }
+
         try {
           const order = await createRazorpayOrderForVendorPackage({
             customerId,
             vendorId: comp.vendorId,
             vendorServiceId: String(vendorServiceId),
-            amount: comp.priceNum,
+            amount: pricing ? pricing.totalAmount : comp.priceNum,
+            ...(pricing
+              ? {
+                  feeBreakdown: {
+                    basePrice: pricing.basePrice,
+                    gstAmount: pricing.gstAmount,
+                    platformFee: pricing.platformFee,
+                    convenienceFee: pricing.convenienceFee,
+                    deliveryFee: pricing.deliveryFee,
+                    packagingFee: pricing.packagingFee,
+                  },
+                }
+              : {}),
           });
-          return c.json({
-            success: true,
-            requiresPayment: true,
-            razorpayOrderId: order.orderId,
-            razorpayKeyId: order.keyId,
-            amount: order.amount,
-            currency: order.currency,
-            paymentId: order.paymentId,
-            vendorId: comp.vendorId,
-            vendorServiceId: String(vendorServiceId),
-          });
+          return c.json(buildOrderResponse(order));
         } catch (e: any) {
           console.error('vendor package Razorpay create-order:', e);
           return c.json({ error: e?.message || 'Failed to start payment' }, 502);
         }
       }
+
+      const policyInputForFinalize = {
+        cancellationPolicy: policy.cancellationPolicy,
+        refundPolicy: policy.refundPolicy,
+        policyVersion: policy.version,
+        policyAcceptedAt: new Date().toISOString(),
+        policyAcceptedMeta: {
+          source: 'package_purchase',
+          via: hasRazorpayProof ? 'razorpay_finalize' : 'free_finalize',
+          userAgent: c.req.header('user-agent') || null,
+        },
+      };
 
       if (comp.priceNum > 0 && hasRazorpayProof) {
         const cfg = await getRazorpayConfig();
@@ -1555,6 +1691,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
         ) {
           return c.json({ error: 'Invalid Razorpay signature' }, 400);
         }
+
+        const expectedTotal = pricing ? pricing.totalAmount : comp.priceNum;
 
         const deterministicPurchaseId = vendorPackagePurchaseIdForRazorpayOrder(razorpayOrderId);
         const existing = await query(
@@ -1589,21 +1727,22 @@ export function registerPackageBookingEndpoints(app: Hono) {
             sessionSchedule,
             razorpayOrderId,
             paymentId: paymentIdForExisting,
+            policy: policyInputForFinalize,
+            totalCharged: expectedTotal,
           });
 
-          const vendorBookingIdExisting = await syncVendorPackagePurchaseToBookingAndNotify({
+          const { parentBookingId } = await createPackageBookingsAfterPayment({
             customerId,
             vendorId: comp.vendorId,
             vendorServiceId: String(vendorServiceId),
             comp,
             purchase: purchase as Record<string, unknown>,
             catalogPackageId: catId,
-            sessionSchedule,
             paymentId: paymentIdForExisting,
             petId: petIdForBooking,
           });
           return c.json(
-            purchaseJson(purchase as Record<string, unknown>, catId, vendorBookingIdExisting)
+            purchaseJson(purchase as Record<string, unknown>, catId, parentBookingId)
           );
         }
 
@@ -1629,8 +1768,10 @@ export function registerPackageBookingEndpoints(app: Hono) {
         if (String(payRow.vendor_id || '').toLowerCase() !== String(comp.vendorId).toLowerCase()) {
           return c.json({ error: 'Payment does not match this vendor' }, 400);
         }
-        const paidAmt = Number(payRow.amount);
-        if (!Number.isFinite(paidAmt) || Math.abs(paidAmt - comp.priceNum) > 0.02) {
+        // Validate against the captured TOTAL on the payments row
+        // (`amount` keeps base-price semantics; the order itself was for `total_amount`).
+        const payTotal = Number(payRow.total_amount ?? payRow.amount);
+        if (!Number.isFinite(payTotal) || Math.abs(payTotal - expectedTotal) > 0.02) {
           return c.json({ error: 'Payment amount mismatch' }, 400);
         }
 
@@ -1641,6 +1782,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
           sessionSchedule,
           razorpayOrderId,
           paymentId: String(payRow.id),
+          policy: policyInputForFinalize,
+          totalCharged: expectedTotal,
         });
 
         await query(
@@ -1650,39 +1793,44 @@ export function registerPackageBookingEndpoints(app: Hono) {
           [payRow.id, razorpayPaymentId, razorpaySignature]
         );
 
-        const vendorBookingId = await syncVendorPackagePurchaseToBookingAndNotify({
+        const { parentBookingId } = await createPackageBookingsAfterPayment({
           customerId,
           vendorId: comp.vendorId,
           vendorServiceId: String(vendorServiceId),
           comp,
           purchase: purchase as Record<string, unknown>,
           catalogPackageId,
-          sessionSchedule,
           paymentId: String(payRow.id),
           petId: petIdForBooking,
         });
-        return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, vendorBookingId));
+        return c.json(
+          purchaseJson(purchase as Record<string, unknown>, catalogPackageId, parentBookingId)
+        );
       }
 
+      // Free package path — same model: parent + per-session children, but no payment.
       const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
       const { purchase } = await insertPackagePurchaseRows(comp, catalogPackageId, {
         paymentStatus: 'completed',
         preferSameProvider: Boolean(preferSameProvider),
         sessionSchedule,
+        policy: policyInputForFinalize,
+        totalCharged: 0,
       });
 
-      const vendorBookingIdFree = await syncVendorPackagePurchaseToBookingAndNotify({
+      const { parentBookingId: parentBookingIdFree } = await createPackageBookingsAfterPayment({
         customerId,
         vendorId: comp.vendorId,
         vendorServiceId: String(vendorServiceId),
         comp,
         purchase: purchase as Record<string, unknown>,
         catalogPackageId,
-        sessionSchedule,
         paymentId: null,
         petId: petIdForBooking,
       });
-      return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, vendorBookingIdFree));
+      return c.json(
+        purchaseJson(purchase as Record<string, unknown>, catalogPackageId, parentBookingIdFree)
+      );
     } catch (error: any) {
       console.error('Error in purchase-from-vendor-service:', error);
       return c.json({ error: error.message }, 500);
@@ -2200,6 +2348,134 @@ export function registerPackageBookingEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error creating package session:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /packages/quote
+   * Server-of-truth pricing for a vendor-service package. Returns the SAME
+   * fee/tax/breakdown shape as `/customer/pricing/quote` for normal bookings,
+   * and the policy snapshot the customer must accept before pay. The Razorpay
+   * order amount is derived from this exact pipeline.
+   *
+   * Request: { customerId?, vendorId, vendorServiceId }
+   */
+  app.post('/packages/quote', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const customerRef = body.customerId || body.customer_id || '';
+      const vendorRef = body.vendorId || body.vendor_id;
+      const vendorServiceId = body.vendorServiceId || body.vendor_service_id;
+
+      if (!vendorRef || !vendorServiceId) {
+        return c.json(
+          { success: false, error: 'vendorId and vendorServiceId are required' },
+          400
+        );
+      }
+
+      const customerId =
+        (customerRef &&
+          ((await resolveCustomerUuidForPackage(String(customerRef))) ||
+            (isLikelyCustomerUuid(String(customerRef)) ? String(customerRef).trim() : null))) ||
+        null;
+
+      const computed = await computeVendorPackagePurchase({
+        customerId: customerId || '00000000-0000-0000-0000-000000000000',
+        vendorIdRaw: String(vendorRef),
+        vendorServiceId: String(vendorServiceId),
+      });
+      if (!computed.ok) {
+        return c.json(
+          { success: false, error: computed.error },
+          computed.status as 400 | 403 | 404
+        );
+      }
+      const comp = computed.comp;
+
+      let pricing: Awaited<ReturnType<typeof quotePackagePricing>> | null = null;
+      try {
+        pricing = await quotePackagePricing(comp);
+      } catch (e: any) {
+        return c.json(
+          { success: false, error: e?.message || 'Failed to compute pricing' },
+          400
+        );
+      }
+
+      const policy = resolvePackagePolicySnapshot(comp);
+
+      return c.json({
+        success: true,
+        package: {
+          vendorServiceId: comp.vendorServiceId,
+          vendorId: comp.vendorId,
+          name: comp.packageDisplayName,
+          serviceStyle: comp.serviceStyle,
+          serviceType: comp.serviceType,
+          totalSessions: comp.unlimitedPurchase ? 'unlimited' : comp.totalSessionsForPurchase,
+          sessionsPerDay: comp.sessionsPerDay,
+          sessionIntervalDays: comp.sessionIntervalDays,
+          validityDays: comp.validityDays,
+        },
+        // Mirrors `/customer/pricing/quote` shape for UniversalPaymentPage.
+        basePrice: pricing.basePrice,
+        tax: pricing.gstAmount,
+        gstAmount: pricing.gstAmount,
+        cgstAmount: pricing.cgstAmount,
+        sgstAmount: pricing.sgstAmount,
+        igstAmount: pricing.igstAmount,
+        taxBreakdown: pricing.taxBreakdown,
+        platformFee: pricing.platformFee,
+        convenienceFee: pricing.convenienceFee,
+        deliveryFee: pricing.deliveryFee,
+        packagingFee: pricing.packagingFee,
+        finalPrice: pricing.totalAmount,
+        totalAmount: pricing.totalAmount,
+        businessServiceType: pricing.businessServiceType,
+        policy: {
+          cancellationPolicy: policy.cancellationPolicy,
+          refundPolicy: policy.refundPolicy,
+          version: policy.version,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error in /packages/quote:', error);
+      return c.json(
+        { success: false, error: error?.message || 'Pricing quote failed' },
+        500
+      );
+    }
+  });
+
+  /**
+   * GET /packages/:packagePurchaseId/policies
+   * Returns the policy snapshot persisted at purchase time for display in
+   * tracking / cancellation flows.
+   */
+  app.get('/packages/:packagePurchaseId/policies', async (c) => {
+    try {
+      const { packagePurchaseId } = c.req.param();
+      const r = await query(
+        `SELECT cancellation_policy, refund_policy, policy_version, policy_accepted_at
+         FROM package_purchases
+         WHERE id = $1::uuid LIMIT 1`,
+        [packagePurchaseId]
+      );
+      const row = r.rows?.[0];
+      if (!row) {
+        return c.json({ success: false, error: 'Package not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        cancellationPolicy: row.cancellation_policy || '',
+        refundPolicy: row.refund_policy || '',
+        version: row.policy_version || null,
+        acceptedAt: row.policy_accepted_at || null,
+      });
+    } catch (error: any) {
+      console.error('Error fetching package policies:', error);
+      return c.json({ success: false, error: error?.message || 'Failed' }, 500);
     }
   });
 

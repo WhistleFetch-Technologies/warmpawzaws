@@ -155,15 +155,26 @@ export function PackageBookingPage({
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Server pricing quote (GST etc.) for vendor-service packages — shown on review step. */
+  /** Server pricing quote (GST + platform fee) — same shape as UniversalPaymentPage. */
   const [priceQuote, setPriceQuote] = useState<{
     basePrice: number;
     tax: number;
     discount?: number;
     finalPrice: number;
     taxBreakdown?: Array<{ name: string; rate: number; amount: number }>;
+    platformFee?: number;
+    convenienceFee?: number;
+    deliveryFee?: number;
+    packagingFee?: number;
+    totalAmount?: number;
   } | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [packagePolicy, setPackagePolicy] = useState<{
+    cancellationPolicy: string;
+    refundPolicy: string;
+    version: string;
+  } | null>(null);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
 
   useEffect(() => {
     loadPackages();
@@ -226,6 +237,8 @@ export function PackageBookingPage({
   useEffect(() => {
     if (view !== 'review') {
       setPriceQuote(null);
+      setPackagePolicy(null);
+      setPolicyAccepted(false);
       return;
     }
     if (!selectedPackage?.vendorServiceId) return;
@@ -233,17 +246,25 @@ export function PackageBookingPage({
     (async () => {
       setQuoteLoading(true);
       try {
-        const res = (await apiClient.post('/customer/pricing/quote', {
-          serviceId: selectedPackage.vendorServiceId,
-          vendorId: selectedPackage.vendorId,
+        // Server-of-truth: same pipeline (taxCalculationService + calculateFinalFees)
+        // is used here AND for the Razorpay order amount, guaranteeing parity.
+        const res = (await apiClient.post('/packages/quote', {
           customerId,
+          vendorId: selectedPackage.vendorId,
+          vendorServiceId: selectedPackage.vendorServiceId,
         })) as {
           success?: boolean;
           basePrice?: number;
           tax?: number;
           discount?: number;
           finalPrice?: number;
+          totalAmount?: number;
           taxBreakdown?: Array<{ name: string; rate: number; amount: number }>;
+          platformFee?: number;
+          convenienceFee?: number;
+          deliveryFee?: number;
+          packagingFee?: number;
+          policy?: { cancellationPolicy?: string; refundPolicy?: string; version?: string };
         };
         if (cancelled) return;
         if (res?.success && res.finalPrice != null) {
@@ -251,14 +272,30 @@ export function PackageBookingPage({
             basePrice: Number(res.basePrice) || 0,
             tax: Number(res.tax) || 0,
             discount: Number(res.discount) || 0,
-            finalPrice: Number(res.finalPrice) || 0,
+            finalPrice: Number(res.finalPrice ?? res.totalAmount) || 0,
             taxBreakdown: Array.isArray(res.taxBreakdown) ? res.taxBreakdown : [],
+            platformFee: Number(res.platformFee) || 0,
+            convenienceFee: Number(res.convenienceFee) || 0,
+            deliveryFee: Number(res.deliveryFee) || 0,
+            packagingFee: Number(res.packagingFee) || 0,
+            totalAmount: Number(res.totalAmount ?? res.finalPrice) || 0,
           });
+          if (res.policy) {
+            setPackagePolicy({
+              cancellationPolicy: String(res.policy.cancellationPolicy || ''),
+              refundPolicy: String(res.policy.refundPolicy || ''),
+              version: String(res.policy.version || ''),
+            });
+          }
         } else {
           setPriceQuote(null);
+          setPackagePolicy(null);
         }
       } catch {
-        if (!cancelled) setPriceQuote(null);
+        if (!cancelled) {
+          setPriceQuote(null);
+          setPackagePolicy(null);
+        }
       } finally {
         if (!cancelled) setQuoteLoading(false);
       }
@@ -579,6 +616,12 @@ export function PackageBookingPage({
     const isVendorCatalog = Boolean(selectedPackage.vendorServiceId);
     const sessionsPerDay = Math.max(1, Math.min(24, Number(selectedPackage.sessionsPerDay) || 1));
 
+    // Hard gate: vendor packages require explicit policy acceptance before pay.
+    if (isVendorCatalog && !policyAccepted) {
+      setError('Please accept the cancellation and refund policy to continue.');
+      return;
+    }
+
     try {
       setBooking(true);
       setError(null);
@@ -608,6 +651,8 @@ export function PackageBookingPage({
           preferSameProvider: true,
           sessionSchedule,
           ...(chosenPetId ? { petId: chosenPetId } : {}),
+          policyAccepted: true,
+          ...(packagePolicy?.version ? { policyVersion: packagePolicy.version } : {}),
         };
 
         const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;
@@ -1211,19 +1256,33 @@ export function PackageBookingPage({
                     <span className="text-gray-500">Included or nil</span>
                   </div>
                 )}
-                <div className="flex justify-between pt-2 border-t border-gray-100 text-gray-600">
-                  <span>Platform fee</span>
-                  <span className="text-gray-500">Not charged separately for packages</span>
-                </div>
+                {/* Same fee categories as UniversalPaymentPage / normal bookings. */}
+                {Number(priceQuote.platformFee) > 0 && (
+                  <div className="flex justify-between text-gray-700 pt-2 border-t border-gray-100">
+                    <span>Platform fee</span>
+                    <span>₹{Math.round(priceQuote.platformFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {Number(priceQuote.convenienceFee) > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>Convenience fee</span>
+                    <span>₹{Math.round(priceQuote.convenienceFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {Number(priceQuote.deliveryFee) > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>Delivery fee</span>
+                    <span>₹{Math.round(priceQuote.deliveryFee || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-baseline pt-2 border-t border-gray-200">
-                  <span className="font-semibold text-gray-900">Estimated total</span>
+                  <span className="font-semibold text-gray-900">Total payable</span>
                   <span className="text-xl font-bold text-orange-600">
                     ₹{Math.round(priceQuote.finalPrice).toLocaleString('en-IN')}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  The payment window shows the final amount charged (from your provider). If it differs from this
-                  estimate, the checkout total applies.
+                  This is the exact amount that will be charged on Razorpay.
                 </p>
               </div>
             ) : (
@@ -1241,6 +1300,52 @@ export function PackageBookingPage({
             )}
           </div>
 
+          {selectedPackage.vendorServiceId && (
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <h3 className="font-semibold text-gray-900 mb-2">Cancellation & refund policy</h3>
+              {packagePolicy?.cancellationPolicy || packagePolicy?.refundPolicy ? (
+                <div className="space-y-2 text-sm text-gray-700">
+                  {packagePolicy?.cancellationPolicy && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Cancellation
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">
+                        {packagePolicy.cancellationPolicy}
+                      </p>
+                    </div>
+                  )}
+                  {packagePolicy?.refundPolicy && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Refund
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">
+                        {packagePolicy.refundPolicy}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  Standard Warmpawz cancellation and refund terms apply for this package.
+                </p>
+              )}
+              <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  checked={policyAccepted}
+                  onChange={(e) => setPolicyAccepted(e.target.checked)}
+                  aria-label="I have read and accept the cancellation and refund policy"
+                />
+                <span>
+                  I have read and agree to the cancellation and refund policy for this package.
+                </span>
+              </label>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -1255,7 +1360,15 @@ export function PackageBookingPage({
             <button
               type="button"
               onClick={createPackageBooking}
-              disabled={booking}
+              disabled={
+                booking ||
+                (Boolean(selectedPackage.vendorServiceId) && !policyAccepted)
+              }
+              title={
+                Boolean(selectedPackage.vendorServiceId) && !policyAccepted
+                  ? 'Accept the cancellation & refund policy to continue'
+                  : undefined
+              }
               className="bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {booking ? (

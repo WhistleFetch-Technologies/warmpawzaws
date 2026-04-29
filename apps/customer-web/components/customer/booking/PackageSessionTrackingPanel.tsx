@@ -9,6 +9,8 @@ import { useRouter } from 'next/navigation';
 type SessionItem = {
   id: string;
   bookingId: string;
+  parentBookingId?: string;
+  packagePurchaseId?: string;
   sessionNumber: number;
   status: string;
   serviceStyle?: string;
@@ -36,6 +38,8 @@ function normalizeSessionRows(rows: unknown): SessionItem[] {
       return {
         id: String(s.id ?? `session-${sessionNumber}`),
         bookingId: String(s.bookingId ?? s.booking_id ?? firstBookingId ?? ''),
+        parentBookingId: String(s.parentBookingId ?? s.parent_booking_id ?? ''),
+        packagePurchaseId: String(s.packagePurchaseId ?? s.package_purchase_id ?? ''),
         sessionNumber,
         status: String(s.display_status ?? s.displayStatus ?? s.status ?? 'pending').toLowerCase(),
         serviceStyle: String(s.service_style ?? s.serviceStyle ?? ''),
@@ -388,56 +392,70 @@ export function PackageSessionTrackingPanel({
               </p>
             ) : isCurrent ? (
               <div className="mt-3 space-y-2">
-                <p className="inline-flex items-center gap-1 text-xs font-medium text-gray-700">
-                  <Key className="h-3.5 w-3.5 text-orange-600" />
-                  {isAtCenter ? 'Check-in OTP' : 'OTP for active session'}
-                </p>
-                {otpValue ? (
-                  <div className="rounded-lg bg-orange-50 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-mono text-base font-bold tracking-widest text-gray-900">
-                        {showOtpForSession === row.sessionNumber ? otpValue : '••••••'}
-                      </p>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setShowOtpForSession((cur) => (cur === row.sessionNumber ? null : row.sessionNumber))
-                          }
-                          className="rounded p-1 hover:bg-orange-100"
-                          aria-label={showOtpForSession === row.sessionNumber ? 'Hide OTP' : 'Show OTP'}
-                        >
-                          {showOtpForSession === row.sessionNumber ? (
-                            <EyeOff className="h-4 w-4 text-orange-700" />
-                          ) : (
-                            <Eye className="h-4 w-4 text-orange-700" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void copyOtp(otpValue, row.sessionNumber)}
-                          className="rounded p-1 hover:bg-orange-100"
-                          aria-label="Copy OTP"
-                        >
-                          {copiedOtpForSession === row.sessionNumber ? (
-                            <Check className="h-4 w-4 text-green-700" />
-                          ) : (
-                            <Copy className="h-4 w-4 text-orange-700" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-600">
-                      {isAtCenter
-                        ? 'Share this OTP with the vendor at check-in.'
-                        : 'Share this OTP with the provider for this session.'}
+                {/*
+                 * Inline OTP only for at_center sessions (per product split):
+                 *   - at_center: customer shares OTP with vendor at the desk → show inline.
+                 *   - at_home:   OTP lives on the dedicated per-session tracking page
+                 *                (mirrors a normal home booking) → "Open tracker" CTA.
+                 *   - tele:      no OTP at all.
+                 */}
+                {isAtCenter ? (
+                  <>
+                    <p className="inline-flex items-center gap-1 text-xs font-medium text-gray-700">
+                      <Key className="h-3.5 w-3.5 text-orange-600" />
+                      Check-in OTP
                     </p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    OTP not available yet. Use refresh after provider starts this session.
+                    {otpValue ? (
+                      <div className="rounded-lg bg-orange-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-mono text-base font-bold tracking-widest text-gray-900">
+                            {showOtpForSession === row.sessionNumber ? otpValue : '••••••'}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowOtpForSession((cur) => (cur === row.sessionNumber ? null : row.sessionNumber))
+                              }
+                              className="rounded p-1 hover:bg-orange-100"
+                              aria-label={showOtpForSession === row.sessionNumber ? 'Hide OTP' : 'Show OTP'}
+                            >
+                              {showOtpForSession === row.sessionNumber ? (
+                                <EyeOff className="h-4 w-4 text-orange-700" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-orange-700" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void copyOtp(otpValue, row.sessionNumber)}
+                              className="rounded p-1 hover:bg-orange-100"
+                              aria-label="Copy OTP"
+                            >
+                              {copiedOtpForSession === row.sessionNumber ? (
+                                <Check className="h-4 w-4 text-green-700" />
+                              ) : (
+                                <Copy className="h-4 w-4 text-orange-700" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Share this OTP with the vendor at check-in.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        OTP not available yet. Use refresh after provider starts this session.
+                      </p>
+                    )}
+                  </>
+                ) : isAtHome ? (
+                  <p className="inline-flex items-center gap-1 text-xs text-gray-600">
+                    <Key className="h-3.5 w-3.5 text-orange-600" />
+                    Open the tracker to view OTP and confirm start / end of this visit.
                   </p>
-                )}
+                ) : null}
                 <div className="flex gap-2">
                   <button
                     type="button"

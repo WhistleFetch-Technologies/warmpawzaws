@@ -1932,7 +1932,34 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (isPackageService && packageDetails && typeof packageDetails === 'object') {
         metadata.isPackage = true;
         metadata.packageType = serviceData.packageType || undefined;
-        metadata.packageDetails = packageDetails;
+        // Preserve cancellation/refund/T&C policies from EnhancedPackageCreationModal
+        // alongside packageDetails so quote + payment flows can surface them and
+        // require customer acceptance before payment.
+        const enrichedPackageDetails: Record<string, unknown> = { ...packageDetails };
+        if (
+          enrichedPackageDetails.cancellationPolicy == null &&
+          (serviceData as any).cancellationPolicy
+        ) {
+          enrichedPackageDetails.cancellationPolicy = (serviceData as any).cancellationPolicy;
+        }
+        if (
+          enrichedPackageDetails.refundPolicy == null &&
+          ((serviceData as any).refundPolicy ?? (serviceData as any).cancellationPolicy)
+        ) {
+          enrichedPackageDetails.refundPolicy =
+            (serviceData as any).refundPolicy ?? (serviceData as any).cancellationPolicy;
+        }
+        if (
+          enrichedPackageDetails.termsAndConditions == null &&
+          (serviceData as any).termsAndConditions
+        ) {
+          enrichedPackageDetails.termsAndConditions = (serviceData as any).termsAndConditions;
+        }
+        metadata.packageDetails = enrichedPackageDetails;
+        if (enrichedPackageDetails.cancellationPolicy)
+          metadata.cancellationPolicy = enrichedPackageDetails.cancellationPolicy;
+        if (enrichedPackageDetails.refundPolicy)
+          metadata.refundPolicy = enrichedPackageDetails.refundPolicy;
       }
       if (effectiveSpecIds.length > 0) {
         metadata.specialization_ids = effectiveSpecIds;

@@ -5818,6 +5818,53 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           const meta = typeof vs.metadata === 'string' ? (vs.metadata ? JSON.parse(vs.metadata) : {}) : (vs.metadata || {});
           taxCategoryId = meta.taxCategoryId || meta.tax_category || null;
+
+          // Package-aware totals: when the vendor_service is a package,
+          // delegate to the same pipeline used at checkout (taxCalculationService
+          // + calculateFinalFees) so quoted total === Razorpay order amount.
+          const isPackageMeta =
+            Boolean(meta?.isPackage) ||
+            String(meta?.type || '') === 'package' ||
+            String(meta?.packageType || '') === 'session' ||
+            (meta?.packageDetails && typeof meta.packageDetails === 'object');
+          if (isPackageMeta) {
+            try {
+              const { computeVendorPackagePurchase } = await import('../../../utils/vendor-package-razorpay-flow');
+              const { quotePackagePricing, resolvePackagePolicySnapshot } = await import('../../../utils/package-pricing');
+              const computed = await computeVendorPackagePurchase({
+                customerId: customerId || '00000000-0000-0000-0000-000000000000',
+                vendorIdRaw: String(vendor.id),
+                vendorServiceId: String(vs.id),
+              });
+              if (computed.ok) {
+                const pricing = await quotePackagePricing(computed.comp);
+                const policy = resolvePackagePolicySnapshot(computed.comp);
+                return c.json({
+                  success: true,
+                  basePrice: pricing.basePrice,
+                  tax: pricing.gstAmount,
+                  discount: 0,
+                  finalPrice: pricing.totalAmount,
+                  taxBreakdown: pricing.taxBreakdown,
+                  platformFee: pricing.platformFee,
+                  convenienceFee: pricing.convenienceFee,
+                  deliveryFee: pricing.deliveryFee,
+                  packagingFee: pricing.packagingFee,
+                  totalAmount: pricing.totalAmount,
+                  businessServiceType: pricing.businessServiceType,
+                  policy: {
+                    cancellationPolicy: policy.cancellationPolicy,
+                    refundPolicy: policy.refundPolicy,
+                    version: policy.version,
+                  },
+                  isPackage: true,
+                  coupon: { applied: false },
+                });
+              }
+            } catch (pkgErr) {
+              console.warn('[pricing/quote] package quote fallback to per-service pricing:', pkgErr);
+            }
+          }
         } catch (_) { }
       } else {
         const catalogRow = await query(

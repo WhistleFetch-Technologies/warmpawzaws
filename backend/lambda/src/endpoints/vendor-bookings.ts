@@ -120,22 +120,29 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
+      // Calendar must show one row per actionable visit. For package purchases:
+      //   - HIDE the canonical parent (purchase-level row, no per-visit time/OTP).
+      //   - SHOW each child session booking individually (per-session time + OTP).
+      const PACKAGE_PARENT_HIDE = `(
+        b.package_purchase_id IS NULL
+        OR COALESCE(b.is_package_session, false) = true
+      )`;
+
       if (centerId) {
-        // Include bookings from same vendor IDs OR vendors with same center_id
         const vendorIdConditions = vendorIds.map((_, idx) => `b.vendor_id = $${idx + 1}`).join(' OR ');
         queryText = `SELECT b.* FROM bookings b
            LEFT JOIN vendors v ON v.id = b.vendor_id
            WHERE (
              (${vendorIdConditions})
              OR (v.center_id = $${paramIndex} AND v.center_id IS NOT NULL)
-           ) AND b.status != 'pending_payment'`;
+           ) AND b.status != 'pending_payment'
+             AND ${PACKAGE_PARENT_HIDE}`;
         params.push(centerId);
         paramIndex++;
       } else {
-        // No center_id, just match vendor IDs
         queryText = vendorIds.length === 1
-          ? 'SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != \'pending_payment\''
-          : 'SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != \'pending_payment\'';
+          ? `SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != 'pending_payment' AND ${PACKAGE_PARENT_HIDE}`
+          : `SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != 'pending_payment' AND ${PACKAGE_PARENT_HIDE}`;
       }
 
       // Filter by date
@@ -158,6 +165,46 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const chatRules = await getDiscoveryRules('all', 'chat');
       const chatDays = chatRules.chat_available_days_post_appointment ?? 7;
+
+      // Pre-compute package progress for any session-children in this page.
+      const packagePurchaseIdsForProgress = Array.from(
+        new Set(
+          (result.rows || [])
+            .map((b: any) =>
+              b?.is_package_session && b?.package_purchase_id
+                ? String(b.package_purchase_id)
+                : ''
+            )
+            .filter(Boolean)
+        )
+      );
+      const progressByPackage = new Map<
+        string,
+        { completedSessions: number; totalSessions: number }
+      >();
+      if (packagePurchaseIdsForProgress.length > 0) {
+        const progressRes = await query(
+          `SELECT pp.id::text AS package_purchase_id,
+                  COALESCE(pp.total_sessions, 0)::int AS total_sessions,
+                  COALESCE(
+                    (SELECT COUNT(*)::int
+                     FROM bookings bx
+                     WHERE bx.package_purchase_id = pp.id
+                       AND COALESCE(bx.is_package_session, false) = true
+                       AND bx.status = 'completed'),
+                    0
+                  ) AS completed_sessions
+           FROM package_purchases pp
+           WHERE pp.id::text = ANY($1::text[])`,
+          [packagePurchaseIdsForProgress]
+        ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+        for (const row of progressRes.rows || []) {
+          progressByPackage.set(String(row.package_purchase_id), {
+            completedSessions: Number(row.completed_sessions) || 0,
+            totalSessions: Number(row.total_sessions) || 0,
+          });
+        }
+      }
 
       // Enrich bookings with customer, service, vendor, and related data (prescriptions, medical records, chat)
       const enrichedBookings = await Promise.all(
@@ -226,6 +273,15 @@ export function registerVendorBookingsEndpoints(app: Hono) {
               basePrice: vendorVisibleAmount,
             };
           }
+          // Backend-computed progress for package session children.
+          const packageProgress =
+            booking.is_package_session && booking.package_purchase_id
+              ? progressByPackage.get(String(booking.package_purchase_id)) || null
+              : null;
+          const sessionDateTime =
+            booking.is_package_session && booking.booking_date && booking.booking_time
+              ? `${String(booking.booking_date).slice(0, 10)}T${String(booking.booking_time)}`
+              : undefined;
           return {
             ...booking,
             total_amount: vendorVisibleAmount,
@@ -242,6 +298,22 @@ export function registerVendorBookingsEndpoints(app: Hono) {
               phone: customer[0].phone,
             } : null,
             service: serviceNested,
+            // Per-session aggregation for the calendar (vendor STRICT contract).
+            isPackageSession: Boolean(booking.is_package_session),
+            packagePurchaseId: booking.package_purchase_id || null,
+            parentBookingId: booking.parent_booking_id || null,
+            sessionNumber: booking.package_session_number ?? null,
+            sessionDateTime: sessionDateTime || null,
+            ...(packageProgress
+              ? {
+                  progress: {
+                    completed_sessions: packageProgress.completedSessions,
+                    total_sessions: packageProgress.totalSessions,
+                    completedSessions: packageProgress.completedSessions,
+                    totalSessions: packageProgress.totalSessions,
+                  },
+                }
+              : {}),
             // Rule engine: Chat available for chat_available_days_post_appointment days after completion
             chatEnabled: (() => {
               if (booking.status === 'cancelled') return false;
@@ -1169,9 +1241,11 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (alias, resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
+      // Hide canonical package-parent rows; show one row per session child.
+      const PARENT_HIDE = `AND (package_purchase_id IS NULL OR COALESCE(is_package_session, false) = true)`;
       let queryText = vendorIds.length === 1
-        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
-        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+        ? `SELECT * FROM bookings WHERE vendor_id = $1 ${PARENT_HIDE}`
+        : `SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) ${PARENT_HIDE}`;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
