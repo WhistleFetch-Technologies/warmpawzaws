@@ -338,4 +338,24 @@ export async function completePackageSessionForBooking(
     `,
     [packagePurchaseId, bookingId, sessionNumber, beforeRem ?? afterRem, afterRem]
   );
+
+  // When every scheduled session for this finite purchase has reached a terminal
+  // state, flip the parent canonical booking (is_package_session = false) to
+  // `completed` so the customer/vendor "Completed" lists pick it up. The parent
+  // stays `confirmed` while any child is still pending/scheduled/in_progress.
+  if (afterRem === 0) {
+    await db.query(
+      `
+      UPDATE bookings
+      SET status = 'completed',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE package_purchase_id = $1::uuid
+        AND COALESCE(is_package_session, false) = false
+        AND parent_booking_id IS NULL
+        AND status <> 'completed'
+      `,
+      [packagePurchaseId]
+    ).catch(() => undefined);
+  }
 }

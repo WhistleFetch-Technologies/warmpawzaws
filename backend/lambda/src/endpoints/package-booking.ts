@@ -703,13 +703,24 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
 
       if (packageBookingId) {
         (pkg as Record<string, unknown>).package_booking_id = packageBookingId;
+        // Backfill per-session child booking ids from `bookings` for any
+        // package_scheduled_sessions row that doesn't yet have one. NEVER
+        // overwrite an existing per-session booking_id with the parent
+        // canonical id — vendor calendar and customer tracker must point at
+        // the same per-session child booking row so GPS / OTP align.
         await query(
-          `UPDATE package_scheduled_sessions
-           SET booking_id = $2::uuid, updated_at = NOW()
-           WHERE package_purchase_id = $1::uuid
-             AND booking_id IS DISTINCT FROM $2::uuid`,
-          [packagePurchaseId, packageBookingId]
+          `UPDATE package_scheduled_sessions pss
+           SET booking_id = b.id, updated_at = NOW()
+           FROM bookings b
+           WHERE pss.package_purchase_id = $1::uuid
+             AND pss.booking_id IS NULL
+             AND b.package_purchase_id = pss.package_purchase_id
+             AND COALESCE(b.is_package_session, false) = true
+             AND b.package_session_number = pss.session_number
+             AND b.parent_booking_id IS NOT NULL`,
+          [packagePurchaseId]
         ).catch(() => undefined);
+        rawSessions = await loadRawSessions();
       }
 
       const bookingIds = [
@@ -817,13 +828,21 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
 
   if (packageBookingId) {
     (pkg as Record<string, unknown>).package_booking_id = packageBookingId;
+    // See note above: only fill missing per-session booking_ids from the
+    // matching child booking row. Never replace a child id with the parent.
     await query(
-      `UPDATE package_scheduled_sessions
-       SET booking_id = $2::uuid, updated_at = NOW()
-       WHERE package_purchase_id = $1::uuid
-         AND booking_id IS DISTINCT FROM $2::uuid`,
-      [packagePurchaseId, packageBookingId]
+      `UPDATE package_scheduled_sessions pss
+       SET booking_id = b.id, updated_at = NOW()
+       FROM bookings b
+       WHERE pss.package_purchase_id = $1::uuid
+         AND pss.booking_id IS NULL
+         AND b.package_purchase_id = pss.package_purchase_id
+         AND COALESCE(b.is_package_session, false) = true
+         AND b.package_session_number = pss.session_number
+         AND b.parent_booking_id IS NOT NULL`,
+      [packagePurchaseId]
     ).catch(() => undefined);
+    rawSessions = await loadRawSessions();
   }
 
   const bookingIds = [

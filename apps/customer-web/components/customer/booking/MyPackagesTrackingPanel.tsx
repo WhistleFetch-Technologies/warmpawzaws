@@ -133,12 +133,37 @@ export function MyPackagesTrackingPanel({
   ];
 
   const openMessages = async (row: MyPackageSummaryRow) => {
-    // Session packages have a single booking thread: derive it from package sessions.
+    // A package purchase has ONE chat thread, anchored on the parent canonical
+    // booking (is_package_session = false). The /packages/:id/sessions response
+    // exposes that as `package.package_booking_id`. Per-session child bookings
+    // are operational rows and are NOT used for chat.
+    setMessagingVendorId(row.vendorId ?? row.id);
+    let bookingId = '';
     try {
-      setMessagingVendorId(row.vendorId ?? row.id);
-      let bookingId = '';
+      const ses = (await apiClient.get(
+        `/packages/${encodeURIComponent(row.id)}/sessions`
+      )) as {
+        package?: {
+          package_booking_id?: string;
+          packageBookingId?: string;
+          booking_id?: string;
+          bookingId?: string;
+        };
+      };
+      bookingId = String(
+        ses?.package?.package_booking_id ??
+          ses?.package?.packageBookingId ??
+          ses?.package?.booking_id ??
+          ses?.package?.bookingId ??
+          ''
+      ).trim();
+    } catch (err) {
+      console.warn('[MyPackages] failed to resolve parent bookingId via /packages/:id/sessions', err);
+    }
 
-      if (customerPhone) {
+    // Fallback: scan the customer's bookings list for the parent of this purchase.
+    if (!bookingId && customerPhone) {
+      try {
         const bookingRes = (await apiClient.get(
           `/customer/${encodeURIComponent(customerPhone)}/bookings?limit=200`
         )) as {
@@ -147,45 +172,29 @@ export function MyPackagesTrackingPanel({
             bookingId?: string;
             packagePurchaseId?: string;
             package_purchase_id?: string;
+            isPackageSession?: boolean;
+            is_package_session?: boolean;
           }>;
         };
         const bookings = Array.isArray(bookingRes?.bookings) ? bookingRes.bookings : [];
         const matched = bookings.find((b) => {
           const pp = String(b.packagePurchaseId ?? b.package_purchase_id ?? '').trim();
-          return pp && pp === row.id;
+          const isChild = Boolean(b.isPackageSession ?? b.is_package_session);
+          return pp && pp === row.id && !isChild;
         });
         bookingId = String(matched?.id ?? matched?.bookingId ?? '').trim();
+      } catch (err) {
+        console.warn('[MyPackages] failed to resolve parent bookingId via /customer/:phone/bookings', err);
       }
-
-      if (!bookingId) {
-        const ses = (await apiClient.get(
-          `/packages/${encodeURIComponent(row.id)}/sessions`
-        )) as {
-          sessions?: Array<{ bookingId?: string; booking_id?: string }>;
-          package?: { package_booking_id?: string; packageBookingId?: string; booking_id?: string; bookingId?: string };
-        };
-        const sessions = Array.isArray(ses?.sessions) ? ses.sessions : [];
-        bookingId = String(
-          sessions.find((s) => String(s?.bookingId ?? s?.booking_id ?? '').trim())?.bookingId ??
-            sessions.find((s) => String(s?.bookingId ?? s?.booking_id ?? '').trim())?.booking_id ??
-            ses?.package?.package_booking_id ??
-            ses?.package?.packageBookingId ??
-            ses?.package?.booking_id ??
-            ses?.package?.bookingId ??
-            ''
-        ).trim();
-      }
-
-      if (!bookingId) {
-        toast.error('Booking not linked yet for this package');
-        return;
-      }
-      router.push(`/chat?bookingId=${encodeURIComponent(bookingId)}`);
-    } catch {
-      toast.error('Unable to open chat thread');
-    } finally {
-      setMessagingVendorId(null);
     }
+
+    setMessagingVendorId(null);
+
+    if (!bookingId) {
+      toast.error('Booking not linked yet for this package');
+      return;
+    }
+    router.push(`/chat?bookingId=${encodeURIComponent(bookingId)}`);
   };
 
   const onClickFilter = (f: 'active' | 'sessions-left' | 'expiring') => {

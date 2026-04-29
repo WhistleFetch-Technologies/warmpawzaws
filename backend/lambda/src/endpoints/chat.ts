@@ -77,6 +77,11 @@ export function registerChatEndpoints(app: Hono) {
         ) unread ON true
         WHERE b.vendor_id IS NOT NULL
           AND lower(trim(COALESCE(b.status::text, ''))) NOT IN ('cancelled', 'no_show')
+          -- Suppress per-session child bookings from the inbox: a package
+          -- purchase has ONE chat thread, anchored on the parent canonical
+          -- booking. Children remain message-able if you navigate by bookingId
+          -- directly; they just don't surface as separate inbox rows.
+          AND COALESCE(b.is_package_session, false) = false
           AND (
             ($1::uuid IS NOT NULL AND b.customer_id = $1::uuid)
             OR (
@@ -151,7 +156,9 @@ export function registerChatEndpoints(app: Hono) {
         `SELECT COUNT(*)::int as total
          FROM chat_messages cm
          INNER JOIN bookings b ON b.id = cm.booking_id AND b.vendor_id = $1
-         WHERE cm.is_read = false AND cm.sender_type = 'customer'`,
+         WHERE cm.is_read = false
+           AND cm.sender_type = 'customer'
+           AND COALESCE(b.is_package_session, false) = false`,
         [vendorId]
       ).catch(() => ({ rows: [{ total: 0 }] }));
       const totalUnread = result.rows?.[0]?.total ?? 0;
@@ -205,6 +212,9 @@ export function registerChatEndpoints(app: Hono) {
         LEFT JOIN customers c ON b.customer_id = c.id
         LEFT JOIN package_purchases pp ON b.package_purchase_id = pp.id
         WHERE b.vendor_id = $1
+          -- A package has one thread on the parent canonical booking; hide
+          -- per-session child bookings from the vendor inbox.
+          AND COALESCE(b.is_package_session, false) = false
         ORDER BY last_msg.created_at DESC NULLS LAST
         LIMIT 100
       `, [vendorId]).catch((e: any) => {
@@ -279,6 +289,9 @@ export function registerChatEndpoints(app: Hono) {
          LEFT JOIN vendor_services vs ON b.service_id = vs.id
          WHERE b.vendor_id IS NOT NULL
            AND lower(trim(COALESCE(b.status::text, ''))) NOT IN ('cancelled', 'no_show')
+           -- Hide per-session child bookings from the customer inbox; a
+           -- package purchase has ONE thread on the parent canonical booking.
+           AND COALESCE(b.is_package_session, false) = false
            AND (
            b.customer_id = me.id
            OR (

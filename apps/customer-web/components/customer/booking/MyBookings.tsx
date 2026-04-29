@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
@@ -414,20 +414,18 @@ export function MyBookings({
         };
       });
 
-      // Sort: most recent first; same package purchase visits ordered by session number
-      mappedBookings.sort((a, b) => {
+      // Hide package child session rows from My Bookings: a package purchase is
+      // surfaced as ONE parent canonical booking. Per-session OTPs / tracker /
+      // directions live on /my-packages → PackageSessionTrackingPanel, NOT here.
+      const visibleBookings = mappedBookings.filter((b) => !b.isPackageSession);
+
+      visibleBookings.sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        if (dateB !== dateA) return dateB - dateA;
-        const ap = String(a.packagePurchaseId || '').toLowerCase();
-        const bp = String(b.packagePurchaseId || '').toLowerCase();
-        if (ap && bp && ap === bp && a.isPackageSession && b.isPackageSession) {
-          return (a.packageSessionNumber || 0) - (b.packageSessionNumber || 0);
-        }
-        return 0;
+        return dateB - dateA;
       });
 
-      setBookings(mappedBookings);
+      setBookings(visibleBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
@@ -547,19 +545,6 @@ export function MyBookings({
     }
     return true;
   });
-
-  /** Lowest-index active package-session visit (shows OTP here and in the list). */
-  const nextPackageVisit = useMemo(() => {
-    const candidates = bookings.filter(
-      (b) =>
-        b.isPackageSession &&
-        b.packageSessionNumber != null &&
-        b.packagePurchaseId &&
-        !['completed', 'cancelled'].includes(b.status)
-    );
-    if (candidates.length === 0) return null;
-    return [...candidates].sort((a, b) => (a.packageSessionNumber || 0) - (b.packageSessionNumber || 0))[0];
-  }, [bookings]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -721,145 +706,6 @@ export function MyBookings({
         className="mx-auto max-w-customer space-y-3 p-4"
         style={{ paddingBottom: 'max(1.25rem, var(--customer-tabbar-content-pad))' }}
       >
-        {nextPackageVisit && activeFilter !== 'completed' ? (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelectedBooking(nextPackageVisit)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setSelectedBooking(nextPackageVisit);
-              }
-            }}
-            className="cursor-pointer rounded-xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 p-4 shadow-sm"
-          >
-            <div className="mb-2 flex items-center gap-2">
-              <Package className="h-5 w-5 shrink-0 text-orange-600" />
-              <h3 className="font-semibold text-gray-900">Next package visit</h3>
-              <span className="rounded-full bg-orange-600 px-2 py-0.5 text-xs font-bold text-white">
-                Session {nextPackageVisit.packageSessionNumber}
-              </span>
-            </div>
-            <p className="text-sm font-medium text-gray-900">{nextPackageVisit.serviceName}</p>
-            <p className="text-xs text-gray-600">{nextPackageVisit.vendorName}</p>
-            <p className="mt-1 text-xs text-gray-700">
-              {new Date(nextPackageVisit.bookingDate).toLocaleDateString()} at {nextPackageVisit.bookingTime}
-            </p>
-            <p className="mt-2 text-xs text-orange-800">Tap for details · OTP for this visit is below</p>
-            {(nextPackageVisit.otpCode || nextPackageVisit.completionOTP || nextPackageVisit.startOTP) &&
-              customerBookingStatusShowsCheckInOtp(nextPackageVisit.status) &&
-              !nextPackageVisit.otpVerified && (
-                <div className="mt-3 rounded-lg border border-orange-200 bg-white/90 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Key className="h-4 w-4 text-orange-600" />
-                      <span className="text-sm font-medium text-orange-900">
-                        {nextPackageVisit.serviceStyle === 'at_home' || nextPackageVisit.serviceType === 'at_home'
-                          ? 'Service OTP'
-                          : nextPackageVisit.serviceStyle === 'at_center' || nextPackageVisit.serviceType === 'at_center'
-                            ? 'Check-in OTP'
-                            : 'Visit OTP'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-lg font-bold tracking-wider text-orange-600">
-                        {showOTP === nextPackageVisit.bookingId
-                          ? nextPackageVisit.otpCode || nextPackageVisit.completionOTP || nextPackageVisit.startOTP
-                          : '••••••'}
-                      </span>
-                      <button
-                        type="button"
-                        className="rounded p-1 hover:bg-orange-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowOTP(showOTP === nextPackageVisit.bookingId ? null : nextPackageVisit.bookingId);
-                        }}
-                      >
-                        {showOTP === nextPackageVisit.bookingId ? (
-                          <EyeOff className="h-4 w-4 text-orange-600" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-orange-600" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded p-1 hover:bg-orange-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyOTP(
-                            String(
-                              nextPackageVisit.otpCode ||
-                                nextPackageVisit.completionOTP ||
-                                nextPackageVisit.startOTP
-                            ),
-                            nextPackageVisit.bookingId
-                          );
-                        }}
-                      >
-                        {copiedOTP === nextPackageVisit.bookingId ? (
-                          <Check className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Copy className="h-4 w-4 text-orange-600" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            {nextPackageVisit.otpVerified &&
-              nextPackageVisit.status === 'in_progress' &&
-              (nextPackageVisit.serviceStyle === 'at_home' || nextPackageVisit.serviceType === 'at_home') &&
-              (nextPackageVisit.completionOTP || nextPackageVisit.otpCode) && (
-                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 p-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="mb-1 flex items-center gap-2">
-                    <Key className="h-4 w-4 text-amber-900" />
-                    <span className="text-sm font-semibold text-amber-950">End-of-service OTP</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-lg font-bold tracking-wider text-amber-950">
-                      {showCompletionOtpFor === nextPackageVisit.bookingId
-                        ? String(nextPackageVisit.completionOTP || nextPackageVisit.otpCode)
-                        : '••••••'}
-                    </span>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        className="rounded p-1 hover:bg-amber-100"
-                        onClick={() =>
-                          setShowCompletionOtpFor(
-                            showCompletionOtpFor === nextPackageVisit.bookingId ? null : nextPackageVisit.bookingId
-                          )
-                        }
-                      >
-                        {showCompletionOtpFor === nextPackageVisit.bookingId ? (
-                          <EyeOff className="h-4 w-4 text-amber-900" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-amber-900" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded p-1 hover:bg-amber-100"
-                        onClick={() =>
-                          copyOTP(
-                            String(nextPackageVisit.completionOTP || nextPackageVisit.otpCode),
-                            `${nextPackageVisit.bookingId}-pin-end`
-                          )
-                        }
-                      >
-                        {copiedOTP === `${nextPackageVisit.bookingId}-pin-end` ? (
-                          <Check className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Copy className="h-4 w-4 text-amber-900" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-          </div>
-        ) : null}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
@@ -1003,8 +849,13 @@ export function MyBookings({
 
                 {/* ✅ Tracker button for at_home services (replaces Directions) - check both serviceType and serviceStyle */}
                 {/* ✅ Hide tracker when vendor has arrived or service is completed */}
+                {/* ✅ Hide tracker for package parent rows — per-session tracker lives on /my-packages */}
                 {(() => {
                   const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
+                  const isPackageParent = Boolean(
+                    (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                  );
+                  if (isPackageParent) return false;
                   // Show tracker for: confirmed, in_progress, vendor_on_way, on_way, in_transit
                   // Hide tracker for: arrived, completed, cancelled, pending
                   const showTrackerStatuses = ['confirmed', 'in_progress', 'vendor_on_way', 'on_way', 'in_transit', 'arrived'];
@@ -1092,7 +943,11 @@ export function MyBookings({
 
                 {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
                 {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
-                {(booking.otpCode || booking.completionOTP || booking.startOTP) &&
+                {/* Hide for package parent rows — per-session OTP lives on /my-packages */}
+                {!(
+                  (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                ) &&
+                  (booking.otpCode || booking.completionOTP || booking.startOTP) &&
                   customerBookingStatusShowsCheckInOtp(booking.status) &&
                   !booking.otpVerified && (
                     <div className="mt-3 pt-3 border-t border-gray-200">
@@ -1143,18 +998,25 @@ export function MyBookings({
                     </div>
                   )}
 
-                {/* OTP Verified Badge */}
-                {booking.otpVerified && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-green-700">
-                      <Check className="w-4 h-4" />
-                      <span className="text-sm">Check-in completed</span>
+                {/* OTP Verified Badge — hidden for package parent rows */}
+                {booking.otpVerified &&
+                  !(
+                    (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                  ) && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-green-700">
+                        <Check className="w-4 h-4" />
+                        <span className="text-sm">Check-in completed</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* End-of-service OTP: shown after vendor used start OTP (walker / at-home in_progress) */}
-                {booking.otpVerified &&
+                {/* Hide for package parent rows — per-session end OTP lives on /my-packages */}
+                {!(
+                  (booking.isPackage || booking.packagePurchaseId) && !booking.isPackageSession
+                ) &&
+                  booking.otpVerified &&
                   booking.status === 'in_progress' &&
                   (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') &&
                   (booking.completionOTP || booking.otpCode) && (

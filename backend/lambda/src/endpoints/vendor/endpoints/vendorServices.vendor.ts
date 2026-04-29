@@ -2587,6 +2587,43 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
 
+      const existingService = await query(
+        `SELECT id, is_enabled, publish_status
+           FROM vendor_services
+          WHERE id = $1 AND vendor_id = $2
+          LIMIT 1`,
+        [serviceId, vendorId]
+      );
+      if (existingService.rowCount === 0) {
+        return c.json({ error: 'Service not found' }, 404);
+      }
+
+      const bookingReferenceCheck = await query(
+        `SELECT COUNT(*)::int AS count
+           FROM bookings
+          WHERE service_id = $1`,
+        [serviceId]
+      );
+      const referencedBookingCount = Number(bookingReferenceCheck.rows?.[0]?.count || 0);
+
+      if (referencedBookingCount > 0) {
+        await query(
+          `UPDATE vendor_services
+              SET is_enabled = false,
+                  publish_status = 'draft',
+                  updated_at = NOW()
+            WHERE id = $1
+              AND vendor_id = $2`,
+          [serviceId, vendorId]
+        );
+
+        return c.json({
+          success: true,
+          softDeleted: true,
+          message: 'Service has existing bookings, so it was disabled instead of deleted.',
+        });
+      }
+
       await query(
         'DELETE FROM vendor_services WHERE id = $1 AND vendor_id = $2',
         [serviceId, vendorId]

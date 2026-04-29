@@ -24,6 +24,10 @@ import {
   vendorServiceRowDedupeKey,
   rowQualifiesForWalkingModal,
 } from '@/lib/walker-vendor-offerings';
+import {
+  isVendorServicePackageRow,
+  buildWalkerServiceDataForVendorPackagePurchase,
+} from '@/lib/vendor-package-purchase-nav';
 
 export interface WalkerPendingWalkSession {
   serviceId: string;
@@ -506,6 +510,28 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     }
     const r = entry.raw;
     const styleFromRow = String(r.serviceStyle ?? r.service_style ?? '').trim() || 'at_home';
+
+    const isPackageRow =
+      entry.kind === 'service_package' ||
+      isVendorServicePackageRow(r as Record<string, unknown>);
+    if (isPackageRow) {
+      const walkerName = String(
+        walker?.name ?? walker?.business_name ?? walker?.businessName ?? ''
+      ).trim();
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vid,
+        vendorName: walkerName || undefined,
+        serviceRow: r as Record<string, unknown>,
+        serviceTypeCategory: 'walking',
+        serviceStyle: styleFromRow,
+      });
+      if (pkgNav) {
+        onNavigate?.('purchase-package', pkgNav);
+        setPackagesDialogOpen(false);
+        return;
+      }
+    }
+
     if (entry.kind === 'vendor_service') {
       const serviceUuid = (r.serviceId || r.service_id || '').toString().trim();
       const vsId = r.id != null ? String(r.id) : '';

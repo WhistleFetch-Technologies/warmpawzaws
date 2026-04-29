@@ -2030,8 +2030,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   Video Call
                 </button>
               )}
-              {/* Home style: Start Travel, etc. (all providers) - mounted near Chat */}
-              {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+              {/*
+               * Home style: Start Travel, etc. — but NOT for package canonical
+               * parent rows. The parent is a purchase-level placeholder; each
+               * session child carries its own home-flow actions (live journey,
+               * start session OTP, complete OTP). Treating the parent as a
+               * journey would generate phantom GPS state for the whole package.
+               */}
+              {isHomeStyle &&
+                booking.status !== 'completed' &&
+                booking.status !== 'cancelled' &&
+                !(
+                  (booking.packagePurchaseId || (booking as any).package_purchase_id) &&
+                  !(booking.isPackageSession || (booking as any).is_package_session)
+                ) && (
                 <>
                   {/* Walker / walk-style home: single live journey page (map + start travel there). Others: in-modal GPS. */}
                   {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&

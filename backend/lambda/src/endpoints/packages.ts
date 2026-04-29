@@ -254,12 +254,15 @@ export function registerPackageEndpoints(app: Hono) {
   app.get("/packages/:packageId", async (c) => {
     try {
       const { packageId } = c.req.param();
+      if (!isValidUUID(packageId)) {
+        return c.json({ error: 'Package not found' }, 404);
+      }
 
       const packages = await query(
         `SELECT p.*, v.business_name as vendor_name, v.address, v.city, v.phone, v.rating
          FROM service_packages p
          INNER JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1`,
+         WHERE p.id = $1::uuid`,
         [packageId]
       );
 

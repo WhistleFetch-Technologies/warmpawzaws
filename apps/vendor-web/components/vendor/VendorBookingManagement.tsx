@@ -1377,6 +1377,15 @@ export function VendorBookingManagement({
                       
                       {/* NEW: Smart buttons based on service type and status */}
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
+                        // Package canonical parent row is a purchase-level placeholder, NOT a session.
+                        // Each session child carries its own Complete-with-OTP / Live tracker actions.
+                        // Hiding here covers at_center, at_home, and tele uniformly so the parent stays
+                        // a non-actionable container with only Chat available.
+                        const isPackageParentRow = Boolean(
+                          (booking.packagePurchaseId || (booking as any).package_purchase_id) &&
+                            !(booking.isPackageSession || (booking as any).is_package_session)
+                        );
+                        if (isPackageParentRow) return null;
                         const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
 
                         if (booking.status === 'pending' || booking.status === 'confirmed') {

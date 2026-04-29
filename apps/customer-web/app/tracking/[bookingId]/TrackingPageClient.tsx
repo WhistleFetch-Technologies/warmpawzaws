@@ -58,10 +58,17 @@ function deriveCustomerTrackingPhase(
   tracking: TrackingData | null,
   booking: { status?: string } | null | undefined
 ): TrackingData['status'] | 'loading' {
-  if (!tracking) return 'loading';
   const bookingStatus = String(booking?.status || '').toLowerCase();
-  if (bookingStatus === 'completed' || tracking.status === 'completed') return 'completed';
+  // Trust booking lifecycle first so customer can see start OTP before vendor starts GPS
+  if (bookingStatus === 'completed') return 'completed';
   if (bookingStatus === 'in_progress') return 'in_progress';
+  if (!tracking) {
+    if (bookingStatus === 'confirmed' || bookingStatus === 'arrived' || bookingStatus === 'pending') {
+      return 'on_way';
+    }
+    return 'loading';
+  }
+  if (tracking.status === 'completed') return 'completed';
   return tracking.status;
 }
 
@@ -115,6 +122,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bookingNotFound, setBookingNotFound] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [correctedDestination, setCorrectedDestination] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -196,6 +204,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
         }
         
         if (booking) {
+          setBookingNotFound(false);
           // Check all possible OTP field names
           const otpCode = booking.otp_code || booking.otpCode || booking.otp || booking.otp_code_value;
           const completionOTP = booking.completion_otp || booking.completionOTP || booking.completion_otp_code;
@@ -235,9 +244,16 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
           setBookingData(bookingDataToSet);
         } else {
           console.warn('[TrackingPage] Could not extract booking from response:', response);
+          setBookingNotFound(true);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('[TrackingPage] Error fetching booking data for OTP:', error);
+        const status = error?.status || error?.response?.status;
+        if (status === 404) {
+          setBookingNotFound(true);
+        }
+      } finally {
+        setLoading(false);
       }
     };
     
@@ -263,7 +279,6 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   useEffect(() => {
     if (!bookingId) return;
 
-    setLoading(true);
     let pollInterval: NodeJS.Timeout | null = null;
     let mounted = true;
 
@@ -469,15 +484,15 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
             /* booking poll is best-effort */
           }
         } else if (response.success && !response.tracking) {
-          setError(response.message || 'GPS tracking is not active for this booking');
+          // GPS session not active yet — page still renders OTP / status from booking
           setTracking(null);
+          setError(null);
         }
       } catch (err: any) {
         if (!mounted) return;
         console.error('Error loading tracking:', err);
-        setError(err.message || 'Failed to load tracking data');
-      } finally {
-        if (mounted) setLoading(false);
+        // Network / API error fetching live GPS — keep booking-derived view alive
+        setTracking(null);
       }
     };
 
@@ -566,14 +581,16 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
   }, [tracking, displayPhase]);
 
   const statusHeadline = useMemo(() => {
-    if (!tracking) return 'Tracking...';
-    const phase = displayPhase === 'loading' ? tracking.status : displayPhase;
+    const phase =
+      displayPhase === 'loading' ? tracking?.status ?? 'on_way' : displayPhase;
     if (phase === 'in_progress' && isWalkStyleBooking) return 'Walk in progress';
+    if (!tracking && phase === 'on_way') return 'Waiting for provider to start the journey';
     return getStatusMessage(phase);
   }, [tracking, displayPhase, isWalkStyleBooking]);
 
   const phaseStepIndex = useMemo(() => {
     const p = displayPhase === 'loading' && tracking ? tracking.status : displayPhase;
+    if (p === 'loading') return 0;
     if (p === 'completed') return 3;
     if (p === 'in_progress') return 2;
     if (p === 'arrived') return 1;
@@ -959,13 +976,16 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
     );
   }
 
-  if (error || !tracking) {
+  // Only short-circuit when we *know* the booking does not exist for this customer.
+  // Missing live GPS data alone must NOT block the OTP / status view (e.g. package
+  // sessions where the vendor has not yet started the journey).
+  if (bookingNotFound && !bookingData) {
     return (
       <div className="min-h-screen min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 p-4">
         <div className="text-center p-6 bg-white rounded-2xl shadow-lg w-full max-w-sm mx-auto">
           <div className="text-5xl mb-4">📍</div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Tracking Not Available</h2>
-          <p className="text-gray-500 mb-4 text-sm">{error || 'Unable to load tracking data'}</p>
+          <p className="text-gray-500 mb-4 text-sm">{error || 'No booking found for this link'}</p>
           <button
             onClick={() => (onBack ? onBack() : goBackOrHome(router))}
             className="w-full px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition font-medium"
@@ -1250,7 +1270,7 @@ export function TrackingPageClient({ bookingId: bookingIdProp, onBack }: Trackin
                 )}
                 {statusHeadline}
               </p>
-              {tracking.petName && (
+              {tracking?.petName && (
                 <p className="text-xs text-gray-500 mt-0.5">🐾 {tracking.petName}</p>
               )}
             </div>

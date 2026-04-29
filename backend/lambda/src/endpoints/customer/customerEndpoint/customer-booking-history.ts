@@ -98,6 +98,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON s.id = b.service_id
         WHERE b.customer_id = $1
+          AND COALESCE(b.is_package_session, false) = false
       `;
 
       const params: any[] = [customerId];

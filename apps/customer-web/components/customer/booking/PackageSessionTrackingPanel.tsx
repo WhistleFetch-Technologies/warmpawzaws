@@ -21,6 +21,14 @@ type SessionItem = {
   completionOtp?: string;
 };
 
+function normalizeSessionDateOnly(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const ymd = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymd?.[1]) return ymd[1];
+  return raw.includes('T') ? raw.split('T')[0] : raw;
+}
+
 function normalizeSessionRows(rows: unknown): SessionItem[] {
   if (!Array.isArray(rows)) return [];
   const firstBookingId = rows
@@ -44,7 +52,9 @@ function normalizeSessionRows(rows: unknown): SessionItem[] {
         status: String(s.display_status ?? s.displayStatus ?? s.status ?? 'pending').toLowerCase(),
         serviceStyle: String(s.service_style ?? s.serviceStyle ?? ''),
         serviceType: String(s.service_type ?? s.serviceType ?? ''),
-        scheduledDate: String(s.scheduled_date ?? s.scheduledDate ?? s.booking_date ?? ''),
+        scheduledDate: normalizeSessionDateOnly(
+          s.scheduled_date ?? s.scheduledDate ?? s.booking_date ?? ''
+        ),
         scheduledTime: String(s.scheduled_time ?? s.scheduledTime ?? s.booking_time ?? ''),
         otpCode: String(s.otp_code ?? s.otpCode ?? s.start_otp ?? s.startOTP ?? ''),
         completionOtp: String(s.completion_otp ?? s.completionOtp ?? ''),
@@ -450,23 +460,26 @@ export function PackageSessionTrackingPanel({
                       </p>
                     )}
                   </>
-                ) : isAtHome ? (
-                  <p className="inline-flex items-center gap-1 text-xs text-gray-600">
-                    <Key className="h-3.5 w-3.5 text-orange-600" />
-                    Open the tracker to view OTP and confirm start / end of this visit.
-                  </p>
                 ) : null}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void loadSessions()}
-                    className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-stone-300 px-3 text-xs font-semibold text-gray-700"
-                    aria-label="Refresh sessions"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh
-                  </button>
-                </div>
+                {/*
+                 * Refresh is only meaningful when the customer is waiting on the
+                 * inline at_center check-in OTP to appear. For at_home sessions
+                 * the OTP / status lives on the dedicated tracker page, so the
+                 * button is hidden to keep the row clean.
+                 */}
+                {isAtCenter ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadSessions()}
+                      className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-stone-300 px-3 text-xs font-semibold text-gray-700"
+                      aria-label="Refresh sessions"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

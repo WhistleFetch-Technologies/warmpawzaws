@@ -149,11 +149,16 @@ const DEFAULT_CATEGORIES: Record<VendorRoleCategory, string> = {
 };
 
 // Package types available per vendor category
+// NOTE: UI-level hide for Subscription / Membership / Unlimited Plan.
+// Backend types and APIs for those package types are preserved; only the
+// vendor "Manage custom service → Package/Plan" picker is restricted to
+// Session and Combo packages until the rest of the lifecycle is supported
+// end-to-end.
 const PACKAGE_TYPES_BY_ROLE: Record<VendorRoleCategory, PackageType[]> = {
-  'trainer_walker': ['session'], // Only session packages
-  'vet_clinic': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
-  'grooming_center': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
-  'diagnostics': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
+  'trainer_walker': ['session'],
+  'vet_clinic': ['session', 'combo'],
+  'grooming_center': ['session', 'combo'],
+  'diagnostics': ['session', 'combo'],
   'other': ['session'],
 };
 
@@ -1209,7 +1214,7 @@ export function VendorCustomServiceCreationEnhanced({
                       ? 'Create a session package with duration, sessions & frequency'
                       : vendorRoleCategory === 'trainer_walker' 
                         ? 'Create a session package'
-                        : 'Create a package, subscription, or membership'
+                        : 'Create a session or combo package'
                     }
                   </p>
                 </div>
