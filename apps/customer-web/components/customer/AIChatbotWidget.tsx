@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Send, Bot, User, AlertCircle, Headphones } from 'lucide-react';
+import { X, Send, Bot, User, AlertCircle, Headphones, Stethoscope, CalendarClock, MessageCircle } from 'lucide-react';
 import { aiChatbotApi, apiClient, supportCrmApi } from '@/lib/api-client';
 import {
   bookingServiceStyleShortLabel,
@@ -232,19 +232,71 @@ export function AIChatbotWidget({
 
   // Widget is always open when rendered - parent controls visibility via conditional rendering
   const [isOpen, setIsOpen] = useState(true);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'bot',
-      content: "Hi! I'm your Warmpawz AI Assistant. I can help you with:\n\n• Pet health symptoms checker\n• Smart booking assistance\n• General support questions\n\nHow can I help you today?",
-      timestamp: new Date().toISOString(),
-      suggestedActions: ['Contact Support'],
-    },
-  ]);
+  /** First open: pick Symptom vs Booking (vs optional general chat), then show that assistant. */
+  const [botEntry, setBotEntry] = useState<'choose' | 'active'>('choose');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [mode, setMode] = useState<'chat' | 'symptoms' | 'booking'>('chat');
+
+  const enterSymptomBot = useCallback(() => {
+    setMode('symptoms');
+    setBotEntry('active');
+    setConversationId(null);
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        type: 'bot',
+        content:
+          "You're in **Symptom checker**. Describe what you're seeing — appetite, vomiting, limping, breathing, etc.\n\nThis is general guidance only, not a diagnosis. For emergencies, contact a vet immediately.",
+        timestamp: new Date().toISOString(),
+        suggestedActions: ['Contact Support'],
+      },
+    ]);
+  }, []);
+
+  const enterBookingBot = useCallback(() => {
+    setMode('booking');
+    setBotEntry('active');
+    setConversationId(null);
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        type: 'bot',
+        content:
+          "You're in **Booking assistant**. Tell me what you need — grooming, vet visit, training, boarding, etc. I'll help you find services and providers.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+  }, []);
+
+  const enterGeneralChat = useCallback(() => {
+    setMode('chat');
+    setBotEntry('active');
+    setConversationId(null);
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        type: 'bot',
+        content:
+          "Hi! I'm your Warmpawz AI Assistant. Ask about the app, orders, or pet care. Use **Change assistant** in the header anytime to pick symptoms, booking, or this chat again.",
+        timestamp: new Date().toISOString(),
+        suggestedActions: ['Contact Support'],
+      },
+    ]);
+  }, []);
+
+  /** Return to the in-chat bot picker (no header tabs). */
+  const returnToBotPicker = useCallback(() => {
+    setInputText('');
+    setConversationId(null);
+    setSending(false);
+    setMessages([]);
+    setMode('chat');
+    setBotEntry('choose');
+  }, []);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastBookingQueryRef = useRef('');
   const [bookingSessionId, setBookingSessionId] = useState<string | null>(null);
@@ -550,7 +602,7 @@ export function AIChatbotWidget({
   ]);
 
   const sendMessage = async () => {
-    if (!inputText.trim() || sending) return;
+    if (botEntry !== 'active' || !inputText.trim() || sending) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -1010,47 +1062,77 @@ export function AIChatbotWidget({
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            onClick={() => setMode('chat')}
-            className={`px-2 py-1 text-xs rounded font-medium ${
-              mode === 'chat' ? 'bg-white text-[#E85D04]' : 'bg-white/20 text-white hover:bg-white/25'
-            }`}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('symptoms')}
-            className={`px-2 py-1 text-xs rounded font-medium ${
-              mode === 'symptoms' ? 'bg-white text-[#E85D04]' : 'bg-white/20 text-white hover:bg-white/25'
-            }`}
-          >
-            Symptoms
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('booking')}
-            className={`px-2 py-1 text-xs rounded font-medium ${
-              mode === 'booking' ? 'bg-white text-[#E85D04]' : 'bg-white/20 text-white hover:bg-white/25'
-            }`}
-          >
-            Booking
-          </button>
-        </div>
+        {botEntry === 'choose' ? (
+          <p className="text-xs text-white/95 font-medium">Choose an assistant below</p>
+        ) : (
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs font-medium text-white/95">
+              {mode === 'symptoms' && 'Symptom checker'}
+              {mode === 'booking' && 'Booking assistant'}
+              {mode === 'chat' && 'General chat'}
+            </span>
+            <button
+              type="button"
+              onClick={returnToBotPicker}
+              className="text-xs font-semibold rounded-full bg-white/20 hover:bg-white/30 px-2.5 py-1 text-white shrink-0"
+            >
+              Change assistant
+            </button>
+          </div>
+        )}
         <p className="text-[11px] text-white/85 leading-snug">
-          {mode === 'symptoms' &&
-            'Describe signs for general triage only (not a diagnosis). No doctors are suggested here — if it is serious, use Go to Booking to open the Booking tab.'}
-          {mode === 'booking' &&
+          {botEntry === 'choose' && 'Pick symptom help, booking, or general chat — no tab bar; you can switch anytime with Change assistant.'}
+          {botEntry === 'active' && mode === 'symptoms' &&
+            'Describe signs for general triage only (not a diagnosis). To book a vet, tap Change assistant → Booking assistant.'}
+          {botEntry === 'active' && mode === 'booking' &&
             'Say the service you want — we match catalog services and providers, then use the buttons to continue.'}
-          {mode === 'chat' && 'Ask anything about the app, orders, or pet care. Use buttons below the reply when shown.'}
+          {botEntry === 'active' && mode === 'chat' && 'Ask anything about the app, orders, or pet care. Use buttons below the reply when shown.'}
         </p>
       </div>
 
-      {/* Messages */}
+      {/* Messages or entry picker */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
+        {botEntry === 'choose' && (
+          <div className="flex flex-col gap-3 pt-2 pb-4 min-h-[12rem] justify-center">
+            <p className="text-center text-sm font-semibold text-gray-900">What do you need help with?</p>
+            <button
+              type="button"
+              onClick={enterSymptomBot}
+              className="flex items-center gap-3 w-full rounded-xl border-2 border-orange-100 bg-orange-50/80 hover:bg-orange-100/90 px-4 py-3.5 text-left transition-colors"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white shadow-sm text-[#E85D04]">
+                <Stethoscope className="w-5 h-5" aria-hidden />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-gray-900">Symptom checker</span>
+                <span className="block text-xs text-gray-600 mt-0.5">Pet health signs &amp; guidance</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={enterBookingBot}
+              className="flex items-center gap-3 w-full rounded-xl border-2 border-orange-100 bg-orange-50/80 hover:bg-orange-100/90 px-4 py-3.5 text-left transition-colors"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white shadow-sm text-[#E85D04]">
+                <CalendarClock className="w-5 h-5" aria-hidden />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-gray-900">Booking assistant</span>
+                <span className="block text-xs text-gray-600 mt-0.5">Find services &amp; book appointments</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={enterGeneralChat}
+              className="flex items-center justify-center gap-2 text-xs text-[#E85D04] font-medium hover:underline py-1"
+            >
+              <MessageCircle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+              General questions only (chat)
+            </button>
+          </div>
+        )}
+        {botEntry === 'active' &&
+          messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -1118,7 +1200,7 @@ export function AIChatbotWidget({
           </div>
         ))}
         
-        {sending && (
+        {botEntry === 'active' && sending && (
           <div className="flex justify-start">
             <div className="bg-gray-100 rounded-lg p-3">
               <div className="flex items-center gap-2">
@@ -1436,45 +1518,47 @@ export function AIChatbotWidget({
         </div>
       ) : null}
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-200">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+      {/* Input — after assistant choice */}
+      {botEntry === 'active' && (
+        <div className="p-4 border-t border-gray-200">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
+              placeholder={
+                mode === 'symptoms'
+                  ? "Describe your pet's symptoms..."
+                  : mode === 'booking'
+                    ? 'What service do you need?'
+                    : 'Type your message...'
               }
-            }}
-            placeholder={
-              mode === 'symptoms'
-                ? "Describe your pet's symptoms..."
-                : mode === 'booking'
-                ? 'What service do you need?'
-                : 'Type your message...'
-            }
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/40"
-            disabled={sending}
-          />
-          <button
-            type="button"
-            onClick={sendMessage}
-            disabled={!inputText.trim() || sending}
-            title="Send"
-            aria-label="Send message"
-            className="shrink-0 h-11 w-11 rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white shadow-md hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-          >
-            {sending ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Send className="w-5 h-5" />
-            )}
-          </button>
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/40"
+              disabled={sending}
+            />
+            <button
+              type="button"
+              onClick={sendMessage}
+              disabled={!inputText.trim() || sending}
+              title="Send"
+              aria-label="Send message"
+              className="shrink-0 h-11 w-11 rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white shadow-md hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              {sending ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
     </>
   );
