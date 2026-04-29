@@ -35,6 +35,10 @@ import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import {
+  requestCameraMicrophonePermission,
+  requiresUserGestureForMediaPrompt,
+} from '@/lib/runtime-permissions';
 import { AttendeeStatus, CallStatus, ChatDataMessage, ChatMessage, ChimeAttendeeData, ChimeMeetingData, ChimeVideoCallProps, TypingDataMessage } from './constants/interface';
 import {
   CALL_ENDED_TOPIC,
@@ -453,21 +457,7 @@ export function ChimeVideoCall({
 
   {/* Prime device permissions*/ }
   const primeDevicePermissions = async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
-    const stopTracks = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      stopTracks(stream);
-    } catch {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stopTracks(stream);
-      } catch { }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stopTracks(stream);
-      } catch { }
-    }
+    await requestCameraMicrophonePermission();
   };
 
   {/* Setup media devices*/ }
@@ -1295,6 +1285,14 @@ export function ChimeVideoCall({
 
   {/* Other participant name*/ }
   const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
+  const handleJoinTap = async () => {
+    const perm = await requestCameraMicrophonePermission();
+    if (perm === 'denied') {
+      toast.error('Camera/Microphone permission denied. Please allow access and try again.');
+      return;
+    }
+    void joinMeeting();
+  };
 
 
 
@@ -1302,7 +1300,13 @@ export function ChimeVideoCall({
 
   {/* Auto-join when SDK is ready (e.g. vendor accepted call or opened video from appointment)*/ }
   useEffect(() => {
-    if (status !== 'ready' || !bookingId || !participantId || hasAutoJoinedRef.current) return;
+    if (
+      status !== 'ready' ||
+      !bookingId ||
+      !participantId ||
+      hasAutoJoinedRef.current ||
+      requiresUserGestureForMediaPrompt()
+    ) return;
     hasAutoJoinedRef.current = true;
     joinMeeting();
   }, [status, bookingId, participantId]);
@@ -1520,7 +1524,7 @@ export function ChimeVideoCall({
           <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
 
           <Button
-            onClick={() => joinMeeting()}
+            onClick={handleJoinTap}
             className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-500/30"
           >
             <Phone className="w-5 h-5 mr-2" />

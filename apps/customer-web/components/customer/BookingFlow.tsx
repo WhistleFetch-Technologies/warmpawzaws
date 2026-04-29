@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { requestLocationPermission } from '@/lib/runtime-permissions';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -1824,9 +1825,15 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     apartmentName: '',
   });
 
-  const detectCurrentLocation = () => {
+  const detectCurrentLocation = async () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    const permission = await requestLocationPermission();
+    if (permission === 'denied') {
+      alert('Location permission denied. Please allow location access and try again.');
       return;
     }
 
