@@ -336,6 +336,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         [bookingId, booking.customer_id]
       );
 
+      await reconcileBookingPayments([booking]);
+
       return c.json({
         success: true,
         booking: {

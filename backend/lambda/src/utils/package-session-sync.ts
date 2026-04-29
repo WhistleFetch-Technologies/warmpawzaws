@@ -3,6 +3,8 @@
  * mark in_progress / completed idempotently (single decrement per visit).
  */
 
+import { getVendorCommissionRate } from './vendor-commission-rate';
+
 /** DB surface compatible with `query()` from rds-connection and `PoolClient#query` overloads. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SqlClient = { query: (...args: any[]) => Promise<any> };
@@ -202,6 +204,133 @@ async function countNonTerminalPackageSessions(
   return Number(r.rows?.[0]?.c ?? 0);
 }
 
+const round2Money = (x: number): number => Math.round(x * 100) / 100;
+
+/**
+ * One slice of parent `total_amount` per completed child session; last session absorbs paise remainder.
+ * Idempotent: one `vendor_earnings` row per child `booking_id`.
+ */
+async function accrueVendorEarningsForPackageSessionChild(
+  db: SqlClient,
+  params: { packagePurchaseId: string; childBookingId: string }
+): Promise<void> {
+  const { packagePurchaseId, childBookingId } = params;
+
+  try {
+    const ppRes = await db.query(
+      `SELECT COALESCE(total_sessions, 0)::int AS total_sessions,
+              COALESCE(unlimited_usage, false) AS unlimited
+       FROM package_purchases
+       WHERE id = $1::uuid`,
+      [packagePurchaseId]
+    );
+    const ppRow = ppRes.rows?.[0];
+    if (!ppRow || ppRow.unlimited) {
+      return;
+    }
+
+    let n = Number(ppRow.total_sessions);
+    if (!Number.isFinite(n) || n <= 0) {
+      const cRes = await db.query(
+        `SELECT COUNT(*)::int AS c FROM package_scheduled_sessions WHERE package_purchase_id = $1::uuid`,
+        [packagePurchaseId]
+      );
+      n = Number(cRes.rows?.[0]?.c ?? 0);
+    }
+    if (!Number.isFinite(n) || n <= 0) {
+      console.warn('[package-session-sync] skip earnings: no session count', packagePurchaseId);
+      return;
+    }
+
+    const parentRes = await db.query(
+      `SELECT vendor_id::text AS vendor_id, total_amount::numeric AS total_amount
+       FROM bookings
+       WHERE package_purchase_id = $1::uuid
+         AND COALESCE(is_package_session, false) = false
+         AND parent_booking_id IS NULL
+       LIMIT 1`,
+      [packagePurchaseId]
+    );
+    const parentRow = parentRes.rows?.[0];
+    if (!parentRow?.vendor_id) {
+      return;
+    }
+
+    const parentTotal = Number(parentRow.total_amount);
+    if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
+      return;
+    }
+
+    const priorRes = await db.query(
+      `SELECT COALESCE(SUM(ve.total_amount), 0)::numeric AS sum_gross,
+              COUNT(*)::int AS cnt
+       FROM vendor_earnings ve
+       INNER JOIN bookings b ON b.id = ve.booking_id
+       WHERE b.package_purchase_id = $1::uuid
+         AND COALESCE(b.is_package_session, false) = true`,
+      [packagePurchaseId]
+    );
+    const sumPriorGross = Number(priorRes.rows?.[0]?.sum_gross ?? 0);
+    const priorCnt = Number(priorRes.rows?.[0]?.cnt ?? 0);
+    if (priorCnt >= n) {
+      return;
+    }
+
+    const isLast = priorCnt === n - 1;
+    const perSessionGross = isLast
+      ? round2Money(parentTotal - sumPriorGross)
+      : round2Money(parentTotal / n);
+
+    if (!Number.isFinite(perSessionGross) || perSessionGross <= 0) {
+      return;
+    }
+
+    const commissionRate = await getVendorCommissionRate(String(parentRow.vendor_id));
+    const commissionAmount = round2Money((perSessionGross * commissionRate) / 100);
+    const vendorAmount = round2Money(perSessionGross - commissionAmount);
+    if (vendorAmount <= 0) {
+      return;
+    }
+
+    const insRes = await db.query(
+      `INSERT INTO vendor_earnings (
+         vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+       )
+       SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+       RETURNING id`,
+      [
+        String(parentRow.vendor_id),
+        childBookingId,
+        vendorAmount,
+        commissionAmount,
+        perSessionGross,
+        commissionRate,
+      ]
+    );
+
+    if ((insRes.rowCount ?? 0) > 0 && insRes.rows?.[0]?.id) {
+      await db
+        .query(
+          `UPDATE vendors
+           SET pending_payout = COALESCE(pending_payout, 0) + $1,
+               total_earnings = COALESCE(total_earnings, 0) + $1,
+               updated_at = NOW()
+           WHERE id = $2::uuid`,
+          [vendorAmount, String(parentRow.vendor_id)]
+        )
+        .catch((err: unknown) =>
+          console.warn('[package-session-sync] vendor totals update:', err)
+        );
+      console.log(
+        `[package-session-sync] vendor_earnings package slice booking=${childBookingId} vendor_gets=${vendorAmount} gross_slice=${perSessionGross}`
+      );
+    }
+  } catch (err: unknown) {
+    console.error('[package-session-sync] accrueVendorEarningsForPackageSessionChild failed:', err);
+  }
+}
+
 /**
  * When a package-linked booking is completed: mark session completed,
  * set `remaining_sessions` from slot counts (no decrement drift), usage log once per booking.
@@ -338,6 +467,11 @@ export async function completePackageSessionForBooking(
     `,
     [packagePurchaseId, bookingId, sessionNumber, beforeRem ?? afterRem, afterRem]
   );
+
+  await accrueVendorEarningsForPackageSessionChild(db, {
+    packagePurchaseId,
+    childBookingId: bookingId,
+  });
 
   // When every scheduled session for this finite purchase has reached a terminal
   // state, flip the parent canonical booking (is_package_session = false) to

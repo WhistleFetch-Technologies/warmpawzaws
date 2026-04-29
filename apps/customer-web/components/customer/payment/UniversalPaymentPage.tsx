@@ -1947,7 +1947,7 @@ export function UniversalPaymentPage({
       //    that row (see razorpay.razorpay.ts orphan upsert).
       const isRazorpayOnline = (paymentPayload.paymentMethod === 'razorpay' || selectedMethod === 'razorpay') && finalAmount > 0;
       const needsPaymentsCreateForWalletSplit =
-        isRazorpayOnline && useWallet && (walletAmount || 0) > 0.009;
+        isRazorpayOnline && useWallet && (walletAmount || 0) > 0;
       const skipPaymentsCreate = isRazorpayOnline && !needsPaymentsCreateForWalletSplit;
       let paymentRes: any = null;
       if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !skipPaymentsCreate) {
@@ -2091,6 +2091,12 @@ export function UniversalPaymentPage({
           const createPayload = {
             ...deferredBookingPayload,
             paymentId: paymentRes?.id,
+            ...(useWallet && (walletAmount || 0) > 0
+              ? {
+                  useWallet: true,
+                  walletAmount: Math.round((walletAmount || 0) * 100) / 100,
+                }
+              : {}),
           } as Record<string, unknown>;
           console.log('🔄 Creating booking after wallet payment:', createPayload);
           const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
@@ -2158,10 +2164,7 @@ export function UniversalPaymentPage({
           type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
           vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
           // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
-          ...(type === 'booking' &&
-          currentBookingId &&
-          useWallet &&
-          (walletAmount || 0) > 0.009
+          ...(type === 'booking' && currentBookingId && useWallet
             ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
             : {}),
         }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
@@ -2395,6 +2398,12 @@ export function UniversalPaymentPage({
               ...deferredBookingPayload,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpayOrderId: response.razorpay_order_id,
+              ...(useWallet && (walletAmount || 0) > 0
+                ? {
+                    useWallet: true,
+                    walletAmount: Math.round((walletAmount || 0) * 100) / 100,
+                  }
+                : {}),
             };
             console.log('🔄 Creating booking after payment:', createPayload);
             const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);

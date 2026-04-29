@@ -79,6 +79,53 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     console.error('[RECONCILE-T1] Error:', err);
   }
 
+  // ── Tier 1b: Wallet ledger debits cover booking total but booking row never flipped to paid ──
+  const unpaidWalletCandidates = bookingRows.filter((b: any) => b.payment_status !== 'paid');
+  if (unpaidWalletCandidates.length > 0) {
+    try {
+      const ids = unpaidWalletCandidates.map((b: any) => b.id);
+      const wtRows = await query(
+        `SELECT booking_id::text AS bid,
+                COALESCE(SUM(ABS(amount::numeric)), 0)::text AS wsum
+         FROM wallet_transactions
+         WHERE booking_id = ANY($1::uuid[])
+           AND LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
+             'debit', 'd', 'payment', 'purchase', 'withdraw'
+           )
+         GROUP BY booking_id`,
+        [ids]
+      );
+      const sumByBooking = new Map<string, number>();
+      for (const r of wtRows.rows || []) {
+        sumByBooking.set(String(r.bid), parseFloat(String(r.wsum || '0')) || 0);
+      }
+      for (const row of unpaidWalletCandidates) {
+        const gross = Math.round((parseFloat(String(row.total_amount ?? 0)) || 0) * 100) / 100;
+        const wsum = sumByBooking.get(String(row.id)) ?? 0;
+        if (gross > 0 && wsum + 0.02 >= gross) {
+          console.log(
+            `[RECONCILE-T1b] Wallet debits ₹${wsum} cover booking ${row.id} (₹${gross}). Marking paid.`
+          );
+          query(
+            `UPDATE bookings SET
+               payment_status = 'paid',
+               status = CASE WHEN status IN ('pending_payment', 'pending') THEN 'confirmed' ELSE status END,
+               updated_at = NOW()
+             WHERE id = $1::uuid
+               AND payment_status IS DISTINCT FROM 'paid'`,
+            [row.id]
+          ).catch((e: any) => console.error(`[RECONCILE-T1b] Update failed for ${row.id}:`, e));
+          row.payment_status = 'paid';
+          if (row.status === 'pending_payment' || row.status === 'pending') {
+            row.status = 'confirmed';
+          }
+        }
+      }
+    } catch (wErr: any) {
+      console.error('[RECONCILE-T1b] Error:', wErr);
+    }
+  }
+
   // ── Tier 2: Razorpay API-based reconciliation ────────────────────────────
   // Re-filter after Tier 1 patching — check ALL bookings still unpaid
   const stillUnpaidBookings = bookingRows.filter(

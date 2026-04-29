@@ -646,12 +646,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   
   const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
 
-  const totalPkgSessions = Number(
-    booking?.packageTotalSessions ?? (booking as any)?.package_total_sessions ?? 0
+  /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
+  const isPackageCanonicalParentRow = Boolean(
+    (booking?.packagePurchaseId || (booking as any)?.package_purchase_id) &&
+      !(booking?.isPackageSession || (booking as any)?.is_package_session)
   );
-  /** Multi-session finite package: completion is per session (package sessions screen), not this aggregate row. */
-  const isMultiSessionPackage =
-    Boolean(booking?.packagePurchaseId || (booking as any)?.package_purchase_id) && totalPkgSessions > 1;
 
   // Helper to format booking time
   const formatBookingTime = (time: string | null | undefined): string => {
@@ -1447,7 +1446,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                   
                   {/* ✅ ACTION BUTTONS based on status */}
-                  {booking.status === 'confirmed' && !isMultiSessionPackage && (
+                  {booking.status === 'confirmed' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -1498,7 +1497,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       Accept Booking
                     </button>
                   )}
-                  {booking.status === 'in_progress' && !isMultiSessionPackage && (
+                  {booking.status === 'in_progress' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: For tele/video consultations, complete directly (no OTP needed)
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -2040,10 +2039,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {isHomeStyle &&
                 booking.status !== 'completed' &&
                 booking.status !== 'cancelled' &&
-                !(
-                  (booking.packagePurchaseId || (booking as any).package_purchase_id) &&
-                  !(booking.isPackageSession || (booking as any).is_package_session)
-                ) && (
+                !isPackageCanonicalParentRow && (
                 <>
                   {/* Walker / walk-style home: single live journey page (map + start travel there). Others: in-modal GPS. */}
                   {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&

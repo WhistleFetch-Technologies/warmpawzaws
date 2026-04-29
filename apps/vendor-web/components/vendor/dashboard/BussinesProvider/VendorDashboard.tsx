@@ -449,6 +449,7 @@ export function VendorDashboard({
                       : b.total_sessions != null
                         ? Number(b.total_sessions)
                         : undefined,
+                isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
               }));
               setTodaySchedule(transformedBookings);
             }
@@ -503,6 +504,7 @@ export function VendorDashboard({
                     : b.total_sessions != null
                       ? Number(b.total_sessions)
                       : undefined,
+              isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
             }));
             setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
           })
@@ -1702,8 +1704,15 @@ export function VendorDashboard({
                                 >
                                   <Phone className="w-3.5 h-3.5" /> Call
                                 </button>
-                                {/* ✅ NEW: Complete Service button with OTP */}
-                                {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') && (
+                                {/* Complete with OTP — not on package purchase parent row (sessions complete individually). */}
+                                {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') &&
+                                  !(
+                                    Boolean(appointment.packagePurchaseId) &&
+                                    !(
+                                      appointment.isPackageSession ||
+                                      (appointment.packageSessionNumber != null && appointment.packageSessionNumber >= 1)
+                                    )
+                                  ) && (
                                   <button
                                     onClick={() => {
                                       setSelectedAppointment(appointment);
