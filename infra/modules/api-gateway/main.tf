@@ -2,6 +2,18 @@
 
 locals {
   is_prod = var.environment == "prod"
+  # Align with Lambda CORS (backend/lambda/src/handler/index.ts); x-customer-phone is required for /chat/* browser calls.
+  cors_allow_headers = [
+    "content-type",
+    "authorization",
+    "x-api-key",
+    "x-uat-mode",
+    "x-uat-token",
+    "x-requested-with",
+    "x-customer-phone",
+  ]
+  cors_origins_json       = jsonencode(var.cors_allowed_origins)
+  cors_allow_headers_json = jsonencode(local.cors_allow_headers)
 }
 
 # Reference existing API Gateway (IMMUTABLE - do not create or modify)
@@ -23,7 +35,7 @@ resource "aws_apigatewayv2_api" "main" {
   cors_configuration {
     allow_origins     = var.cors_allowed_origins
     allow_methods     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
-    allow_headers     = ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"]
+    allow_headers     = local.cors_allow_headers
     expose_headers    = ["content-length", "x-request-id"]
     max_age           = 86400
     allow_credentials = true
@@ -46,16 +58,12 @@ resource "aws_apigatewayv2_api" "main" {
 # using the AWS CLI since data sources are read-only.
 # This runs on every apply to ensure CORS stays correctly configured.
 
-locals {
-  cors_origins_json = jsonencode(var.cors_allowed_origins)
-}
-
 resource "null_resource" "update_existing_api_cors" {
   count = var.existing_api_gateway_id != null ? 1 : 0
   
-  # Trigger update when CORS origins change
   triggers = {
     cors_origins = local.cors_origins_json
+    cors_headers = local.cors_allow_headers_json
     api_id       = var.existing_api_gateway_id
   }
   
@@ -67,7 +75,7 @@ resource "null_resource" "update_existing_api_cors" {
         --cors-configuration '{
           "AllowOrigins": ${local.cors_origins_json},
           "AllowMethods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
-          "AllowHeaders": ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"],
+          "AllowHeaders": ${local.cors_allow_headers_json},
           "ExposeHeaders": ["content-length", "x-request-id"],
           "AllowCredentials": true,
           "MaxAge": 86400

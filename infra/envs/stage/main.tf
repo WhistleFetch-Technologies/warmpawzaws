@@ -33,6 +33,11 @@ locals {
     Environment = "stage"
     Project     = "Warmpawz"
   }
+  cors_allowed_origins = [
+    "https://stage.customer.warmpawz.com",
+    "https://stage.vendor.warmpawz.com",
+    "https://stage.admin.warmpawz.com",
+  ]
 }
 
 # VPC Module - Production-grade with HA
@@ -93,7 +98,7 @@ module "s3" {
   environment           = local.environment
   account_id            = data.aws_caller_identity.current.account_id
   enable_versioning     = true
-  cors_allowed_origins  = ["https://stage.customer.warmpawz.com", "https://stage.vendor.warmpawz.com"]
+  cors_allowed_origins  = local.cors_allowed_origins
   log_retention_days    = 90
   backup_retention_days = 180
   alarm_actions         = [module.sns.system_alerts_topic_arn]
@@ -128,6 +133,7 @@ module "lambda" {
 
   common_env_vars = {
     ENVIRONMENT                 = local.environment
+    ALLOWED_ORIGINS             = join(",", local.cors_allowed_origins)
     SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
     DB_HOST                     = module.rds.cluster_endpoint
     DB_NAME                     = module.rds.database_name
@@ -173,7 +179,7 @@ module "api_gateway" {
   aws_region                  = var.aws_region
   stage_name                  = "$default"
   auto_deploy                 = true
-  cors_allowed_origins        = ["https://stage.customer.warmpawz.com", "https://stage.vendor.warmpawz.com"]
+  cors_allowed_origins        = local.cors_allowed_origins
   throttle_burst_limit        = 2000
   throttle_rate_limit         = 1000
   cognito_user_pool_arn       = module.cognito.user_pool_arn

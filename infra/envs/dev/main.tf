@@ -83,6 +83,9 @@ locals {
   # Vendor: E95171GX1I6HN → d1s6ykkj381k58.cloudfront.net
   cors_allowed_origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
     "http://localhost:5173",
     "https://${local.admin_subdomain}",
     "https://${local.vendor_subdomain}",
@@ -224,6 +227,7 @@ module "lambda" {
     {
     ENVIRONMENT                 = local.environment
     SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
+    ALLOWED_ORIGINS             = join(",", local.cors_allowed_origins)
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
     UAT_MODE                    = "true"
