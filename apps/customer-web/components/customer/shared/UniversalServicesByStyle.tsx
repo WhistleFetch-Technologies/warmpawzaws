@@ -558,6 +558,18 @@ export function UniversalServicesByStyle({
     return provider.role || 'Provider';
   };
 
+  const getProviderAddress = (provider: Provider) => {
+    const rawAddress = [
+      provider.address,
+      (provider as any)?.location?.address,
+      (provider as any)?.vendorLocation?.address,
+      (provider as any)?.vendor?.address,
+      (provider as any)?.facility?.address,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) as string | undefined;
+
+    return rawAddress?.trim() || '';
+  };
+
   const openProviderProfileForChevron = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
     const row = provider as unknown as Record<string, unknown>;
@@ -1326,6 +1338,7 @@ export function UniversalServicesByStyle({
             {providers.map((provider) => {
               const expanded = selectedProvider === provider.providerId;
               const headerInteractive = expanded;
+              const providerAddress = getProviderAddress(provider);
               return (
               <Card key={provider.providerId} className="bg-white overflow-hidden">
                 <div
@@ -1393,6 +1406,12 @@ export function UniversalServicesByStyle({
                             </span>
                           )}
                         </div>
+                        {providerAddress && (
+                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span className="line-clamp-1">{providerAddress}</span>
+                          </div>
+                        )}
                         {/* Show experience for staff/individual */}
                         {provider.experienceYears && provider.providerType !== 'vendor' && (
                           <div className="text-xs text-gray-500 mt-1">

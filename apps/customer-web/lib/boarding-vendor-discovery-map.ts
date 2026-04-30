@@ -153,6 +153,29 @@ function pickBestDescription(p: Record<string, unknown>): string {
   return candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
 }
 
+function resolveVendorAddress(service: any): string {
+  const candidateStrings = [
+    service?.vendorLocation?.address,
+    service?.address,
+    service?.location?.address,
+  ];
+  for (const value of candidateStrings) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+
+  const city =
+    typeof service?.city === 'string' && service.city.trim() ? service.city.trim() : '';
+  const pincode =
+    typeof service?.pincode === 'string' && service.pincode.trim() ? service.pincode.trim() : '';
+  const cityPincode = [city, pincode].filter(Boolean).join(', ');
+  if (cityPincode) return cityPincode;
+
+  return 'Location on booking';
+}
+
 export function planRowsFromDiscoveryServices(services: unknown[] | undefined): BoardingPlanRow[] {
   if (!Array.isArray(services)) return [];
   const out: BoardingPlanRow[] = [];
@@ -284,11 +307,7 @@ export function buildBoardingVendorListFromRows(
       vendorMap.set(groupKey, {
         id: vendorId || groupKey,
         name: venueName,
-        address:
-          service.vendorLocation?.address ||
-          service.address ||
-          `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() ||
-          'Location on booking',
+        address: resolveVendorAddress(service),
         rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.6'),
         review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
         distance: distanceStr,
