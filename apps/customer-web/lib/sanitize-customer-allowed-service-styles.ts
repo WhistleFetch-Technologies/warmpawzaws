@@ -97,6 +97,11 @@ export function sanitizeCustomerAllowedServiceStyles(
   const catTrain = cat.includes('train');
   const catDiag = cat.includes('diagnostic');
 
+  const catNutrition = cat.includes('nutrition') || cat.includes('nutritionist');
+  if (r.includes('nutrition') || catNutrition) {
+    return ['tele'];
+  }
+
   if (r.includes('walk') || catWalk) {
     return ['at_home'];
   }

@@ -27,7 +27,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { CATEGORY_ROLES } from './customer/constants/index';
+import { expandSearchCategoryForOpenSearch, expandSearchCategoryForSql, getSearchCategoryIlikePatterns } from '../utils/search-category-aliases';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -36,39 +36,6 @@ try {
   openSearchClient = getOpenSearchClient();
 } catch (error) {
   console.warn('⚠️  OpenSearch client not available, will use SQL fallback');
-}
-
-/**
- * Customer /search UI sends hub slugs (vet, grooming, walker, …).
- * `vendors.category` / `vendor_services.category` store role-style strings; values may differ in case.
- */
-function expandCategoryBucket(slug: string | undefined): string[] | undefined {
-  if (!slug) return undefined;
-  const raw = new Set<string>();
-  raw.add(slug);
-  (CATEGORY_ROLES[slug] || []).forEach((m) => raw.add(m));
-  const list = Array.from(raw)
-    .map((s) => String(s).trim())
-    .filter(Boolean);
-  return list.length ? list : undefined;
-}
-
-function expandCategoryLower(slug: string | undefined): string[] | undefined {
-  const list = expandCategoryBucket(slug);
-  if (!list?.length) return undefined;
-  return Array.from(new Set(list.map((v) => v.toLowerCase())));
-}
-
-/** OpenSearch keyword field may be indexed with mixed case — send both forms. */
-function expandCategoryTermsAnyCase(slug: string | undefined): string[] | undefined {
-  const list = expandCategoryBucket(slug);
-  if (!list?.length) return undefined;
-  const out = new Set<string>();
-  for (const v of list) {
-    out.add(v);
-    out.add(v.toLowerCase());
-  }
-  return Array.from(out);
 }
 
 /** Whitespace-separated query → tokens (cap avoids huge SQL from pasted text). */
@@ -91,10 +58,6 @@ class UniversalSearchHandler extends BaseHandler {
     const category = context.event.queryStringParameters?.category;
     const location = context.event.queryStringParameters?.location;
     const limit = parseInt(context.event.queryStringParameters?.limit || '20', 10);
-
-    if (!searchQuery && !category) {
-      return this.error('Search query or category is required', 400);
-    }
 
     // Try OpenSearch first if available
     if (openSearchClient && process.env.ENABLE_OPENSEARCH === 'true') {
@@ -144,7 +107,7 @@ class UniversalSearchHandler extends BaseHandler {
     }
 
     // Add category filter (UI slug → multiple DB role/category strings)
-    const categoryTerms = expandCategoryTermsAnyCase(category);
+    const categoryTerms = expandSearchCategoryForOpenSearch(category);
     if (categoryTerms?.length) {
       searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
     }
@@ -213,6 +176,8 @@ class UniversalSearchHandler extends BaseHandler {
     location: string | undefined,
     limit: number
   ): Promise<HandlerResponse> {
+    const isBrowseAll = !searchQuery.trim() && !category;
+
     // ✅ SQL: Search vendors and services
     // ✅ LIVE STATUS FILTER: Only show vendors that are eligible for listing
     // Criteria: active+approved, has at least 1 enabled+published service, has schedule.
@@ -232,14 +197,18 @@ class UniversalSearchHandler extends BaseHandler {
             AND vs.is_enabled = true 
             AND vs.publish_status IN ('published', 'auto_published')
         )
-        AND EXISTS (
-          SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        AND (
+          $1::boolean = true
+          OR EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE va.vendor_id = v.id
+               OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+          )
         )
     `;
 
-    const params: any[] = [];
-    let paramIndex = 1;
+    const params: any[] = [isBrowseAll];
+    let paramIndex = 2;
 
     const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
 
@@ -266,21 +235,35 @@ class UniversalSearchHandler extends BaseHandler {
       paramIndex++;
     }
 
-    const vendorCategoryValues = expandCategoryLower(category);
-    if (vendorCategoryValues?.length) {
-      // Prefer published service categories — vendors.category is often null or stale.
+    const vendorCategoryValues = expandSearchCategoryForSql(category);
+    const vendorIlikePatterns = getSearchCategoryIlikePatterns(category);
+    if (vendorCategoryValues.length || vendorIlikePatterns.length) {
+      const exactArr = vendorCategoryValues.length ? vendorCategoryValues : ['__no_match__'];
+      const ilikeArr = vendorIlikePatterns.length ? vendorIlikePatterns : ['__no_match__'];
       vendorsQuery += ` AND (
         EXISTS (
           SELECT 1 FROM vendor_services vscat
           WHERE vscat.vendor_id = v.id
             AND vscat.is_enabled = true
             AND vscat.publish_status IN ('published', 'auto_published')
-            AND LOWER(TRIM(COALESCE(vscat.category, ''))) = ANY($${paramIndex}::text[])
+            AND (
+              LOWER(TRIM(COALESCE(vscat.category, ''))) = ANY($${paramIndex}::text[])
+              OR vscat.category ILIKE ANY($${paramIndex + 1}::text[])
+              OR vscat.service_name ILIKE ANY($${paramIndex + 1}::text[])
+              OR COALESCE(vscat.sub_category, '') ILIKE ANY($${paramIndex + 1}::text[])
+            )
         )
-        OR (v.category IS NOT NULL AND LOWER(TRIM(COALESCE(v.category, ''))) = ANY($${paramIndex}::text[]))
+        OR (
+          v.category IS NOT NULL
+          AND (
+            LOWER(TRIM(COALESCE(v.category, ''))) = ANY($${paramIndex}::text[])
+            OR v.category ILIKE ANY($${paramIndex + 1}::text[])
+          )
+        )
       )`;
-      params.push(vendorCategoryValues);
-      paramIndex++;
+      params.push(exactArr);
+      params.push(ilikeArr);
+      paramIndex += 2;
     }
 
     if (location) {
@@ -306,14 +289,18 @@ class UniversalSearchHandler extends BaseHandler {
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
-        AND EXISTS (
-          SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        AND (
+          $1::boolean = true
+          OR EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE va.vendor_id = v.id
+               OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+          )
         )
     `;
 
-    const serviceParams: any[] = [];
-    let serviceParamIndex = 1;
+    const serviceParams: any[] = [isBrowseAll];
+    let serviceParamIndex = 2;
 
     for (const token of keywordTokens) {
       servicesQuery += ` AND (
@@ -326,11 +313,20 @@ class UniversalSearchHandler extends BaseHandler {
       serviceParamIndex++;
     }
 
-    const serviceCategoryValues = expandCategoryLower(category);
-    if (serviceCategoryValues?.length) {
-      servicesQuery += ` AND LOWER(TRIM(COALESCE(vs.category, ''))) = ANY($${serviceParamIndex}::text[])`;
-      serviceParams.push(serviceCategoryValues);
-      serviceParamIndex++;
+    const serviceCategoryValues = expandSearchCategoryForSql(category);
+    const serviceIlikePatterns = getSearchCategoryIlikePatterns(category);
+    if (serviceCategoryValues.length || serviceIlikePatterns.length) {
+      const exactSvcArr = serviceCategoryValues.length ? serviceCategoryValues : ['__no_match__'];
+      const ilikeSvcArr = serviceIlikePatterns.length ? serviceIlikePatterns : ['__no_match__'];
+      servicesQuery += ` AND (
+        LOWER(TRIM(COALESCE(vs.category, ''))) = ANY($${serviceParamIndex}::text[])
+        OR vs.category ILIKE ANY($${serviceParamIndex + 1}::text[])
+        OR vs.service_name ILIKE ANY($${serviceParamIndex + 1}::text[])
+        OR COALESCE(vs.sub_category, '') ILIKE ANY($${serviceParamIndex + 1}::text[])
+      )`;
+      serviceParams.push(exactSvcArr);
+      serviceParams.push(ilikeSvcArr);
+      serviceParamIndex += 2;
     }
 
     servicesQuery += ` LIMIT $${serviceParamIndex}`;

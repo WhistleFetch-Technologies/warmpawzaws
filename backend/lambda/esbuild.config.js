@@ -122,6 +122,7 @@ esbuild.build({
     '@opensearch-project/opensearch',
     '@opensearch-project/opensearch/aws',
     'firebase-admin', // Not used in Lambda, exclude to reduce bundle size
+    '@grpc/grpc-js',  // Has corrupt source map; not needed at Lambda runtime
     // ✅ FIX: These MUST be bundled for Lambda to work:
     // - 'pg' - PostgreSQL driver (removed from external)
     // - 'jose' - JWT handling (removed from external)
@@ -154,7 +155,7 @@ esbuild.build({
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
-    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/src/index.ts'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
   },
   
   // AWS Lambda specific settings
@@ -206,7 +207,7 @@ esbuild.build({
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
-    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/src/index.ts'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),

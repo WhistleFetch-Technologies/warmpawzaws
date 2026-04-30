@@ -9,7 +9,7 @@ export function defaultAllowedServiceStylesForRole(roleId?: string | null): stri
   if (r.includes('board')) return ['at_center'];
   if (r.includes('train')) return ['at_home', 'at_center'];
   if (r.includes('behavior') || r.includes('behaviour')) return ['at_home', 'at_center', 'tele'];
-  if (r.includes('nutrition')) return ['at_home', 'at_center', 'tele'];
+  if (r.includes('nutrition')) return ['tele'];
   if (r.includes('vet')) return ['at_home', 'at_center', 'tele'];
   return ['at_home', 'at_center'];
 }
@@ -21,7 +21,8 @@ export function defaultAllowedServiceStylesForCategory(categoryId?: string | nul
   if (c.includes('board')) return ['at_center'];
   if (c.includes('train')) return ['at_home', 'at_center'];
   if (c.includes('behavior') || c.includes('behaviour')) return ['at_home', 'at_center', 'tele'];
-  if (c.includes('wellness') || c.includes('nutrition') || c.includes('pharmacy')) {
+  if (c.includes('nutrition')) return ['tele'];
+  if (c.includes('wellness') || c.includes('pharmacy')) {
     return ['at_home', 'at_center', 'tele'];
   }
   if (

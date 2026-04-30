@@ -49,8 +49,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "dist/types/**/*.ts",
-    "../../../../../../AppData/Local/warmpawz/admin-web-next/types/**/*.ts",
-    "..\\..\\..\\..\\..\\..\\AppData\\Local\\warmpawz\\admin-web-next/types/**/*.ts"
+    "../../../../AppData/Local/warmpawz/admin-web-next/types/**/*.ts",
+    "..\\..\\..\\..\\AppData\\Local\\warmpawz\\admin-web-next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

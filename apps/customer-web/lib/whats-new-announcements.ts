@@ -50,7 +50,7 @@ const fallbackWhatsNew: WhatsNewAnnouncement[] = [
   },
   {
     id: 'premium',
-    title: 'WarmPawz Plus',
+    title: 'Warmpawz Plus',
     subtitle: 'Coming soon — unlimited services at best prices when we launch',
     badgeText: 'SOON',
     badgeColor: 'amber',

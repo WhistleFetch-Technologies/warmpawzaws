@@ -438,7 +438,7 @@ export function ProblemBasedFlowRouter({
         walking: ['at_home'], // Walking is only at_home
         boarding: ['at_center'],
         behaviorist: ['tele', 'at_home', 'at_center'],
-        nutritionist: ['tele', 'at_home'], // Nutritionists offer tele and home visits
+        nutritionist: ['tele'], // Nutritionists: video call only
       };
 
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
@@ -537,7 +537,7 @@ export function ProblemBasedFlowRouter({
         walking: ['at_home'],
         boarding: ['at_center'],
         behaviorist: ['tele', 'at_home', 'at_center'],
-        nutritionist: ['tele', 'at_home'],
+        nutritionist: ['tele'],
       };
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
       

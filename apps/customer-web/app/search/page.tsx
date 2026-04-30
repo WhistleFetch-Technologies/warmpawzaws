@@ -7,6 +7,7 @@ import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
@@ -119,12 +120,7 @@ function SearchContent() {
    * No keyword but hub selected → fetch GET /search?category=… (browse-by-hub).
    */
   const searchFetchTrigger = useMemo(() => {
-    if (vendorIdParam) return null;
-    const q = (query || '').trim();
-    const c = (category || '').trim();
-    if (q) return { kind: 'keyword' as const, q, n: searchNonce };
-    if (c) return { kind: 'hub' as const, c, n: searchNonce };
-    return null;
+    return buildSearchFetchTrigger(query, category, vendorIdParam, searchNonce);
   }, [query, category, vendorIdParam, searchNonce]);
 
   const displayedResults = useMemo(() => {
@@ -172,8 +168,11 @@ function SearchContent() {
         if (searchFetchTrigger.kind === 'keyword') {
           params.set('q', searchFetchTrigger.q);
           params.set('limit', '50');
-        } else {
+        } else if (searchFetchTrigger.kind === 'hub') {
           params.set('category', searchFetchTrigger.c);
+          params.set('limit', '50');
+        } else {
+          params.set('limit', '50');
         }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
@@ -189,10 +188,17 @@ function SearchContent() {
             results: contextResults,
             timestamp: Date.now(),
           });
-        } else {
+        } else if (searchFetchTrigger.kind === 'hub') {
           saveSearchContext({
             query: '',
             category: searchFetchTrigger.c,
+            results: mapped,
+            timestamp: Date.now(),
+          });
+        } else {
+          saveSearchContext({
+            query: '',
+            category: undefined,
             results: mapped,
             timestamp: Date.now(),
           });
@@ -271,7 +277,6 @@ function SearchContent() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query?.trim() && !category) return;
     setSearchNonce((n) => n + 1);
   };
 
