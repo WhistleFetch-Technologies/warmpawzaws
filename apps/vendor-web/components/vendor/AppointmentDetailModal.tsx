@@ -1723,8 +1723,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                             </div>
                           );
                         };
-                        const boolLine = (label: string, v: unknown) =>
-                          v === true ? line(label, 'Yes') : null;
                         const stay = p.stay || {};
                         return (
                           <div className="space-y-3 text-sm border-t border-orange-200/60 pt-3">
@@ -1776,13 +1774,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                               {line('Food / brand', i.foodBrandType)}
                               {line('How much & how often', i.feedingRoutine)}
                               {line('Treats', i.treatsAllowed)}
-                            </div>
-                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
-                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Additional services</p>
-                              {boolLine('Ear cleaning', i.additionalEarCleaning)}
-                              {boolLine('Toe-nails trim', i.additionalToeNails)}
-                              {boolLine('Pet grooming', i.additionalGrooming)}
-                              {line('Other', i.additionalOther)}
                             </div>
                             {i.playtime ? (
                               <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-1">

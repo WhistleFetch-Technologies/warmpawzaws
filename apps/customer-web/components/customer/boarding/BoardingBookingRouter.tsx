@@ -154,10 +154,6 @@ type BoardingIntakeState = {
   feedingRoutine: string;
   foodBrandType: string;
   treatsAllowed: string;
-  additionalEarCleaning: boolean;
-  additionalToeNails: boolean;
-  additionalGrooming: boolean;
-  additionalOther: string;
   playtime: '' | 'once_daily' | 'twice_daily' | 'every_other_day';
   temperamentNotes: string;
   anxietyOrBehavior: string;
@@ -173,8 +169,7 @@ type BoardingIntakeShrinkableKey =
   | 'medicalConditions'
   | 'temperamentNotes'
   | 'anxietyOrBehavior'
-  | 'feedingRoutine'
-  | 'additionalOther';
+  | 'feedingRoutine';
 
 function emptyBoardingIntake(): BoardingIntakeState {
   return {
@@ -203,10 +198,6 @@ function emptyBoardingIntake(): BoardingIntakeState {
     feedingRoutine: '',
     foodBrandType: '',
     treatsAllowed: '',
-    additionalEarCleaning: false,
-    additionalToeNails: false,
-    additionalGrooming: false,
-    additionalOther: '',
     playtime: '',
     temperamentNotes: '',
     anxietyOrBehavior: '',
@@ -217,16 +208,73 @@ function emptyBoardingIntake(): BoardingIntakeState {
   };
 }
 
+function medicalHistoryValueMeaningful(v: unknown): boolean {
+  if (v == null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (typeof v === 'boolean') return v === true;
+  if (typeof v === 'number') return !Number.isNaN(v);
+  if (Array.isArray(v)) return v.some(medicalHistoryValueMeaningful);
+  if (typeof v === 'object') return Object.values(v as Record<string, unknown>).some(medicalHistoryValueMeaningful);
+  return false;
+}
+
+const MEDICAL_HISTORY_LABELS: Record<string, string> = {
+  allergies: 'Allergies',
+  vaccinations: 'Vaccinations',
+  chronicConditions: 'Chronic conditions',
+  dietaryRestrictions: 'Dietary restrictions',
+  spayedNeutered: 'Spayed / neutered',
+  medicalConditions: 'Medical notes',
+  weight: 'Weight',
+  microchipId: 'Microchip',
+  microchip_id: 'Microchip',
+};
+
+function medicalHistoryLabel(key: string): string {
+  return MEDICAL_HISTORY_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim();
+}
+
+function formatNestedHealthFields(obj: Record<string, unknown>): string {
+  const bits: string[] = [];
+  for (const [sk, sv] of Object.entries(obj)) {
+    if (!medicalHistoryValueMeaningful(sv)) continue;
+    if (typeof sv === 'string' && sv.trim()) bits.push(`${medicalHistoryLabel(sk)}: ${sv.trim()}`);
+    else if (typeof sv === 'boolean' && sv) bits.push(`${medicalHistoryLabel(sk)}: yes`);
+    else if (typeof sv === 'number') bits.push(`${medicalHistoryLabel(sk)}: ${sv}`);
+  }
+  return bits.join('; ');
+}
+
 function medicalHistoryToText(h: unknown): string {
   if (!h || typeof h !== 'object') return '';
   try {
     const o = h as Record<string, unknown>;
-    const parts: string[] = [];
+    const lines: string[] = [];
     for (const [k, v] of Object.entries(o)) {
-      if (v == null || v === '') continue;
-      parts.push(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+      if (!medicalHistoryValueMeaningful(v)) continue;
+      const title = medicalHistoryLabel(k);
+      if (typeof v === 'string' || typeof v === 'number') {
+        lines.push(`${title}: ${String(v).trim()}`);
+        continue;
+      }
+      if (typeof v === 'boolean' && v) {
+        lines.push(`${title}: Yes`);
+        continue;
+      }
+      if (Array.isArray(v)) {
+        const parts = v.filter((x) => medicalHistoryValueMeaningful(x));
+        if (parts.length === 0) continue;
+        if (parts.every((x) => typeof x === 'string' || typeof x === 'number')) {
+          lines.push(`${title}: ${parts.map(String).join(', ')}`);
+        }
+        continue;
+      }
+      if (typeof v === 'object' && v !== null) {
+        const nested = formatNestedHealthFields(v as Record<string, unknown>);
+        if (nested) lines.push(`${title}: ${nested}`);
+      }
     }
-    return parts.join('; ').slice(0, 4000);
+    return lines.join('\n').slice(0, 4000);
   } catch {
     return '';
   }
@@ -276,14 +324,21 @@ function buildIntakeFromSources(
 function parseFacilityDisclaimerPoints(facility: unknown): string[] {
   if (!facility || typeof facility !== 'object') return [];
   const f = facility as Record<string, unknown>;
-  if (Array.isArray(f.disclaimerPoints)) {
-    return f.disclaimerPoints.map((x) => String(x).trim()).filter(Boolean);
-  }
-  if (typeof f.disclaimer === 'string' && f.disclaimer.trim()) {
-    return f.disclaimer
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+  const normalize = (arr: unknown): string[] =>
+    Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter(Boolean) : [];
+  const fromArr =
+    normalize(f.disclaimerPoints).length > 0
+      ? normalize(f.disclaimerPoints)
+      : normalize(f.boardingDisclaimerPoints);
+  if (fromArr.length > 0) return fromArr;
+  for (const key of ['boardingDisclaimer', 'disclaimer'] as const) {
+    const raw = f[key];
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
   }
   return [];
 }
@@ -310,7 +365,6 @@ function buildBoardingIntakeNotesPayload(
     'temperamentNotes',
     'anxietyOrBehavior',
     'feedingRoutine',
-    'additionalOther',
   ];
   const clone: BoardingIntakeState = { ...intake };
   let disclaimerBullets =
@@ -525,16 +579,27 @@ export function BoardingBookingRouter({
     let cancelled = false;
     (async () => {
       try {
-        const r = (await apiClient.get(
+        const raw = (await apiClient.get(
           `/customer/vendor/${encodeURIComponent(vendorId)}`
-        )) as { vendor?: { boardingDisclaimerPoints?: string[] } };
-        const pts = r?.vendor?.boardingDisclaimerPoints;
-        if (cancelled) return;
-        if (Array.isArray(pts) && pts.length > 0) {
-          setVendorApiDisclaimerPoints(pts.map((x) => String(x).trim()).filter(Boolean));
-        } else {
-          setVendorApiDisclaimerPoints([]);
+        )) as Record<string, unknown>;
+        const vendor = (raw?.vendor ?? (raw as { data?: { vendor?: unknown } }).data?.vendor) as
+          | {
+              boardingDisclaimerPoints?: unknown;
+              boardingDisclaimer?: unknown;
+            }
+          | undefined;
+        let pts: string[] = [];
+        if (Array.isArray(vendor?.boardingDisclaimerPoints)) {
+          pts = vendor.boardingDisclaimerPoints.map((x) => String(x).trim()).filter(Boolean);
         }
+        if (pts.length === 0 && typeof vendor?.boardingDisclaimer === 'string' && vendor.boardingDisclaimer.trim()) {
+          pts = vendor.boardingDisclaimer
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+        if (cancelled) return;
+        setVendorApiDisclaimerPoints(pts);
       } catch {
         if (!cancelled) setVendorApiDisclaimerPoints([]);
       }
@@ -551,7 +616,12 @@ export function BoardingBookingRouter({
     return vendorApiDisclaimerPoints;
   }, [facility, isPetSitting, vendorApiDisclaimerPoints]);
   const facilityDisclaimerKey = useMemo(
-    () => facilityDisclaimerPoints.join('\u0001'),
+    () =>
+      [...facilityDisclaimerPoints]
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+        .join('\u0001'),
     [facilityDisclaimerPoints]
   );
   const [vendorDisclaimerAcknowledged, setVendorDisclaimerAcknowledged] = useState(false);
@@ -2251,54 +2321,6 @@ export function BoardingBookingRouter({
                   className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
                   placeholder="Yes / no / which treats"
                 />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900">Additional services</h3>
-              <p className="text-xs text-gray-500">
-                Optional — tick any extras you&apos;d like during the stay.
-              </p>
-              <div className="space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={boardingIntake.additionalEarCleaning}
-                    onCheckedChange={(c) =>
-                      setBoardingIntake((s) => ({ ...s, additionalEarCleaning: c === true }))
-                    }
-                    className="border-gray-300 data-[state=checked]:bg-[#FF8C42] data-[state=checked]:border-[#FF8C42]"
-                  />
-                  <span className="text-sm text-gray-800">Ear cleaning</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={boardingIntake.additionalToeNails}
-                    onCheckedChange={(c) =>
-                      setBoardingIntake((s) => ({ ...s, additionalToeNails: c === true }))
-                    }
-                    className="border-gray-300 data-[state=checked]:bg-[#FF8C42] data-[state=checked]:border-[#FF8C42]"
-                  />
-                  <span className="text-sm text-gray-800">Toe-nails trim</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={boardingIntake.additionalGrooming}
-                    onCheckedChange={(c) =>
-                      setBoardingIntake((s) => ({ ...s, additionalGrooming: c === true }))
-                    }
-                    className="border-gray-300 data-[state=checked]:bg-[#FF8C42] data-[state=checked]:border-[#FF8C42]"
-                  />
-                  <span className="text-sm text-gray-800">Pet grooming</span>
-                </label>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Others</label>
-                  <Input
-                    value={boardingIntake.additionalOther}
-                    onChange={(e) => setBoardingIntake((s) => ({ ...s, additionalOther: e.target.value }))}
-                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
-                    placeholder="Describe other add‑ons"
-                  />
-                </div>
               </div>
             </div>
 

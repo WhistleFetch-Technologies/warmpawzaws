@@ -413,7 +413,15 @@ function resolveBoardingDisclaimerFromVendor(vendorRow: any, metadata: Record<st
       : points.length > 0
         ? points.join('\n')
         : (metadata.disclaimer || '');
-  return { disclaimer: text, disclaimerPoints: points };
+  // If DB has prose in boarding_disclaimer but points array is empty, still return bullets for UIs that only read disclaimerPoints.
+  let disclaimerPoints = points;
+  if (disclaimerPoints.length === 0 && typeof text === 'string' && text.trim()) {
+    disclaimerPoints = text
+      .split(/\n+/)
+      .map((line: string) => line.trim())
+      .filter(Boolean);
+  }
+  return { disclaimer: text, disclaimerPoints };
 }
 
 /** Map canonical role names to customer-facing discovery categories (align with CustomerHomeComplete tiles). */
