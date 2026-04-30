@@ -2439,6 +2439,38 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
            WHERE id = $2`,
           [reason, bookingId]
         );
+
+        const packagePurchaseId = String((currentBooking as any).package_purchase_id || '').trim();
+        const isPackageParent = Boolean((currentBooking as any).is_package) && !Boolean((currentBooking as any).is_package_session);
+        if (packagePurchaseId && isPackageParent) {
+          await client.query(
+            `UPDATE package_purchases
+             SET status = 'cancelled',
+                 expires_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $1::uuid`,
+            [packagePurchaseId]
+          );
+          await client.query(
+            `UPDATE package_scheduled_sessions
+             SET status = 'cancelled',
+                 updated_at = NOW()
+             WHERE package_purchase_id = $1::uuid
+               AND status IN ('pending', 'scheduled')`,
+            [packagePurchaseId]
+          );
+          await client.query(
+            `UPDATE bookings
+             SET status = 'cancelled',
+                 cancelled_at = COALESCE(cancelled_at, NOW()),
+                 cancellation_reason = COALESCE(cancellation_reason, $2),
+                 updated_at = NOW()
+             WHERE package_purchase_id = $1::uuid
+               AND COALESCE(is_package_session, false) = true
+               AND status IN ('pending', 'confirmed')`,
+            [packagePurchaseId, reason]
+          );
+        }
       });
 
       // Log status change

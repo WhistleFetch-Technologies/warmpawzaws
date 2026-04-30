@@ -614,48 +614,6 @@ In rare scenarios of any injury or medical issue with the pet, it will be dealt 
                   />
                 </div>
 
-                {isBoardingVendor && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Disclaimer
-                    </label>
-                    <div className="space-y-2">
-                      {profile.disclaimerPoints.map((point, index) => (
-                        <div key={`disclaimer-${index}`} className="flex items-start gap-2">
-                          <span className="mt-2 text-xs text-gray-400">{index + 1}.</span>
-                          <Textarea
-                            value={point}
-                            onChange={(e) => updateDisclaimerPoint(index, e.target.value)}
-                            placeholder="Add boarding terms, policies, and instructions"
-                            rows={2}
-                            className="flex-1"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="mt-1 h-8 w-8 p-0"
-                            onClick={() => removeDisclaimerPoint(index)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addDisclaimerPoint}
-                        className="h-8 border-dashed"
-                      >
-                        <Plus className="mr-1 h-4 w-4" />
-                        Add point
-                      </Button>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      This general instruction is shown for your boarding profile and can be edited anytime.
-                    </p>
-                  </div>
-                )}
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Address
@@ -738,6 +696,46 @@ In rare scenarios of any injury or medical issue with the pet, it will be dealt 
                 </Button>
               </div>
             </div>
+
+            {isBoardingVendor && (
+              <div className="bg-white rounded-xl border p-6">
+                <h2 className="font-bold text-gray-900 mb-4">Disclaimer</h2>
+                <div className="space-y-2">
+                  {profile.disclaimerPoints.map((point, index) => (
+                    <div key={`disclaimer-${index}`} className="flex items-start gap-2">
+                      <span className="mt-2 text-xs text-gray-400">{index + 1}.</span>
+                      <Textarea
+                        value={point}
+                        onChange={(e) => updateDisclaimerPoint(index, e.target.value)}
+                        placeholder="Add boarding terms, policies, and instructions"
+                        rows={2}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-1 h-8 w-8 p-0"
+                        onClick={() => removeDisclaimerPoint(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addDisclaimerPoint}
+                    className="h-8 border-dashed"
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add point
+                  </Button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  This general instruction is shown for your boarding profile and can be edited anytime.
+                </p>
+              </div>
+            )}
 
             {/* Instant Tele — only when Admin role includes tele (same source as customer discovery) */}
             {canVendorUseServiceStyle(vendorStyleSource, 'tele') && (

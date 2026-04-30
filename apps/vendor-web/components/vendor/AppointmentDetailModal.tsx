@@ -17,6 +17,11 @@ import { DiagnosticsReportUpload } from './diagnostics/DiagnosticsReportUpload';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from './PrescriptionDocument';
+import {
+  parseBoardingIntakeV1FromNotes,
+  playtimeLabel,
+  type BoardingIntakeV1Payload,
+} from '@/lib/boarding-intake-notes';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -100,6 +105,9 @@ interface Booking {
   packageTotalSessions?: number;
   packageSessionNumber?: number;
   packageUnlimitedUsage?: boolean;
+
+  /** Structured boarding customer intake + disclaimer ack (from `notes` JSON). */
+  boardingIntakeV1?: BoardingIntakeV1Payload | null;
 
   // Allow any additional properties from API
   [key: string]: any;
@@ -293,7 +301,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         petObject: data.pet,
         rawBooking: { petId: rawBooking.petId, pet_id: rawBooking.pet_id, petName: rawBooking.petName, customerId: rawBooking.customerId || rawBooking.customer_id }
       });
-      
+
+      const boardingIntakeV1 = parseBoardingIntakeV1FromNotes(rawBooking.notes);
+      const hasBoardingIntakeJson = !!boardingIntakeV1;
+
       const mappedBooking: Booking = {
         id: rawBooking.id || rawBooking.bookingId,
         petId: finalPetId, // ✅ FIX: Get petId from booking or pet object
@@ -343,7 +354,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         prescriptionUrl: rawBooking.prescriptionUrl,
         // Metadata
         metadata: rawBooking.metadata,
-        specialInstructions: rawBooking.specialInstructions || rawBooking.notes,
+        specialInstructions: hasBoardingIntakeJson
+          ? rawBooking.specialInstructions
+          : rawBooking.specialInstructions || rawBooking.notes,
+        boardingIntakeV1: boardingIntakeV1 || undefined,
         meetingLink: rawBooking.meetingLink,
         // Vendor (from API – used for prescription creation)
         vendorId: rawBooking.vendorId || rawBooking.vendor_id,
@@ -1687,7 +1701,119 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     </div>
                   )}
                   
-                  {/* Display Special Instructions if any */}
+                  {booking.boardingIntakeV1 && (
+                    <div className="rounded-xl border border-[#FF8C42]/30 bg-orange-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-[#FF8C42]" />
+                        <h3 className="font-semibold text-gray-900">Boarding intake</h3>
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Submitted with this booking — same details the customer saw on the intake form.
+                      </p>
+                      {(() => {
+                        const p = booking.boardingIntakeV1!;
+                        const i = (p.intake || {}) as Record<string, unknown>;
+                        const line = (label: string, val: unknown) => {
+                          const s = val != null && String(val).trim() !== '' ? String(val) : '';
+                          if (!s) return null;
+                          return (
+                            <div key={label} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-2 text-sm">
+                              <p className="text-gray-500 sm:col-span-1">{label}</p>
+                              <p className="text-gray-900 sm:col-span-2 whitespace-pre-wrap break-words">{s}</p>
+                            </div>
+                          );
+                        };
+                        const stay = p.stay || {};
+                        return (
+                          <div className="space-y-3 text-sm border-t border-orange-200/60 pt-3">
+                            {(stay.checkInDate || stay.checkOutDate) && (
+                              <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-1">
+                                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Stay</p>
+                                {line('Check-in', [stay.checkInDate, stay.checkInTime].filter(Boolean).join(' · '))}
+                                {line('Check-out', [stay.checkOutDate, stay.checkOutTime].filter(Boolean).join(' · '))}
+                                {p.facilityName ? line('Facility', p.facilityName) : null}
+                              </div>
+                            )}
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Owner & emergency</p>
+                              {line('Owner', i.ownerFullName)}
+                              {line('Phone', i.ownerPhone)}
+                              {line('Email', i.ownerEmail)}
+                              {line('Address', i.ownerAddress)}
+                              {line('Emergency contact', i.emergencyContactName)}
+                              {line('Emergency phone', i.emergencyContactPhone)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Pet (from form)</p>
+                              {line('Name', i.petName)}
+                              {line('Species', i.petSpecies)}
+                              {line('Breed', i.petBreed)}
+                              {line(
+                                'Age',
+                                [i.petAgeYears != null && String(i.petAgeYears) !== '' ? `${i.petAgeYears} yr` : '', i.petAgeMonths != null && String(i.petAgeMonths) !== '' ? `${i.petAgeMonths} mo` : '']
+                                  .filter(Boolean)
+                                  .join(', ')
+                              )}
+                              {line('Sex', i.petGender)}
+                              {line('Weight (kg)', i.petWeightKg)}
+                              {line('Microchip', i.petMicrochip)}
+                              {line('Color / markings', i.petColorMarkings)}
+                              {line('Spayed / neutered', i.spayedNeutered)}
+                              {line('Vaccinations', i.vaccinationsUpToDate)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Health & vet</p>
+                              {line('Medications', i.medications)}
+                              {line('Allergies', i.allergies)}
+                              {line('Medical conditions', i.medicalConditions)}
+                              {line('Vet name', i.vetName)}
+                              {line('Vet phone', i.vetPhone)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Feeding</p>
+                              {line('Food / brand', i.foodBrandType)}
+                              {line('How much & how often', i.feedingRoutine)}
+                              {line('Treats', i.treatsAllowed)}
+                            </div>
+                            {i.playtime ? (
+                              <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-1">
+                                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Playtime</p>
+                                {line('Preference', playtimeLabel(i.playtime))}
+                              </div>
+                            ) : null}
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Behavior & social</p>
+                              {line('Temperament', i.temperamentNotes)}
+                              {line('Anxiety / behavior', i.anxietyOrBehavior)}
+                              {line('With dogs', i.socialWithDogs)}
+                              {line('With cats', i.socialWithCats)}
+                              {line('With people', i.socialWithPeople)}
+                            </div>
+                            {i.specialInstructions ? line('Special instructions', i.specialInstructions) : null}
+                            {p.vendorDisclaimer?.acknowledged ? (
+                              <div className="rounded-lg bg-amber-100/50 border border-amber-200 p-3 space-y-2">
+                                <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Disclaimer acknowledged</p>
+                                {p.vendorDisclaimer.acceptedAt ? (
+                                  <p className="text-xs text-amber-900/90">
+                                    {new Date(p.vendorDisclaimer.acceptedAt).toLocaleString('en-IN')}
+                                  </p>
+                                ) : null}
+                                {Array.isArray(p.vendorDisclaimer.bullets) && p.vendorDisclaimer.bullets.length > 0 ? (
+                                  <ul className="list-disc pl-4 space-y-1 text-sm text-amber-950">
+                                    {p.vendorDisclaimer.bullets.map((b, idx) => (
+                                      <li key={idx}>{b}</li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Display Special Instructions if any (plain text; not raw boarding JSON) */}
                   {booking.specialInstructions && (
                     <div>
                       <p className="text-sm text-gray-500">Customer Notes</p>

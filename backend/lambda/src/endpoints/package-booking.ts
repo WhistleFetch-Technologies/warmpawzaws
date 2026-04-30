@@ -52,6 +52,7 @@ import {
 } from '../utils/vendor-package-razorpay-flow';
 import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/package-pricing';
 import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
+import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -97,10 +98,46 @@ function roundMoney(value: number): number {
 
 async function debitWalletForPackagePurchase(
   customerId: string,
-  amountToDebit: number
+  amountToDebit: number,
+  operationKey?: string | null
 ): Promise<number> {
   const debit = roundMoney(amountToDebit);
   if (debit <= 0) return 0;
+
+  const opKey = String(operationKey || '').trim();
+
+  const wtColsResult = await query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'wallet_transactions'`
+  ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+  const wtCols = new Set(
+    (wtColsResult.rows || []).map((r: { column_name?: string }) => String(r.column_name || '').toLowerCase())
+  );
+  const wtHasWalletId = wtCols.has('wallet_id');
+  const wtHasCustomerId = wtCols.has('customer_id');
+  const wtHasReferenceType = wtCols.has('reference_type');
+  const wtHasReferenceId = wtCols.has('reference_id');
+
+  // Idempotency at wallet-ledger level: if this exact operation key already has a debit row,
+  // do not debit the wallet again.
+  if (opKey && wtHasReferenceType && wtHasReferenceId) {
+    const existingTx = await query(
+      `SELECT amount::text
+       FROM wallet_transactions
+       WHERE customer_id = $1::uuid
+         AND transaction_type = 'debit'
+         AND reference_type = 'package_payment'
+         AND reference_id = $2
+       ORDER BY created_at DESC NULLS LAST
+       LIMIT 1`,
+      [customerId, opKey]
+    ).catch(() => ({ rows: [] as Array<{ amount?: string }> }));
+    if (existingTx.rows?.[0]) {
+      const alreadyDebited = Math.max(0, Number(existingTx.rows[0].amount || 0) || 0);
+      return alreadyDebited;
+    }
+  }
 
   await query(
     `INSERT INTO customer_wallets (customer_id, balance, currency)
@@ -138,13 +175,38 @@ async function debitWalletForPackagePurchase(
 
   const walletId = String(upd.rows[0].id);
   const balanceAfter = Number(upd.rows[0].balance || 0) || 0;
-  await query(
-    `INSERT INTO wallet_transactions
-      (wallet_id, customer_id, transaction_type, amount, balance_after, reference_type, reference_id, description)
-     VALUES
-      ($1::uuid, $2::uuid, 'debit', $3::numeric, $4::numeric, 'package_payment', NULL, 'Payment for package purchase')`,
-    [walletId, customerId, debit, balanceAfter]
-  ).catch(() => {});
+
+  // Schema-adaptive insert so transaction always shows in history across DB variants.
+  try {
+    const insertCols: string[] = [];
+    const insertVals: unknown[] = [];
+    const pushVal = (col: string, val: unknown) => {
+      insertCols.push(col);
+      insertVals.push(val);
+    };
+
+    if (wtHasWalletId) pushVal('wallet_id', walletId);
+    if (wtHasCustomerId) pushVal('customer_id', customerId);
+    pushVal('transaction_type', 'debit');
+    pushVal('amount', debit);
+    if (wtCols.has('balance_after')) pushVal('balance_after', balanceAfter);
+    if (wtHasReferenceType && wtHasReferenceId) {
+      pushVal('reference_type', 'package_payment');
+      pushVal('reference_id', opKey || `pkgpay_${customerId}_${Date.now()}`);
+    }
+    pushVal(
+      'description',
+      opKey ? `Payment for package purchase ${opKey}` : 'Payment for package purchase'
+    );
+    const placeholders = insertCols.map((_, i) => `$${i + 1}`).join(', ');
+    await query(
+      `INSERT INTO wallet_transactions (${insertCols.join(', ')})
+       VALUES (${placeholders})`,
+      insertVals
+    );
+  } catch (e: any) {
+    console.warn('[purchase-from-vendor-service] wallet transaction insert failed:', e?.message || e);
+  }
 
   await query(
     `UPDATE customers SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1::numeric)
@@ -1534,7 +1596,13 @@ export function registerPackageBookingEndpoints(app: Hono) {
       const policyVersionRaw = bodyObj.policyVersion;
       const useWalletRaw = bodyObj.useWallet;
       const walletAmountRaw = bodyObj.walletAmount;
+      const idempotencyKeyRaw =
+        bodyObj.idempotencyKey ??
+        c.req.header('x-idempotency-key') ??
+        c.req.header('X-Idempotency-Key') ??
+        c.req.header('idempotency-key');
       const petIdForBooking = uuidOrNull(petIdBody);
+      const idempotencyKey = String(idempotencyKeyRaw || '').trim();
 
       if (!customerRef || !vendorRef || !vendorServiceId) {
         return c.json(
@@ -1666,9 +1734,15 @@ export function registerPackageBookingEndpoints(app: Hono) {
           : null;
       const grossTotal = roundMoney(pricing ? pricing.totalAmount : comp.priceNum);
       let walletApplied = 0;
+      const walletOperationKey =
+        idempotencyKey || `pkg_wallet_${customerId}_${String(vendorServiceId)}_${Date.now()}`;
       if (comp.priceNum > 0 && !hasRazorpayProof && useWallet) {
         const walletTarget = requestedWalletAmount > 0 ? requestedWalletAmount : grossTotal;
-        walletApplied = await debitWalletForPackagePurchase(customerId, Math.min(walletTarget, grossTotal));
+        walletApplied = await debitWalletForPackagePurchase(
+          customerId,
+          Math.min(walletTarget, grossTotal),
+          walletOperationKey
+        );
       } else if (comp.priceNum > 0 && hasRazorpayProof && useWallet) {
         walletApplied = Math.min(requestedWalletAmount, grossTotal);
       }
@@ -1719,6 +1793,15 @@ export function registerPackageBookingEndpoints(app: Hono) {
         },
       });
 
+      // Initial step idempotency (order creation / wallet-only finalize). Final Razorpay
+      // confirmation uses a second API call and must not be short-circuited by this key.
+      if (idempotencyKey && !hasRazorpayProof) {
+        const existing = await checkIdempotencyKey(idempotencyKey);
+        if (existing.exists) {
+          return c.json(existing.response, existing.httpStatus || 200);
+        }
+      }
+
       if (comp.priceNum > 0 && !hasRazorpayProof) {
         if (payableAfterWallet <= 0) {
           const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
@@ -1755,7 +1838,21 @@ export function registerPackageBookingEndpoints(app: Hono) {
             paymentId: walletPaymentId || null,
             petId: petIdForBooking,
           });
-          return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, parentBookingId));
+          const responseBody = purchaseJson(
+            purchase as Record<string, unknown>,
+            catalogPackageId,
+            parentBookingId
+          );
+          if (idempotencyKey) {
+            await storeIdempotencyKey(
+              idempotencyKey,
+              'package_purchase_wallet',
+              String((purchase as Record<string, unknown>).id || ''),
+              responseBody,
+              200
+            );
+          }
+          return c.json(responseBody);
         }
 
         // Acceptance gate: never start a Razorpay order without explicit consent.
@@ -1810,7 +1907,17 @@ export function registerPackageBookingEndpoints(app: Hono) {
                 }
               : {}),
           });
-          return c.json(buildOrderResponse(order));
+          const orderResponse = buildOrderResponse(order);
+          if (idempotencyKey) {
+            await storeIdempotencyKey(
+              idempotencyKey,
+              'package_purchase_order',
+              String(order.paymentId || order.orderId || ''),
+              orderResponse,
+              200
+            );
+          }
+          return c.json(orderResponse);
         } catch (e: any) {
           console.error('vendor package Razorpay create-order:', e);
           return c.json({ error: e?.message || 'Failed to start payment' }, 502);

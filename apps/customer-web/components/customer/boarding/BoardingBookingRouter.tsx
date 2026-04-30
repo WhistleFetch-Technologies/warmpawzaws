@@ -11,12 +11,15 @@
  * - Confirmation
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ArrowLeft, Moon, Sun, Calendar, Clock, MapPin, User, 
   CheckCircle2, Package, Plus, X, Upload, Building2, Home, Dog, Cat, CalendarRange
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
@@ -108,7 +111,330 @@ function matchPresetToVendorServiceRowId(
   return undefined;
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'payment' | 'confirmation';
+type BookingStep =
+  | 'service'
+  | 'datetime'
+  | 'pet'
+  | 'boarding_form'
+  | 'payment'
+  | 'confirmation';
+
+const BOOKING_NOTES_MAX_LEN = 10_000;
+
+type CustomerProfileSnapshot = {
+  fullName: string;
+  phone: string;
+  email: string;
+  address: string;
+};
+
+type BoardingIntakeState = {
+  ownerFullName: string;
+  ownerPhone: string;
+  ownerEmail: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  ownerAddress: string;
+  petName: string;
+  petSpecies: string;
+  petBreed: string;
+  petAgeYears: string;
+  petAgeMonths: string;
+  petGender: string;
+  petWeightKg: string;
+  petMicrochip: string;
+  petColorMarkings: string;
+  spayedNeutered: string;
+  vaccinationsUpToDate: string;
+  medications: string;
+  allergies: string;
+  medicalConditions: string;
+  vetName: string;
+  vetPhone: string;
+  feedingRoutine: string;
+  foodBrandType: string;
+  treatsAllowed: string;
+  playtime: '' | 'once_daily' | 'twice_daily' | 'every_other_day';
+  temperamentNotes: string;
+  anxietyOrBehavior: string;
+  socialWithDogs: string;
+  socialWithCats: string;
+  socialWithPeople: string;
+  specialInstructions: string;
+};
+
+/** String fields we may truncate when serializing intake JSON to the booking notes limit. */
+type BoardingIntakeShrinkableKey =
+  | 'specialInstructions'
+  | 'medicalConditions'
+  | 'temperamentNotes'
+  | 'anxietyOrBehavior'
+  | 'feedingRoutine';
+
+function emptyBoardingIntake(): BoardingIntakeState {
+  return {
+    ownerFullName: '',
+    ownerPhone: '',
+    ownerEmail: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    ownerAddress: '',
+    petName: '',
+    petSpecies: '',
+    petBreed: '',
+    petAgeYears: '',
+    petAgeMonths: '',
+    petGender: '',
+    petWeightKg: '',
+    petMicrochip: '',
+    petColorMarkings: '',
+    spayedNeutered: '',
+    vaccinationsUpToDate: '',
+    medications: '',
+    allergies: '',
+    medicalConditions: '',
+    vetName: '',
+    vetPhone: '',
+    feedingRoutine: '',
+    foodBrandType: '',
+    treatsAllowed: '',
+    playtime: '',
+    temperamentNotes: '',
+    anxietyOrBehavior: '',
+    socialWithDogs: '',
+    socialWithCats: '',
+    socialWithPeople: '',
+    specialInstructions: '',
+  };
+}
+
+function medicalHistoryValueMeaningful(v: unknown): boolean {
+  if (v == null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (typeof v === 'boolean') return v === true;
+  if (typeof v === 'number') return !Number.isNaN(v);
+  if (Array.isArray(v)) return v.some(medicalHistoryValueMeaningful);
+  if (typeof v === 'object') return Object.values(v as Record<string, unknown>).some(medicalHistoryValueMeaningful);
+  return false;
+}
+
+const MEDICAL_HISTORY_LABELS: Record<string, string> = {
+  allergies: 'Allergies',
+  vaccinations: 'Vaccinations',
+  chronicConditions: 'Chronic conditions',
+  dietaryRestrictions: 'Dietary restrictions',
+  spayedNeutered: 'Spayed / neutered',
+  medicalConditions: 'Medical notes',
+  weight: 'Weight',
+  microchipId: 'Microchip',
+  microchip_id: 'Microchip',
+};
+
+function medicalHistoryLabel(key: string): string {
+  return MEDICAL_HISTORY_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim();
+}
+
+function formatNestedHealthFields(obj: Record<string, unknown>): string {
+  const bits: string[] = [];
+  for (const [sk, sv] of Object.entries(obj)) {
+    if (!medicalHistoryValueMeaningful(sv)) continue;
+    if (typeof sv === 'string' && sv.trim()) bits.push(`${medicalHistoryLabel(sk)}: ${sv.trim()}`);
+    else if (typeof sv === 'boolean' && sv) bits.push(`${medicalHistoryLabel(sk)}: yes`);
+    else if (typeof sv === 'number') bits.push(`${medicalHistoryLabel(sk)}: ${sv}`);
+  }
+  return bits.join('; ');
+}
+
+function medicalHistoryToText(h: unknown): string {
+  if (!h || typeof h !== 'object') return '';
+  try {
+    const o = h as Record<string, unknown>;
+    const lines: string[] = [];
+    for (const [k, v] of Object.entries(o)) {
+      if (!medicalHistoryValueMeaningful(v)) continue;
+      const title = medicalHistoryLabel(k);
+      if (typeof v === 'string' || typeof v === 'number') {
+        lines.push(`${title}: ${String(v).trim()}`);
+        continue;
+      }
+      if (typeof v === 'boolean' && v) {
+        lines.push(`${title}: Yes`);
+        continue;
+      }
+      if (Array.isArray(v)) {
+        const parts = v.filter((x) => medicalHistoryValueMeaningful(x));
+        if (parts.length === 0) continue;
+        if (parts.every((x) => typeof x === 'string' || typeof x === 'number')) {
+          lines.push(`${title}: ${parts.map(String).join(', ')}`);
+        }
+        continue;
+      }
+      if (typeof v === 'object' && v !== null) {
+        const nested = formatNestedHealthFields(v as Record<string, unknown>);
+        if (nested) lines.push(`${title}: ${nested}`);
+      }
+    }
+    return lines.join('\n').slice(0, 4000);
+  } catch {
+    return '';
+  }
+}
+
+function buildIntakeFromSources(
+  profile: CustomerProfileSnapshot | null,
+  petDetail: Record<string, unknown>,
+  phoneFallback: string
+): BoardingIntakeState {
+  const species = String(petDetail.species || petDetail.type || '').trim();
+  const ay = petDetail.age_years;
+  const am = petDetail.age_months;
+  const ageYears =
+    ay != null && ay !== ''
+      ? String(ay)
+      : petDetail.age != null && petDetail.age !== ''
+        ? String(parseInt(String(petDetail.age), 10) || '')
+        : '';
+  const ageMonths = am != null && am !== '' ? String(am) : '';
+  const weight =
+    petDetail.weight_kg != null && petDetail.weight_kg !== ''
+      ? String(petDetail.weight_kg)
+      : petDetail.weight != null && petDetail.weight !== ''
+        ? String(petDetail.weight)
+        : '';
+  return {
+    ...emptyBoardingIntake(),
+    ownerFullName: profile?.fullName || '',
+    ownerPhone: profile?.phone || phoneFallback || '',
+    ownerEmail: profile?.email || '',
+    ownerAddress: profile?.address || '',
+    petName: String(petDetail.name || ''),
+    petSpecies: species,
+    petBreed: String(petDetail.breed || ''),
+    petAgeYears: ageYears,
+    petAgeMonths: ageMonths,
+    petGender: String(petDetail.gender || ''),
+    petWeightKg: weight,
+    petMicrochip: String(petDetail.microchipId || petDetail.microchip_id || ''),
+    medicalConditions: medicalHistoryToText(
+      petDetail.healthRecords || petDetail.medical_history || {}
+    ),
+  };
+}
+
+function parseFacilityDisclaimerPoints(facility: unknown): string[] {
+  if (!facility || typeof facility !== 'object') return [];
+  const f = facility as Record<string, unknown>;
+  const normalize = (arr: unknown): string[] =>
+    Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter(Boolean) : [];
+  const fromArr =
+    normalize(f.disclaimerPoints).length > 0
+      ? normalize(f.disclaimerPoints)
+      : normalize(f.boardingDisclaimerPoints);
+  if (fromArr.length > 0) return fromArr;
+  for (const key of ['boardingDisclaimer', 'disclaimer'] as const) {
+    const raw = f[key];
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function buildBoardingIntakeNotesPayload(
+  intake: BoardingIntakeState,
+  ctx: {
+    checkInDate: string;
+    checkOutDate: string;
+    checkInTime: string;
+    checkOutTime: string;
+    facilityName?: string;
+    vendorId?: string;
+    vendorDisclaimer?: {
+      acknowledged: boolean;
+      acceptedAt: string;
+      bullets: string[];
+    };
+  }
+): string {
+  const shrinkable: BoardingIntakeShrinkableKey[] = [
+    'specialInstructions',
+    'medicalConditions',
+    'temperamentNotes',
+    'anxietyOrBehavior',
+    'feedingRoutine',
+  ];
+  const clone: BoardingIntakeState = { ...intake };
+  let disclaimerBullets =
+    ctx.vendorDisclaimer?.bullets?.length && ctx.vendorDisclaimer.acknowledged
+      ? [...ctx.vendorDisclaimer.bullets]
+      : undefined;
+
+  const stringify = () =>
+    JSON.stringify({
+      type: 'boarding_intake_v1',
+      submittedAt: new Date().toISOString(),
+      facilityName: ctx.facilityName,
+      vendorId: ctx.vendorId,
+      stay: {
+        checkInDate: ctx.checkInDate,
+        checkOutDate: ctx.checkOutDate,
+        checkInTime: ctx.checkInTime,
+        checkOutTime: ctx.checkOutTime,
+      },
+      intake: clone,
+      ...(disclaimerBullets?.length && ctx.vendorDisclaimer?.acknowledged
+        ? {
+            vendorDisclaimer: {
+              acknowledged: true,
+              acceptedAt: ctx.vendorDisclaimer.acceptedAt,
+              bullets: disclaimerBullets,
+            },
+          }
+        : {}),
+    });
+
+  let s = stringify();
+  let guard = 0;
+  while (s.length > BOOKING_NOTES_MAX_LEN && guard < 120) {
+    let shortened = false;
+    for (const k of shrinkable) {
+      const v = clone[k];
+      if (typeof v === 'string' && v.length > 24) {
+        clone[k] = v.slice(0, Math.max(24, Math.floor(v.length * 0.82)));
+        shortened = true;
+      }
+    }
+    if (disclaimerBullets && disclaimerBullets.length > 0) {
+      const last = disclaimerBullets[disclaimerBullets.length - 1];
+      if (last.length > 12) {
+        disclaimerBullets = [
+          ...disclaimerBullets.slice(0, -1),
+          last.slice(0, Math.max(12, Math.floor(last.length * 0.82))),
+        ];
+        shortened = true;
+      } else {
+        disclaimerBullets = disclaimerBullets.slice(0, -1);
+        shortened = true;
+      }
+    }
+    if (!shortened) break;
+    s = stringify();
+    guard++;
+  }
+  if (s.length > BOOKING_NOTES_MAX_LEN) {
+    return s.slice(0, BOOKING_NOTES_MAX_LEN);
+  }
+  return s;
+}
+
+function getBookingSteps(isPetSitting: boolean): BookingStep[] {
+  return isPetSitting
+    ? ['service', 'datetime', 'pet', 'payment', 'confirmation']
+    : ['service', 'datetime', 'pet', 'boarding_form', 'payment', 'confirmation'];
+}
 
 /** Matches server pet-sitting pricing (bookings-enhanced). */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
@@ -124,6 +450,38 @@ interface Pet {
   name: string;
   species: string;
   breed: string;
+  ageYears?: number;
+  ageMonths?: number;
+  gender?: string;
+  weightKg?: number;
+  microchipId?: string;
+  healthRecords?: Record<string, unknown>;
+}
+
+function mapPhoneListPet(p: Record<string, unknown>): Pet {
+  const ay = p.age_years;
+  const ageStr = p.age != null ? String(p.age) : '';
+  const parsedAge = ageStr ? parseInt(ageStr, 10) : NaN;
+  return {
+    id: String(p.id),
+    name: String(p.name ?? ''),
+    species: String(p.species || p.type || ''),
+    breed: String(p.breed ?? ''),
+    ageYears: typeof ay === 'number' ? ay : Number.isFinite(parsedAge) ? parsedAge : undefined,
+    ageMonths: typeof p.age_months === 'number' ? p.age_months : undefined,
+    gender: p.gender != null ? String(p.gender) : undefined,
+    weightKg:
+      typeof p.weight_kg === 'number'
+        ? p.weight_kg
+        : p.weight != null && String(p.weight) !== ''
+          ? parseFloat(String(p.weight))
+          : undefined,
+    microchipId: p.microchipId != null ? String(p.microchipId) : undefined,
+    healthRecords:
+      p.healthRecords && typeof p.healthRecords === 'object'
+        ? (p.healthRecords as Record<string, unknown>)
+        : undefined,
+  };
 }
 
 export function BoardingBookingRouter({ 
@@ -184,7 +542,8 @@ export function BoardingBookingRouter({
   const [checkOutTime, setCheckOutTime] = useState('10:00');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
-  const [notes, setNotes] = useState('');
+  const customerProfileRef = useRef<CustomerProfileSnapshot | null>(null);
+  const [boardingIntake, setBoardingIntake] = useState<BoardingIntakeState>(() => emptyBoardingIntake());
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
@@ -209,6 +568,68 @@ export function BoardingBookingRouter({
   
   // Modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
+
+  const [vendorApiDisclaimerPoints, setVendorApiDisclaimerPoints] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!vendorId || isPetSitting) {
+      setVendorApiDisclaimerPoints([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = (await apiClient.get(
+          `/customer/vendor/${encodeURIComponent(vendorId)}`
+        )) as Record<string, unknown>;
+        const vendor = (raw?.vendor ?? (raw as { data?: { vendor?: unknown } }).data?.vendor) as
+          | {
+              boardingDisclaimerPoints?: unknown;
+              boardingDisclaimer?: unknown;
+            }
+          | undefined;
+        let pts: string[] = [];
+        if (Array.isArray(vendor?.boardingDisclaimerPoints)) {
+          pts = vendor.boardingDisclaimerPoints.map((x) => String(x).trim()).filter(Boolean);
+        }
+        if (pts.length === 0 && typeof vendor?.boardingDisclaimer === 'string' && vendor.boardingDisclaimer.trim()) {
+          pts = vendor.boardingDisclaimer
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+        if (cancelled) return;
+        setVendorApiDisclaimerPoints(pts);
+      } catch {
+        if (!cancelled) setVendorApiDisclaimerPoints([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId, isPetSitting]);
+
+  const facilityDisclaimerPoints = useMemo(() => {
+    if (isPetSitting) return [];
+    const fromFacility = parseFacilityDisclaimerPoints(facility);
+    if (fromFacility.length > 0) return fromFacility;
+    return vendorApiDisclaimerPoints;
+  }, [facility, isPetSitting, vendorApiDisclaimerPoints]);
+  const facilityDisclaimerKey = useMemo(
+    () =>
+      [...facilityDisclaimerPoints]
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+        .join('\u0001'),
+    [facilityDisclaimerPoints]
+  );
+  const [vendorDisclaimerAcknowledged, setVendorDisclaimerAcknowledged] = useState(false);
+
+  useEffect(() => {
+    if (isPetSitting) return;
+    setVendorDisclaimerAcknowledged(false);
+  }, [facilityDisclaimerKey, isPetSitting]);
 
   // Default boarding service options (no vendor / offline demo only — real bookings need vendor UUID rows)
   const defaultServiceTypeOptions = [
@@ -472,40 +893,87 @@ export function BoardingBookingRouter({
 
   const loadCustomerData = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = (await apiClient.get(`/customer/pets/${phone}`)) as {
+        pets?: Record<string, unknown>[];
+      };
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        })));
+        setPets(petsResponse.pets.map((p) => mapPhoneListPet(p)));
       }
-      
+
       try {
-        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        if (profileResponse?.profile?.id || profileResponse?.id) {
-          setCustomerId(profileResponse?.profile?.id || profileResponse?.id);
+        const profileResponse = (await apiClient.get(
+          `/customer/profile?phone=${encodeURIComponent(phone)}`
+        )) as {
+          profile?: {
+            id?: string;
+            name?: string;
+            firstName?: string;
+            lastName?: string;
+            phone?: string;
+            email?: string;
+            address?: string;
+          };
+          id?: string;
+        };
+        const p = profileResponse?.profile;
+        if (p?.id || profileResponse?.id) {
+          setCustomerId(p?.id || profileResponse?.id || null);
         }
-      } catch (profileErr) {
-        console.log('Could not get customer ID');
+        if (p) {
+          const combinedName = String(p.name || '').trim();
+          const fromParts = [p.firstName, p.lastName].filter(Boolean).join(' ').trim();
+          const snap: CustomerProfileSnapshot = {
+            fullName: combinedName || fromParts,
+            phone: String(p.phone || phone),
+            email: String(p.email || ''),
+            address: typeof p.address === 'string' ? p.address : '',
+          };
+          customerProfileRef.current = snap;
+        } else {
+          const snap = { fullName: '', phone, email: '', address: '' };
+          customerProfileRef.current = snap;
+        }
+      } catch {
+        const snap = { fullName: '', phone, email: '', address: '' };
+        customerProfileRef.current = snap;
       }
     } catch (error) {
       console.error('Error loading customer data:', error);
       setPets([]);
     }
   };
+
+  const prefillBoardingIntake = async (pet: Pet) => {
+    let detail: Record<string, unknown> = {
+      id: pet.id,
+      name: pet.name,
+      species: pet.species,
+      breed: pet.breed,
+      age_years: pet.ageYears,
+      age_months: pet.ageMonths,
+      gender: pet.gender,
+      weight_kg: pet.weightKg,
+      microchipId: pet.microchipId,
+      healthRecords: pet.healthRecords as unknown,
+    };
+    try {
+      const r = (await apiClient.get(`/customer/pets/${pet.id}`)) as { pet?: Record<string, unknown> };
+      if (r?.pet) {
+        detail = { ...detail, ...r.pet };
+      }
+    } catch {
+      /* use list fields only */
+    }
+    setBoardingIntake(buildIntakeFromSources(customerProfileRef.current, detail, phone));
+  };
   
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = (await apiClient.get(`/customer/pets/${phone}`)) as {
+        pets?: Record<string, unknown>[];
+      };
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        const mappedPets = petsResponse.pets.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          species: p.species || p.type,
-          breed: p.breed,
-        }));
+        const mappedPets = petsResponse.pets.map((p) => mapPhoneListPet(p));
         setPets(mappedPets);
         if (mappedPets.length > 0) {
           setSelectedPet(mappedPets[mappedPets.length - 1]);
@@ -620,10 +1088,25 @@ export function BoardingBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
+    const steps = getBookingSteps(isPetSitting);
     const currentIdx = steps.indexOf(step);
 
     if (step === 'pet') {
+      if (!isPetSitting) {
+        if (!selectedPet) {
+          toast.error('Please select a pet');
+          return;
+        }
+        setVendorDisclaimerAcknowledged(false);
+        void prefillBoardingIntake(selectedPet);
+        setStep('boarding_form');
+        return;
+      }
+      handleCreateBookingForPayment();
+      return;
+    }
+
+    if (step === 'boarding_form') {
       handleCreateBookingForPayment();
       return;
     }
@@ -693,6 +1176,46 @@ export function BoardingBookingRouter({
     if (!vendorId) {
       toast.error('Vendor ID is required');
       return;
+    }
+
+    if (!isPetSitting) {
+      if (!boardingIntake.ownerFullName.trim() || !boardingIntake.ownerPhone.trim()) {
+        toast.error('Please add your name and phone on the intake form.');
+        setStep('boarding_form');
+        return;
+      }
+      if (!boardingIntake.petName.trim()) {
+        toast.error('Pet name is required on the intake form.');
+        setStep('boarding_form');
+        return;
+      }
+      if (!boardingIntake.petBreed.trim()) {
+        toast.error('Pet breed is required on the intake form.');
+        setStep('boarding_form');
+        return;
+      }
+      if (!boardingIntake.petGender.trim()) {
+        toast.error('Pet sex is required on the intake form.');
+        setStep('boarding_form');
+        return;
+      }
+      if (!boardingIntake.petAgeYears.trim() && !boardingIntake.petAgeMonths.trim()) {
+        toast.error('Please enter your pet’s age (years and/or months) on the intake form.');
+        setStep('boarding_form');
+        return;
+      }
+      if (!boardingIntake.foodBrandType.trim() || !boardingIntake.feedingRoutine.trim()) {
+        toast.error(
+          'Feeding information is required: what kind of food, how much, and how often (meals per day / routine).'
+        );
+        setStep('boarding_form');
+        return;
+      }
+      if (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged) {
+        toast.error('Please read and accept the facility disclaimer.');
+        setStep('boarding_form');
+        return;
+      }
     }
 
     setProcessing(true);
@@ -772,6 +1295,8 @@ export function BoardingBookingRouter({
             ? 'at_home'
             : 'at_center';
 
+      const disclaimerAcceptedAt = new Date().toISOString();
+
       const bookingData: any = {
         customerId: customerId,
         vendorId: vendorId,
@@ -781,7 +1306,25 @@ export function BoardingBookingRouter({
         serviceType: bookingServiceType,
         petId: selectedPet?.id,
         customerPhone: phone || undefined,
-        notes: notes || undefined,
+        notes:
+          !isPetSitting
+            ? buildBoardingIntakeNotesPayload(boardingIntake, {
+                checkInDate,
+                checkOutDate,
+                checkInTime,
+                checkOutTime,
+                facilityName: facility?.name,
+                vendorId: vendorId || undefined,
+                vendorDisclaimer:
+                  facilityDisclaimerPoints.length > 0 && vendorDisclaimerAcknowledged
+                    ? {
+                        acknowledged: true,
+                        acceptedAt: disclaimerAcceptedAt,
+                        bullets: [...facilityDisclaimerPoints],
+                      }
+                    : undefined,
+              })
+            : undefined,
         idempotencyKey,
         // Boarding-specific fields
         checkInDate,
@@ -858,7 +1401,7 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'payment', 'confirmation'];
+    const steps = getBookingSteps(isPetSitting);
     const currentIdx = steps.indexOf(step);
 
     if (currentIdx <= 0) {
@@ -876,10 +1419,12 @@ export function BoardingBookingRouter({
   };
 
   const renderStepIndicator = () => {
-    const stepLabels = ['Service', 'Dates', 'Pet', 'Payment'];
-    const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, payment: 3, confirmation: 4
-    };
+    const stepLabels = isPetSitting
+      ? ['Service', 'Dates', 'Pet', 'Payment']
+      : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
+    const currentStepMap: Record<BookingStep, number> = isPetSitting
+      ? { service: 0, datetime: 1, pet: 2, boarding_form: 2, payment: 3, confirmation: 4 }
+      : { service: 0, datetime: 1, pet: 2, boarding_form: 3, payment: 4, confirmation: 5 };
     const currentIdx = currentStepMap[step];
 
     return (
@@ -966,12 +1511,17 @@ export function BoardingBookingRouter({
     { value: dateSummaryValue, label: 'Dates' },
     { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
   ];
-  const stepLabels = ['Service', 'Dates', 'Pet', 'Payment'];
-  const stepIdx = ['service', 'datetime', 'pet', 'payment'].indexOf(step);
+  const stepLabels = isPetSitting
+    ? ['Service', 'Dates', 'Pet', 'Payment']
+    : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
+  const stepSequenceForHeader = isPetSitting
+    ? (['service', 'datetime', 'pet', 'payment'] as const)
+    : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
+  const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
   const stepIndicators = stepLabels.map((label, idx) => ({
     label,
-    isCompleted: idx < stepIdx,
-    isCurrent: idx === stepIdx,
+    isCompleted: stepIdx >= 0 && idx < stepIdx,
+    isCurrent: stepIdx >= 0 && idx === stepIdx,
   }));
 
   return (
@@ -1457,7 +2007,429 @@ export function BoardingBookingRouter({
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedPet}
             >
-              {selectedPet ? 'Continue to payment' : 'Select a Pet to Continue'}
+              {selectedPet
+                ? isPetSitting
+                  ? 'Continue to payment'
+                  : 'Continue'
+                : 'Select a Pet to Continue'}
+            </Button>
+          </div>
+        )}
+
+        {step === 'boarding_form' && !isPetSitting && (
+          <div className="space-y-6 pb-6">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Boarding intake</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                We&apos;ve pre-filled details from your account and pet profile. Add anything the kennel should
+                know before check-in.
+              </p>
+            </div>
+
+            {facilityDisclaimerPoints.length > 0 && (
+              <div className="rounded-xl border-2 border-amber-200 bg-amber-50/90 p-4 shadow-sm space-y-3">
+                <h3 className="text-sm font-bold text-gray-900">Facility disclaimer</h3>
+                <p className="text-xs text-amber-900/90">
+                  Your boarding provider set the following. Please read carefully before continuing.
+                </p>
+                <div className="max-h-52 overflow-y-auto rounded-lg border border-amber-100/80 bg-white/90 p-3 text-sm text-gray-800">
+                  <ul className="list-disc pl-5 space-y-2 leading-relaxed">
+                    {facilityDisclaimerPoints.map((line, i) => (
+                      <li key={`${i}-${line.slice(0, 24)}`}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex items-start gap-3 pt-1">
+                  <Checkbox
+                    id="vendor-boarding-disclaimer-ack"
+                    checked={vendorDisclaimerAcknowledged}
+                    onCheckedChange={(c) => setVendorDisclaimerAcknowledged(c === true)}
+                    className="mt-0.5 border-amber-800/40 data-[state=checked]:bg-[#FF8C42] data-[state=checked]:border-[#FF8C42]"
+                  />
+                  <label
+                    htmlFor="vendor-boarding-disclaimer-ack"
+                    className="text-sm text-gray-900 leading-snug cursor-pointer select-none"
+                  >
+                    I have read and agree to the facility disclaimer above.
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Your details</h3>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Full name</label>
+                <Input
+                  value={boardingIntake.ownerFullName}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, ownerFullName: e.target.value }))}
+                  className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  placeholder="Your name"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Phone</label>
+                  <Input
+                    value={boardingIntake.ownerPhone}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, ownerPhone: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Mobile number"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Email</label>
+                  <Input
+                    value={boardingIntake.ownerEmail}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, ownerEmail: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Email (optional)"
+                    type="email"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Emergency contact name</label>
+                  <Input
+                    value={boardingIntake.emergencyContactName}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, emergencyContactName: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Alternate contact"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Emergency contact phone</label>
+                  <Input
+                    value={boardingIntake.emergencyContactPhone}
+                    onChange={(e) =>
+                      setBoardingIntake((s) => ({ ...s, emergencyContactPhone: e.target.value }))
+                    }
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Phone"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Address</label>
+                <Textarea
+                  value={boardingIntake.ownerAddress}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, ownerAddress: e.target.value }))}
+                  className="min-h-[80px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                  placeholder="Home address (optional)"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Pet details</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                    Pet name <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={boardingIntake.petName}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petName: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Species</label>
+                  <Input
+                    value={boardingIntake.petSpecies}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petSpecies: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Dog, cat, …"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                    Breed <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={boardingIntake.petBreed}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petBreed: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Colour / markings</label>
+                  <Input
+                    value={boardingIntake.petColorMarkings}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petColorMarkings: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                    Age (years) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={boardingIntake.petAgeYears}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petAgeYears: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                    Age (months) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={boardingIntake.petAgeMonths}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petAgeMonths: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                    Sex (M / F) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={boardingIntake.petGender}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petGender: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="e.g. Male"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Weight (kg)</label>
+                  <Input
+                    value={boardingIntake.petWeightKg}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petWeightKg: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    inputMode="decimal"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Microchip ID</label>
+                  <Input
+                    value={boardingIntake.petMicrochip}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, petMicrochip: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Spayed / neutered</label>
+                  <Input
+                    value={boardingIntake.spayedNeutered}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, spayedNeutered: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="Yes / no / unknown"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Health & vet</h3>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Vaccinations up to date?</label>
+                <Input
+                  value={boardingIntake.vaccinationsUpToDate}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, vaccinationsUpToDate: e.target.value }))}
+                  className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  placeholder="Yes / no — add details"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Medications & schedule</label>
+                <Textarea
+                  value={boardingIntake.medications}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, medications: e.target.value }))}
+                  className="min-h-[72px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Allergies</label>
+                <Textarea
+                  value={boardingIntake.allergies}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, allergies: e.target.value }))}
+                  className="min-h-[72px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Medical conditions & history</label>
+                <Textarea
+                  value={boardingIntake.medicalConditions}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, medicalConditions: e.target.value }))}
+                  className="min-h-[88px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Regular vet / clinic</label>
+                  <Input
+                    value={boardingIntake.vetName}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, vetName: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">Vet phone</label>
+                  <Input
+                    value={boardingIntake.vetPhone}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, vetPhone: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Feeding <span className="text-red-500">*</span>
+              </h3>
+              <p className="text-xs text-gray-500">
+                What kind of food, how much you feed, and how often (required for boarding).
+              </p>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                  What kind of food? <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  value={boardingIntake.foodBrandType}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, foodBrandType: e.target.value }))}
+                  className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  placeholder="Brand, wet/dry, flavour…"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                  How much & how often? <span className="text-red-500">*</span>
+                </label>
+                <Textarea
+                  value={boardingIntake.feedingRoutine}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, feedingRoutine: e.target.value }))}
+                  className="min-h-[72px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                  placeholder="e.g. 1 cup twice daily at 8am and 6pm"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Treats allowed?</label>
+                <Input
+                  value={boardingIntake.treatsAllowed}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, treatsAllowed: e.target.value }))}
+                  className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  placeholder="Yes / no / which treats"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Playtime</h3>
+              <p className="text-xs text-gray-500">How often should playtime be included?</p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: 'once_daily' as const, label: 'Once a day' },
+                    { id: 'twice_daily' as const, label: 'Twice a day' },
+                    { id: 'every_other_day' as const, label: 'Every other day' },
+                  ]
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setBoardingIntake((s) => ({ ...s, playtime: opt.id }))}
+                    className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-colors ${
+                      boardingIntake.playtime === opt.id
+                        ? 'border-[#FF8C42] bg-orange-50 text-gray-900'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-[#FF8C42]/60'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setBoardingIntake((s) => ({ ...s, playtime: '' }))}
+                  className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-colors ${
+                    boardingIntake.playtime === ''
+                      ? 'border-[#FF8C42] bg-orange-50 text-gray-900'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-[#FF8C42]/60'
+                  }`}
+                >
+                  No preference
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Behaviour & socialisation</h3>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Temperament</label>
+                <Textarea
+                  value={boardingIntake.temperamentNotes}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, temperamentNotes: e.target.value }))}
+                  className="min-h-[72px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                  placeholder="Friendly, shy, noise sensitivity…"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">Anxiety or behaviour notes</label>
+                <Textarea
+                  value={boardingIntake.anxietyOrBehavior}
+                  onChange={(e) => setBoardingIntake((s) => ({ ...s, anxietyOrBehavior: e.target.value }))}
+                  className="min-h-[72px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y"
+                  placeholder="Separation anxiety, resource guarding, escape risk…"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">With dogs</label>
+                  <Input
+                    value={boardingIntake.socialWithDogs}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, socialWithDogs: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                    placeholder="e.g. Playful"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">With cats</label>
+                  <Input
+                    value={boardingIntake.socialWithCats}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, socialWithCats: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">With people</label>
+                  <Input
+                    value={boardingIntake.socialWithPeople}
+                    onChange={(e) => setBoardingIntake((s) => ({ ...s, socialWithPeople: e.target.value }))}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm h-auto"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900">Special instructions</h3>
+              <Textarea
+                value={boardingIntake.specialInstructions}
+                onChange={(e) => setBoardingIntake((s) => ({ ...s, specialInstructions: e.target.value }))}
+                className="min-h-[96px] rounded-xl border-2 border-gray-200 px-4 py-3 text-base md:text-sm resize-y placeholder:text-gray-400"
+                placeholder="Will the pet have any personal items while boarding with us? If so please list them below. Anything else the facility should know (sleeping, toys, routines…)"
+              />
+            </div>
+
+            <Button
+              onClick={handleNext}
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
+              disabled={
+                processing ||
+                (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged)
+              }
+            >
+              {processing ? 'Creating booking…' : 'Continue to payment'}
             </Button>
           </div>
         )}

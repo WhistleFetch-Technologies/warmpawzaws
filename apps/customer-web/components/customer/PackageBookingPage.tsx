@@ -13,7 +13,7 @@
  * Status: ✅ P0 IMPLEMENTATION
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import {
@@ -73,7 +73,7 @@ interface PackageBooking {
   packageName: string;
   totalSessions: number;
   completedSessions: number;
-  status: 'active' | 'completed';
+  status: 'active' | 'completed' | 'cancelled';
   sessions: Session[];
   createdAt: string;
 }
@@ -177,6 +177,7 @@ export function PackageBookingPage({
     version: string;
   } | null>(null);
   const [policyAccepted, setPolicyAccepted] = useState(false);
+  const purchaseAttemptKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadPackages();
@@ -513,9 +514,14 @@ export function PackageBookingPage({
             packageName: String(p.packageName || p.package_name || 'Package'),
             totalSessions: unlimited ? Math.max(used, 1) : total || Math.max(used, 1),
             completedSessions: unlimited ? used : used,
-            status: (p.status === 'exhausted' || p.status === 'expired' ? 'completed' : 'active') as
+            status: (p.status === 'cancelled' || p.status === 'canceled'
+              ? 'cancelled'
+              : p.status === 'exhausted' || p.status === 'expired'
+                ? 'completed'
+                : 'active') as
               | 'active'
-              | 'completed',
+              | 'completed'
+              | 'cancelled',
             sessions: [],
             createdAt: p.expiresAt || p.expires_at || new Date().toISOString(),
           };
@@ -534,6 +540,7 @@ export function PackageBookingPage({
     const spd = Math.max(1, Math.min(24, Number(pkg.sessionsPerDay) || 1));
     setPerDaySessionTimes(Array.from({ length: spd }, () => ''));
     setPriceQuote(null);
+    purchaseAttemptKeyRef.current = null;
     setView('schedule');
     setError(null);
   };
@@ -555,6 +562,7 @@ export function PackageBookingPage({
   );
   const reviewWalletToUse = useWallet ? Math.max(0, Math.min(walletBalance, reviewGrossAmount)) : 0;
   const reviewRazorpayPayable = Math.max(0, reviewGrossAmount - reviewWalletToUse);
+  const isWalletFullyCoveringReview = useWallet && reviewRazorpayPayable <= 0.01;
   const canUseWalletInReview = walletBalance > 0.01;
 
   const validateScheduleForSubmit = (): string | null => {
@@ -672,6 +680,13 @@ export function PackageBookingPage({
       })();
 
       if (selectedPackage.vendorServiceId) {
+        const purchaseIdempotencyKey =
+          purchaseAttemptKeyRef.current ||
+          (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? `pkg_purchase_${crypto.randomUUID()}`
+            : `pkg_purchase_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+        purchaseAttemptKeyRef.current = purchaseIdempotencyKey;
+
         const grossAmount = Number(
           priceQuote?.finalPrice ?? priceQuote?.totalAmount ?? selectedPackage.totalPrice ?? 0
         );
@@ -687,6 +702,7 @@ export function PackageBookingPage({
           ...(packagePolicy?.version ? { policyVersion: packagePolicy.version } : {}),
           useWallet,
           walletAmount: walletToUse,
+          idempotencyKey: purchaseIdempotencyKey,
         };
 
         const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;
@@ -1189,7 +1205,9 @@ export function PackageBookingPage({
               <h2 className="text-lg font-bold text-gray-900">Booking summary</h2>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Review your package and charges, then proceed to secure payment.
+              {isWalletFullyCoveringReview
+                ? 'Review your package and confirm booking. No online payment is required.'
+                : 'Review your package and charges, then proceed to secure payment.'}
             </p>
 
             <div className="space-y-3 text-sm border-t border-gray-100 pt-3">
@@ -1447,7 +1465,11 @@ export function PackageBookingPage({
                 </>
               ) : (
                 <>
-                  Proceed to payment
+                  {isWalletFullyCoveringReview
+                    ? 'Confirm booking'
+                    : reviewRazorpayPayable > 0.01
+                      ? `Proceed to payment (₹${Math.round(reviewRazorpayPayable).toLocaleString('en-IN')})`
+                      : 'Proceed to payment'}
                   <ChevronRight className="w-5 h-5" />
                 </>
               )}
@@ -1486,9 +1508,11 @@ export function PackageBookingPage({
                   <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
                     pkg.status === 'active' 
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
+                      : pkg.status === 'cancelled'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-700'
                   }`}>
-                    {pkg.status === 'active' ? 'In Progress' : 'Completed'}
+                    {pkg.status === 'active' ? 'In Progress' : pkg.status === 'cancelled' ? 'Cancelled' : 'Completed'}
                   </div>
                 </div>
 
