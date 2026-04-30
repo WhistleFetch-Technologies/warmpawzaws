@@ -55,6 +55,7 @@ import {
 	normalizeAdminBannersList,
 	formatAdminBannerPlacementLabel,
 	adminBannerPositionFromRow,
+	normalizeLocationValue,
 } from "@/lib/banner-admin";
 import { toast, Toaster } from "sonner";
 import {
@@ -92,7 +93,11 @@ export default function MarketingPromotionsTab() {
 		display_order: 0,
 		gradient_from: "#FF8C42",
 		gradient_to: "#FF6B35",
+		target_state: "",
+		target_city: "",
 	});
+	const [bannerGeoStates, setBannerGeoStates] = useState<string[]>([]);
+	const [bannerGeoCities, setBannerGeoCities] = useState<string[]>([]);
 	
 	// Articles State
 	const [articles, setArticles] = useState<any[]>([]);
@@ -148,6 +153,7 @@ export default function MarketingPromotionsTab() {
 		validFrom: "",
 		validUntil: "",
 		isActive: true,
+		published: true,
 		displayType: "spotlight",
 	});
 
@@ -182,6 +188,20 @@ export default function MarketingPromotionsTab() {
 			loadRoles(); // Load roles first
 		}
 	}, [activeTab]);
+
+	useEffect(() => {
+		if (activeTab === "banners") {
+			loadBannerGeoStates();
+		}
+	}, [activeTab]);
+
+	useEffect(() => {
+		if (!bannerForm.target_state) {
+			loadBannerGeoCities();
+			return;
+		}
+		loadBannerGeoCities(bannerForm.target_state);
+	}, [bannerForm.target_state]);
 
 	// Reload config when geography changes or tab is opened
 	useEffect(() => {
@@ -445,8 +465,24 @@ export default function MarketingPromotionsTab() {
 					discountValue: promo.discount_value !== undefined ? promo.discount_value : (promo.discountValue !== undefined ? promo.discountValue : 0),
 					// Map is_active -> isActive
 					isActive: promo.is_active !== undefined ? promo.is_active : (promo.isActive !== undefined ? promo.isActive : true),
-					// Map serviceCategory (if applicable_services exists)
-					serviceCategory: promo.serviceCategory || promo.target_category || 'all',
+					// Map serviceCategory/serviceStyle from persisted applicable_services + metadata
+					serviceCategory: (() => {
+						const rawServices = Array.isArray(promo.applicable_services)
+							? promo.applicable_services
+							: (typeof promo.applicable_services === 'string'
+								? (() => { try { return JSON.parse(promo.applicable_services); } catch { return []; } })()
+								: []);
+						const categoryToken = (rawServices || []).find((s: string) => typeof s === 'string' && !s.startsWith('style:'));
+						return promo.serviceCategory || promo.service_category || promo.target_category || categoryToken || promo.metadata?.serviceCategory || promo.metadata?.promotionTarget?.serviceCategory || 'all';
+					})(),
+					serviceStyle: (() => {
+						const rawStyle = promo.serviceStyle || promo.service_style || promo.metadata?.serviceStyle || promo.metadata?.promotionTarget?.serviceStyle || 'all';
+						const normalized = String(rawStyle).trim().toLowerCase();
+						if (normalized === 'online') return 'tele';
+						if (normalized === 'clinic' || normalized === 'center') return 'at_center';
+						if (normalized === 'home_visit' || normalized === 'home') return 'at_home';
+						return normalized || 'all';
+					})(),
 					// Map validFrom/validUntil
 					validFrom: promo.validFrom || promo.start_date || '',
 					validUntil: promo.validUntil || promo.end_date || '',
@@ -465,10 +501,33 @@ export default function MarketingPromotionsTab() {
 
 	const handleSavePromo = async () => {
 		try {
+			const applicableServices =
+				promoForm.serviceCategory && promoForm.serviceCategory !== 'all'
+					? [promoForm.serviceCategory]
+					: [];
+			if (promoForm.serviceStyle && promoForm.serviceStyle !== 'all') {
+				applicableServices.push(`style:${promoForm.serviceStyle}`);
+			}
+			const payload = {
+				...promoForm,
+				applicableServices,
+				serviceCategory: promoForm.serviceCategory,
+				serviceStyle: promoForm.serviceStyle,
+				metadata: {
+					promotionTarget: {
+						serviceCategory: promoForm.serviceCategory || 'all',
+						serviceStyle: promoForm.serviceStyle || 'all',
+					},
+					serviceStyle: promoForm.serviceStyle || 'all',
+				},
+				validFrom: promoForm.validFrom?.trim() ? promoForm.validFrom : null,
+				validUntil: promoForm.validUntil?.trim() ? promoForm.validUntil : null,
+				published: promoForm.published !== false,
+			};
 			if (editingPromo) {
-				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, promoForm);
+				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, payload);
 			} else {
-				await apiClient.post("/marketing/promotions", promoForm);
+				await apiClient.post("/marketing/promotions", payload);
 			}
 			toast.success(
 				`Promotion ${editingPromo ? "updated" : "created"} successfully`
@@ -507,6 +566,7 @@ export default function MarketingPromotionsTab() {
 			validFrom: "",
 			validUntil: "",
 			isActive: true,
+			published: true,
 			displayType: "spotlight",
 		});
 	};
@@ -524,6 +584,7 @@ export default function MarketingPromotionsTab() {
 			validFrom: promo.validFrom,
 			validUntil: promo.validUntil,
 			isActive: promo.isActive,
+			published: promo.published !== false,
 			displayType: promo.displayType,
 		});
 		setShowPromoModal(true);
@@ -547,6 +608,116 @@ export default function MarketingPromotionsTab() {
 		}
 	};
 
+	const loadBannerGeoStates = async () => {
+		try {
+			const data = await apiClient.get("/admin/banners/locations/states");
+			const rows = Array.isArray((data as any).states) ? (data as any).states : [];
+			const adminStates = rows
+				.map((row: any) => normalizeLocationValue(row?.value))
+				.filter((value: string | null): value is string => Boolean(value));
+			if (adminStates.length > 0) {
+				setBannerGeoStates(adminStates);
+				return;
+			}
+
+			// Fallback to service launch state catalog when address-derived list is empty
+			const cfg = await apiClient.get("/config/service-launch");
+			const availableStates = Array.isArray((cfg as any).availableStates)
+				? (cfg as any).availableStates
+				: [];
+			const fallbackStates = availableStates
+				.map((s: any) => normalizeLocationValue(s?.name || s?.code))
+				.filter((value: string | null): value is string => Boolean(value));
+			setBannerGeoStates(fallbackStates);
+		} catch (error) {
+			console.error("Error loading banner states:", error);
+			// Last fallback: service-launch catalog
+			try {
+				const cfg = await apiClient.get("/config/service-launch");
+				const availableStates = Array.isArray((cfg as any).availableStates)
+					? (cfg as any).availableStates
+					: [];
+				const fallbackStates = availableStates
+					.map((s: any) => normalizeLocationValue(s?.name || s?.code))
+					.filter((value: string | null): value is string => Boolean(value));
+				setBannerGeoStates(fallbackStates);
+			} catch {
+				setBannerGeoStates([]);
+			}
+		}
+	};
+
+	const resolveStateCodeFromName = async (stateName: string): Promise<string> => {
+		try {
+			const cfg = await apiClient.get("/config/service-launch");
+			const availableStates = Array.isArray((cfg as any).availableStates)
+				? (cfg as any).availableStates
+				: [];
+			const match = availableStates.find(
+				(s: any) => String(s?.name || "").trim().toLowerCase() === stateName.trim().toLowerCase()
+			);
+			return match?.code || stateName;
+		} catch {
+			return stateName;
+		}
+	};
+
+	const loadBannerGeoCities = async (state?: string) => {
+		try {
+			const query = state ? `?state=${encodeURIComponent(state)}` : "";
+			const data = await apiClient.get(`/admin/banners/locations/cities${query}`);
+			const rows = Array.isArray((data as any).cities) ? (data as any).cities : [];
+			const adminCities = rows
+				.map((row: any) => normalizeLocationValue(row?.value))
+				.filter((value: string | null): value is string => Boolean(value));
+			if (adminCities.length > 0) {
+				setBannerGeoCities(adminCities);
+				return;
+			}
+
+			// Fallback to service-launch city catalog (state-scoped)
+			if (state) {
+				const stateCode = await resolveStateCodeFromName(state);
+				const fallback = await apiClient.get(
+					`/config/service-launch/cities?stateCode=${encodeURIComponent(stateCode)}`
+				);
+				const fallbackCities = Array.isArray((fallback as any).cities)
+					? (fallback as any).cities
+					: [];
+				setBannerGeoCities(
+					fallbackCities
+						.map((city: any) => normalizeLocationValue(city))
+						.filter((value: string | null): value is string => Boolean(value))
+				);
+				return;
+			}
+
+			setBannerGeoCities([]);
+		} catch (error) {
+			console.error("Error loading banner cities:", error);
+			if (!state) {
+				setBannerGeoCities([]);
+				return;
+			}
+			try {
+				const stateCode = await resolveStateCodeFromName(state);
+				const fallback = await apiClient.get(
+					`/config/service-launch/cities?stateCode=${encodeURIComponent(stateCode)}`
+				);
+				const fallbackCities = Array.isArray((fallback as any).cities)
+					? (fallback as any).cities
+					: [];
+				setBannerGeoCities(
+					fallbackCities
+						.map((city: any) => normalizeLocationValue(city))
+						.filter((value: string | null): value is string => Boolean(value))
+				);
+			} catch {
+				setBannerGeoCities([]);
+			}
+		}
+	};
+
 	const handleSaveBanner = async () => {
 		try {
 			if (editingBanner) {
@@ -562,6 +733,8 @@ export default function MarketingPromotionsTab() {
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
 					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					targetState: normalizeLocationValue(bannerForm.target_state),
+					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
 			} else {
 				await apiClient.post("/admin/banners", {
@@ -576,6 +749,8 @@ export default function MarketingPromotionsTab() {
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
 					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					targetState: normalizeLocationValue(bannerForm.target_state),
+					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
 			}
 			toast.success(`Banner ${editingBanner ? "updated" : "created"} successfully`);
@@ -614,6 +789,8 @@ export default function MarketingPromotionsTab() {
 			display_order: banners.length,
 			gradient_from: "#FF8C42",
 			gradient_to: "#FF6B35",
+			target_state: "",
+			target_city: "",
 		});
 	};
 
@@ -632,6 +809,8 @@ export default function MarketingPromotionsTab() {
 			display_order: banner.display_order || banner.priority || 0,
 			gradient_from: banner.metadata?.gradient_from || "#FF8C42",
 			gradient_to: banner.metadata?.gradient_to || "#FF6B35",
+			target_state: normalizeLocationValue(banner.target_state || banner.targetState) || "",
+			target_city: normalizeLocationValue(banner.target_city || banner.targetCity) || "",
 		});
 		setShowBannerModal(true);
 	};
@@ -1993,6 +2172,15 @@ export default function MarketingPromotionsTab() {
 							/>
 							<Label>Active</Label>
 						</div>
+						<div className="flex items-center gap-2">
+							<Switch
+								checked={promoForm.published}
+								onCheckedChange={(checked: boolean) =>
+									setPromoForm({ ...promoForm, published: checked })
+								}
+							/>
+							<Label>Published</Label>
+						</div>
 					</div>
 
 					<DialogFooter>
@@ -2214,6 +2402,58 @@ export default function MarketingPromotionsTab() {
 									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
 									min="0"
 								/>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>State</Label>
+								<Select
+									value={bannerForm.target_state || "__all_states__"}
+									onValueChange={(v: string) =>
+										setBannerForm({
+											...bannerForm,
+											target_state: v === "__all_states__" ? "" : v,
+											target_city: "",
+										})
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="All States" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__all_states__">All States</SelectItem>
+										{bannerGeoStates.map((state) => (
+											<SelectItem key={state} value={state}>
+												{state}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label>City</Label>
+								<Select
+									value={bannerForm.target_city || "__all_cities__"}
+									onValueChange={(v: string) =>
+										setBannerForm({
+											...bannerForm,
+											target_city: v === "__all_cities__" ? "" : v,
+										})
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="All Cities" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__all_cities__">All Cities</SelectItem>
+										{bannerGeoCities.map((city) => (
+											<SelectItem key={city} value={city}>
+												{city}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 						</div>
 

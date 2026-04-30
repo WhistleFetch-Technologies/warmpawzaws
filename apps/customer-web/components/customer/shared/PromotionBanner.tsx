@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import { parsePromotionApplicableServices, shouldIncludePromotionForService } from '@/lib/promotion-banner-filter';
 
 interface Promotion {
   id: string;
@@ -20,6 +21,9 @@ interface Promotion {
   priority?: number;
   promotion_type?: string;
   applicable_services?: string[] | any;
+  service_category?: string;
+  service_style?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface PromotionBannerProps {
@@ -28,7 +32,7 @@ interface PromotionBannerProps {
   maxPromotions?: number;
   showSpotlightOnly?: boolean;
   /** In-app navigation (CustomerHomeWrapper). When set, avoids broken `/${service}` full-page loads. */
-  onNavigate?: (screen: string, data?: { promotionId?: string }) => void;
+  onNavigate?: (screen: string, data?: { promotionId?: string; promotionIntent?: Record<string, unknown>; serviceStyle?: string; [key: string]: unknown }) => void;
 }
 
 /**
@@ -76,21 +80,11 @@ export function PromotionBanner({
         fetchedPromotions = response;
       }
       
-      // Filter by service if applicable_services field exists
+      // For home feed (`service=all`) include active published promos across categories.
+      // Service-specific filtering applies only when rendering a specific vertical feed.
       if (fetchedPromotions.length > 0) {
         fetchedPromotions = fetchedPromotions.filter((promo: Promotion) => {
-          // If no applicable_services, show to all services
-          if (!promo.applicable_services || 
-              (Array.isArray(promo.applicable_services) && promo.applicable_services.length === 0)) {
-            return true;
-          }
-          
-          // Check if service is in applicable_services
-          const services = Array.isArray(promo.applicable_services) 
-            ? promo.applicable_services 
-            : (typeof promo.applicable_services === 'string' ? JSON.parse(promo.applicable_services) : []);
-          
-          return services.includes(service);
+          return shouldIncludePromotionForService(promo, service);
         });
       }
       
@@ -129,18 +123,54 @@ export function PromotionBanner({
 
   const navigateForPromotion = (promo: Promotion, source: string) => {
     apiClient.post(`/promotions/${promo.id}/click`, { source }).catch(() => {});
+    const parsedApplicable = parsePromotionApplicableServices(promo.applicable_services);
+    const styleToken = parsedApplicable.find((x) => x.startsWith('style:'));
+    const categoryToken = parsedApplicable.find((x) => !x.startsWith('style:') && x.trim() !== '');
+    const resolvedStyle =
+      String(
+        promo.service_style ??
+        (promo as any).target_style ??
+        (promo as any).targetStyle ??
+        (styleToken ? styleToken.replace(/^style:/, '') : '') ??
+        (promo.metadata as any)?.serviceStyle ??
+        (promo.metadata as any)?.promotionTarget?.serviceStyle ??
+        ''
+      ).trim().toLowerCase();
+    const resolvedCategory =
+      String(
+        promo.service_category ??
+        (promo as any).target_category ??
+        (promo as any).targetCategory ??
+        categoryToken ??
+        (promo.metadata as any)?.serviceCategory ??
+        (promo.metadata as any)?.promotionTarget?.serviceCategory ??
+        (service !== 'all' ? service : '')
+      ).trim().toLowerCase();
+    const promotionIntent = {
+      promotionId: promo.id,
+      serviceCategory: resolvedCategory,
+      serviceStyle: resolvedStyle,
+      clickedAt: Date.now(),
+      source,
+    };
     try {
       sessionStorage.setItem(
         'wp_promotion_cta',
-        JSON.stringify({ promotionId: promo.id, at: Date.now() })
+        JSON.stringify(promotionIntent)
       );
     } catch {
       /* ignore */
     }
-    const screen = resolvePromotionDestination(promo as Record<string, unknown>, service);
+    let screen = resolvePromotionDestination(
+      { ...(promo as Record<string, unknown>), service_category: resolvedCategory, service_style: resolvedStyle },
+      service
+    );
+    if (screen === 'home') screen = 'services';
     if (onNavigate) {
       onNavigate(screen, {
         promotionId: promo.id,
+        promotionIntent,
+        ...(resolvedStyle ? { serviceStyle: resolvedStyle } : {}),
         ...(screen === 'vet-tele-consultation'
           ? { service: 'tele' as const, directTelePay: true as const }
           : {}),
@@ -198,10 +228,11 @@ export function PromotionBanner({
             <Sparkles className="w-4 h-4 text-yellow-500" />
             <h3 className="text-sm font-semibold text-gray-700">Featured Offers</h3>
           </div>
-          {visiblePromotions
-            .filter(p => p.is_spotlight)
-            .map((promo) => (
-              <Card key={promo.id} className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200 relative">
+          <div className="space-y-3">
+            {visiblePromotions
+              .filter(p => p.is_spotlight)
+              .map((promo) => (
+                <Card key={promo.id} className="w-full p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200 relative">
                 <button
                   onClick={() => handleDismiss(promo.id)}
                   className="absolute top-2 right-2 p-1 hover:bg-gray-200 rounded-full transition-colors"
@@ -243,8 +274,9 @@ export function PromotionBanner({
                     </Button>
                   </div>
                 </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+          </div>
         </div>
       )}
 
@@ -257,48 +289,54 @@ export function PromotionBanner({
               <h3 className="text-sm font-semibold text-gray-700">Special Offers</h3>
             </div>
           )}
-          {visiblePromotions
-            .filter(p => !p.is_spotlight)
-            .map((promo) => (
-              <Card key={promo.id} className="p-3 bg-blue-50 border-blue-200 relative">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {visiblePromotions
+              .filter(p => !p.is_spotlight)
+              .map((promo) => (
+                <Card key={promo.id} className="w-full overflow-hidden border border-blue-100 rounded-3xl shadow-sm relative bg-white">
                 <button
                   onClick={() => handleDismiss(promo.id)}
-                  className="absolute top-2 right-2 p-1 hover:bg-gray-200 rounded-full transition-colors"
+                  className="absolute top-2 right-2 z-10 p-1 hover:bg-white/80 rounded-full transition-colors"
                   aria-label="Dismiss"
                 >
                   <X className="w-4 h-4 text-gray-500" />
                 </button>
                 
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    {getPromotionIcon(promo)}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge className="bg-blue-500 text-white text-xs">
-                        {formatDiscount(promo)}
-                      </Badge>
+                <div className="h-full flex flex-col">
+                  <div className="bg-gradient-to-br from-blue-50 to-sky-100 px-3 pt-4 pb-3 min-h-[110px] flex flex-col items-start">
+                    <Badge className="bg-sky-500 text-white text-xs mb-3">
+                      {formatDiscount(promo)}
+                    </Badge>
+                    <div className="p-2 bg-white rounded-xl shadow-sm">
+                      {getPromotionIcon(promo)}
                     </div>
-                    
-                    <h4 className="font-semibold text-gray-900 text-sm mb-1">{promo.name}</h4>
-                    
-                    {promo.description && (
-                      <p className="text-xs text-gray-600 line-clamp-1">{promo.description}</p>
-                    )}
                   </div>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
-                    onClick={() => navigateForPromotion(promo, `${service}_regular`)}
-                  >
-                    Use
-                  </Button>
+
+                  <div className="flex-1 p-3 flex flex-col">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-900 text-lg leading-tight line-clamp-2 mb-1">
+                        {promo.name}
+                      </h4>
+
+                      {promo.description ? (
+                        <p className="text-sm text-gray-500 line-clamp-2">{promo.description}</p>
+                      ) : (
+                        <p className="text-sm text-gray-400 line-clamp-1">Limited time offer</p>
+                      )}
+                    </div>
+
+                    <Button
+                      size="sm"
+                      className="mt-3 w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl"
+                      onClick={() => navigateForPromotion(promo, `${service}_regular`)}
+                    >
+                      Use
+                    </Button>
+                  </div>
                 </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+          </div>
         </div>
       )}
     </div>

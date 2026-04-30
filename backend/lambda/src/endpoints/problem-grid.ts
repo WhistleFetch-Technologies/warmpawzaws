@@ -34,6 +34,31 @@ function cleanDescription(desc: string | null | undefined): string | undefined {
   return cleaned || undefined;
 }
 
+/**
+ * SQL predicate matching `sqlVendorDiscoverableStatus` in service-discovery.customer.ts.
+ * Vendors are considered discoverable when their status is approved/active/activated, or
+ * when they are still pending and (solo, or in a non-prod env where we surface pending).
+ *
+ * Without this, prod's hardcoded `v.status = 'approved'` filter excluded vendors saved
+ * with status='active' (e.g. nutritionists like Whisker Wise) from problem/specialization
+ * search even though they are visible everywhere else (profile, by-style, etc.).
+ */
+function vendorDiscoverableStatusSql(alias = 'v', allowAllPending = false): string {
+  const statusInList = `LOWER(TRIM(COALESCE(${alias}.status::text, ''))) IN ('approved', 'active', 'activated')`;
+  const pendingClause = allowAllPending
+    ? `LOWER(TRIM(COALESCE(${alias}.status::text, ''))) = 'pending'`
+    : `(LOWER(TRIM(COALESCE(${alias}.status::text, ''))) = 'pending' AND LOWER(TRIM(COALESCE(${alias}.vendor_type::text, ''))) = 'solo')`;
+  return `(${statusInList} OR ${pendingClause})`;
+}
+
+function isVendorStatusDiscoverable(status: string | null | undefined, vendorType: string | null | undefined, allowAllPending = false): boolean {
+  const s = String(status ?? '').trim().toLowerCase();
+  const vt = String(vendorType ?? '').trim().toLowerCase();
+  if (s === 'approved' || s === 'active' || s === 'activated') return true;
+  if (s === 'pending') return allowAllPending || vt === 'solo';
+  return false;
+}
+
 function normalizeSpecializationKey(value: string | null | undefined): string {
   if (!value) return '';
   return String(value)
@@ -938,9 +963,11 @@ export function registerProblemGridEndpoints(app: Hono) {
                           process.env.STAGE === 'prod' ||
                           process.env.STAGE === 'production';
       const isDevOrUatEnvironment = !isProduction; // Allow pending in all non-prod environments
-      const statusFilter = isDevOrUatEnvironment 
-        ? `(v.status = 'approved' OR v.status = 'pending')`
-        : `v.status = 'approved'`;
+      // ✅ FIX (prod parity): include 'active' / 'activated' (saved by /vendor/auth/setup-account
+      // and admin approval flows) — not only 'approved'. Otherwise nutritionists like
+      // Whisker Wise (status='active') silently disappear from specialization search even
+      // though they are visible in by-style/services and on the profile API.
+      const statusFilter = vendorDiscoverableStatusSql('v', isDevOrUatEnvironment);
       
       console.log(`[BY-PROBLEM] 🔧 Environment check - isProduction: ${isProduction}, isDevOrUat: ${isDevOrUatEnvironment}`);
       console.log(`[BY-PROBLEM] 🔧 ENV vars - ENVIRONMENT: ${process.env.ENVIRONMENT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, STAGE: ${process.env.STAGE || 'not set'}`);
@@ -1121,7 +1148,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               WHERE LOWER(TRIM(spec)) = ANY($1::text[])
                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )
-            AND (v.status = 'approved' OR v.status = 'pending')
+            AND ${vendorDiscoverableStatusSql('v', isDevOrUatEnvironment)}
             AND v.is_active = true
           LIMIT 5
         `, [specializationKeys]);
@@ -1329,7 +1356,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               service_publish_status: vendor.service_publish_status,
               has_spec_in_table: vendor.has_spec_in_table,
               has_spec_in_jsonb: vendor.has_spec_in_jsonb,
-              would_match_status: isDevOrUatEnvironment ? (vendor.status === 'approved' || vendor.status === 'pending') : vendor.status === 'approved',
+              would_match_status: isVendorStatusDiscoverable(vendor.status, vendor.vendor_type, isDevOrUatEnvironment),
               would_match_active: vendor.is_active === true,
               would_match_vendor_type: true, // Business/clinic vendors can offer at_home services
               would_match_service: vendor.service_count > 0 && 
@@ -1592,7 +1619,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           WHERE status = 'completed'
           GROUP BY vendor_id
         ) b_stats ON b_stats.vendor_id = v.id
-        WHERE (v.status = 'approved' OR v.status = 'pending')
+        WHERE ${vendorDiscoverableStatusSql('v', false)}
           AND v.is_active = true
       `;
 
@@ -1736,7 +1763,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($1::text[])
               )
             )
-            AND (v.status = 'approved' OR v.status = 'pending')
+            AND ${vendorDiscoverableStatusSql('v', false)}
             AND v.is_active = true
             LIMIT 10
           `;
@@ -1782,7 +1809,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 SELECT 1 FROM vendor_specializations vs 
                 WHERE vs.vendor_id = v.id AND vs.specialization = ANY($1::text[])
               ) as has_spec_in_table,
-              (v.status = 'approved' OR v.status = 'pending') as status_ok,
+              ${vendorDiscoverableStatusSql('v', false)} as status_ok,
               v.is_active as is_active_ok
             FROM vendors v
             LEFT JOIN roles r ON v.role_id = r.id

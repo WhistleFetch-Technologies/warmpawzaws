@@ -8,7 +8,6 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -353,7 +352,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           {/* Vendor spotlights + promotion banner - Phase 0.1 Integration */}
           <div className="space-y-4">
             <FeaturedVendorSpotlights service="training" onNavigate={onNavigate} />
-            <PromotionBanner service="training" maxPromotions={3} onNavigate={onNavigate} />
           </div>
 
           {/* Service Types */}
