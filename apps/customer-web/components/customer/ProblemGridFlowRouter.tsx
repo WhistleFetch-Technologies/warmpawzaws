@@ -63,6 +63,35 @@ function serviceTitleInitial(title: string): string {
   return /[a-zA-Z0-9]/.test(ch) ? ch.toUpperCase() : t.slice(0, 1);
 }
 
+function isGroomingProblem(problem: ProblemGridItem | null): boolean {
+  if (!problem) return false;
+  const roleHints = [
+    problem.roleId,
+    ...(Array.isArray(problem.linkedServiceRoles) ? problem.linkedServiceRoles : []),
+    problem.category,
+    problem.id,
+    problem.name,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase());
+  return roleHints.some((v) => v.includes('groom'));
+}
+
+function normalizeVendorType(row: ByProblemServiceRow): string {
+  const raw = (row as any).vendorType ?? (row as any).vendor_type ?? (row as any).providerType ?? '';
+  return String(raw).trim().toLowerCase();
+}
+
+function isSoloVendor(row: ByProblemServiceRow): boolean {
+  const t = normalizeVendorType(row);
+  return t === 'solo' || t === 'individual' || t === 'freelancer' || t === 'personal';
+}
+
+function isBusinessVendor(row: ByProblemServiceRow): boolean {
+  const t = normalizeVendorType(row);
+  return t === 'business' || t === 'company' || t === 'enterprise' || t === 'clinic' || t === 'center';
+}
+
 /** Category / service-type label for bottom row (matches vet clinic cards) */
 function pickServiceCategoryLabel(row: ByProblemServiceRow, problemName?: string | null): string {
   const x = row as Record<string, unknown>;
@@ -255,11 +284,15 @@ export function ProblemGridFlowRouter({
 
   const roleForStyles = selectedProblem?.roleId || selectedProblem?.linkedServiceRoles?.[0] || 'veterinarian';
 
-  const availableStyles = sanitizeCustomerAllowedServiceStyles(allowedServiceStyles, {
+  const normalizedAvailableStyles = sanitizeCustomerAllowedServiceStyles(allowedServiceStyles, {
     roleId: roleForStyles,
     specializationId: selectedProblem?.id,
     categoryHint: selectedProblem?.category,
   }) as ServiceStyle[];
+  const groomingOnlyHomeAndCenter = isGroomingProblem(selectedProblem);
+  const availableStyles = groomingOnlyHomeAndCenter
+    ? (['at_home', 'at_center'] as ServiceStyle[])
+    : normalizedAvailableStyles;
   const hasTeleOption = availableStyles.includes('tele');
 
   const vendorsGrouped = useMemo(() => groupByProblemRowsByVendor(flatRows), [flatRows]);
@@ -367,6 +400,14 @@ export function ProblemGridFlowRouter({
           rows = rows.filter((p: any) => {
             const style = p.serviceStyle || p.service_style;
             return style === 'at_center' || style === 'at_vendor' || style === 'at_clinic';
+          });
+          if (groomingOnlyHomeAndCenter) {
+            rows = rows.filter((p: ByProblemServiceRow) => !isSoloVendor(p) || isBusinessVendor(p));
+          }
+        } else if (selectedServiceStyle === 'at_home') {
+          rows = rows.filter((p: any) => {
+            const style = p.serviceStyle || p.service_style;
+            return style === 'at_home' || style === 'home_visit';
           });
         } else if (selectedServiceStyle === 'tele') {
           rows = rows.filter((p: any) => {

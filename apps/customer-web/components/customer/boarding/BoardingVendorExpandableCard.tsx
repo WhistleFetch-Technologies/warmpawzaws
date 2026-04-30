@@ -64,6 +64,8 @@ export function BoardingVendorExpandableCard({
   const centerProfileVendorId =
     pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
   const minP = minPProp ?? minPriceForVendor(v);
+  const displayAddress =
+    typeof v.address === 'string' && v.address.trim() ? v.address.trim() : 'Location on booking';
   /** When only "View Services" expands, header can still collapse an open card (parity with tapping header again in default mode). */
   const headerActsAsCollapse = !headerTapExpandsServices && expanded;
   const headerInteractive = headerTapExpandsServices || headerActsAsCollapse;
@@ -161,7 +163,7 @@ export function BoardingVendorExpandableCard({
             </div>
             <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
               <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-              <span className="truncate">{v.address}</span>
+              <span className="truncate">{displayAddress}</span>
             </div>
             <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
               <Clock className="w-3.5 h-3.5 text-gray-400" />
