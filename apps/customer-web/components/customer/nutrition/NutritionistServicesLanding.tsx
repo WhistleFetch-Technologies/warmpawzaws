@@ -9,7 +9,6 @@ import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
-import { PromotionBanner } from '../shared/PromotionBanner';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes, MEAL_PLANS_COMING_SOON } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
@@ -176,9 +175,6 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       {/* Main Content - White Card with Top Radius */}
       <div className="bg-white max-w-md mx-auto px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
-
-          {/* Promotion Banner */}
-          <PromotionBanner service="nutrition" maxPromotions={3} onNavigate={onNavigate} />
 
           {/* Problem Grid - Consult by Need */}
           <div>

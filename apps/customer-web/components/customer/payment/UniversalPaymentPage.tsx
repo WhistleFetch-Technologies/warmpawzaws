@@ -110,6 +110,14 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted';
+  initialPromotionId?: string;
+  initialPromotionIntent?: {
+    promotionId?: string;
+    serviceCategory?: string;
+    serviceStyle?: string;
+    clickedAt?: number;
+    source?: string;
+  };
 
   /**
    * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
@@ -180,7 +188,7 @@ interface PlatformFees {
 
 interface PromotionOffer {
   id: string;
-  type: 'spotlight' | 'category_discount' | 'service_discount' | 'flash_sale';
+  type: 'spotlight' | 'category_discount' | 'service_discount' | 'flash_sale' | 'coupon';
   title: string;
   description: string;
   discountType: 'percentage' | 'fixed';
@@ -306,6 +314,8 @@ export function UniversalPaymentPage({
   customerEmail,
   customerId,
   flowType,
+  initialPromotionId,
+  initialPromotionIntent,
   layoutVariant = 'fullscreen',
   onBack,
   onSuccess,
@@ -994,10 +1004,19 @@ export function UniversalPaymentPage({
 
   const loadPromotions = async () => {
     try {
+      const selectedServiceIds = (selectedServices || [])
+        .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+        .filter(Boolean);
+      const params = new URLSearchParams({
+        category: String(category || initialPromotionIntent?.serviceCategory || ''),
+        serviceStyle: String(serviceStyle || initialPromotionIntent?.serviceStyle || ''),
+        amount: String(baseAmount || 0),
+      });
+      if (serviceId) params.set('serviceId', String(serviceId));
+      if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
+
       // Load applicable promotions (public endpoint – no admin auth required)
-      const promoRes = await apiClient.get<any>(
-        `/promotions/applicable?category=${category || ''}&serviceStyle=${serviceStyle || ''}&amount=${baseAmount}`
-      );
+      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
         const raw = promoRes.promotions as any[];
@@ -1023,10 +1042,19 @@ export function UniversalPaymentPage({
           }));
 
         setPromotions(applicablePromos);
-
-        const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
-        if (spotlight && spotlight.applicable) {
-          setAppliedPromotion(spotlight);
+        if (initialPromotionId) {
+          const matched = applicablePromos.find((p: PromotionOffer) => p.id === initialPromotionId);
+          if (matched && matched.applicable) {
+            setAppliedPromotion(matched);
+            toast.success('Special offer auto-applied to this payment.');
+          } else {
+            toast.info('The selected special offer is not eligible for this service/amount.');
+          }
+        } else {
+          const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
+          if (spotlight && spotlight.applicable) {
+            setAppliedPromotion(spotlight);
+          }
         }
       }
     } catch (error) {

@@ -1,14 +1,19 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@warmpawz/ui';
 import { Image, Plus, Edit, Trash2, Calendar, Link as LinkIcon } from 'lucide-react';
 import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
 import { validateRequired } from '@/lib/utils';
 import { formatDateForInput } from '@/lib/utils';
-import { normalizeAdminBannersList, adminBannerPositionFromRow } from '@/lib/banner-admin';
+import {
+  normalizeAdminBannersList,
+  adminBannerPositionFromRow,
+  normalizeLocationValue,
+  formatAdminBannerLocationLabel,
+} from '@/lib/banner-admin';
 
 // ============================================================================
 // TYPES
@@ -30,6 +35,8 @@ interface Banner {
   display_order: number;
   target_role_id?: string;
   target_service_category?: string;
+  target_state?: string | null;
+  target_city?: string | null;
   metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
@@ -48,6 +55,8 @@ interface BannerFormData {
   display_order: number;
   target_role_id: string;
   target_service_category: string;
+  target_state: string;
+  target_city: string;
 }
 
 // ============================================================================
@@ -85,6 +94,8 @@ export default function BannersPage() {
       endDate: data.end_date || null,
       isActive: data.is_active,
       ctaText: data.cta_text,
+      targetState: normalizeLocationValue(data.target_state),
+      targetCity: normalizeLocationValue(data.target_city),
     }),
     transformUpdate: (data) => ({
       title: data.title,
@@ -97,6 +108,8 @@ export default function BannersPage() {
       endDate: data.end_date || null,
       isActive: data.is_active,
       ctaText: data.cta_text,
+      targetState: normalizeLocationValue(data.target_state),
+      targetCity: normalizeLocationValue(data.target_city),
     }),
     onSuccess: (message) => {
       notifications.setSuccess(message);
@@ -121,6 +134,8 @@ export default function BannersPage() {
       display_order: banners.length,
       target_role_id: '',
       target_service_category: '',
+      target_state: '',
+      target_city: '',
     },
     getDefaultFormData: () => ({
       title: '',
@@ -135,6 +150,8 @@ export default function BannersPage() {
       display_order: banners.length,
       target_role_id: '',
       target_service_category: '',
+      target_state: '',
+      target_city: '',
     }),
     mapItemToFormData: (banner) => ({
       title: banner.title,
@@ -149,8 +166,28 @@ export default function BannersPage() {
       display_order: banner.display_order,
       target_role_id: banner.target_role_id || '',
       target_service_category: banner.target_service_category || '',
+      target_state: normalizeLocationValue((banner as any).target_state) || '',
+      target_city: normalizeLocationValue((banner as any).target_city) || '',
     }),
   });
+  const selectedTargetState = normalizeLocationValue(modal.formData.target_state);
+  const { data: availableStates } = useApiData<{ value: string }>({
+    endpoint: '/admin/banners/locations/states',
+    dataKey: 'states',
+  });
+  const { data: availableCities } = useApiData<{ value: string }>({
+    endpoint: '/admin/banners/locations/cities',
+    dataKey: 'cities',
+    params: selectedTargetState ? { state: selectedTargetState } : undefined,
+  });
+  const stateOptions = useMemo(
+    () => availableStates.map((s) => s.value).filter(Boolean),
+    [availableStates]
+  );
+  const cityOptions = useMemo(
+    () => availableCities.map((c) => c.value).filter(Boolean),
+    [availableCities]
+  );
 
   // Combine errors and success messages
   const error = dataError || crudError || notifications.error;
@@ -343,6 +380,12 @@ export default function BannersPage() {
                         <span className="text-muted-foreground">Position:</span>
                         <Badge variant="outline">{getPositionLabel(banner.position)}</Badge>
                       </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Location:</span>
+                        <Badge variant="outline">
+                          {formatAdminBannerLocationLabel((banner as any).target_state, (banner as any).target_city)}
+                        </Badge>
+                      </div>
                       {banner.start_date && (
                         <div className="flex items-center gap-2 text-sm">
                           <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -470,6 +513,60 @@ export default function BannersPage() {
                     <SelectItem value="checkout">Checkout Page</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="target_state">State</Label>
+                  <Select
+                    value={modal.formData.target_state || '__all_states__'}
+                    onValueChange={(value: string) => {
+                      const normalizedState = value === '__all_states__' ? '' : value;
+                      modal.setFormData({
+                        ...modal.formData,
+                        target_state: normalizedState,
+                        target_city: '',
+                      });
+                    }}
+                  >
+                    <SelectTrigger id="target_state">
+                      <SelectValue placeholder="All States" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all_states__">All States</SelectItem>
+                      {stateOptions.map((state) => (
+                        <SelectItem key={state} value={state}>
+                          {state}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="target_city">City</Label>
+                  <Select
+                    value={modal.formData.target_city || '__all_cities__'}
+                    onValueChange={(value: string) =>
+                      modal.setFormData({
+                        ...modal.formData,
+                        target_city: value === '__all_cities__' ? '' : value,
+                      })
+                    }
+                    disabled={!modal.formData.target_state}
+                  >
+                    <SelectTrigger id="target_city">
+                      <SelectValue placeholder="All Cities" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all_cities__">All Cities</SelectItem>
+                      {cityOptions.map((city) => (
+                        <SelectItem key={city} value={city}>
+                          {city}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

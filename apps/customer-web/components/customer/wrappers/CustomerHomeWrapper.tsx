@@ -730,14 +730,29 @@ export function CustomerHomeWrapper({
     }
 
     if (service === 'walker') setCurrentScreen('walker');
-    else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
+    else if (service === 'vet' || service === 'veterinarian') {
+      const st = String(data?.serviceStyle || data?.service_style || '').toLowerCase();
+      if (st === 'tele' || st === 'online') setCurrentScreen('vet-tele-consultation');
+      else if (st === 'at_home' || st === 'home') setCurrentScreen('vet-home-visit');
+      else setCurrentScreen('vet');
+    }
     else if (service === 'vet-tele-consultation') {
       setVetServiceData(_data);
       setCurrentScreen('vet-tele-consultation');
       return;
     }
-    else if (service === 'grooming') setCurrentScreen('grooming');
-    else if (service === 'training') setCurrentScreen('training');
+    else if (service === 'grooming') {
+      const st = String(data?.serviceStyle || data?.service_style || '').toLowerCase();
+      if (st === 'at_home' || st === 'home') setCurrentScreen('grooming_home');
+      else if (st === 'at_center' || st === 'center' || st === 'clinic') setCurrentScreen('grooming_center');
+      else setCurrentScreen('grooming');
+    }
+    else if (service === 'training') {
+      const st = String(data?.serviceStyle || data?.service_style || '').toLowerCase();
+      if (st === 'at_home' || st === 'home') setCurrentScreen('training_home');
+      else if (st === 'at_center' || st === 'center' || st === 'clinic') setCurrentScreen('training_center');
+      else setCurrentScreen('training');
+    }
     else if (service === 'boarding' || boardingLikeScreens.has(serviceKey)) setCurrentScreen('boarding');
     else if (service === 'pet-sitter' || service === 'pet_sitter' || service === 'sitting') {
       setPetSitterOriginScreen(currentScreen);
@@ -2013,6 +2028,22 @@ export function CustomerHomeWrapper({
   // ✅ FIX: Payment Screen - Universal payment page for all service booking flows
   if (currentScreen === 'payment' && paymentData) {
     const bookingData = paymentData;
+    let promotionIntent: any = bookingData?.promotionIntent;
+    if (!promotionIntent && typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('wp_promotion_cta');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const clickedAt = Number(parsed?.clickedAt || parsed?.at || 0);
+          const maxIntentAgeMs = 6 * 60 * 60 * 1000;
+          if (parsed?.promotionId && clickedAt > 0 && Date.now() - clickedAt <= maxIntentAgeMs) {
+            promotionIntent = parsed;
+          }
+        }
+      } catch {
+        // ignore stale/malformed session data
+      }
+    }
     const servicesArray = bookingData.services && Array.isArray(bookingData.services) 
       ? bookingData.services 
       : [];
@@ -2059,6 +2090,8 @@ export function CustomerHomeWrapper({
         priceIncludesTax={catalogPriceIncludesTax(firstService)}
         duration={duration}
         selectedServices={selectedServices}
+        initialPromotionId={bookingData?.promotionId || promotionIntent?.promotionId}
+        initialPromotionIntent={promotionIntent}
         customerPhone={phone}
         customerId={bookingData.customerId}
         flowType={bookingData.flowType}

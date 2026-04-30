@@ -20,6 +20,106 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 
 export function registerPromotionEndpoints(app: Hono) {
+  const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
+    const value = String(raw || 'percentage').trim().toLowerCase();
+    if (value === 'flat') return 'fixed';
+    if (value === 'fixed') return 'fixed';
+    return 'percentage';
+  };
+
+  const parseDateInput = (raw: unknown): string | null => {
+    if (raw === null || raw === undefined) return null;
+    const value = String(raw).trim();
+    if (!value) return null;
+
+    // Accept datetime-local (`YYYY-MM-DDTHH:mm`) and date inputs.
+    const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().split('T')[0];
+  };
+
+  const normalizeStyle = (raw: unknown): string => {
+    const value = String(raw || '').trim().toLowerCase();
+    if (!value) return '';
+    if (value === 'home' || value === 'at_home' || value === 'home_visit') return 'at_home';
+    if (value === 'clinic' || value === 'center' || value === 'at_center') return 'at_center';
+    if (value === 'online') return 'tele';
+    return value;
+  };
+
+  const parseServicesList = (raw: unknown): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map((x) => String(x).trim()).filter(Boolean) : [];
+      } catch {
+        return [raw.trim()].filter(Boolean);
+      }
+    }
+    return [];
+  };
+
+  const extractPromotionStyle = (promotion: any): string => {
+    const services = parseServicesList(promotion?.applicable_services);
+    const fromServices = services.find((s) => s.startsWith('style:'));
+    if (fromServices) return normalizeStyle(fromServices.replace(/^style:/, ''));
+    return normalizeStyle(
+      promotion?.service_style ??
+      promotion?.metadata?.serviceStyle ??
+      promotion?.metadata?.promotionTarget?.serviceStyle
+    );
+  };
+
+  const extractPromotionCategory = (promotion: any): string => {
+    const services = parseServicesList(promotion?.applicable_services);
+    const fromServices = services.find((s) => !String(s).startsWith('style:'));
+    return String(
+      promotion?.service_category ??
+      promotion?.serviceCategory ??
+      promotion?.metadata?.serviceCategory ??
+      promotion?.metadata?.promotionTarget?.serviceCategory ??
+      fromServices ??
+      ''
+    ).trim().toLowerCase();
+  };
+
+  const isPromotionEligible = (promotion: any, params: { category?: string; serviceStyle?: string; serviceIds?: string[]; amount?: number }) => {
+    const now = new Date();
+    const startDate = promotion.start_date ? new Date(promotion.start_date) : null;
+    const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
+    if (startDate && now < startDate) return { eligible: false, reason: 'Promotion not started yet' };
+    if (endDate && now > endDate) return { eligible: false, reason: 'Promotion has expired' };
+
+    const amount = Number(params.amount || 0);
+    const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
+    if (minOrder > 0 && amount > 0 && amount < minOrder) {
+      return { eligible: false, reason: `Minimum order amount of ₹${minOrder} required` };
+    }
+
+    const category = String(params.category || '').trim().toLowerCase();
+    const style = normalizeStyle(params.serviceStyle || '');
+    const serviceIds = (params.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
+    const configured = parseServicesList(promotion.applicable_services);
+    const configuredCategories = configured.filter((x) => !x.startsWith('style:'));
+    const configuredStyles = configured.filter((x) => x.startsWith('style:')).map((x) => normalizeStyle(x.replace(/^style:/, '')));
+    const configuredServiceIds = configured.filter((x) => isValidUUID(String(x)));
+
+    if (category && category !== 'all' && configuredCategories.length > 0 && !configuredCategories.map((x) => x.toLowerCase()).includes(category)) {
+      return { eligible: false, reason: 'Promotion not applicable for this category' };
+    }
+    if (style && style !== 'all' && configuredStyles.length > 0 && !configuredStyles.includes(style)) {
+      return { eligible: false, reason: 'Promotion not applicable for this service style' };
+    }
+    if (serviceIds.length > 0 && configuredServiceIds.length > 0 && !serviceIds.some((sid) => configuredServiceIds.includes(sid))) {
+      return { eligible: false, reason: 'Promotion not applicable for selected service' };
+    }
+
+    return { eligible: true, reason: null as string | null };
+  };
+
   // ============================================================================
   // SPOTLIGHT ENDPOINTS
   // ============================================================================
@@ -210,11 +310,33 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const promotions = rows.map((row: any) => {
+        const serviceCategory = extractPromotionCategory(row);
+        const serviceStyle = extractPromotionStyle(row);
+        const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+        return {
+          ...row,
+          service_category: row.service_category ?? serviceCategory ?? null,
+          service_style: row.service_style ?? serviceStyle ?? null,
+          serviceCategory: row.serviceCategory ?? row.service_category ?? serviceCategory ?? null,
+          serviceStyle: row.serviceStyle ?? row.service_style ?? serviceStyle ?? null,
+          metadata: {
+            ...(metadata as Record<string, unknown>),
+            promotionTarget: {
+              ...(((metadata as any)?.promotionTarget || {}) as Record<string, unknown>),
+              serviceCategory: (metadata as any)?.promotionTarget?.serviceCategory ?? (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
+              serviceStyle: (metadata as any)?.promotionTarget?.serviceStyle ?? (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
+            },
+            serviceCategory: (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
+            serviceStyle: (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
+          },
+        };
+      });
 
       return c.json({
         success: true,
-        promotions: rows,
-        total: rows.length,
+        promotions,
+        total: promotions.length,
       });
     } catch (error: any) {
       console.error('Error fetching promotions list:', error);
@@ -286,7 +408,20 @@ export function registerPromotionEndpoints(app: Hono) {
    */
   app.post("/promotions/apply", async (c) => {
     try {
-      const { promotionId, bookingId, orderId, amount } = await c.req.json();
+      const {
+        promotionId,
+        bookingId,
+        orderId,
+        amount,
+        category,
+        serviceStyle,
+        serviceId,
+        selectedServiceIds,
+      } = await c.req.json();
+      const serviceIds = [
+        ...(Array.isArray(selectedServiceIds) ? selectedServiceIds : []),
+        ...(serviceId ? [serviceId] : []),
+      ].map((x) => String(x).trim()).filter(Boolean);
 
       if (!promotionId || !amount) {
         return c.json({ error: 'promotionId and amount are required' }, 400);
@@ -304,19 +439,15 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const promotion = promoRows[0];
 
-      // Check eligibility
-      const now = new Date();
-      const startDate = new Date(promotion.start_date);
-      const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
-
-      if (now < startDate || (endDate && now > endDate)) {
-        return c.json({ error: 'Promotion is not currently active' }, 400);
-      }
-
-      if (promotion.min_order_amount && amount < parseFloat(promotion.min_order_amount)) {
+      const eligibility = isPromotionEligible(promotion, { category, serviceStyle, serviceIds, amount });
+      if (!eligibility.eligible) {
         return c.json({
-          error: `Minimum order amount of ₹${promotion.min_order_amount} required`,
-        }, 400);
+          success: false,
+          promotionId: promotion.id,
+          discountAmount: 0,
+          finalAmount: Number(amount),
+          reasonIfRejected: eligibility.reason || 'Promotion is not eligible',
+        }, 200);
       }
 
       // Calculate discount
@@ -334,15 +465,16 @@ export function registerPromotionEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        promotionId: promotion.id,
+        discountAmount,
+        finalAmount,
+        reasonIfRejected: null,
         promotion: {
           id: promotion.id,
           name: promotion.name,
           discountType: promotion.discount_type,
           discountValue: promotion.discount_value,
         },
-        originalAmount: amount,
-        discountAmount,
-        finalAmount,
       });
     } catch (error: any) {
       console.error('Error applying promotion:', error);
@@ -611,6 +743,13 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const category = c.req.query('category') || 'all';
       const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const serviceId = c.req.query('serviceId');
+      const selectedServiceIdsRaw = c.req.query('selectedServiceIds');
+      const selectedServiceIds = String(selectedServiceIdsRaw || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (serviceId) selectedServiceIds.push(String(serviceId));
       const amount = parseFloat(c.req.query('amount') || '0');
 
       const now = new Date().toISOString().split('T')[0];
@@ -631,25 +770,16 @@ export function registerPromotionEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      if (category && category !== 'all') {
-        queryStr += ` AND (
-          applicable_services IS NULL 
-          OR applicable_services = '[]'::jsonb
-          OR applicable_services @> $${paramIndex}::jsonb
-          OR applicable_to = 'all'
-          OR applicable_to = $${paramIndex + 1}
-        )`;
-        params.push(JSON.stringify([category]));
-        params.push(category);
-        paramIndex += 2;
-      }
-
       queryStr += ` ORDER BY priority DESC, discount_value DESC LIMIT 20`;
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
-      const promotions = rows.map((promo: any) => ({
+      const promotions = rows
+        .filter((promo: any) =>
+          isPromotionEligible(promo, { category, serviceStyle, serviceIds: selectedServiceIds, amount }).eligible
+        )
+        .map((promo: any) => ({
         id: promo.id,
         code: promo.code,
         name: promo.name || promo.title,
@@ -659,6 +789,7 @@ export function registerPromotionEndpoints(app: Hono) {
         minOrderAmount: parseFloat(promo.min_order_amount || '0'),
         maxDiscountAmount: parseFloat(promo.max_discount_amount || '0'),
         applicableServices: promo.applicable_services,
+        serviceStyle: extractPromotionStyle(promo) || 'all',
         expiresAt: promo.end_date,
       }));
 
@@ -689,6 +820,13 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const category = c.req.query('category') || 'all';
       const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const serviceId = c.req.query('serviceId');
+      const selectedServiceIdsRaw = c.req.query('selectedServiceIds');
+      const selectedServiceIds = String(selectedServiceIdsRaw || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (serviceId) selectedServiceIds.push(String(serviceId));
       const amount = parseFloat(c.req.query('amount') || '0');
 
       const now = new Date().toISOString().split('T')[0];
@@ -710,27 +848,17 @@ export function registerPromotionEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      // Filter by category (check applicable_services or applicable_to)
-      if (category && category !== 'all') {
-        queryStr += ` AND (
-          applicable_services IS NULL 
-          OR applicable_services = '[]'::jsonb
-          OR applicable_services @> $${paramIndex}::jsonb
-          OR applicable_to = 'all'
-          OR applicable_to = $${paramIndex + 1}
-        )`;
-        params.push(JSON.stringify([category]));
-        params.push(category);
-        paramIndex += 2;
-      }
-
       queryStr += ` ORDER BY priority DESC, discount_value DESC LIMIT 20`;
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
       // Format promotions for frontend
-      const promotions = rows.map((promo: any) => ({
+      const promotions = rows
+        .filter((promo: any) =>
+          isPromotionEligible(promo, { category, serviceStyle, serviceIds: selectedServiceIds, amount }).eligible
+        )
+        .map((promo: any) => ({
         id: promo.id,
         code: promo.code,
         name: promo.name || promo.title,
@@ -740,6 +868,7 @@ export function registerPromotionEndpoints(app: Hono) {
         minOrderAmount: parseFloat(promo.min_order_amount || '0'),
         maxDiscountAmount: parseFloat(promo.max_discount_amount || '0'),
         applicableServices: promo.applicable_services,
+        serviceStyle: extractPromotionStyle(promo) || 'all',
         expiresAt: promo.end_date,
       }));
 
@@ -884,15 +1013,18 @@ export function registerPromotionEndpoints(app: Hono) {
         applicableServices,
         applicable_services,
         applicableRoles,
+        serviceCategory,
+        serviceStyle,
+        metadata,
         priority = 0,
         is_spotlight = false,
-        published = false,
+        published,
       } = body;
 
       // Support both frontend field names (title, discountType, discountValue) and backend names (name, discount_type, discount_value)
       const finalName = name || title || '';
       const finalDescription = description || subtitle || '';
-      const finalDiscountType = discountType || discount_type || 'percentage';
+      const finalDiscountType = normalizePromotionDiscountType(discountType || discount_type);
       const finalDiscountValue = discountValue !== undefined ? discountValue : (discount_value !== undefined ? discount_value : 0);
       const finalPromotionType = promotionType || type || 'flash_sale';
 
@@ -910,10 +1042,20 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       // Phase 0.1: Support both frontend field names and DB column names
-      const finalStartDate = startDate || validFrom || new Date().toISOString().split('T')[0];
-      const finalEndDate = endDate || validUntil || null;
+      const finalStartDate = parseDateInput(startDate ?? validFrom) || new Date().toISOString().split('T')[0];
+      const finalEndDate = parseDateInput(endDate ?? validUntil);
       const finalIsActive = active !== undefined ? active : (isActive !== false);
-      const finalApplicableServices = applicable_services || applicableServices || null;
+      const finalServiceCategory = String(serviceCategory || '').trim().toLowerCase();
+      const finalServiceStyle = normalizeStyle(serviceStyle || '');
+      const incomingMetadata = metadata && typeof metadata === 'object' ? metadata : {};
+      const baseApplicableServices = parseServicesList(applicable_services || applicableServices);
+      const finalApplicableServices = (() => {
+        const next = [...baseApplicableServices];
+        if (finalServiceCategory && finalServiceCategory !== 'all') next.push(finalServiceCategory);
+        if (finalServiceStyle && finalServiceStyle !== 'all') next.push(`style:${finalServiceStyle}`);
+        return Array.from(new Set(next));
+      })();
+      const finalPublished = published === undefined ? true : published === true;
 
       // Build promotion data, only include code if column exists
       const promotionData: any = {
@@ -924,14 +1066,26 @@ export function registerPromotionEndpoints(app: Hono) {
         discount_value: parseFloat(String(finalDiscountValue)),
         min_order_amount: (minOrderAmount || min_order_amount) ? parseFloat(String(minOrderAmount || min_order_amount)) : null,
         max_discount_amount: (maxDiscountAmount || max_discount_amount) ? parseFloat(String(maxDiscountAmount || max_discount_amount)) : null,
-        start_date: new Date(finalStartDate).toISOString().split('T')[0],
-        end_date: finalEndDate ? new Date(finalEndDate).toISOString().split('T')[0] : null,
+        start_date: finalStartDate,
+        end_date: finalEndDate,
         is_active: finalIsActive,
-        applicable_services: finalApplicableServices ? (Array.isArray(finalApplicableServices) ? JSON.stringify(finalApplicableServices) : finalApplicableServices) : null,
+        applicable_services: finalApplicableServices.length > 0 ? JSON.stringify(finalApplicableServices) : null,
+        service_category: finalServiceCategory || null,
+        service_style: finalServiceStyle || null,
         applicable_roles: applicableRoles || null,
+        metadata: {
+          ...(incomingMetadata as Record<string, unknown>),
+          promotionTarget: {
+            ...(((incomingMetadata as any)?.promotionTarget || {}) as Record<string, unknown>),
+            serviceCategory: finalServiceCategory || 'all',
+            serviceStyle: finalServiceStyle || 'all',
+          },
+          serviceCategory: finalServiceCategory || 'all',
+          serviceStyle: finalServiceStyle || 'all',
+        },
         priority: parseInt(String(priority)) || 0,
         is_spotlight: is_spotlight === true,
-        published: published === true,
+        published: finalPublished,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -988,18 +1142,53 @@ export function registerPromotionEndpoints(app: Hono) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.promotionType !== undefined) updateData.promotion_type = body.promotionType;
       if (body.type !== undefined) updateData.promotion_type = body.type;
-      if (body.discountType !== undefined) updateData.discount_type = body.discountType;
+      if (body.discountType !== undefined) updateData.discount_type = normalizePromotionDiscountType(body.discountType);
+      if (body.discount_type !== undefined) updateData.discount_type = normalizePromotionDiscountType(body.discount_type);
       if (body.discountValue !== undefined) updateData.discount_value = parseFloat(body.discountValue);
       if (body.minOrderAmount !== undefined) updateData.min_order_amount = body.minOrderAmount ? parseFloat(body.minOrderAmount) : null;
       if (body.maxDiscountAmount !== undefined) updateData.max_discount_amount = body.maxDiscountAmount ? parseFloat(body.maxDiscountAmount) : null;
-      if (body.startDate !== undefined) updateData.start_date = new Date(body.startDate).toISOString().split('T')[0];
-      if (body.validFrom !== undefined) updateData.start_date = new Date(body.validFrom).toISOString().split('T')[0];
-      if (body.endDate !== undefined) updateData.end_date = body.endDate ? new Date(body.endDate).toISOString().split('T')[0] : null;
-      if (body.validUntil !== undefined) updateData.end_date = body.validUntil ? new Date(body.validUntil).toISOString().split('T')[0] : null;
+      if (body.startDate !== undefined) updateData.start_date = parseDateInput(body.startDate) || new Date().toISOString().split('T')[0];
+      if (body.validFrom !== undefined) updateData.start_date = parseDateInput(body.validFrom) || new Date().toISOString().split('T')[0];
+      if (body.endDate !== undefined) updateData.end_date = parseDateInput(body.endDate);
+      if (body.validUntil !== undefined) updateData.end_date = parseDateInput(body.validUntil);
       if (body.isActive !== undefined) updateData.is_active = body.isActive !== false;
       if (body.active !== undefined) updateData.is_active = body.active !== false;
       if (body.applicableServices !== undefined) updateData.applicable_services = body.applicableServices ? (Array.isArray(body.applicableServices) ? JSON.stringify(body.applicableServices) : body.applicableServices) : null;
       if (body.applicable_services !== undefined) updateData.applicable_services = body.applicable_services ? (Array.isArray(body.applicable_services) ? JSON.stringify(body.applicable_services) : body.applicable_services) : null;
+      if (body.serviceCategory !== undefined) updateData.service_category = String(body.serviceCategory || '').trim().toLowerCase() || null;
+      if (body.service_category !== undefined) updateData.service_category = String(body.service_category || '').trim().toLowerCase() || null;
+      if (body.serviceStyle !== undefined) updateData.service_style = normalizeStyle(body.serviceStyle) || null;
+      if (body.service_style !== undefined) updateData.service_style = normalizeStyle(body.service_style) || null;
+      if (body.serviceCategory !== undefined || body.serviceStyle !== undefined) {
+        const existing = parseServicesList(promotions[0].applicable_services);
+        const withoutStyle = existing.filter((x) => !x.startsWith('style:'));
+        const nextCategory = String(body.serviceCategory ?? withoutStyle[0] ?? 'all').trim().toLowerCase();
+        const nextStyle = normalizeStyle(body.serviceStyle);
+        const merged: string[] = [];
+        if (nextCategory && nextCategory !== 'all') merged.push(nextCategory);
+        if (nextStyle && nextStyle !== 'all') merged.push(`style:${nextStyle}`);
+        updateData.applicable_services = merged.length > 0 ? JSON.stringify(Array.from(new Set(merged))) : null;
+        updateData.service_category = nextCategory && nextCategory !== 'all' ? nextCategory : null;
+        updateData.service_style = nextStyle && nextStyle !== 'all' ? nextStyle : null;
+      }
+      if (body.metadata !== undefined && body.metadata && typeof body.metadata === 'object') {
+        updateData.metadata = body.metadata;
+      }
+      if (body.serviceCategory !== undefined || body.service_category !== undefined || body.serviceStyle !== undefined || body.service_style !== undefined) {
+        const incomingMetadata = (updateData.metadata ?? promotions[0].metadata ?? {}) as Record<string, unknown>;
+        const metadataCategory = String(updateData.service_category ?? (incomingMetadata as any)?.serviceCategory ?? '').trim().toLowerCase();
+        const metadataStyle = normalizeStyle(updateData.service_style ?? (incomingMetadata as any)?.serviceStyle ?? '');
+        updateData.metadata = {
+          ...incomingMetadata,
+          promotionTarget: {
+            ...(((incomingMetadata as any)?.promotionTarget || {}) as Record<string, unknown>),
+            serviceCategory: metadataCategory || 'all',
+            serviceStyle: metadataStyle || 'all',
+          },
+          serviceCategory: metadataCategory || 'all',
+          serviceStyle: metadataStyle || 'all',
+        };
+      }
       if (body.applicableRoles !== undefined) updateData.applicable_roles = body.applicableRoles;
       if (body.priority !== undefined) updateData.priority = parseInt(body.priority) || 0;
       // Phase 0.1: New fields

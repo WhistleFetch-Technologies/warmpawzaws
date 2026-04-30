@@ -21,6 +21,7 @@ type BannerVM = {
   subtitle?: string;
   gradientFrom: string;
   gradientTo: string;
+  imageUrl?: string;
   ctaText: string;
   ctaLink?: string;
   Icon: LucideIcon;
@@ -28,12 +29,25 @@ type BannerVM = {
 
 function mapApiBanner(b: Record<string, unknown>, index: number): BannerVM {
   const meta = (b.metadata as Record<string, unknown> | undefined) || {};
+  const imageUrlValue =
+    b.imageUrl ??
+    b.image_url ??
+    b.bannerImageUrl ??
+    b.banner_image_url ??
+    b.backgroundImageUrl ??
+    b.background_image_url ??
+    meta.imageUrl ??
+    meta.image_url ??
+    meta.bannerImageUrl ??
+    meta.banner_image_url;
+
   return {
     id: String(b.id ?? `banner-${index}`),
     title: String(b.title ?? ''),
     subtitle: b.subtitle != null ? String(b.subtitle) : undefined,
     gradientFrom: String(b.gradientFrom ?? meta.gradient_from ?? '#FF8C42'),
     gradientTo: String(b.gradientTo ?? meta.gradient_to ?? '#FF6B35'),
+    imageUrl: imageUrlValue != null ? String(imageUrlValue).trim() || undefined : undefined,
     ctaText: String(b.ctaText ?? b.cta_text ?? 'Learn More'),
     ctaLink: b.ctaLink != null ? String(b.ctaLink) : b.cta_link != null ? String(b.cta_link) : undefined,
     Icon: iconForCustomerHomeApiBanner(b),
@@ -116,7 +130,12 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
             key={banner.id}
             className={`${index === ix ? 'block' : 'hidden'}`}
             style={{
-              background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+              backgroundImage: banner.imageUrl
+                ? `linear-gradient(90deg, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.15) 100%), url("${banner.imageUrl}")`
+                : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
             }}
           >
             <div className="p-4 flex items-start justify-between gap-3">
@@ -136,7 +155,7 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
                   {banner.ctaText}
                 </button>
               </div>
-              <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />
+              {banner.imageUrl ? null : <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />}
             </div>
           </div>
         ))}

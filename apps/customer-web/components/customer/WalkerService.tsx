@@ -14,7 +14,6 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { WALKING_NEEDS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
@@ -772,9 +771,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             </div>
           </div>
         </Card>
-
-        {/* Promotion Banner - Phase 0.1 Integration */}
-        <PromotionBanner service="walking" maxPromotions={3} onNavigate={onNavigate} />
 
         {/* Problem Grid - Walk by Need */}
         <div>

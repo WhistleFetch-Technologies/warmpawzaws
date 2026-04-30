@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -227,7 +226,6 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         <div className="bg-white px-4 pt-6">
           <div className="space-y-8">
             <FeaturedVendorSpotlights service="boarding" onNavigate={onNavigate} />
-            <PromotionBanner service="boarding" maxPromotions={3} onNavigate={onNavigate} />
 
             {previousFacility && (
               <div className="space-y-3">

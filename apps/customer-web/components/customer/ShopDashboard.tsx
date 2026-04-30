@@ -16,7 +16,6 @@ import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { cn } from '@/components/ui/utils';
 
 interface ShopDashboardProps {
@@ -292,11 +291,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
       </div>
 
       <div className="pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
-        {/* PHASE 1.3: Promotion Banners (from Admin Marketing) */}
-        <div className="p-4 sm:p-5">
-          <PromotionBanner service="shop" onNavigate={onNavigate} />
-        </div>
-
         {/* Quick Features */}
         <div className="px-4 sm:px-5 mb-6">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
