@@ -88,6 +88,15 @@ function norm(s: string): string {
   return String(s).toLowerCase().trim().replace(/\s+/g, '_');
 }
 
+function normalizeStyleAlias(raw: unknown): string {
+  const style = norm(String(raw ?? ''));
+  if (!style) return '';
+  if (style === 'online') return 'tele';
+  if (style === 'clinic' || style === 'center') return 'at_center';
+  if (style === 'home' || style === 'home_visit') return 'at_home';
+  return style;
+}
+
 /**
  * Admin/CMS often stores CTAs as `/grooming`, `/vet` — those are in-app screen ids, not App Router paths.
  * Returns the wrapper screen id when the path is a single known segment; otherwise null (use router as-is).
@@ -131,6 +140,69 @@ function firstMappedScreen(slugs: string[]): string | null {
   return null;
 }
 
+function styleAwareScreenFromPromo(promo: Record<string, unknown>): string | null {
+  const rawCategory = String(
+    promo.service_category ??
+      promo.serviceCategory ??
+      promo.target_category ??
+      promo.targetCategory ??
+      ''
+  ).trim();
+  const rawStyle = String(
+    promo.service_style ??
+      promo.serviceStyle ??
+      (promo.metadata as any)?.serviceStyle ??
+      (promo.metadata as any)?.promotionTarget?.serviceStyle ??
+      ''
+  ).trim();
+  const category = norm(rawCategory);
+  const style = normalizeStyleAlias(rawStyle);
+
+  if (!category || category === 'all') return null;
+
+  if (category === 'vet' || category === 'veterinary' || category === 'veterinarian') {
+    if (style === 'tele' || style === 'online') return 'vet-tele-consultation';
+    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'vet-home-visit';
+    return 'vet';
+  }
+  if (category === 'grooming') {
+    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'grooming_home';
+    if (style === 'at_center' || style === 'center' || style === 'clinic') return 'grooming_center';
+    return 'grooming';
+  }
+  if (category === 'training') {
+    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'training_home';
+    if (style === 'at_center' || style === 'center' || style === 'clinic') return 'training_center';
+    return 'training';
+  }
+  return SLUG_TO_SCREEN[category] ?? null;
+}
+
+function styleAwareScreenFromApplicableServices(slugs: string[]): string | null {
+  const normalized = slugs.map((s) => norm(s)).filter(Boolean);
+  const styleToken = normalized.find((s) => s.startsWith('style:'));
+  const categoryToken = normalized.find((s) => !s.startsWith('style:') && s !== 'all');
+  if (!categoryToken) return null;
+
+  const style = normalizeStyleAlias(styleToken ? styleToken.replace(/^style:/, '') : '');
+  if (categoryToken === 'vet' || categoryToken === 'veterinary' || categoryToken === 'veterinarian') {
+    if (style === 'tele') return 'vet-tele-consultation';
+    if (style === 'at_home') return 'vet-home-visit';
+    return 'vet';
+  }
+  if (categoryToken === 'grooming') {
+    if (style === 'at_home') return 'grooming_home';
+    if (style === 'at_center') return 'grooming_center';
+    return 'grooming';
+  }
+  if (categoryToken === 'training') {
+    if (style === 'at_home') return 'training_home';
+    if (style === 'at_center') return 'training_center';
+    return 'training';
+  }
+  return SLUG_TO_SCREEN[categoryToken] ?? null;
+}
+
 /**
  * Optional explicit target from admin/API (snake or camel).
  */
@@ -153,11 +225,6 @@ function explicitTargetScreen(promo: Record<string, unknown>): string | null {
       return v.trim();
     }
   }
-  const cat = promo.service_category ?? promo.serviceCategory;
-  if (typeof cat === 'string' && cat.trim()) {
-    const n = norm(cat);
-    if (SLUG_TO_SCREEN[n]) return SLUG_TO_SCREEN[n];
-  }
   return null;
 }
 
@@ -171,7 +238,14 @@ export function resolvePromotionDestination(
   const explicit = explicitTargetScreen(promo);
   if (explicit) return explicit;
 
-  const fromApplicable = firstMappedScreen(parseApplicableServices(promo));
+  const styleAware = styleAwareScreenFromPromo(promo);
+  if (styleAware) return styleAware;
+
+  const applicable = parseApplicableServices(promo);
+  const fromApplicableStyleAware = styleAwareScreenFromApplicableServices(applicable);
+  if (fromApplicableStyleAware) return fromApplicableStyleAware;
+
+  const fromApplicable = firstMappedScreen(applicable);
   if (fromApplicable) return fromApplicable;
 
   const ctx = norm(contextService);
@@ -179,7 +253,7 @@ export function resolvePromotionDestination(
 
   if (SLUG_TO_SCREEN[ctx]) return SLUG_TO_SCREEN[ctx];
 
-  return 'home';
+  return 'services';
 }
 
 /**

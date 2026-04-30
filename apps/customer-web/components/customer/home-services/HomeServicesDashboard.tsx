@@ -24,7 +24,6 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { HOME_SERVICE_CONFIGS } from './index';
 import { HomeServiceRouter, HomeServiceType } from './HomeServiceRouter';
-import { PromotionBanner } from '../shared/PromotionBanner';
 
 interface HomeServicesDashboardProps {
   phone: string;
@@ -260,9 +259,6 @@ export function HomeServicesDashboard({
             </div>
           </Card>
         )}
-
-        {/* Promotions */}
-        <PromotionBanner service="home_service" onNavigate={onNavigate} />
 
         {/* Recently Used Services */}
         {recentlyUsed.length > 0 && (

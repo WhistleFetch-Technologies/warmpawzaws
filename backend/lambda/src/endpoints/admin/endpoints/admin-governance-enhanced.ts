@@ -396,6 +396,13 @@ function pickBannerStringField(value: unknown): string | undefined {
   return s.length ? s : undefined;
 }
 
+function pickBannerNullableField(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const normalized = String(value).trim();
+  return normalized.length ? normalized : null;
+}
+
 function normalizeBannerTypeForDb(typeOrPosition: string): string {
   const key = typeOrPosition.trim().toLowerCase();
   return ALLOWED_BANNER_DB_TYPES.has(key) ? key : 'main';
@@ -488,6 +495,10 @@ class CreateBannerHandler extends BaseHandler {
       endDate,
       isActive = true,
       metadata,
+      targetState,
+      target_state,
+      targetCity,
+      target_city,
     } = body;
 
     const bannerType = resolveBannerTypeFromBody(type, position);
@@ -506,6 +517,8 @@ class CreateBannerHandler extends BaseHandler {
         start_date: startDate ? new Date(startDate) : new Date(),
         end_date: endDate ? new Date(endDate) : null,
         is_active: isActive,
+        target_state: pickBannerNullableField(target_state ?? targetState) ?? null,
+        target_city: pickBannerNullableField(target_city ?? targetCity) ?? null,
       });
 
       // Publish banner change event
@@ -552,6 +565,10 @@ class UpdateBannerHandler extends BaseHandler {
       endDate,
       isActive,
       metadata,
+      targetState,
+      target_state,
+      targetCity,
+      target_city,
     } = body;
 
     try {
@@ -574,6 +591,14 @@ class UpdateBannerHandler extends BaseHandler {
       if (endDate !== undefined) updateData.end_date = endDate ? new Date(endDate) : null;
       if (isActive !== undefined) updateData.is_active = isActive;
       if (metadata !== undefined) updateData.metadata = metadata;
+      const normalizedTargetState = pickBannerNullableField(target_state ?? targetState);
+      const normalizedTargetCity = pickBannerNullableField(target_city ?? targetCity);
+      if (normalizedTargetState !== undefined) {
+        updateData.target_state = normalizedTargetState;
+      }
+      if (normalizedTargetCity !== undefined) {
+        updateData.target_city = normalizedTargetCity;
+      }
 
       await update('banners', { id: bannerId }, updateData);
 
@@ -758,6 +783,59 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/admin/banners/locations/states', async (c) => {
+    try {
+      const result = await query(
+        `SELECT value
+         FROM (
+           SELECT DISTINCT TRIM(state) AS value
+           FROM customer_addresses
+           WHERE state IS NOT NULL
+             AND TRIM(state) <> ''
+           UNION
+           SELECT DISTINCT TRIM(state) AS value
+           FROM customers
+           WHERE state IS NOT NULL
+             AND TRIM(state) <> ''
+         ) states
+         ORDER BY LOWER(value) ASC`
+      ).catch(() => ({ rows: [] }));
+      return c.json({ success: true, states: result.rows || [] });
+    } catch (error: any) {
+      return c.json({ success: true, states: [], error: error.message });
+    }
+  });
+
+  app.get('/admin/banners/locations/cities', async (c) => {
+    try {
+      const state = c.req.query('state');
+      const normalizedState = pickBannerStringField(state);
+      const params: string[] = [];
+      let sql = `SELECT value
+         FROM (
+           SELECT DISTINCT TRIM(city) AS value, TRIM(state) AS state_name
+           FROM customer_addresses
+           WHERE city IS NOT NULL
+             AND TRIM(city) <> ''
+           UNION
+           SELECT DISTINCT TRIM(city) AS value, TRIM(state) AS state_name
+           FROM customers
+           WHERE city IS NOT NULL
+             AND TRIM(city) <> ''
+         ) cities
+         WHERE 1=1`;
+      if (normalizedState) {
+        sql += ` AND LOWER(state_name) = LOWER($1)`;
+        params.push(normalizedState);
+      }
+      sql += ` ORDER BY LOWER(value) ASC`;
+      const result = await query(sql, params).catch(() => ({ rows: [] }));
+      return c.json({ success: true, cities: result.rows || [] });
+    } catch (error: any) {
+      return c.json({ success: true, cities: [], error: error.message });
+    }
   });
 
   // ==========================================

@@ -9,7 +9,6 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -384,7 +383,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6 space-y-4">
           <FeaturedVendorSpotlights service="vet" onNavigate={onNavigate} />
-          <PromotionBanner service="vet" maxPromotions={3} onNavigate={onNavigate} />
         </div>
 
         {/* Phase 1: Book again with previous vet */}

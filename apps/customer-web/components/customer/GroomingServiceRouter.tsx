@@ -9,7 +9,6 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
-import { PromotionBanner } from './shared/PromotionBanner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -319,7 +318,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            <PromotionBanner service="grooming" onNavigate={onNavigate} />
           </div>
 
           {/* Grooming Needs Grid */}

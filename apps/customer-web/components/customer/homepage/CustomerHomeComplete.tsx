@@ -8,7 +8,7 @@ import dynamic from 'next/dynamic';
 import {
   Bell, Heart, Plus, ChevronRight, Star, MapPin, Clock,
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
-  GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
+  GraduationCap, Coffee, Shield, Sparkles,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
   Navigation, AlertCircle, FlaskConical,   MessageSquare,
 } from 'lucide-react';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { PromotionBanner } from '../shared/PromotionBanner';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -25,13 +26,13 @@ import { WalletIcon } from '../WalletIcon';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
-import { Dog, Cat, UtensilsCrossed, Package as PackageIcon, Shirt, Watch, Bed, Store } from 'lucide-react';
+import { Dog, Cat, UtensilsCrossed, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
 import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 // Re-export type for VendorOnTheWayPopup
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
-import { defaultBanners, defaultGroomingServices, defaultHotDeals, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
+import { defaultBanners, defaultGroomingServices, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
 import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
@@ -608,15 +609,60 @@ export function CustomerHomeComplete({
     loadDynamicContent();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
 
+  const resolveCustomerLocation = async (): Promise<{ city: string; state: string }> => {
+    let city = '';
+    let state = '';
+    try {
+      const addressesResponse = (await apiClient
+        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+        .catch(() => null)) as any;
+      const addresses = addressesResponse?.addresses || [];
+      const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
+      if (defaultAddress) {
+        city = (defaultAddress.city || '').trim();
+        state = (defaultAddress.state || '').trim();
+      }
+    } catch {
+      // Keep legacy fallback behavior
+    }
+
+    if (!city || !state) {
+      try {
+        const profileResponse = await apiClient
+          .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
+          .catch(() => null);
+        const profile = profileResponse as any;
+        const profileLocation = serviceBaseOnpincode(profile, profile?.pincode || '');
+        if (!city && profileLocation.city) city = String(profileLocation.city).trim();
+        if (!state && profileLocation.state) state = String(profileLocation.state).trim();
+      } catch {
+        // Keep legacy fallback behavior
+      }
+    }
+
+    return { city, state };
+  };
+
   // Load dynamic content (banners, articles, announcements)
   const loadDynamicContent = async () => {
     try {
+      const { city: customerCity, state: customerState } = await resolveCustomerLocation();
+      const bannerQuery = new URLSearchParams({ limit: '20' });
+      if (customerState) bannerQuery.append('state', customerState);
+      if (customerCity) bannerQuery.append('city', customerCity);
+      const homeTopQuery = new URLSearchParams(bannerQuery);
+      homeTopQuery.append('position', 'home_top');
+      const homeMiddleQuery = new URLSearchParams(bannerQuery);
+      homeMiddleQuery.append('position', 'home_middle');
+      const homeLowerQuery = new URLSearchParams(bannerQuery);
+      homeLowerQuery.append('position', 'home_lower');
+
       // Fetch all content in parallel with better error handling
       const [bannersResp, middleBannersResp, lowerBannersResp, articlesResp, announcementsResp, adoptionResp] =
         await Promise.allSettled([
-          apiClient.get<any>('/customer/banners?position=home_top&limit=20'),
-          apiClient.get<any>('/customer/banners?position=home_middle&limit=20'),
-          apiClient.get<any>('/customer/banners?position=home_lower&limit=20'),
+          apiClient.get<any>(`/customer/banners?${homeTopQuery.toString()}`),
+          apiClient.get<any>(`/customer/banners?${homeMiddleQuery.toString()}`),
+          apiClient.get<any>(`/customer/banners?${homeLowerQuery.toString()}`),
           apiClient.getCustomerArticlesList<any>('/customer/articles?limit=3&featured=true'),
           apiClient.get<any>('/customer/announcements?limit=3'),
           apiClient.get<any>('/customer/adoption-stats'),
@@ -1138,6 +1184,7 @@ export function CustomerHomeComplete({
         id: b.id,
         title: b.title,
         subtitle: b.subtitle,
+        imageUrl: b.imageUrl || b.image_url || '',
         gradientFrom: b.gradientFrom || b.gradient_from || '#9333ea',
         gradientTo: b.gradientTo || b.gradient_to || '#ec4899',
         Icon: iconForCustomerHomeApiBanner(b),
@@ -1666,14 +1713,6 @@ export function CustomerHomeComplete({
   // Use API data or fallback to defaults
   const displayGroomingServices = groomingServices.length > 0 ? groomingServices : defaultGroomingServices;
   const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
-  /** Homepage carousel: real featured products only in production; optional mock strip in development. */
-  const carouselHotDeals =
-    hotDeals.length > 0
-      ? hotDeals
-      : typeof process !== 'undefined' && process.env.NODE_ENV === 'development'
-        ? defaultHotDeals
-        : [];
-
   // ✅ FIX: Remove dummy articles - show only admin-created articles
   const articles = dynamicArticles.map((a: any) => ({
     id: a.id,
@@ -2297,59 +2336,14 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {carouselHotDeals.length > 0 && (
         <div className="mb-6">
-          <div className="px-6 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-pink-600" />
-              <h2 className="text-black font-semibold">Hot Deals</h2>
-            </div>
-            <button
-              onClick={() => handleNavigation('shop')}
-              className="text-xs text-pink-600 font-medium flex items-center gap-1"
-            >
-              Shop All <ChevronRight className="w-4 h-4" />
-            </button>
+          <div className="px-6 mb-4">
+            <h2 className="text-black font-semibold">Special Offers</h2>
           </div>
-          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {carouselHotDeals.map((deal: any, index) => {
-              const DealIcon = deal.Icon || PackageIcon;
-              return (
-                <div key={deal.id ?? index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-                  <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center relative">
-                    <DealIcon className="w-12 h-12 text-pink-500" />
-                    {deal.discount && (
-                      <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
-                        {deal.discount}
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <h3 className="text-sm font-semibold text-gray-800 mb-1 line-clamp-2">{deal.title}</h3>
-                    <div className="flex items-center gap-1 mb-2">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs text-gray-600">{deal.rating}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#FF8C42] font-bold text-sm">{deal.price}</span>
-                      <span className="text-gray-400 line-through text-xs">{deal.originalPrice}</span>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleNavigation('shop');
-                      }}
-                      className="w-full bg-[#FF8C42] text-white py-2 rounded-lg text-xs font-medium mt-2"
-                    >
-                      Add to Cart
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="px-6">
+            <PromotionBanner service="all" maxPromotions={3} onNavigate={handleNavigation} />
           </div>
         </div>
-        )}
 
         {/* Featured Services Mix - Square Boxes */}
         <div className="mb-6">
@@ -2389,7 +2383,11 @@ export function CustomerHomeComplete({
                           : 'z-0 opacity-0 pointer-events-none'
                       }`}
                       style={{
-                        background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                        backgroundImage: (banner as { imageUrl?: string }).imageUrl
+                          ? `linear-gradient(135deg, rgba(17,24,39,0.75) 0%, rgba(17,24,39,0.45) 100%), url(${(banner as { imageUrl?: string }).imageUrl})`
+                          : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
                       }}
                       aria-hidden={currentMiddleBanner !== index}
                     >
@@ -2415,7 +2413,9 @@ export function CustomerHomeComplete({
                               <p className="text-sm text-white/90 mt-1 line-clamp-2">{banner.subtitle}</p>
                             ) : null}
                           </div>
-                          <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />
+                          {(banner as { imageUrl?: string }).imageUrl ? null : (
+                            <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />
+                          )}
                         </div>
                         <div className="flex items-end justify-end pt-2">
                           {slotComingSoon ? (

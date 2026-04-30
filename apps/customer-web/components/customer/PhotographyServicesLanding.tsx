@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
 
 interface PhotographyServicesLandingProps {
   phone: string;
@@ -105,9 +104,6 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
-          {/* Promotion Banner */}
-          <PromotionBanner service="photography" maxPromotions={3} onNavigate={onNavigate} />
-
           {/* Photography Types */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Photography Services</h2>

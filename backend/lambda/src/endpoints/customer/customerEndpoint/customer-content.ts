@@ -33,6 +33,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const bannerType = positionParam === 'all' ? 'all' : (positionParam === 'home_top' ? 'main' : positionParam);
       const rawLimit = parseInt(c.req.query('limit') || '10', 10);
       const limit = Math.min(Math.max(rawLimit, 1), 25);
+      const customerState = (c.req.query('state') || '').trim();
+      const customerCity = (c.req.query('city') || '').trim();
 
       const now = new Date().toISOString();
 
@@ -60,9 +62,27 @@ export function registerCustomerContentEndpoints(app: Hono) {
         )
         AND (start_date IS NULL OR start_date <= $2)
         AND (end_date IS NULL OR end_date >= $2)
+        AND (
+          (target_state IS NULL AND target_city IS NULL)
+          OR (
+            $4::text <> ''
+            AND target_state IS NOT NULL
+            AND target_city IS NULL
+            AND LOWER(target_state) = LOWER($4::text)
+          )
+          OR (
+            $5::text <> ''
+            AND target_city IS NOT NULL
+            AND LOWER(target_city) = LOWER($5::text)
+            AND (
+              target_state IS NULL
+              OR ($4::text <> '' AND LOWER(target_state) = LOWER($4::text))
+            )
+          )
+        )
         ORDER BY display_order ASC, created_at DESC
         LIMIT $3`,
-        [bannerType, now, limit]
+        [bannerType, now, limit, customerState, customerCity]
       ).catch(() => ({ rows: [] }));
 
       const parseMetadata = (raw: unknown): Record<string, unknown> => {
