@@ -66,6 +66,8 @@ export interface CenterProfile {
     // Basic Info
     centerName: string;
     description: string;
+    disclaimer: string;
+    disclaimerPoints: string[];
     address: string;
     city: string;
     state: string;

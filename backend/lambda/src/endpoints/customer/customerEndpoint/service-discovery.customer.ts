@@ -4478,6 +4478,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           description: metadata.description || vendor.description || '', // ✅ FIX: Get description from metadata
+          disclaimer: metadata.disclaimer,
+          disclaimerPoints: metadata.disclaimerPoints || [],
           amenities: metadata.amenities || [],
           customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
@@ -4613,6 +4615,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         metadataChanged = true;
       }
 
+      // Store disclaimer/instructions in metadata (editable by vendor from profile basic tab)
+      if (facilityData.disclaimerPoints !== undefined || facilityData.disclaimer !== undefined) {
+        const disclaimerPointsInput = Array.isArray(facilityData.disclaimerPoints)
+          ? facilityData.disclaimerPoints
+          : (typeof facilityData.disclaimer === 'string'
+            ? String(facilityData.disclaimer).split(/\n+/)
+            : []);
+        const disclaimerPoints = disclaimerPointsInput
+          .map((point: any) => String(point ?? '').trim())
+          .filter(Boolean);
+        updatedMetadata.disclaimerPoints = disclaimerPoints;
+        updatedMetadata.disclaimer = disclaimerPoints.join('\n');
+        metadataChanged = true;
+      }
+
       // Update metadata if any metadata fields changed
       if (metadataChanged) {
         // ✅ FIX B1: Check if metadata column exists before trying to update it
@@ -4690,6 +4707,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           latitude: updated[0].latitude,
           longitude: updated[0].longitude,
           operating_hours: updated[0].operating_hours,
+          disclaimer: (updated[0].metadata as any)?.disclaimer,
+          disclaimerPoints: (updated[0].metadata as any)?.disclaimerPoints || [],
           amenities: (updated[0].metadata as any)?.amenities || [],
           photos: (updated[0].metadata as any)?.facility_photos || [],
           specializations: (updated[0].metadata as any)?.specializations ?? (updated[0].specializations ?? []),
@@ -5002,6 +5021,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           amenities: metadata.amenities || vendor.amenities || [], // ✅ FIX: Get from metadata
           customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
           description: metadata.description || vendor.description || '', // ✅ FIX: Include description
+          disclaimer: metadata.disclaimer,
+          disclaimerPoints: metadata.disclaimerPoints || [],
           operatingHours: operatingHours, // ✅ FIX: Parse operating hours
           specializations: metadata.specializations || [], // ✅ FIX: Include specializations
         },

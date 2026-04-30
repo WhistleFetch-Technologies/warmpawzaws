@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Save, Clock, Building2, MapPin, Camera, Calendar, Sparkles, Check, Search } from 'lucide-react';
+import { Save, Clock, Building2, MapPin, Camera, Calendar, Sparkles, Check, Search, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
-import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole, canVendorUseServiceStyle } from '@/lib/vendor-utils';
+import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole, canVendorUseServiceStyle, isVendorType } from '@/lib/vendor-utils';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
@@ -53,6 +53,8 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
   const [profile, setProfile] = useState<CenterProfile>({
     centerName: vendorData?.businessName || '',
     description: '',
+    disclaimer: '',
+    disclaimerPoints: [],
     address: vendorData?.address || '',
     city: vendorData?.city || '',
     state: vendorData?.state || '',
@@ -77,6 +79,51 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
 
   const [customAmenityInput, setCustomAmenityInput] = useState('');
   const [availableForInstantTele, setAvailableForInstantTele] = useState<boolean>(false);
+  const isBoardingVendor =
+    isVendorType(vendorData, 'boarding') ||
+    hasVendorRole(vendorData, ['pet_boarding', 'boarding', 'pet_resort', 'resort']);
+  const DEFAULT_BOARDING_DISCLAIMER = `Boarding will be confirmed once the payment is done.
+Check-in time is between 11 AM to 6 PM (early check-in is subject to availability).
+Check-out time is by 12 o'clock noon. Late check-out will be charged for the full day.
+Every day one video will be shared with the parents.
+Only pet parents will be allowed to visit the pet during boarding period, that too on prior notice and at a given time-slot.
+Extension of the boarding period will depend on availability and should be paid for in advance.
+Complimentary bath will be provided when the stay is of 7 or more days.
+Management will not be responsible if the pet has any issues due to internal problems (like heart attack, heart failure, cardiac arrest, organ failure, gastric dilatation-volvulus, etc.).
+Management will not be responsible for the items left behind for the pet (e.g. bed, bowls, etc.).
+Management will decide whether the pet will be provided play time with other pets or not (depends on behavior).
+In rare scenarios of any injury or medical issue with the pet, it will be dealt with immediately by management (take to the vet) and parents will be informed. In such incidents, parents will be required to take care of the medical bills.`;
+  const DEFAULT_BOARDING_DISCLAIMER_POINTS = [
+    'Boarding will be confirmed once the payment is done.',
+    'Check-in time is between 11 AM to 6 PM (early check-in is subject to availability).',
+    'Check-out time is by 12 o\'clock noon. Late check-out will be charged for the full day.',
+    'Every day one video will be shared with the parents.',
+    'Only pet parents will be allowed to visit the pet during boarding period, that too on prior notice and at a given time-slot.',
+    'Extension of the boarding period will depend on availability and should be paid for in advance.',
+    'Complimentary bath will be provided when the stay is of 7 or more days.',
+    'Management will not be responsible if the pet has any issues due to internal problems (like heart attack, heart failure, cardiac arrest, organ failure, gastric dilatation-volvulus, etc.).',
+    'Management will not be responsible for the items left behind for the pet (e.g. bed, bowls, etc.).',
+    'Management will decide whether the pet will be provided play time with other pets or not (depends on behavior).',
+    'In rare scenarios of any injury or medical issue with the pet, it will be dealt with immediately by management (take to the vet) and parents will be informed. In such incidents, parents will be required to take care of the medical bills.',
+  ];
+
+  const parseDisclaimerPoints = (disclaimerValue: unknown): string[] => {
+    if (Array.isArray(disclaimerValue)) {
+      return disclaimerValue
+        .map((point) => (typeof point === 'string' ? point.trim() : ''))
+        .filter(Boolean);
+    }
+    if (typeof disclaimerValue === 'string') {
+      return disclaimerValue
+        .split(/\n+/)
+        .map((line) => line.replace(/^[\s\-*•\d.)]+/, '').trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const serializeDisclaimerPoints = (points: string[]): string =>
+    points.map((point) => point.trim()).filter(Boolean).join('\n');
   /** Merged vendor + /vendor/profile so allowedServiceStyles reflects Admin role (instant tele gate). */
   const [vendorStyleSource, setVendorStyleSource] = useState<any>(vendorData);
   // Using apiClient instead of API_BASE - use local roleId state
@@ -110,6 +157,18 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
   useEffect(() => {
     setVendorStyleSource(vendorData);
   }, [vendorData]);
+
+  useEffect(() => {
+    if (!isBoardingVendor) return;
+    setProfile((prev) => {
+      if (prev.disclaimerPoints.length > 0) return prev;
+      return {
+        ...prev,
+        disclaimerPoints: DEFAULT_BOARDING_DISCLAIMER_POINTS,
+        disclaimer: DEFAULT_BOARDING_DISCLAIMER,
+      };
+    });
+  }, [isBoardingVendor]);
 
   useEffect(() => {
     loadCenterProfile();
@@ -203,6 +262,20 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
           ...prev,
           centerName: facilityData.facility.centerName || prev.centerName,
           description: facilityData.facility.description || prev.description || '',
+          disclaimerPoints: (() => {
+            const fromApi = parseDisclaimerPoints(
+              facilityData.facility.disclaimerPoints ?? facilityData.facility.disclaimer
+            );
+            if (fromApi.length > 0) return fromApi;
+            return isBoardingVendor ? DEFAULT_BOARDING_DISCLAIMER_POINTS : prev.disclaimerPoints;
+          })(),
+          disclaimer: (() => {
+            const points = parseDisclaimerPoints(
+              facilityData.facility.disclaimerPoints ?? facilityData.facility.disclaimer
+            );
+            if (points.length > 0) return serializeDisclaimerPoints(points);
+            return isBoardingVendor ? DEFAULT_BOARDING_DISCLAIMER : prev.disclaimer;
+          })(),
           address: facilityData.facility.address || prev.address,
           city: facilityData.facility.city || prev.city,
           state: facilityData.facility.state || prev.state,
@@ -288,6 +361,8 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
       const facilityData = {
         centerName: profile.centerName.trim(),
         description: profile.description.trim(),
+        disclaimerPoints: profile.disclaimerPoints.map((point) => point.trim()).filter(Boolean),
+        disclaimer: serializeDisclaimerPoints(profile.disclaimerPoints),
         address: profile.address.trim(),
         city: profile.city.trim(),
         state: profile.state.trim(),
@@ -416,6 +491,35 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
     }
   };
 
+  const updateDisclaimerPoint = (index: number, value: string) => {
+    setProfile(prev => ({
+      ...prev,
+      disclaimerPoints: prev.disclaimerPoints.map((point, idx) => (idx === index ? value : point)),
+      disclaimer: serializeDisclaimerPoints(
+        prev.disclaimerPoints.map((point, idx) => (idx === index ? value : point))
+      ),
+    }));
+  };
+
+  const addDisclaimerPoint = () => {
+    setProfile(prev => ({
+      ...prev,
+      disclaimerPoints: [...prev.disclaimerPoints, ''],
+      disclaimer: serializeDisclaimerPoints([...prev.disclaimerPoints, '']),
+    }));
+  };
+
+  const removeDisclaimerPoint = (index: number) => {
+    setProfile(prev => {
+      const nextPoints = prev.disclaimerPoints.filter((_, idx) => idx !== index);
+      return {
+        ...prev,
+        disclaimerPoints: nextPoints,
+        disclaimer: serializeDisclaimerPoints(nextPoints),
+      };
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -509,6 +613,48 @@ export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGalle
                     rows={4}
                   />
                 </div>
+
+                {isBoardingVendor && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Disclaimer
+                    </label>
+                    <div className="space-y-2">
+                      {profile.disclaimerPoints.map((point, index) => (
+                        <div key={`disclaimer-${index}`} className="flex items-start gap-2">
+                          <span className="mt-2 text-xs text-gray-400">{index + 1}.</span>
+                          <Textarea
+                            value={point}
+                            onChange={(e) => updateDisclaimerPoint(index, e.target.value)}
+                            placeholder="Add boarding terms, policies, and instructions"
+                            rows={2}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-1 h-8 w-8 p-0"
+                            onClick={() => removeDisclaimerPoint(index)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={addDisclaimerPoint}
+                        className="h-8 border-dashed"
+                      >
+                        <Plus className="mr-1 h-4 w-4" />
+                        Add point
+                      </Button>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      This general instruction is shown for your boarding profile and can be edited anytime.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
