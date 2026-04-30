@@ -90,6 +90,71 @@ function uuidOrNull(v: unknown): string | null {
   return isLikelyCustomerUuid(s) ? s : null;
 }
 
+function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+async function debitWalletForPackagePurchase(
+  customerId: string,
+  amountToDebit: number
+): Promise<number> {
+  const debit = roundMoney(amountToDebit);
+  if (debit <= 0) return 0;
+
+  await query(
+    `INSERT INTO customer_wallets (customer_id, balance, currency)
+     VALUES ($1::uuid, 0, 'INR')
+     ON CONFLICT (customer_id) DO NOTHING`,
+    [customerId]
+  ).catch(async () => {
+    await query(
+      `INSERT INTO customer_wallets (customer_id, balance)
+       VALUES ($1::uuid, 0)
+       ON CONFLICT (customer_id) DO NOTHING`,
+      [customerId]
+    );
+  });
+
+  const upd = await query(
+    `UPDATE customer_wallets
+     SET balance = balance - $1::numeric, updated_at = NOW()
+     WHERE customer_id = $2::uuid
+       AND balance >= $1::numeric
+     RETURNING id, balance::text`,
+    [debit, customerId]
+  ).catch(async () =>
+    query(
+      `UPDATE customer_wallets
+       SET balance = balance - $1::numeric
+       WHERE customer_id = $2::uuid
+         AND balance >= $1::numeric
+       RETURNING id, balance::text`,
+      [debit, customerId]
+    )
+  );
+
+  if (!upd.rows?.[0]?.id) return 0;
+
+  const walletId = String(upd.rows[0].id);
+  const balanceAfter = Number(upd.rows[0].balance || 0) || 0;
+  await query(
+    `INSERT INTO wallet_transactions
+      (wallet_id, customer_id, transaction_type, amount, balance_after, reference_type, reference_id, description)
+     VALUES
+      ($1::uuid, $2::uuid, 'debit', $3::numeric, $4::numeric, 'package_payment', NULL, 'Payment for package purchase')`,
+    [walletId, customerId, debit, balanceAfter]
+  ).catch(() => {});
+
+  await query(
+    `UPDATE customers SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1::numeric)
+     WHERE id = $2::uuid`,
+    [debit, customerId]
+  ).catch(() => {});
+
+  return debit;
+}
+
 /** Map vendor_services.service_style to bookings.service_type CHECK values. */
 function bookingServiceTypeForPackageStyle(style: string): string {
   const s = String(style || '').toLowerCase();
@@ -1467,6 +1532,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
       const petIdBody = bodyObj.petId;
       const policyAcceptedRaw = bodyObj.policyAccepted;
       const policyVersionRaw = bodyObj.policyVersion;
+      const useWalletRaw = bodyObj.useWallet;
+      const walletAmountRaw = bodyObj.walletAmount;
       const petIdForBooking = uuidOrNull(petIdBody);
 
       if (!customerRef || !vendorRef || !vendorServiceId) {
@@ -1591,10 +1658,32 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const policy = resolvePackagePolicySnapshot(comp);
       const policyAcceptedFlag = Boolean(policyAcceptedRaw);
+      const useWallet = Boolean(useWalletRaw);
+      const requestedWalletAmount = Math.max(0, roundMoney(Number(walletAmountRaw ?? 0)));
       const policyVersionFromClient =
         typeof policyVersionRaw === 'string' && policyVersionRaw.trim()
           ? policyVersionRaw.trim()
           : null;
+      const grossTotal = roundMoney(pricing ? pricing.totalAmount : comp.priceNum);
+      let walletApplied = 0;
+      if (comp.priceNum > 0 && !hasRazorpayProof && useWallet) {
+        const walletTarget = requestedWalletAmount > 0 ? requestedWalletAmount : grossTotal;
+        walletApplied = await debitWalletForPackagePurchase(customerId, Math.min(walletTarget, grossTotal));
+      } else if (comp.priceNum > 0 && hasRazorpayProof && useWallet) {
+        walletApplied = Math.min(requestedWalletAmount, grossTotal);
+      }
+      const payableAfterWallet = roundMoney(Math.max(0, grossTotal - walletApplied));
+      const policyInputForFinalize = {
+        cancellationPolicy: policy.cancellationPolicy,
+        refundPolicy: policy.refundPolicy,
+        policyVersion: policy.version,
+        policyAcceptedAt: new Date().toISOString(),
+        policyAcceptedMeta: {
+          source: 'package_purchase',
+          via: hasRazorpayProof ? 'razorpay_finalize' : 'free_finalize',
+          userAgent: c.req.header('user-agent') || null,
+        },
+      };
 
       const buildOrderResponse = (
         order: { orderId: string; keyId: string; amount: number; currency: string; paymentId: string }
@@ -1621,6 +1710,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
               businessServiceType: pricing.businessServiceType,
             }
           : null,
+        walletApplied,
+        payableAfterWallet,
         policy: {
           cancellationPolicy: policy.cancellationPolicy,
           refundPolicy: policy.refundPolicy,
@@ -1629,6 +1720,44 @@ export function registerPackageBookingEndpoints(app: Hono) {
       });
 
       if (comp.priceNum > 0 && !hasRazorpayProof) {
+        if (payableAfterWallet <= 0) {
+          const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
+          const walletPaymentRows = await insert('payments', {
+            booking_id: null,
+            customer_id: customerId,
+            vendor_id: comp.vendorId,
+            amount: pricing ? pricing.basePrice : grossTotal,
+            gst_amount: pricing ? pricing.gstAmount : 0,
+            platform_fee: pricing ? pricing.platformFee : 0,
+            convenience_fee: pricing ? pricing.convenienceFee : 0,
+            total_amount: grossTotal,
+            currency: 'INR',
+            payment_method: 'wallet',
+            payment_status: 'completed',
+            completed_at: new Date().toISOString(),
+          } as any);
+          const walletPaymentId = String((Array.isArray(walletPaymentRows) ? walletPaymentRows[0] : walletPaymentRows)?.id || '');
+          const { purchase } = await insertPackagePurchaseRows(comp, catalogPackageId, {
+            paymentStatus: 'completed',
+            preferSameProvider: Boolean(preferSameProvider),
+            sessionSchedule,
+            paymentId: walletPaymentId || null,
+            policy: policyInputForFinalize,
+            totalCharged: grossTotal,
+          });
+          const { parentBookingId } = await createPackageBookingsAfterPayment({
+            customerId,
+            vendorId: comp.vendorId,
+            vendorServiceId: String(vendorServiceId),
+            comp,
+            purchase: purchase as Record<string, unknown>,
+            catalogPackageId,
+            paymentId: walletPaymentId || null,
+            petId: petIdForBooking,
+          });
+          return c.json(purchaseJson(purchase as Record<string, unknown>, catalogPackageId, parentBookingId));
+        }
+
         // Acceptance gate: never start a Razorpay order without explicit consent.
         if (!policyAcceptedFlag) {
           return c.json(
@@ -1667,7 +1796,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             customerId,
             vendorId: comp.vendorId,
             vendorServiceId: String(vendorServiceId),
-            amount: pricing ? pricing.totalAmount : comp.priceNum,
+            amount: payableAfterWallet,
             ...(pricing
               ? {
                   feeBreakdown: {
@@ -1688,18 +1817,6 @@ export function registerPackageBookingEndpoints(app: Hono) {
         }
       }
 
-      const policyInputForFinalize = {
-        cancellationPolicy: policy.cancellationPolicy,
-        refundPolicy: policy.refundPolicy,
-        policyVersion: policy.version,
-        policyAcceptedAt: new Date().toISOString(),
-        policyAcceptedMeta: {
-          source: 'package_purchase',
-          via: hasRazorpayProof ? 'razorpay_finalize' : 'free_finalize',
-          userAgent: c.req.header('user-agent') || null,
-        },
-      };
-
       if (comp.priceNum > 0 && hasRazorpayProof) {
         const cfg = await getRazorpayConfig();
         if (!cfg?.keySecret) {
@@ -1716,7 +1833,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           return c.json({ error: 'Invalid Razorpay signature' }, 400);
         }
 
-        const expectedTotal = pricing ? pricing.totalAmount : comp.priceNum;
+        const expectedTotal = payableAfterWallet;
 
         const deterministicPurchaseId = vendorPackagePurchaseIdForRazorpayOrder(razorpayOrderId);
         const existing = await query(
@@ -1752,7 +1869,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
             razorpayOrderId,
             paymentId: paymentIdForExisting,
             policy: policyInputForFinalize,
-            totalCharged: expectedTotal,
+            totalCharged: grossTotal,
           });
 
           const { parentBookingId } = await createPackageBookingsAfterPayment({
@@ -1807,7 +1924,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
           razorpayOrderId,
           paymentId: String(payRow.id),
           policy: policyInputForFinalize,
-          totalCharged: expectedTotal,
+          totalCharged: grossTotal,
         });
 
         await query(

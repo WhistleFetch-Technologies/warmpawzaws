@@ -155,6 +155,8 @@ export function PackageBookingPage({
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWallet, setUseWallet] = useState(false);
   /** Server pricing quote (GST + platform fee) — same shape as UniversalPaymentPage. */
   const [priceQuote, setPriceQuote] = useState<{
     basePrice: number;
@@ -180,6 +182,26 @@ export function PackageBookingPage({
     loadPackages();
     loadMyPackages();
   }, [customerId, vendorPackageIntent?.vendorId, vendorPackageIntent?.vendorServiceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!customerPhone) return;
+      try {
+        const res = (await apiClient.get(
+          `/customer/wallet?phone=${encodeURIComponent(customerPhone)}`
+        )) as any;
+        if (cancelled) return;
+        const bal = Number(res?.wallet?.balance ?? res?.balance ?? 0);
+        setWalletBalance(Number.isFinite(bal) ? bal : 0);
+      } catch {
+        if (!cancelled) setWalletBalance(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerPhone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -644,6 +666,10 @@ export function PackageBookingPage({
       })();
 
       if (selectedPackage.vendorServiceId) {
+        const grossAmount = Number(
+          priceQuote?.finalPrice ?? priceQuote?.totalAmount ?? selectedPackage.totalPrice ?? 0
+        );
+        const walletToUse = useWallet ? Math.max(0, Math.min(walletBalance, grossAmount)) : 0;
         const basePayload = {
           customerId,
           vendorId: selectedPackage.vendorId,
@@ -653,6 +679,8 @@ export function PackageBookingPage({
           ...(chosenPetId ? { petId: chosenPetId } : {}),
           policyAccepted: true,
           ...(packagePolicy?.version ? { policyVersion: packagePolicy.version } : {}),
+          useWallet,
+          walletAmount: walletToUse,
         };
 
         const res = (await apiClient.post('/packages/purchase-from-vendor-service', basePayload)) as any;
@@ -680,12 +708,15 @@ export function PackageBookingPage({
               includeInstrumentBlocks: true,
               handler: async (response: any) => {
                 try {
+                  const walletApplied = Number(res?.walletApplied ?? walletToUse ?? 0) || 0;
                   const confirm = (await apiClient.post('/packages/purchase-from-vendor-service', {
                     ...basePayload,
                     razorpay_order_id: response.razorpay_order_id,
                     razorpay_payment_id: response.razorpay_payment_id,
                     razorpay_signature: response.razorpay_signature,
                     ...(paymentIdFromOrder ? { paymentId: paymentIdFromOrder } : {}),
+                    useWallet: walletApplied > 0,
+                    walletAmount: walletApplied,
                   })) as any;
                   if (!confirm?.success) {
                     throw new Error(confirm?.error || 'Purchase confirmation failed');
@@ -1146,6 +1177,15 @@ export function PackageBookingPage({
       {/* Booking summary — after schedule, before payment */}
       {view === 'review' && selectedPackage && (
         <div className="space-y-6">
+          {(() => {
+            const grossAmount = Number(
+              priceQuote?.finalPrice ?? priceQuote?.totalAmount ?? selectedPackage.totalPrice ?? 0
+            );
+            const walletToUse = useWallet ? Math.max(0, Math.min(walletBalance, grossAmount)) : 0;
+            const razorpayPayable = Math.max(0, grossAmount - walletToUse);
+            const canUseWallet = walletBalance > 0.01;
+            return (
+              <>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
             <div className="flex items-center gap-2 mb-3">
               <Receipt className="w-5 h-5 text-orange-500 shrink-0" />
@@ -1281,9 +1321,6 @@ export function PackageBookingPage({
                     ₹{Math.round(priceQuote.finalPrice).toLocaleString('en-IN')}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  This is the exact amount that will be charged on Razorpay.
-                </p>
               </div>
             ) : (
               <div className="space-y-2 text-sm">
@@ -1298,6 +1335,41 @@ export function PackageBookingPage({
                 </p>
               </div>
             )}
+
+            {canUseWallet && (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                    checked={useWallet}
+                    onChange={(e) => setUseWallet(e.target.checked)}
+                    aria-label="Use wallet balance"
+                  />
+                  <span className="text-sm text-gray-800">
+                    Use wallet balance (available ₹{Math.round(walletBalance).toLocaleString('en-IN')})
+                  </span>
+                </label>
+                {useWallet && (
+                  <div className="mt-2 space-y-1 text-sm">
+                    <div className="flex justify-between text-gray-700">
+                      <span>Wallet applied</span>
+                      <span className="font-medium">− ₹{Math.round(walletToUse).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-gray-900">
+                      <span>Razorpay payable</span>
+                      <span>₹{Math.round(razorpayPayable).toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <p className="text-xs text-gray-500 mt-2">
+              {useWallet
+                ? 'Wallet amount will be used first. Remaining amount will be charged on Razorpay.'
+                : 'This amount will be charged on Razorpay.'}
+            </p>
           </div>
 
           {selectedPackage.vendorServiceId && (
@@ -1385,6 +1457,9 @@ export function PackageBookingPage({
             </button>
           </div>
         </div>
+              </>
+            );
+          })()}
       )}
 
       {/* My Packages View */}
