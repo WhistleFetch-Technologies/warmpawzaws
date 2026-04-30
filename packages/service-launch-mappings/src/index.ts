@@ -14,6 +14,86 @@ export function normalizeServiceKey(key: string | null | undefined): string {
     .replace(/_/g, '-');
 }
 
+function normalizeCategoryToken(raw: string | null | undefined): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+}
+
+const BASE_SEARCH_CATEGORY_ALIASES: Record<string, string[]> = {
+  vet: [
+    'vet',
+    'veterinary',
+    'veterinarian',
+    'vet_clinic',
+    'vet_solo',
+    'pet_clinic',
+    'vet care',
+    'vet_care',
+  ],
+  grooming: [
+    'grooming',
+    'groomer',
+    'grooming_salon',
+    'pet_groomer',
+    'groomer_center',
+    'groomer_solo',
+    'grooming_solo',
+  ],
+  training: [
+    'training',
+    'trainer',
+    'pet_trainer',
+    'trainer_center',
+    'training_center',
+    'trainer_solo',
+    'training_solo',
+    'dog_trainer',
+    'pet_training',
+    'agility',
+    'obedience',
+    'behavioral',
+    'behaviorist',
+    'pet_behaviorist',
+  ],
+  boarding: ['boarding', 'pet_daycare', 'pet_boarding', 'pet_boarder'],
+  walker: [
+    'walker',
+    'walking',
+    'pet_walker',
+    'dog_walker',
+    'dog_walking',
+    'dog walking',
+    'pet_walking',
+    'walker_solo',
+  ],
+  cafe: ['cafe', 'pet_cafe', 'cafes', 'pet_cafe_owner', 'animal_cafe'],
+  resort: ['resort', 'pet_resort', 'holiday', 'pet_holiday', 'pet_lodge', 'pet_hotel', 'vacation'],
+  pharmacy: [
+    'pharmacy',
+    'pet_pharmacy',
+    'chemist',
+    'drugstore',
+    'medicine',
+    'medical_store',
+    'dispensary',
+    'e_pharmacy',
+    'online_pharmacy',
+  ],
+  nutritionist: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+  nutrition: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+};
+
+export function getSearchCategoryAliases(category: string | null | undefined): string[] {
+  const normalized = normalizeCategoryToken(category);
+  if (!normalized) return [];
+  const canonical = normalized in BASE_SEARCH_CATEGORY_ALIASES ? normalized : normalized.replace(/_/g, '-');
+  const list = BASE_SEARCH_CATEGORY_ALIASES[canonical] || BASE_SEARCH_CATEGORY_ALIASES[normalized] || [];
+  const out = new Set<string>([normalized, ...list.map((entry) => normalizeCategoryToken(entry))]);
+  return Array.from(out);
+}
+
 /**
  * Maps catalog / role `category_id` to the canonical launch service id used in
  * `platform:service-launch-config`, GET /config/service-launch, and GET /config/service-launch/customer.

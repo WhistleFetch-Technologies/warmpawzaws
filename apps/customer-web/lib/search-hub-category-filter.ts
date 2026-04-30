@@ -1,62 +1,4 @@
-/**
- * Maps /search page hub chips → vendor_services / vendors.category values (lowercase match).
- * Keep aligned with backend CATEGORY_ROLES (training_center, pet_walker, holiday→resort, etc.).
- */
-const HUB_TO_DB_CATEGORIES: Record<string, string[]> = {
-  vet: ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'veterinary', 'pet_clinic'],
-  grooming: ['groomer', 'grooming', 'grooming_salon', 'pet_groomer', 'groomer_center', 'groomer_solo', 'grooming_solo'],
-  training: [
-    'trainer',
-    'training',
-    'pet_trainer',
-    'trainer_center',
-    'training_center',
-    'trainer_solo',
-    'training_solo',
-    'dog_trainer',
-    'pet_training',
-    'agility',
-    'obedience',
-  ],
-  boarding: ['boarding', 'pet_boarder', 'pet_boarding'],
-  walker: [
-    'walker',
-    'pet_walker',
-    'dog_walker',
-    'walker_solo',
-    'dog_walking',
-    'pet_walking',
-    'walking',
-  ],
-  cafe: ['cafe', 'pet_cafe', 'cafes', 'pet_cafe_owner', 'animal_cafe'],
-  resort: ['resort', 'pet_resort', 'holiday', 'pet_holiday', 'pet_lodge', 'pet_hotel', 'vacation'],
-  pharmacy: [
-    'pharmacy',
-    'pet_pharmacy',
-    'chemist',
-    'drugstore',
-    'medicine',
-    'medical_store',
-    'dispensary',
-    'e_pharmacy',
-    'online_pharmacy',
-  ],
-  /** Align with backend CATEGORY_ROLES / discover-services nutrition roles */
-  nutritionist: [
-    'nutrition',
-    'nutritionist',
-    'pet_nutritionist',
-    'nutritionist_center',
-    'nutritionist_solo',
-  ],
-  nutrition: [
-    'nutrition',
-    'nutritionist',
-    'pet_nutritionist',
-    'nutritionist_center',
-    'nutritionist_solo',
-  ],
-};
+import { getSearchCategoryAliases } from '@warmpawz/service-launch-mappings';
 
 const HUB_QUERY_HINTS: Record<string, string[]> = {
   vet: ['vet', 'veterinar', 'doctor', 'clinic', 'animal hosp', 'pet hosp'],
@@ -99,8 +41,7 @@ const HUB_QUERY_HINTS: Record<string, string[]> = {
 };
 
 function normalizedAllowed(hubId: string): Set<string> {
-  const raw = HUB_TO_DB_CATEGORIES[hubId];
-  const list = raw?.length ? [hubId, ...raw] : [hubId];
+  const list = getSearchCategoryAliases(hubId);
   return new Set(list.map((s) => s.toLowerCase()));
 }
 
