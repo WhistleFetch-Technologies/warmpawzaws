@@ -204,6 +204,7 @@ export function CustomerHomeComplete({
   const [userProfilePhoto, setUserProfilePhoto] = useState<string>('');
   const [currentBanner, setCurrentBanner] = useState(0);
   const [currentMiddleBanner, setCurrentMiddleBanner] = useState(0);
+  const heroBannerTouchStartX = useRef<number | null>(null);
   const middleBannerTouchStartX = useRef<number | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
   const [showAddPetModal, setShowAddPetModal] = useState(false);
@@ -1979,7 +1980,24 @@ export function CustomerHomeComplete({
 
         {/* Hero Banner Carousel */}
         <div className="px-4 mb-4">
-          <div className="relative h-28 rounded-2xl overflow-hidden shadow-md">
+          <div
+            className="relative h-28 rounded-2xl overflow-hidden shadow-md"
+            onTouchStart={(e) => {
+              heroBannerTouchStartX.current = e.touches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={(e) => {
+              const start = heroBannerTouchStartX.current;
+              heroBannerTouchStartX.current = null;
+              if (start == null || homeBannerCount <= 1) return;
+              const end = e.changedTouches[0]?.clientX ?? start;
+              const dx = end - start;
+              if (dx < -48) {
+                setCurrentBanner((prev) => (prev + 1) % homeBannerCount);
+              } else if (dx > 48) {
+                setCurrentBanner((prev) => (prev - 1 + homeBannerCount) % homeBannerCount);
+              }
+            }}
+          >
             {banners.map((banner, index) => {
               const heroComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
               return (
