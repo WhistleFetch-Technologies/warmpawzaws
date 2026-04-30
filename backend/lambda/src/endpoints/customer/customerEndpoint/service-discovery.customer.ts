@@ -370,6 +370,52 @@ function acceptableStylesForService(serviceStyle: string | null | undefined): st
   return [normalized];
 }
 
+/** Prefer dedicated boarding disclaimer columns; fall back to vendor metadata (legacy). */
+function resolveBoardingDisclaimerFromVendor(vendorRow: any, metadata: Record<string, any>): {
+  disclaimer: string;
+  disclaimerPoints: string[];
+} {
+  let points: string[] = [];
+  const raw = vendorRow?.boarding_disclaimer_points;
+  if (Array.isArray(raw)) {
+    points = raw.map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+  } else if (raw && typeof raw === 'object') {
+    try {
+      const arr = Array.isArray(raw) ? raw : JSON.parse(JSON.stringify(raw));
+      if (Array.isArray(arr)) {
+        points = arr.map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+      }
+    } catch {
+      /* ignore */
+    }
+  } else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p)) {
+        points = p.map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (points.length === 0 && Array.isArray(metadata?.disclaimerPoints)) {
+    points = metadata.disclaimerPoints.map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+  }
+  if (points.length === 0 && typeof metadata?.disclaimer === 'string' && metadata.disclaimer.trim()) {
+    points = metadata.disclaimer
+      .split(/\n+/)
+      .map((line: string) => line.trim())
+      .filter(Boolean);
+  }
+  const text =
+    typeof vendorRow?.boarding_disclaimer === 'string' && vendorRow.boarding_disclaimer.trim()
+      ? String(vendorRow.boarding_disclaimer)
+      : points.length > 0
+        ? points.join('\n')
+        : (metadata.disclaimer || '');
+  return { disclaimer: text, disclaimerPoints: points };
+}
+
 /** Map canonical role names to customer-facing discovery categories (align with CustomerHomeComplete tiles). */
 function getCategoryFromRole(roleId: string): string {
   const roleCategoryMap: Record<string, string> = {
@@ -3707,6 +3753,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         facilityPhotos = Array.isArray(raw) ? raw.filter(Boolean) : [];
       } catch (_) { }
 
+      const vendorMeta = (() => {
+        try {
+          return vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : {};
+        } catch {
+          return {};
+        }
+      })();
+      const boardingDiscProfile = resolveBoardingDisclaimerFromVendor(vendor, vendorMeta || {});
+
       return c.json({
         success: true,
         vendor: {
@@ -3715,7 +3770,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ownerName: vendor.owner_name,
           roleId: vendor.role_id,
           roleName: role?.name,
-          category: getCategoryFromRole(role?.name || ''),
+          category: getCategoryFromRole(
+            String(role?.name || '')
+              .toLowerCase()
+              .replace(/-/g, '_')
+          ),
           address: vendor.address,
           city: vendor.city,
           state: vendor.state,
@@ -3733,6 +3792,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           specializations: vendorSpecializations,
           serviceStyles: vendorServiceStyles,
           facilityPhotos,
+          boardingDisclaimer: boardingDiscProfile.disclaimer,
+          boardingDisclaimerPoints: boardingDiscProfile.disclaimerPoints,
         },
         services: services.rows,
         reviews: reviews.rows,
@@ -4456,6 +4517,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
       console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
+      const boardingDisc = resolveBoardingDisclaimerFromVendor(vendor, metadata);
       return c.json({
         success: true,
         vendor: {
@@ -4468,6 +4530,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           email: vendor.email,
           roleId: vendor.role_id, // ✅ FIX: Include roleId for CenterProfileManager
           role_id: vendor.role_id,
+          boardingDisclaimer: boardingDisc.disclaimer,
+          boardingDisclaimerPoints: boardingDisc.disclaimerPoints,
         },
         facility: {
           centerName: vendor.business_name, // ✅ FIX: Include centerName
@@ -4478,8 +4542,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           description: metadata.description || vendor.description || '', // ✅ FIX: Get description from metadata
-          disclaimer: metadata.disclaimer,
-          disclaimerPoints: metadata.disclaimerPoints || [],
+          disclaimer: boardingDisc.disclaimer || metadata.disclaimer,
+          disclaimerPoints: boardingDisc.disclaimerPoints.length ? boardingDisc.disclaimerPoints : metadata.disclaimerPoints || [],
           amenities: metadata.amenities || [],
           customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
@@ -4628,6 +4692,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         updatedMetadata.disclaimerPoints = disclaimerPoints;
         updatedMetadata.disclaimer = disclaimerPoints.join('\n');
         metadataChanged = true;
+
+        // Dedicated boarding disclaimer columns (per-vendor; customer intake + discovery). Requires migration 722.
+        try {
+          const roleRows = await select('roles', { id: vendor.role_id });
+          const rn = String(roleRows[0]?.name || '')
+            .toLowerCase()
+            .replace(/-/g, '_');
+          if (getCategoryFromRole(rn) === 'boarding') {
+            await query(
+              `UPDATE vendors SET boarding_disclaimer = $2, boarding_disclaimer_points = $3::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
+              [actualVendorId, disclaimerPoints.join('\n'), JSON.stringify(disclaimerPoints)]
+            );
+          }
+        } catch (syncBoardingDiscErr: any) {
+          console.warn(
+            '[FACILITY] boarding_disclaimer column sync failed (apply db/migrations/722_vendor_boarding_disclaimer_columns.sql):',
+            syncBoardingDiscErr?.message
+          );
+        }
       }
 
       // Update metadata if any metadata fields changed
