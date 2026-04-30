@@ -1377,33 +1377,63 @@ export function VendorBookingManagement({
                       
                       {/* NEW: Smart buttons based on service type and status */}
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
-                        // Package canonical parent row is a purchase-level placeholder, NOT a session.
-                        // Each session child carries its own Complete-with-OTP / Live tracker actions.
-                        // Hiding here covers at_center, at_home, and tele uniformly so the parent stays
-                        // a non-actionable container with only Chat available.
-                        const isPackageParentRow = Boolean(
-                          (booking.packagePurchaseId || (booking as any).package_purchase_id) &&
-                            !(booking.isPackageSession || (booking as any).is_package_session)
+                        const packagePurchaseId = String(
+                          booking.packagePurchaseId || (booking as any).package_purchase_id || ''
+                        ).trim();
+                        const isPackageSessionRow = Boolean(
+                          booking.isPackageSession || (booking as any).is_package_session
                         );
-                        if (isPackageParentRow) return null;
+                        const isPackageParentRow = Boolean(
+                          packagePurchaseId && !isPackageSessionRow
+                        );
+                        const sessionOneStartedForParent =
+                          isPackageParentRow &&
+                          bookings.some((b: any) => {
+                            const samePackage =
+                              String(b.packagePurchaseId || b.package_purchase_id || '').trim() ===
+                              packagePurchaseId;
+                            if (!samePackage) return false;
+                            const isSession = Boolean(b.isPackageSession || b.is_package_session);
+                            const sessionNo = Number(b.packageSessionNumber ?? b.package_session_number ?? 0);
+                            if (!isSession || sessionNo !== 1) return false;
+                            const st = String(b.status || '').toLowerCase();
+                            const hasStartedStamp = Boolean(
+                              b.sessionStartedAt ||
+                                b.session_started_at ||
+                                b.startedAt ||
+                                b.started_at
+                            );
+                            return (
+                              hasStartedStamp ||
+                              ['in_progress', 'arrived', 'completed', 'service_started', 'started'].includes(st)
+                            );
+                          });
+
+                        // Session rows: no decline action.
+                        if (isPackageSessionRow && packagePurchaseId) return null;
                         const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
 
                         if (booking.status === 'pending' || booking.status === 'confirmed') {
+                          const canDeclineThisRow =
+                            !isPackageParentRow || !sessionOneStartedForParent;
                           const declineBtn = (
                             <button
                               type="button"
                               className="w-full px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (!canDeclineThisRow) return;
                                 setDeclineModalBooking({
                                   ...booking,
                                   scheduledDate: booking.date,
                                   scheduledTime: booking.time,
                                 } as any);
                               }}
-                              disabled={completingBooking}
+                              disabled={completingBooking || !canDeclineThisRow}
                             >
-                              Decline booking (refund per policy)
+                              {canDeclineThisRow
+                                ? 'Decline booking (refund per policy)'
+                                : 'Decline disabled (session 1 already started)'}
                             </button>
                           );
 

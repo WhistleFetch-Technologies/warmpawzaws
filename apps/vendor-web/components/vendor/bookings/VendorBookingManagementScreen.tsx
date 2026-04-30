@@ -203,10 +203,44 @@ export function VendorBookingManagementScreen({
                   {!isStaff &&
                     vendorId &&
                     (booking.status === 'pending' || booking.status === 'confirmed') && (
+                    (() => {
+                      const packagePurchaseId = String((booking as any).packagePurchaseId ?? (booking as any).package_purchase_id ?? '').trim();
+                      const isPackageSessionRow = Boolean((booking as any).isPackageSession ?? (booking as any).is_package_session);
+                      const isPackageParentRow = Boolean(packagePurchaseId && !isPackageSessionRow);
+                      const sessionOneStartedForParent =
+                        isPackageParentRow &&
+                        bookings.some((b: any) => {
+                          const samePackage =
+                            String(b.packagePurchaseId ?? b.package_purchase_id ?? '').trim() === packagePurchaseId;
+                          if (!samePackage) return false;
+                          const isSession = Boolean(b.isPackageSession ?? b.is_package_session);
+                          const sessionNo = Number(b.packageSessionNumber ?? b.package_session_number ?? 0);
+                          if (!isSession || sessionNo !== 1) return false;
+                          const st = String(b.status || '').toLowerCase();
+                          const hasStartedStamp = Boolean(
+                            b.sessionStartedAt || b.session_started_at || b.startedAt || b.started_at
+                          );
+                          return (
+                            hasStartedStamp ||
+                            ['in_progress', 'arrived', 'completed', 'service_started', 'started'].includes(st)
+                          );
+                        });
+
+                      // Remove decline on individual package session rows.
+                      if (isPackageSessionRow && packagePurchaseId) return null;
+
+                      const canDecline = !isPackageParentRow || !sessionOneStartedForParent;
+                      return (
                     <div className="flex space-x-2 mb-3">
                       <button
-                        className="flex-1 bg-red-500 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
+                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+                          canDecline
+                            ? 'bg-red-500 text-white hover:bg-red-600'
+                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                        }`}
+                        disabled={!canDecline}
                         onClick={() =>
+                          canDecline &&
                           setDeclineBooking({
                             ...booking,
                             id: booking.id,
@@ -216,9 +250,11 @@ export function VendorBookingManagementScreen({
                           } as any)
                         }
                       >
-                        Decline / refund
+                        {canDecline ? 'Decline / refund' : 'Decline disabled (session 1 started)'}
                       </button>
                     </div>
+                      );
+                    })()
                   )}
 
                   <button

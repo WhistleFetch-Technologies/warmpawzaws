@@ -270,15 +270,38 @@ export function PackageSessionTrackingPanel({
   const openSessionDirections = async (row: SessionItem) => {
     const bookingId = await resolveBookingIdForRow(row);
     if (!bookingId) {
-      toast.info('Booking id not linked yet for this package.');
+      toast.info('Location not linked yet for this session.');
       return;
     }
     try {
       const res = (await apiClient.get(`/tracking/booking/${encodeURIComponent(bookingId)}`)) as Record<string, any>;
       const destination = (res?.destination || res?.destinationLocation || res?.current_location || res?.currentLocation || {}) as Record<string, unknown>;
-      const lat = Number((destination as any).latitude ?? (destination as any).lat);
-      const lng = Number((destination as any).longitude ?? (destination as any).lng);
-      const address = String((destination as any).address ?? '').trim();
+      const lat = Number(
+        (destination as any).latitude ??
+          (destination as any).lat ??
+          res?.vendor_latitude ??
+          res?.vendorLatitude ??
+          res?.tracking?.vendor_latitude ??
+          res?.tracking?.vendorLatitude
+      );
+      const lng = Number(
+        (destination as any).longitude ??
+          (destination as any).lng ??
+          res?.vendor_longitude ??
+          res?.vendorLongitude ??
+          res?.tracking?.vendor_longitude ??
+          res?.tracking?.vendorLongitude
+      );
+      const address = String(
+        (destination as any).address ??
+          res?.destination_address ??
+          res?.vendor_address ??
+          res?.tracking?.vendor_address ??
+          ''
+      ).trim();
+      const placeName = String(
+        res?.vendor_name ?? res?.vendorName ?? res?.tracking?.vendor_name ?? res?.tracking?.vendorName ?? ''
+      ).trim();
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
         window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
         return;
@@ -287,9 +310,13 @@ export function PackageSessionTrackingPanel({
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
         return;
       }
-      await openSessionTracking(row);
+      if (placeName) {
+        window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName)}`, '_blank');
+        return;
+      }
+      toast.info('Center location is not available yet for directions.');
     } catch {
-      await openSessionTracking(row);
+      toast.info('Unable to open directions right now. Please try again.');
     }
   };
 
