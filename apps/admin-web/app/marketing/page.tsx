@@ -824,8 +824,10 @@ export default function MarketingPromotionsTab() {
 		try {
 			const data = await apiClient.get("/admin/content/pages");
 			const allPages = Array.isArray((data as any).pages) ? (data as any).pages : [];
-			// Filter for marketing articles
-			const articlesList = allPages.filter((p: any) => p.category === 'marketing' || p.category === 'tips' || p.category === 'article');
+			// Filter for all article categories available in the article creation form
+			const articlesList = allPages.filter((p: any) =>
+				['marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'general'].includes(p.category)
+			);
 			setArticles(articlesList);
 		} catch (error) {
 			console.error("Error loading articles:", error);
@@ -2570,7 +2572,7 @@ export default function MarketingPromotionsTab() {
 										<SelectItem value="grooming">Grooming</SelectItem>
 										<SelectItem value="insurance">Insurance</SelectItem>
 										<SelectItem value="behavior">Behavior</SelectItem>
-										<SelectItem value="marketing">General</SelectItem>
+										<SelectItem value="general">General</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>

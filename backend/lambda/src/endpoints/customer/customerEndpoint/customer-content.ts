@@ -188,7 +188,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
           updated_at
         FROM content_pages
         WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'legal', 'help', 'other')
+        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'legal', 'help', 'other', 'general')
       `;
 
       const params: any[] = [];
