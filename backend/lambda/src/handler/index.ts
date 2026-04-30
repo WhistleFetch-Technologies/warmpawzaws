@@ -194,7 +194,7 @@ import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 // Create Hono app
 const app = new Hono();
 
-/** Local apps posting Allyticas ingest / calling API from browser — must stay allowed even when ALLOWED_ORIGINS lists only prod domains (otherwise fetch from localhost fails CORS while curl still works). */
+/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList). */
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
@@ -203,9 +203,24 @@ const LOCAL_DEV_ORIGINS = [
   'http://localhost:5173',
 ];
 
-// CORS: merge env list (CDK/deploy) with localhost dev origins so browser sessions match curl smoke tests.
+/** Must stay aligned with API Gateway AllowHeaders (infra/modules/api-gateway/main.tf). */
+const CORS_ALLOW_HEADERS_BASE =
+  'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,x-customer-phone,X-Requested-With';
+
+const isStrictCorsOriginPolicy = (): boolean => {
+  const e = (process.env.ENVIRONMENT || '').toLowerCase();
+  return e === 'prod' || e === 'production' || e === 'stage';
+};
+
+/** Env-scoped allowlist: prod/stage use only ALLOWED_ORIGINS; dev merges localhost + ALLOWED_ORIGINS (Terraform). */
 const getAllowedOriginsList = (): string[] => {
-  const fromEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const fromEnv = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (isStrictCorsOriginPolicy()) {
+    return fromEnv.length > 0 ? [...new Set(fromEnv)] : [];
+  }
   const merged = [...new Set([...LOCAL_DEV_ORIGINS, ...fromEnv])];
   return merged.length > 0 ? merged : LOCAL_DEV_ORIGINS;
 };
@@ -215,17 +230,61 @@ const getDefaultCorsOrigin = (): string => {
   return list[0] || '';
 };
 
-// Helper function to get allowed origin for a request
+/**
+ * Exact allowlist match only (no wildcard). Missing Origin → first allowed origin (non-browser parity).
+ * Present but disallowed Origin → '' (omit ACAO on that response).
+ */
 const getAllowedOrigin = (origin: string | null | undefined): string => {
-  const allowedOrigins = getAllowedOriginsList();
-  const defaultOrigin = getDefaultCorsOrigin();
-  if (!origin) return defaultOrigin;
+  const list = getAllowedOriginsList();
+  if (!origin || !String(origin).trim()) {
+    return getDefaultCorsOrigin();
+  }
   const normalizedOrigin = origin.toLowerCase();
-  const normalizedAllowed = allowedOrigins.map(o => o.toLowerCase());
-  if (normalizedAllowed.includes(normalizedOrigin)) return origin;
-  if (normalizedOrigin.includes('cloudfront.net')) return origin;
-  return defaultOrigin;
+  if (list.map((o) => o.toLowerCase()).includes(normalizedOrigin)) {
+    return origin;
+  }
+  return '';
 };
+
+function mergeAccessControlRequestHeaders(requestedHeaderLine: string): string {
+  const extra = (requestedHeaderLine || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .join(',');
+  return extra ? `${CORS_ALLOW_HEADERS_BASE},${extra}` : CORS_ALLOW_HEADERS_BASE;
+}
+
+function corsPreflightResponseHeaders(
+  allowedOrigin: string,
+  requestedHeaderLine: string
+): Record<string, string> {
+  const h: Record<string, string> = {
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': mergeAccessControlRequestHeaders(requestedHeaderLine),
+    'access-control-max-age': '86400',
+    'content-length': '0',
+  };
+  if (allowedOrigin) {
+    h['access-control-allow-origin'] = allowedOrigin;
+    h['access-control-allow-credentials'] = 'true';
+  }
+  return h;
+}
+
+/** Non-preflight API Gateway responses (errors / header merge): omit ACAO when origin not allowed. */
+function apiGwCorsHeadersForResponse(origin: string | undefined): Record<string, string> {
+  const allowedOrigin = getAllowedOrigin(origin);
+  const h: Record<string, string> = {
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
+  };
+  if (allowedOrigin) {
+    h['access-control-allow-origin'] = allowedOrigin;
+    h['access-control-allow-credentials'] = 'true';
+  }
+  return h;
+}
 
 // Explicit OPTIONS handler for all routes - must be before CORS middleware
 // This ensures OPTIONS requests return 200 OK immediately
@@ -237,48 +296,29 @@ app.options('*', async (c) => {
       origin: origin || 'none',
       rawPath: (c.req as any).rawPath || c.req.path,
     });
-    
+
     const allowedOrigin = getAllowedOrigin(origin);
-    
-    const requestedHeaders = c.req.header('access-control-request-headers') || 
-                            c.req.header('Access-Control-Request-Headers') || '';
-    const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
-    const allowedHeaders = requestedHeaders 
-      ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
-      : baseAllowedHeaders;
-    
+    const requestedHeaders =
+      c.req.header('access-control-request-headers') ||
+      c.req.header('Access-Control-Request-Headers') ||
+      '';
+
     console.log('[Hono OPTIONS] Returning 200 OK with CORS headers:', {
       allowedOrigin,
-      allowedHeaders: allowedHeaders.substring(0, 100), // Log first 100 chars
+      allowedHeaders: mergeAccessControlRequestHeaders(requestedHeaders).substring(0, 100),
     });
-    
-    // Return empty body with 200 status and CORS headers
+
     return new Response(null, {
       status: 200,
-      headers: {
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': allowedHeaders,
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(allowedOrigin, requestedHeaders),
     });
   } catch (error) {
     console.error('[Hono OPTIONS] Error in OPTIONS handler:', error);
-    // Even on error, return 200 OK for CORS
     const origin = c.req.header('origin') || c.req.header('Origin') || '';
     const allowedOrigin = getAllowedOrigin(origin);
     return new Response(null, {
       status: 200,
-      headers: {
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(allowedOrigin, ''),
     });
   }
 });
@@ -286,15 +326,21 @@ app.options('*', async (c) => {
 app.use('*', cors({
   origin: (origin) => {
     const allowed = getAllowedOriginsList();
-    const defaultOrigin = getDefaultCorsOrigin();
-    if (!origin) return defaultOrigin;
+    if (!origin) return getDefaultCorsOrigin() || undefined;
     const normalized = origin.toLowerCase();
-    if (allowed.map(o => o.toLowerCase()).includes(normalized)) return origin;
-    if (normalized.includes('cloudfront.net')) return origin;
-    return defaultOrigin;
+    if (allowed.map((o) => o.toLowerCase()).includes(normalized)) return origin;
+    return null;
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key', 'X-UAT-Mode', 'X-UAT-Token'],
+  allowHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'x-api-key',
+    'X-UAT-Mode',
+    'X-UAT-Token',
+    'X-Customer-Phone',
+  ],
   credentials: true,
   maxAge: 86400,
 }));
@@ -721,12 +767,15 @@ registerSpecializationMasterEndpoints(app); // Specialization master (problem gr
 app.notFound((c) => {
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
-  return c.json({ error: 'Not Found' }, 404, {
-    'access-control-allow-origin': allowedOrigin,
+  const headers: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'access-control-allow-credentials': 'true',
-  });
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
+  };
+  if (allowedOrigin) {
+    headers['access-control-allow-origin'] = allowedOrigin;
+    headers['access-control-allow-credentials'] = 'true';
+  }
+  return c.json({ error: 'Not Found' }, 404, headers);
 });
 
 // Error handler with CloudWatch tracking
@@ -756,12 +805,14 @@ app.onError((err, c) => {
   // Get origin for CORS headers (used in all error responses)
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
-  const corsHeaders = {
-    'access-control-allow-origin': allowedOrigin,
+  const corsHeaders: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'access-control-allow-credentials': 'true',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
   };
+  if (allowedOrigin) {
+    corsHeaders['access-control-allow-origin'] = allowedOrigin;
+    corsHeaders['access-control-allow-credentials'] = 'true';
+  }
   
   // CRITICAL: Check path FIRST - this is the most reliable way to match
   // Check for service-catalog/categories errors by PATH (most reliable)
@@ -1057,7 +1108,7 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
   headers: {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
     'access-control-allow-credentials': 'true',
     'access-control-max-age': '86400',
     'content-length': '0',
@@ -1113,45 +1164,23 @@ export const handler = async (
   
   if (isOptions) {
     try {
-      const origin = event?.headers?.origin || 
-                     event?.headers?.Origin || 
-                     event?.headers?.['origin'] ||
-                     event?.headers?.['Origin'] ||
-                     '';
-      
-      const allowedOrigins = getAllowedOriginsList();
-      let allowedOrigin = getDefaultCorsOrigin();
-      if (origin) {
-        const normalizedOrigin = origin.toLowerCase();
-        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-        if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
-          allowedOrigin = origin;
-        } else if (normalizedOrigin.includes('cloudfront.net')) {
-          // Allow any CloudFront origin (for flexibility)
-          allowedOrigin = origin;
-        }
-      }
-      
-      // Get requested headers from preflight request
-      const requestedHeaders = event?.headers?.['access-control-request-headers'] || 
-                               event?.headers?.['Access-Control-Request-Headers'] ||
-                               '';
-      const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
-      const allowedHeaders = requestedHeaders 
-        ? `${baseAllowedHeaders},${requestedHeaders.split(',').map((h: string) => h.trim()).join(',')}`
-        : baseAllowedHeaders;
-      
+      const origin =
+        event?.headers?.origin ||
+        event?.headers?.Origin ||
+        event?.headers?.['origin'] ||
+        event?.headers?.['Origin'] ||
+        '';
+
+      const allowedOrigin = getAllowedOrigin(origin);
+      const requestedHeaders =
+        event?.headers?.['access-control-request-headers'] ||
+        event?.headers?.['Access-Control-Request-Headers'] ||
+        '';
+
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': allowedOrigin,
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': allowedHeaders,
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(allowedOrigin, requestedHeaders),
       };
     } catch (optionsError) {
       // CRITICAL: Even on ANY error, return 200 OK for CORS preflight
@@ -1160,14 +1189,7 @@ export const handler = async (
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': getDefaultCorsOrigin(),
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
       };
     }
   }
@@ -1177,14 +1199,7 @@ export const handler = async (
     return {
       statusCode: 200,
       body: '',
-      headers: {
-        'access-control-allow-origin': getDefaultCorsOrigin(),
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
     };
   }
   
@@ -1381,9 +1396,6 @@ export const handler = async (
                    event.headers?.['origin'] ||
                    event.headers?.['Origin'];
     
-    // Get allowed origin using helper (reads from ALLOWED_ORIGINS env)
-    const allowedOrigin = getAllowedOrigin(origin);
-    
     // Check if Hono CORS middleware already set CORS headers
     const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['access-control-allow-origin'];
     
@@ -1392,11 +1404,7 @@ export const handler = async (
     const finalHeaders: Record<string, string> = { ...responseHeaders };
     
     if (!hasCorsHeaders) {
-      // Only set CORS headers if they weren't already set by Hono middleware
-      finalHeaders['access-control-allow-origin'] = allowedOrigin;
-      finalHeaders['access-control-allow-credentials'] = 'true';
-      finalHeaders['access-control-allow-methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
-      finalHeaders['access-control-allow-headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+      Object.assign(finalHeaders, apiGwCorsHeadersForResponse(origin));
     }
     
     const finalResponse = {
@@ -1421,19 +1429,11 @@ export const handler = async (
                      event.headers?.['origin'] ||
                      event.headers?.['Origin'] ||
                      '';
-      const allowedOrigin = getAllowedOrigin(origin);
       
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': allowedOrigin,
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getAllowedOrigin(origin), ''),
       };
     }
     
@@ -1460,10 +1460,7 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
+        ...apiGwCorsHeadersForResponse(origin),
       },
     };
   }
@@ -1481,14 +1478,7 @@ export const handler = async (
         return {
           statusCode: 200,
           body: '',
-          headers: {
-            'access-control-allow-origin': getDefaultCorsOrigin(),
-            'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-            'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-            'access-control-allow-credentials': 'true',
-            'access-control-max-age': '86400',
-            'content-length': '0',
-          },
+          headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
         };
       }
     } catch {
@@ -1496,14 +1486,7 @@ export const handler = async (
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': getDefaultCorsOrigin(),
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
       };
     }
     
@@ -1514,10 +1497,7 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'access-control-allow-origin': getDefaultCorsOrigin(),
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
+        ...apiGwCorsHeadersForResponse(undefined),
       },
     };
   }
