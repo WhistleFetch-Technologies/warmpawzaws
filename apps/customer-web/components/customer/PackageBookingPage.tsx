@@ -550,6 +550,12 @@ export function PackageBookingPage({
   };
 
   const chosenPetId = localPetId || petId || null;
+  const reviewGrossAmount = Number(
+    priceQuote?.finalPrice ?? priceQuote?.totalAmount ?? selectedPackage?.totalPrice ?? 0
+  );
+  const reviewWalletToUse = useWallet ? Math.max(0, Math.min(walletBalance, reviewGrossAmount)) : 0;
+  const reviewRazorpayPayable = Math.max(0, reviewGrossAmount - reviewWalletToUse);
+  const canUseWalletInReview = walletBalance > 0.01;
 
   const validateScheduleForSubmit = (): string | null => {
     if (!selectedPackage) return 'Select a package';
@@ -1177,15 +1183,6 @@ export function PackageBookingPage({
       {/* Booking summary — after schedule, before payment */}
       {view === 'review' && selectedPackage && (
         <div className="space-y-6">
-          {(() => {
-            const grossAmount = Number(
-              priceQuote?.finalPrice ?? priceQuote?.totalAmount ?? selectedPackage.totalPrice ?? 0
-            );
-            const walletToUse = useWallet ? Math.max(0, Math.min(walletBalance, grossAmount)) : 0;
-            const razorpayPayable = Math.max(0, grossAmount - walletToUse);
-            const canUseWallet = walletBalance > 0.01;
-            return (
-              <>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
             <div className="flex items-center gap-2 mb-3">
               <Receipt className="w-5 h-5 text-orange-500 shrink-0" />
@@ -1336,7 +1333,7 @@ export function PackageBookingPage({
               </div>
             )}
 
-            {canUseWallet && (
+            {canUseWalletInReview && (
               <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
@@ -1354,11 +1351,11 @@ export function PackageBookingPage({
                   <div className="mt-2 space-y-1 text-sm">
                     <div className="flex justify-between text-gray-700">
                       <span>Wallet applied</span>
-                      <span className="font-medium">− ₹{Math.round(walletToUse).toLocaleString('en-IN')}</span>
+                      <span className="font-medium">− ₹{Math.round(reviewWalletToUse).toLocaleString('en-IN')}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-gray-900">
                       <span>Razorpay payable</span>
-                      <span>₹{Math.round(razorpayPayable).toLocaleString('en-IN')}</span>
+                      <span>₹{Math.round(reviewRazorpayPayable).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 )}
@@ -1457,9 +1454,6 @@ export function PackageBookingPage({
             </button>
           </div>
         </div>
-              </>
-            );
-          })()}
       )}
 
       {/* My Packages View */}
