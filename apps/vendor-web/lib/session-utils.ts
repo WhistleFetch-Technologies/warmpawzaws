@@ -122,6 +122,7 @@ export function clearVendorSession(): void {
   
   // Clear Cognito tokens
   localStorage.removeItem('vendorTokenExpiry');
+  localStorage.removeItem('vendorRefreshTokenExpiry');
   localStorage.removeItem('cognitoAccessToken');
   localStorage.removeItem('cognitoIdToken');
   localStorage.removeItem('cognitoRefreshToken');
@@ -269,7 +270,9 @@ export function initializeSession(): void {
                 localStorage.getItem('vendorSessionToken');
   
   if (token && isTokenExpired(token)) {
-    console.log('[Session] Token expired - clearing vendor session');
-    clearVendorSession();
+    console.log('[Session] Token expired - attempting silent refresh');
+    import('./cognito-auth').then(({ refreshVendorTokensIfNeeded }) => {
+      refreshVendorTokensIfNeeded().catch(() => {});
+    });
   }
 }

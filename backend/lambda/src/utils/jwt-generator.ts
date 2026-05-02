@@ -80,7 +80,7 @@ export async function generateUATJWTToken(params: {
     .sign(secret);
 
   // Generate Refresh Token (longer expiry for refresh)
-  const refreshExp = now + (7 * 24 * 60 * 60); // 7 days
+  const refreshExp = now + (90 * 24 * 60 * 60); // 90 days
   const refreshToken = await new SignJWT({
     sub: userId,
     'cognito:username': phone,
@@ -161,7 +161,7 @@ export async function generateProductionJWTToken(params: {
     .sign(secret);
 
   // Generate Refresh Token
-  const refreshExp = now + (7 * 24 * 60 * 60); // 7 days
+  const refreshExp = now + (90 * 24 * 60 * 60); // 90 days
   const refreshToken = await new SignJWT({
     sub: userId,
     'cognito:username': phone,

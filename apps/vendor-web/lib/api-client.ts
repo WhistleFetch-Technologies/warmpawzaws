@@ -136,7 +136,11 @@ export class ApiClient {
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
-      // Try Cognito token first (preferred for AWS Serverless)
+      // Try Cognito token first (preferred for AWS Serverless).
+      // refreshVendorTokensIfNeeded() (called at the top of request()) updates localStorage
+      // before this getter runs, so the re-read below picks up any freshly issued token.
+      // TODO: convert getAuthToken to async and replace getCognitoIdToken() with
+      //       refreshVendorTokensIfNeeded() once callers are migrated to await the result.
       try {
         const { getCognitoIdToken } = require('./cognito-auth');
         const cognitoToken = getCognitoIdToken();
@@ -168,6 +172,16 @@ export class ApiClient {
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
     }
+    // Silently refresh the Cognito access token when it has expired but the 90-day
+    // refresh token window is still open.  Runs before getAuthToken() so the updated
+    // token is in localStorage by the time the synchronous read below fires.
+    try {
+      const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+      await refreshVendorTokensIfNeeded();
+    } catch {
+      // Never let a refresh failure block the outgoing request.
+    }
+
     // Fix: Normalize URL to avoid double slashes
     const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash

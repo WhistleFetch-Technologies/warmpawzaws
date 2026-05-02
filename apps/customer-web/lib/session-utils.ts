@@ -154,6 +154,7 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('cognitoRefreshToken');
   localStorage.removeItem('cognitoTokenExpiry');
   localStorage.removeItem('cognitoUserInfo');
+  localStorage.removeItem('customerRefreshTokenExpiry');
 
   // Aliases used by auth / legacy flows
   localStorage.removeItem('customer_phone');
@@ -223,8 +224,10 @@ export function initializeSession(): void {
   const token = getStoredCustomerJwtForSession();
   
   if (token && isTokenExpired(token)) {
-    console.log('[Session] Token expired - clearing customer session');
-    clearCustomerSession();
+    console.log('[Session] Token expired - attempting silent refresh');
+    import('./cognito-auth').then(({ refreshCognitoTokensIfNeeded }) => {
+      refreshCognitoTokensIfNeeded().catch(() => {});
+    });
   }
 
   ensureCustomerIdStorageReconciledOnce();
