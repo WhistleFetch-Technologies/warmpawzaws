@@ -339,7 +339,13 @@ export class ApiClient {
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
-      // Try Cognito token first (preferred for AWS Serverless)
+      // Try Cognito token first (preferred for AWS Serverless).
+      // getCognitoIdToken() reads the stored bundle synchronously; if the access token is
+      // still valid it is returned immediately.  When it has expired, refreshCognitoTokensIfNeeded
+      // (called at the top of request()) will have already swapped in a fresh token before
+      // this getter is invoked, so the re-read below picks up the updated value.
+      // TODO: convert getAuthToken to async and replace getCognitoIdToken() with
+      //       refreshCognitoTokensIfNeeded() once callers are migrated to await the result.
       const { getCognitoIdToken } = require('./cognito-auth');
       const cognitoToken = getCognitoIdToken();
       if (cognitoToken) {
@@ -372,6 +378,16 @@ export class ApiClient {
       this.offlineQueue = new OfflineQueue();
     }
     
+    // Silently refresh the Cognito access token when it has expired but the 90-day
+    // refresh token window is still open.  This runs before getAuthToken() so the
+    // updated token lands in localStorage in time for the synchronous read below.
+    try {
+      const { refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
+      await refreshCognitoTokensIfNeeded();
+    } catch {
+      // Never let a refresh failure block the outgoing request.
+    }
+
     // Fix: Normalize URL to avoid double slashes
     const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     let path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
@@ -654,7 +670,7 @@ export class ApiClient {
         return await this.get<T>(fetchPath, noRetry);
       } catch (e: unknown) {
         if (e instanceof ApiError && e.statusCode != null && [502, 503].includes(e.statusCode)) {
-          return { articles: [] } as T;
+          return { articles: [] } as unknown as T;
         }
         throw e;
       }

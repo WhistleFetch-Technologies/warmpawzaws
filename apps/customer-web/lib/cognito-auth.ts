@@ -25,6 +25,10 @@ export function storeCognitoTokens(tokens: CognitoTokens): void {
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
     const expiryTime = Date.now() + (tokens.expiresIn * 1000);
     localStorage.setItem('customerTokenExpiry', expiryTime.toString());
+    // Only set the 90-day refresh token expiry on fresh login; silent refreshes must not overwrite it.
+    if (!localStorage.getItem('customerRefreshTokenExpiry')) {
+      localStorage.setItem('customerRefreshTokenExpiry', (Date.now() + 90 * 24 * 60 * 60 * 1000).toString());
+    }
   }
 }
 
@@ -38,7 +42,10 @@ export function getCognitoTokens(): CognitoTokens | null {
     const tokens = JSON.parse(stored);
     const expiryTime = localStorage.getItem('customerTokenExpiry');
     if (expiryTime && Date.now() > parseInt(expiryTime, 10)) {
-      clearCognitoTokens();
+      // Access token is expired — do NOT clear storage here.
+      // The refresh token may still be within its 90-day window.
+      // refreshCognitoTokensIfNeeded() is responsible for deciding whether
+      // to refresh or clear; clearing here would destroy the refresh token.
       return null;
     }
     return tokens;
@@ -56,12 +63,21 @@ export function clearCognitoTokens(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem('customerTokenExpiry');
+    localStorage.removeItem('customerRefreshTokenExpiry');
     localStorage.removeItem(USER_STORAGE_KEY);
   }
 }
 
 export function isAuthenticated(): boolean {
-  return getCognitoTokens() !== null;
+  if (typeof window === 'undefined') return false;
+  // Active access token — definitely authenticated.
+  if (getCognitoTokens() !== null) return true;
+  // Access token expired but refresh token window still open — treat as authenticated;
+  // the next API call will silently renew the access token.
+  const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!stored) return false;
+  const refreshExpiry = localStorage.getItem('customerRefreshTokenExpiry');
+  return !!refreshExpiry && Date.now() < parseInt(refreshExpiry, 10);
 }
 
 export function storeUserInfo(user: any): void {
@@ -77,6 +93,74 @@ export function getUserInfo(): any | null {
   try {
     return JSON.parse(stored);
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Transparently refreshes the access token when it is expired but the 90-day refresh
+ * token is still valid.  Returns the (possibly updated) token bundle, or null when the
+ * session is fully expired / user must log in again.
+ *
+ * Safe to call on every API request — returns immediately when the access token is still valid.
+ */
+export async function refreshCognitoTokensIfNeeded(): Promise<CognitoTokens | null> {
+  if (typeof window === 'undefined') return null;
+
+  const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!stored) return null;
+
+  let tokens: CognitoTokens;
+  try {
+    tokens = JSON.parse(stored);
+  } catch {
+    return null;
+  }
+
+  const expiryTime = localStorage.getItem('customerTokenExpiry');
+  // Access token still valid — return as-is without a network round-trip.
+  if (expiryTime && Date.now() < parseInt(expiryTime, 10)) return tokens;
+
+  // Access token expired — check whether the 90-day refresh token window is still open.
+  const refreshExpiry = localStorage.getItem('customerRefreshTokenExpiry');
+  if (!refreshExpiry || Date.now() > parseInt(refreshExpiry, 10)) {
+    clearCognitoTokens();
+    return null;
+  }
+
+  if (!tokens.refreshToken) {
+    clearCognitoTokens();
+    return null;
+  }
+
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+    });
+
+    if (!res.ok) {
+      clearCognitoTokens();
+      return null;
+    }
+
+    const newData = await res.json();
+    const updated: CognitoTokens = {
+      ...tokens,
+      accessToken: newData.accessToken,
+      idToken: newData.idToken,
+      expiresIn: newData.expiresIn,
+    };
+
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(updated));
+    const newExpiry = Date.now() + (newData.expiresIn * 1000);
+    localStorage.setItem('customerTokenExpiry', newExpiry.toString());
+    // Do NOT touch customerRefreshTokenExpiry — the 90-day clock must not reset on silent refresh.
+
+    return updated;
+  } catch {
+    clearCognitoTokens();
     return null;
   }
 }
