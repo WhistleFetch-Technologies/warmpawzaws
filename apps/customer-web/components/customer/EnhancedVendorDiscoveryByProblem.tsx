@@ -15,7 +15,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Star, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
+import { ArrowLeft, MapPin, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
+import { StarRating } from '@/components/customer/shared/StarRating';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatDistanceDisplay } from '@/lib/distance-display';
@@ -276,10 +277,12 @@ export function EnhancedVendorDiscoveryByProblem({
                       
                       {/* Rating & Distance */}
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3.5 h-3.5 fill-current" />
-                          <span className="text-sm font-medium text-gray-700">{result.rating?.toFixed(1) || '4.5'}</span>
-                        </div>
+                        <StarRating
+                          rating={result.rating}
+                          reviewCount={result.reviewCount ?? result.review_count}
+                          starsClassName="w-3.5 h-3.5"
+                          textClassName="text-xs text-gray-600"
+                        />
                         {formatDistanceDisplay(result) && (
                           <>
                             <span className="text-gray-300">•</span>

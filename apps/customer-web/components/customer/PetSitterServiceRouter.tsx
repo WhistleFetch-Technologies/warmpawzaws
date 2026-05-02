@@ -115,14 +115,16 @@ export function PetSitterServiceRouter({
         )
         .catch(() => null);
       if (response?.provider) {
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
         setPreviousSitter({
-          id: response.provider.id,
-          name:
-            response.provider.businessName ||
-            response.provider.name,
-          photo: response.provider.photo,
-          rating: response.provider.rating || 4.8,
-          lastVisit: response.provider.lastVisit,
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo,
+          rating: pr,
+          lastVisit: p.lastVisit,
         });
       } else {
         const pkgRes = await apiClient
@@ -135,7 +137,7 @@ export function PetSitterServiceRouter({
               id: pkg.vendorId,
               name: pkg.vendorName,
               photo: null,
-              rating: 4.8,
+              rating: 0,
               lastVisit: pkg.lastUsed || "Recently",
             });
           }
@@ -219,10 +221,15 @@ export function PetSitterServiceRouter({
 
   const headerStats = useMemo(() => {
     const n = vendors.length;
+    const rated = vendors.filter(
+      (v: any) =>
+        (Number(v.reviewCount ?? v.totalReviews ?? 0) || 0) > 0 &&
+        Number(v.rating) > 0
+    );
     const rating =
-      n > 0
-        ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1)
-        : "4.7";
+      rated.length > 0
+        ? (rated.reduce((a, v) => a + Number(v.rating), 0) / rated.length).toFixed(1)
+        : "—";
     return [
       { value: `${n > 0 ? n : 12}+`, label: "Sitters" },
       { value: "8K+", label: "Visits" },

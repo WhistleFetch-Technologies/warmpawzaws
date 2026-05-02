@@ -105,12 +105,16 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=boarding`).catch(() => null);
       if (response?.provider) {
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
         setPreviousFacility({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo,
-          rating: response.provider.rating || 4.8,
-          lastVisit: response.provider.lastVisit,
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo,
+          rating: pr,
+          lastVisit: p.lastVisit,
         });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=boarding`).catch(() => null);
@@ -121,7 +125,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               id: pkg.vendorId,
               name: pkg.vendorName,
               photo: null,
-              rating: 4.8,
+              rating: 0,
               lastVisit: pkg.lastUsed || '3 weeks ago',
             });
         }

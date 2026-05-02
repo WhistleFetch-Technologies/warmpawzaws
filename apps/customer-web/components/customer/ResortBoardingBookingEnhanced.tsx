@@ -248,7 +248,7 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
   const totalAmount = calculateTotal();
 
   const resortReviewStats = [
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: '5★', label: 'Stay' },
     { value: '24/7', label: 'Care' },
   ];

@@ -42,7 +42,7 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [showPreReview, setShowPreReview] = useState(false);
 
   const resortPrePaymentStats = [
-    { value: '4.9', label: 'Stays', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Stays', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: '5★', label: 'Rooms' },
     { value: '24/7', label: 'Care' },
   ];

@@ -127,7 +127,7 @@ export function PetSittingVendorListView({
   const dashboardStats = [
     { value: `${sortedVendors.length > 0 ? sortedVendors.length : 0}+`, label: "Sitters", icon: <Home className="h-4 w-4" /> },
     { value: "8K+", label: "Visits" },
-    { value: "4.8", label: "Rating", icon: <Star className="h-4 w-4 fill-white" /> },
+    { value: "—", label: "Rating", icon: <Star className="h-4 w-4 fill-white" /> },
   ];
 
   const handleBack = () => {

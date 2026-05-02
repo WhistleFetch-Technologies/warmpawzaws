@@ -17,6 +17,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi, EnhancedSearchApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceSearchScreenProps {
   phone: string;
@@ -88,7 +89,12 @@ export function ServiceSearchScreen({
     performSearch();
   };
 
-  const renderServiceItem = ({ item }: { item: Service }) => (
+  const renderServiceItem = ({ item }: { item: Service }) => {
+    const face = customerFacingRating(
+      item.rating,
+      (item as any).reviewCount ?? (item as any).review_count
+    );
+    return (
     <TouchableOpacity
       style={styles.serviceCard}
       onPress={() => onNavigate && onNavigate('ServiceDetail', { serviceId: item.id, vendorId: item.vendorId })}
@@ -99,9 +105,9 @@ export function ServiceSearchScreen({
           {item.description}
         </Text>
         <Text style={styles.vendorName}>{item.vendorName}</Text>
-        {item.rating && (
+        {face != null && (
           <View style={styles.ratingContainer}>
-            <Text style={styles.rating}>⭐ {item.rating.toFixed(1)}</Text>
+            <Text style={styles.rating}>⭐ {face.toFixed(1)}</Text>
           </View>
         )}
       </View>
@@ -122,7 +128,8 @@ export function ServiceSearchScreen({
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <ScreenShell style={styles.container}>

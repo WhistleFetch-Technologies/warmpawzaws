@@ -2014,7 +2014,7 @@ export function CustomerHomeWrapper({
           } else if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
             setPreviousScreen('vet-tele-consultation');
-            setPaymentData(data);
+            setPaymentData({ ...(data && typeof data === 'object' ? data : {}), returnScreen: 'vet-tele-consultation' });
             setCurrentScreen('payment');
           } else {
             // Fallback to vet navigation handler
@@ -2036,7 +2036,7 @@ export function CustomerHomeWrapper({
           if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
             setPreviousScreen('vet-home-visit');
-            setPaymentData(data);
+            setPaymentData({ ...(data && typeof data === 'object' ? data : {}), returnScreen: 'vet-home-visit' });
             setCurrentScreen('payment');
           } else if (screen === 'add-pet') {
             setCurrentScreen('add-pet');
@@ -2122,19 +2122,28 @@ export function CustomerHomeWrapper({
         customerId={bookingData.customerId}
         flowType={bookingData.flowType}
         onBack={() => {
-          // Go back to provider profile or tele consultation
-          if (bookingData.category === 'nutritionist') {
-            setCurrentScreen(previousScreen || 'nutritionist-tele');
+          const bd = bookingData;
+          const fromPayload = bd?.returnScreen as ScreenType | undefined;
+          const explicitTarget = fromPayload ?? previousScreen;
+          setPaymentData(null);
+          if (explicitTarget) {
+            setCurrentScreen(explicitTarget);
             setPreviousScreen(null);
-          } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant' || bookingData.flowType === 'tele-queue-accepted') {
-            setCurrentScreen(previousScreen || 'vet-tele-consultation');
-            setPreviousScreen(null);
-          } else if (bookingData.flowType === 'home-visit') {
+            return;
+          }
+          if (bd.category === 'nutritionist') {
+            setCurrentScreen('nutritionist-tele');
+          } else if (
+            bd.flowType === 'tele-scheduled' ||
+            bd.flowType === 'tele-instant' ||
+            bd.flowType === 'tele-queue-accepted'
+          ) {
+            setCurrentScreen('vet-tele-consultation');
+          } else if (bd.flowType === 'home-visit') {
             setCurrentScreen('vet-home-visit');
           } else {
             setCurrentScreen('vet');
           }
-          setPaymentData(null);
         }}
         onSuccess={(bookingId, orderId, otpCode, meta) => {
           setSelectedBookingId(bookingId);
@@ -2669,7 +2678,7 @@ export function CustomerHomeWrapper({
           onBack={() => { setCurrentScreen(previousScreen || 'nutritionist'); setPreviousScreen(null); }}
           onNavigate={(screen, data) => {
             if (screen === 'payment' && data) {
-              setPaymentData(data);
+              setPaymentData({ ...(typeof data === 'object' ? data : {}), returnScreen: 'nutritionist-tele' });
               setPreviousScreen('nutritionist-tele');
               setCurrentScreen('payment');
             } else if (screen === 'video-call' && data?.bookingId) {

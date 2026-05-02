@@ -148,6 +148,10 @@ export default function ShopPage() {
           });
         }
         const compareOrOriginal = p.original_price ?? p.compare_at_price;
+        const rc = Number(p.review_count ?? 0) || 0;
+        const rawRating = p.rating != null ? Number(p.rating) : NaN;
+        const rating =
+          rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
         return {
           ...p,
           id,
@@ -157,8 +161,8 @@ export default function ShopPage() {
             compareOrOriginal != null && String(compareOrOriginal) !== ''
               ? parseFloat(String(compareOrOriginal))
               : undefined,
-          rating: p.rating || 4.5,
-          review_count: p.review_count || 0,
+          rating,
+          review_count: rc,
           images: p.images || [],
           emoji: p.emoji || '🐾',
         };
@@ -1206,10 +1210,18 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
           {product.name}
         </h3>
 
-        <div className="flex items-center gap-1">
-          <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
-          <span className="text-[11px] font-semibold text-slate-800">{product.rating || 4.5}</span>
-          <span className="text-[11px] text-slate-400">({product.review_count || 0})</span>
+        <div className="flex items-center gap-1 min-h-[16px]">
+          {(product.review_count ?? 0) > 0 && (product.rating ?? 0) > 0 ? (
+            <>
+              <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+              <span className="text-[11px] font-semibold text-slate-800">
+                {Number(product.rating).toFixed(1)}
+              </span>
+              <span className="text-[11px] text-slate-400">({product.review_count})</span>
+            </>
+          ) : (
+            <span className="text-[11px] text-slate-400">No reviews yet</span>
+          )}
         </div>
 
         <div className="flex items-baseline gap-1.5 flex-wrap">

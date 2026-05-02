@@ -19,7 +19,7 @@ interface SponsoredProvider {
   roleIcon?: string | null;
   roleImage?: string | null;
   photo?: string;
-  rating: number;
+  rating: number | null;
   reviewCount: number;
   specialization?: string;
   qualifications?: string;

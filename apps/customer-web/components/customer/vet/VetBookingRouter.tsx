@@ -924,7 +924,7 @@ export function VetBookingRouter({
   const dashboardStats = [
     { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   // Phase 1: Step indicators include Summary
@@ -1592,7 +1592,13 @@ export function VetBookingRouter({
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => setShowPaymentPage(false)}
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  // at_home auto-opens payment when step stays 'payment' and showPaymentPage is false — leave summary or we snap straight back into payment
+                  if (step === 'payment') {
+                    setStep('summary');
+                  }
+                }}
                 onPaymentAbandoned={() => {
                   if (selectedDate) void loadTimeSlots(selectedDate);
                 }}

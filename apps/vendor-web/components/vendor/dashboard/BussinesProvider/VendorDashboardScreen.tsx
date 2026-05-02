@@ -113,14 +113,18 @@ export function VendorDashboardScreen({
       if (dashboardResponse.success && responseData) {
         const data = responseData;
 
+        const tr = Number(data.stats?.totalReviews ?? 0) || 0;
+        const rawR = data.stats?.rating != null ? Number(data.stats.rating) : NaN;
+        const ratingVal =
+          tr > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR : 0;
         setStats({
           appointments: data.stats?.appointments || 0,
           consultations: data.stats?.consultations || 0,
           earnings: data.stats?.earnings || 0,
           pendingEarnings: data.stats?.pendingEarnings || 0,
           completedServices: data.stats?.completedServices || 0,
-          rating: data.stats?.rating || 4.5,
-          totalReviews: data.stats?.totalReviews || 0,
+          rating: ratingVal,
+          totalReviews: tr,
         });
 
         // Set today's schedule if available

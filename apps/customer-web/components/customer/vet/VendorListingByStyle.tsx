@@ -106,18 +106,22 @@ export function VendorListingByStyle({
         const response = await apiClient.get(`/search?${searchParams}`) as any;
         
         if (response.success || response.vendors) {
-          const searchVendors = (response.vendors || []).map((v: any) => ({
+          const searchVendors = (response.vendors || []).map((v: any) => {
+            const rc = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+            const r = v.rating != null ? Number(v.rating) : NaN;
+            return {
             id: v.id,
             name: v.businessName || v.name,
             type: 'vendor' as const,
-            rating: v.rating || 4.5,
-            reviewCount: v.completedBookings || 0,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+            reviewCount: rc,
             distance: v.distance_km ?? v.distance ?? null,
             city: v.city,
             isVerified: true,
             specialization: v.specialization,
             qualifications: v.qualifications,
-          }));
+          };
+          });
           setVendors(searchVendors);
         }
       } catch (error) {
@@ -182,12 +186,14 @@ export function VendorListingByStyle({
               ? Math.min(...item.services.map((s: any) => s.price || 0).filter((p: number) => p > 0))
               : item.price;
             
+            const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
+            const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Provider',
               type: providerType,
-              rating: parseFloat(item.rating || '4.5'),
-              reviewCount: parseInt(item.reviewCount || item.reviewsCount || '0', 10),
+              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+              reviewCount: rc,
               distance: item.distance || null,
               city: item.city,
               address: item.address,

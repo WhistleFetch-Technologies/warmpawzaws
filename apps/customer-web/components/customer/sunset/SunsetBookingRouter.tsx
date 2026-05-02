@@ -488,7 +488,7 @@ export function SunsetBookingRouter({
 
   const sunsetPrePaymentStats = [
     { value: '200+', label: 'Families' },
-    { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: 'Trusted', label: 'Care' },
   ];
 

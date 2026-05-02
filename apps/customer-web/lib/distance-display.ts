@@ -13,7 +13,7 @@ function coerceDistanceValue(distance: unknown): number | null {
 
 export function formatDistanceFromKm(distanceKm: number): string {
   if (distanceKm < 1) return `${Math.round(distanceKm * 1000)} m`;
-  return `${distanceKm.toFixed(1)} km`;
+  return `${Math.round(distanceKm)} km`;
 }
 
 export function formatDistanceDisplay(input: {

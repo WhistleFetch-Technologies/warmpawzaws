@@ -377,10 +377,12 @@ export function IntegratedServicesComplete({
                         </span>
                       )}
                       
-                      {provider.distance !== undefined && (
+                      {provider.distance != null && (
                         <span className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-4 h-4" />
-                          {Number(provider.distance || 0).toFixed(1)} km
+                          {Number(provider.distance) < 1
+                            ? `${Math.round(Number(provider.distance) * 1000)} m`
+                            : `${Math.round(Number(provider.distance))} km`}
                         </span>
                       )}
 

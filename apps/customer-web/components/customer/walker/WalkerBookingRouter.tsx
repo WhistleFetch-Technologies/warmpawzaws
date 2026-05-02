@@ -540,7 +540,7 @@ export function WalkerBookingRouter({
   const dashboardStats = [
     { value: '30+', label: 'Walkers' },
     { value: '2K+', label: 'Walks' },
-    { value: '*4.8', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   const getServiceTitle = () => {

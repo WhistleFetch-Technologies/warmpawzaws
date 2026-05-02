@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Video, Clock, Zap, Calendar, ChevronRight,
-  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus,
+  User, Shield, Phone, AlertCircle, PawPrint, Plus,
   Apple, UtensilsCrossed
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -145,11 +145,8 @@ function ModeSelection({ onSelectScheduled, onBack }: ModeSelectionProps) {
             <div className="text-white/70 text-xs">Starts at</div>
           </div>
           <div className="bg-white/15 backdrop-blur-sm rounded-xl p-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 text-lg font-bold text-white">
-              <Star className="w-3.5 h-3.5 fill-white" />
-              4.9
-            </div>
-            <div className="text-white/70 text-xs">Rating</div>
+            <div className="text-lg font-bold text-white leading-tight">Verified</div>
+            <div className="text-white/70 text-xs">Experts</div>
           </div>
         </div>
       </div>

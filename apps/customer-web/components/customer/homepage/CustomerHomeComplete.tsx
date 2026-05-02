@@ -46,6 +46,7 @@ import {
   mapCatalogCategoryIdToCustomerHomeScreen,
 } from '@warmpawz/service-launch-mappings';
 import { toast } from 'sonner';
+import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -820,7 +821,8 @@ export function CustomerHomeComplete({
             id: s.id || s.vendorServiceId,
             title: s.serviceName || s.name || 'Grooming Service',
             price: `₹${s.price || s.basePrice || 999}`,
-            rating: s.rating || 4.8,
+            rating: s.rating != null ? Number(s.rating) : undefined,
+            reviewCount: Number(s.reviewCount ?? s.review_count ?? 0) || 0,
             serviceStyle: s.serviceStyle || 'at_center',
             description: s.description || 'Professional grooming service',
             vendorId: s.vendorId
@@ -866,15 +868,20 @@ export function CustomerHomeComplete({
             (p: any) => p.is_featured === true || p.isFeatured === true
           );
           if (featuredProducts.length > 0) {
-            const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => ({
-              id: p.id,
-              title: p.name || 'Pet Products',
-              price: `₹${p.salePrice || p.price || 999}`,
-              originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
-              discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
-              iconType: 'product',
-              rating: p.rating || 4.5
-            }));
+            const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => {
+              const rc = Number(p.reviewCount ?? p.review_count ?? 0) || 0;
+              const rt = p.rating != null && p.rating !== '' ? Number(p.rating) : NaN;
+              return {
+                id: p.id,
+                title: p.name || 'Pet Products',
+                price: `₹${p.salePrice || p.price || 999}`,
+                originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
+                discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
+                iconType: 'product',
+                rating: rc > 0 && Number.isFinite(rt) && rt > 0 ? rt : undefined,
+                reviewCount: rc,
+              };
+            });
             setHotDeals(mappedDeals);
           } else {
             setHotDeals([]);
@@ -2254,14 +2261,20 @@ export function CustomerHomeComplete({
                   className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => handleNavigation('grooming')}
                 >
-                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-3">
                     <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                       <ServiceIcon className="w-6 h-6 text-orange-500" />
                     </div>
-                    <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs font-medium">{service.rating}</span>
-                    </div>
+                    {hasRatings(normalizeRatingCount(service.reviewCount)) &&
+                    service.rating != null &&
+                    Number(service.rating) > 0 ? (
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
+                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                        <span className="text-xs font-medium">
+                          {Number(service.rating).toFixed(1)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <h3 className="text-black font-semibold mb-1">{service.title}</h3>
                   <div onClick={(e) => e.stopPropagation()} className="mb-3">
@@ -2911,8 +2924,8 @@ export function CustomerHomeComplete({
                       </div>
                       <div className="h-8 w-px bg-white/20"></div>
                       <div>
-                        <p className="text-lg font-semibold">4.9★</p>
-                        <p className="text-xs text-white/80">250+ reviews</p>
+                        <p className="text-lg font-semibold">Verified hosts</p>
+                        <p className="text-xs text-white/80">Book with confidence</p>
                       </div>
                     </div>
                     <button

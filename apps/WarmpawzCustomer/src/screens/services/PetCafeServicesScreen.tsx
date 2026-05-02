@@ -4,7 +4,7 @@
  * Identical functionality to web app
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   applyWarmpawzCustomerToRazorpayOptions,
   profileEmailAndName,
 } from '../../utils/razorpay-checkout-options';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type ViewType = 
   | 'landing'
@@ -45,6 +46,7 @@ interface Cafe {
   name: string;
   address: string;
   rating: number;
+  reviewCount: number;
   image?: string;
 }
 
@@ -74,6 +76,17 @@ export function PetCafeServicesScreen({
   const [petCount, setPetCount] = useState(1);
   const [specialRequest, setSpecialRequest] = useState('');
 
+  const cafesAvgRating = useMemo(() => {
+    const scored = cafes.filter(
+      (c) =>
+        (c.reviewCount ?? 0) > 0 && c.rating != null && Number(c.rating) > 0
+    );
+    if (scored.length === 0) return null;
+    return (
+      scored.reduce((a, c) => a + Number(c.rating), 0) / scored.length
+    ).toFixed(1);
+  }, [cafes]);
+
   useEffect(() => {
     loadCafes();
   }, []);
@@ -89,11 +102,18 @@ export function PetCafeServicesScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!cafeMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const vr =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(vr) && vr > 0 ? vr : 0;
           cafeMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: service.vendorRating || 4.5,
+            rating,
+            reviewCount: rc,
             image: service.vendorImage || 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1000',
           });
         }
@@ -297,7 +317,9 @@ export function PetCafeServicesScreen({
             <Text style={styles.statLabel}>Pet Cafes</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>⭐ 4.5</Text>
+            <Text style={styles.statNumber}>
+              {cafesAvgRating != null ? `⭐ ${cafesAvgRating}` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Avg Rating</Text>
           </View>
         </View>
@@ -327,7 +349,9 @@ export function PetCafeServicesScreen({
               <Text style={styles.emptySubtext}>Check back soon!</Text>
             </View>
           ) : (
-            cafes.map((cafe) => (
+            cafes.map((cafe) => {
+              const face = customerFacingRating(cafe.rating, cafe.reviewCount);
+              return (
               <TouchableOpacity
                 key={cafe.id}
                 style={styles.cafeCard}
@@ -339,15 +363,18 @@ export function PetCafeServicesScreen({
                 <View style={styles.cafeInfo}>
                   <View style={styles.cafeHeader}>
                     <Text style={styles.cafeName}>{cafe.name}</Text>
-                    <Text style={styles.cafeRating}>
-                      ⭐ {cafe.rating.toFixed(1)}
-                    </Text>
+                    {face != null ? (
+                      <Text style={styles.cafeRating}>⭐ {face.toFixed(1)}</Text>
+                    ) : (
+                      <Text style={styles.cafeRatingMuted}>No reviews</Text>
+                    )}
                   </View>
                   <Text style={styles.cafeAddress}>{cafe.address}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
-            ))
+            );
+            })
           )}
         </ScrollView>
       )}
@@ -373,7 +400,10 @@ export function PetCafeServicesScreen({
           <View style={styles.cafeDetailInfo}>
             <Text style={styles.cafeDetailName}>{selectedCafe?.name}</Text>
             <Text style={styles.cafeDetailRating}>
-              ⭐ {selectedCafe?.rating.toFixed(1)} Rating
+              {selectedCafe &&
+              customerFacingRating(selectedCafe.rating, selectedCafe.reviewCount) != null
+                ? `⭐ ${customerFacingRating(selectedCafe.rating, selectedCafe.reviewCount)!.toFixed(1)} rating`
+                : 'No customer reviews yet'}
             </Text>
             <Text style={styles.cafeDetailAddress}>{selectedCafe?.address}</Text>
           </View>
@@ -711,6 +741,10 @@ const styles = StyleSheet.create({
   cafeRating: {
     fontSize: typography.body,
     color: colors.primary,
+  },
+  cafeRatingMuted: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
   },
   cafeAddress: {
     fontSize: typography.body,

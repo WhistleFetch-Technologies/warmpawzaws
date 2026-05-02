@@ -20,6 +20,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
 
 type ViewType = 
   | 'dashboard'
@@ -141,26 +142,37 @@ export function ShopDashboardScreen({
       const response = await CustomerApi.searchProducts('', selectedCategory !== 'all' ? selectedCategory : undefined);
       const productsData = Array.isArray(response) ? response : (response as any).products || [];
       
-      const formattedProducts: Product[] = productsData.map((prod: any) => ({
+      const formattedProducts: Product[] = productsData.map((prod: any) => {
+        const reviewCount = normalizeReviewCount(prod.reviewCount ?? prod.reviews);
+        const avgRating = customerFacingRating(
+          prod.rating ?? prod.averageRating,
+          reviewCount
+        );
+        const vendorRc = normalizeReviewCount(
+          prod.vendorReviewCount ?? prod.vendor_review_count
+        );
+        const vendorAvg = customerFacingRating(prod.vendorRating, vendorRc);
+        return {
         id: prod.id || prod.productId,
         name: prod.name || prod.productName,
         description: prod.description || '',
         price: prod.price || prod.unitPrice || 0,
         originalPrice: prod.originalPrice || prod.mrp,
-        rating: prod.rating || prod.averageRating || 4.5,
-        reviews: prod.reviewCount || prod.reviews || 0,
+        rating: avgRating ?? 0,
+        reviews: reviewCount,
         image: prod.image || prod.imageUrl || '',
         category: prod.category || 'general',
         vendor: {
           name: prod.vendorName || 'Vendor',
-          rating: prod.vendorRating || 4.5,
+          rating: vendorAvg ?? 0,
           location: prod.vendorLocation || '',
           deliveryTime: prod.deliveryTime || '2-3 days',
         },
         stock: prod.inStock ? 'In Stock' : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount ? `${prod.discount}%` : undefined,
-      }));
+      };
+      });
       
       setProducts(formattedProducts);
     } catch (error) {
@@ -411,15 +423,27 @@ export function ShopDashboardScreen({
                   </Text>
                   <View style={styles.vendorInfo}>
                     <Text style={styles.vendorName}>{product.vendor.name}</Text>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>
-                      {product.vendor.rating}
-                    </Text>
+                    {product.vendor.rating > 0 ? (
+                      <>
+                        <Text style={styles.ratingIcon}>⭐</Text>
+                        <Text style={styles.ratingText}>
+                          {product.vendor.rating.toFixed(1)}
+                        </Text>
+                      </>
+                    ) : null}
                   </View>
                   <View style={styles.productRating}>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
-                    <Text style={styles.reviewsText}>({product.reviews})</Text>
+                    {product.reviews > 0 && product.rating > 0 ? (
+                      <>
+                        <Text style={styles.ratingIcon}>⭐</Text>
+                        <Text style={styles.ratingText}>
+                          {product.rating.toFixed(1)}
+                        </Text>
+                        <Text style={styles.reviewsText}>({product.reviews})</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.reviewsText}>No customer reviews</Text>
+                    )}
                   </View>
                   <View style={styles.productPriceContainer}>
                     <Text style={styles.productPrice}>₹{product.price}</Text>
@@ -477,11 +501,21 @@ export function ShopDashboardScreen({
                       </Text>
                     </View>
                     <View style={styles.productRating}>
-                      <Text style={styles.ratingIcon}>⭐</Text>
-                      <Text style={styles.ratingText}>{product.rating}</Text>
-                      <Text style={styles.deliveryText}>
-                        • {product.vendor.deliveryTime}
-                      </Text>
+                      {product.reviews > 0 && product.rating > 0 ? (
+                        <>
+                          <Text style={styles.ratingIcon}>⭐</Text>
+                          <Text style={styles.ratingText}>
+                            {product.rating.toFixed(1)}
+                          </Text>
+                          <Text style={styles.deliveryText}>
+                            • {product.vendor.deliveryTime}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={styles.reviewsText}>
+                          No reviews • {product.vendor.deliveryTime}
+                        </Text>
+                      )}
                     </View>
                     <Text style={styles.productPrice}>₹{product.price}</Text>
                     <TouchableOpacity
@@ -569,9 +603,19 @@ export function ShopDashboardScreen({
               {selectedProduct.description}
             </Text>
             <View style={styles.productDetailRating}>
-              <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
-              <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
+              {selectedProduct.reviews > 0 && selectedProduct.rating > 0 ? (
+                <>
+                  <Text style={styles.ratingIcon}>⭐</Text>
+                  <Text style={styles.ratingText}>
+                    {selectedProduct.rating.toFixed(1)}
+                  </Text>
+                  <Text style={styles.reviewsText}>
+                    ({selectedProduct.reviews} reviews)
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.reviewsText}>No customer reviews</Text>
+              )}
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
@@ -583,7 +627,10 @@ export function ShopDashboardScreen({
             </View>
             <View style={styles.vendorInfoDetail}>
               <Text style={styles.vendorInfoText}>
-                Vendor: {selectedProduct.vendor.name} ⭐ {selectedProduct.vendor.rating}
+                Vendor: {selectedProduct.vendor.name}
+                {selectedProduct.vendor.rating > 0
+                  ? ` ⭐ ${selectedProduct.vendor.rating.toFixed(1)}`
+                  : ' — no seller reviews yet'}
               </Text>
               <Text style={styles.vendorInfoText}>
                 Delivery: {selectedProduct.vendor.deliveryTime}

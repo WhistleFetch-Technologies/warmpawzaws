@@ -16,6 +16,7 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -582,7 +583,7 @@ export function GroomingServicesByStyle({
     const dashboardStats = [
       { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
-      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
     ];
     
     const getServiceTitle = () => {
@@ -643,16 +644,13 @@ export function GroomingServicesByStyle({
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{salonName}</h1>
               
               {/* Rating and Reviews */}
-              <div className="flex items-center gap-3 mb-3">
-                <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
-                  <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                  <span className="font-bold text-lg text-gray-900">
-                    {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
-                  </span>
-                  <span className="text-gray-600 text-sm">
-                    ({rating?.totalReviews || profileProvider.reviewCount || 0} reviews)
-                  </span>
-                </div>
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <StarRating
+                  rating={rating?.averageRating ?? profileProvider.rating}
+                  reviewCount={rating?.totalReviews ?? profileProvider.reviewCount}
+                  starsClassName="h-5 w-5"
+                  textClassName="text-sm text-gray-700"
+                />
                 
                 {facility?.isPremium && (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -954,7 +952,7 @@ export function GroomingServicesByStyle({
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                            {Number(rating?.averageRating || profileProvider.rating || 0).toFixed(1)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
@@ -1054,7 +1052,7 @@ export function GroomingServicesByStyle({
   const dashboardStats = [
     { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
   
   const getServiceTitle = () => {
@@ -1265,9 +1263,11 @@ export function GroomingServicesByStyle({
                               {provider.city}
                             </div>
                           )}
-                          {serviceStyle === 'at_center' && provider.distance != null && (
+                          {provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance).toFixed(1)} km away
+                              {Number(provider.distance) < 1
+                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
+                                : `${Math.round(Number(provider.distance))} km away`}
                             </span>
                           )}
                         </div>

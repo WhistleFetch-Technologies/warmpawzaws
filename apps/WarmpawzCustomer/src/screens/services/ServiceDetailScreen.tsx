@@ -17,6 +17,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceDetailScreenProps {
   serviceId: string;
@@ -104,14 +105,20 @@ export function ServiceDetailScreen({
             <Text style={styles.description}>{service.description}</Text>
           )}
 
-          {vendor && (
+          {vendor &&
+            (() => {
+              const vFace = customerFacingRating(
+                vendor.rating,
+                vendor.reviewCount ?? vendor.review_count
+              );
+              return (
             <View style={styles.vendorSection}>
               <Text style={styles.sectionTitle}>Service Provider</Text>
               <View style={styles.vendorCard}>
                 <Text style={styles.vendorName}>{vendor.name || vendor.businessName}</Text>
-                {vendor.rating && (
+                {vFace != null && (
                   <View style={styles.ratingContainer}>
-                    <Text style={styles.ratingText}>⭐ {vendor.rating.toFixed(1)}</Text>
+                    <Text style={styles.ratingText}>⭐ {vFace.toFixed(1)}</Text>
                   </View>
                 )}
                 {vendor.address && (
@@ -119,7 +126,8 @@ export function ServiceDetailScreen({
                 )}
               </View>
             </View>
-          )}
+              );
+            })()}
 
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Service Details</Text>

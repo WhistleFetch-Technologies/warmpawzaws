@@ -154,13 +154,16 @@ export function HomeServiceLanding({
         services.forEach((service: any) => {
           const vendorId = service.vendorId;
           if (!vendorMap.has(vendorId)) {
+            const rc = Number(service.vendorReviewCount ?? 0) || 0;
+            const rawV = service.vendorRating != null ? Number(service.vendorRating) : NaN;
+            const vr = rc > 0 && Number.isFinite(rawV) && rawV > 0 ? rawV : 0;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: service.vendorName || 'Provider',
               photo: service.vendorPhoto || service.vendorLogo,
-              rating: service.vendorRating || 4.5,
-              reviewCount: service.vendorReviewCount || 0,
-              distance: Math.random() * 5 + 0.5,
+              rating: vr,
+              reviewCount: rc,
+              distance: service.distance ?? null,
               price: service.price || 0
             });
           }
@@ -169,15 +172,17 @@ export function HomeServiceLanding({
         const allProviders = Array.from(vendorMap.values());
         setFeaturedProviders(allProviders.slice(0, 5));
 
+        const rated = allProviders.filter((p: any) => p.reviewCount > 0 && p.rating > 0);
         setStats({
           activeProviders: allProviders.length || 50,
           sessions: '5K',
-          rating: allProviders.length > 0
-            ? (allProviders.reduce((acc: number, p: any) => acc + (p.rating || 4.5), 0) / allProviders.length).toFixed(1)
-            : '4.7'
+          rating:
+            rated.length > 0
+              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
+              : '—',
         });
       } catch (e) {
-        setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+        setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
       }
 
       // Load previous providers for this customer
@@ -190,11 +195,14 @@ export function HomeServiceLanding({
           const prevVendorMap = new Map();
           bookings.forEach((booking: any) => {
             if (booking.vendorId && !prevVendorMap.has(booking.vendorId)) {
+              const brc = Number(booking.vendorReviewCount ?? 0) || 0;
+              const braw = booking.vendorRating != null ? Number(booking.vendorRating) : NaN;
+              const br = brc > 0 && Number.isFinite(braw) && braw > 0 ? braw : 0;
               prevVendorMap.set(booking.vendorId, {
                 id: booking.vendorId,
                 name: booking.vendorName || 'Provider',
                 photo: booking.vendorPhoto,
-                rating: booking.vendorRating || 4.5,
+                rating: br,
                 lastVisit: new Date(booking.scheduledDate).toLocaleDateString()
               });
             }
@@ -216,7 +224,7 @@ export function HomeServiceLanding({
       }
     } catch (error) {
       console.error('Error loading landing data:', error);
-      setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+      setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -411,7 +419,11 @@ export function HomeServiceLanding({
                         />
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
-                          <span>{provider.distance?.toFixed(1) || '2.0'} km</span>
+                          <span>{provider.distance != null
+                            ? (provider.distance < 1
+                              ? `${Math.round(provider.distance * 1000)} m`
+                              : `${Math.round(provider.distance)} km`)
+                            : null}</span>
                         </div>
                       </div>
                     </div>

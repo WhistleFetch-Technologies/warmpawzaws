@@ -123,19 +123,33 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
       }
       
       // Format products from API response (vendor-listed products)
-      const formattedProducts: Product[] = productsData.map((prod: any) => ({
+      const formattedProducts: Product[] = productsData.map((prod: any) => {
+        const reviews = prod.review_count || prod.reviews || 0;
+        const rc = Number(reviews) || 0;
+        const avg =
+          prod.rating != null || prod.average_rating != null
+            ? Number(prod.rating ?? prod.average_rating)
+            : NaN;
+        const productRating =
+          rc > 0 && Number.isFinite(avg) && avg > 0 ? avg : 0;
+        const vrc = Number(prod.vendor_review_count ?? prod.vendorReviewCount ?? 0) || 0;
+        const vr =
+          prod.vendor_rating != null ? Number(prod.vendor_rating) : NaN;
+        const vendorRating =
+          vrc > 0 && Number.isFinite(vr) && vr > 0 ? vr : 0;
+        return {
         id: canonicalProductId(prod as Record<string, unknown>) || String(prod.id || prod.product_id || ''),
         name: prod.name || prod.product_name,
         description: prod.description || '',
         price: parseFloat(prod.price || prod.unit_price || 0),
         originalPrice: prod.original_price || prod.mrp ? parseFloat(prod.original_price || prod.mrp) : undefined,
-        rating: prod.rating || prod.average_rating || 0,
-        reviews: prod.review_count || prod.reviews || 0,
+        rating: productRating,
+        reviews: rc,
         image: prod.image || prod.image_url || prod.primary_image || '',
         category: prod.category || prod.category_name || 'general',
         vendor: {
           name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
-          rating: prod.vendor_rating || 4.7,
+          rating: vendorRating,
           location: prod.vendor_location || prod.vendor?.city || '',
           deliveryTime: prod.delivery_time || '2-3 days',
         },
@@ -143,7 +157,8 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         stock: prod.in_stock !== false && prod.stock_quantity > 0 ? 'In Stock' : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount_percentage ? `${prod.discount_percentage}%` : undefined,
-      }));
+      };
+      });
       
       setProducts(formattedProducts);
     } catch (error) {
@@ -326,10 +341,10 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
 
           <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 sm:px-5">
             {[
-              { name: 'PetMart India', rating: 4.7, products: '1500+', logo: '🏪', verified: true },
-              { name: 'Pet Tech Store', rating: 4.8, products: '800+', logo: '🤖', verified: true },
-              { name: 'Gadgets4Pets', rating: 4.9, products: '1200+', logo: '⚡', verified: true },
-              { name: 'Groom & Care', rating: 4.7, products: '600+', logo: '✨', verified: true }
+              { name: 'PetMart India', products: '1500+', logo: '🏪', verified: true },
+              { name: 'Pet Tech Store', products: '800+', logo: '🤖', verified: true },
+              { name: 'Gadgets4Pets', products: '1200+', logo: '⚡', verified: true },
+              { name: 'Groom & Care', products: '600+', logo: '✨', verified: true }
             ].map((vendor, idx) => (
               <Card key={idx} className="flex-shrink-0 min-w-[9rem] w-36 sm:w-40 p-4 hover:shadow-lg transition-shadow cursor-pointer">
                 <div className="text-center">
@@ -341,10 +356,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                       <span>Verified</span>
                     </div>
                   )}
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs font-medium">{vendor.rating}</span>
-                  </div>
                   <p className="text-xs text-gray-500">{vendor.products} products</p>
                 </div>
               </Card>

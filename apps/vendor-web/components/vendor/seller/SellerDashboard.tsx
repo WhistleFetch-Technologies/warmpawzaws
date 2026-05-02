@@ -140,7 +140,11 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
           </div>
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
             <p className="text-orange-100 text-sm">Rating</p>
-            <p className="text-2xl font-bold mt-1">⭐ {analytics?.avgRating || '4.5'}</p>
+            <p className="text-2xl font-bold mt-1">
+              {analytics?.avgRating != null && analytics.avgRating !== '' && Number(analytics.avgRating) > 0
+                ? `⭐ ${Number(analytics.avgRating).toFixed(1)}`
+                : '—'}
+            </p>
           </div>
         </div>
       </div>

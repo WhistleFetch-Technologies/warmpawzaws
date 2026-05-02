@@ -73,20 +73,24 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=vet`).catch(() => null);
       if (response?.provider) {
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
         setPreviousVet({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo || null,
-          rating: response.provider.rating || 4.8,
-          lastVisit: response.provider.lastVisit,
-          sessionsCount: response.provider.sessionsCount || 1
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo || null,
+          rating: pr,
+          lastVisit: p.lastVisit,
+          sessionsCount: p.sessionsCount || 1
         });
       } else {
         const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=vet`).catch(() => null);
         if (packagesResponse?.packages?.length > 0) {
           const pkg = packagesResponse.packages[0];
           if (pkg.vendorId && pkg.vendorName) {
-            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
           }
         }
       }

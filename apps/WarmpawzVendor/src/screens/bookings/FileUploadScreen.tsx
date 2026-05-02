@@ -17,6 +17,10 @@ import {
   ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  cameraPickerAllowsEditing,
+  libraryPickerAllowsEditing,
+} from '../../utils/image-picker-platform';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { AppointmentDetailApi, FileUploadApi } from '../../services/api';
 
@@ -60,12 +64,12 @@ export function FileUploadScreen({
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        allowsEditing: libraryPickerAllowsEditing,
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
+      const asset = result.assets?.[0];
+      if (!result.canceled && asset) {
         setSelectedFile({
           uri: asset.uri,
           type: 'image/jpeg',
@@ -87,12 +91,12 @@ export function FileUploadScreen({
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
+        allowsEditing: cameraPickerAllowsEditing,
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
+      const asset = result.assets?.[0];
+      if (!result.canceled && asset) {
         setSelectedFile({
           uri: asset.uri,
           type: 'image/jpeg',
