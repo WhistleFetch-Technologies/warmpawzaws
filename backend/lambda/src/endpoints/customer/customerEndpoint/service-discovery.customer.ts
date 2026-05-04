@@ -1780,10 +1780,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       };
 
-      // 4) Vendor SQL: require VA2 match OR no VA2 rows yet (new vendors with services but calendar not saved)
-      const availabilityRequiredSql = sittingDiscoveryRelaxed
-        ? ''
-        : `
+      // 4) Vendor SQL: VA2 gate (sitting + training hubs skip — solo sitters/trainers often have published
+      // services but empty or all-disabled calendars; booking still uses slots API.)
+      const availabilityRequiredSql =
+        sittingDiscoveryRelaxed || trainingDiscoverySearch
+          ? ''
+          : `
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
@@ -5765,7 +5767,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               )` : ``}
               ${strictCustomDiscoverySql}
           )
-          AND ${sqlVendorAvailabilityOrNotConfigured('v')}
+          ${trainingDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
       `;
 
       const vendorParams: any[] =
