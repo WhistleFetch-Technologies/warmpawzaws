@@ -293,10 +293,12 @@ export function ServicesByProblem({
                           <Clock className="w-4 h-4" />
                           {svc.duration} min
                         </span>
-                        {svc.distance !== undefined && (
+                        {svc.distance != null && (
                           <span className="flex items-center gap-1">
                             <MapPin className="w-4 h-4" />
-                            {Number(svc.distance || 0).toFixed(1)} km
+                            {Number(svc.distance) < 1
+                              ? `${Math.round(Number(svc.distance) * 1000)} m`
+                              : `${Math.round(Number(svc.distance))} km`}
                           </span>
                         )}
                       </div>

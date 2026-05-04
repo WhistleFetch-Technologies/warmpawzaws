@@ -579,8 +579,12 @@ export function UniversalProviderProfile({
               </div>
               {provider.distance != null && (
                 <div className="text-center">
-                  <div className="font-bold text-gray-900">{Number(provider.distance || 0).toFixed(1)}</div>
-                  <p className="text-xs text-gray-500">km away</p>
+                  <div className="font-bold text-gray-900">
+                    {Number(provider.distance) < 1
+                      ? `${Math.round(Number(provider.distance) * 1000)} m`
+                      : `${Math.round(Number(provider.distance))} km`}
+                  </div>
+                  <p className="text-xs text-gray-500">away</p>
                 </div>
               )}
               <div className="text-center">

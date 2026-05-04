@@ -287,11 +287,6 @@ export function HomeServiceProviderProfile({
         'Provider';
       const fullName = (merged.fullName as string) || (merged.owner_name as string) || (merged.ownerName as string) || '';
 
-      const ratingAvg =
-        ratingMeta.average ??
-        (typeof merged.rating === 'number' ? merged.rating : parseFloat(String(merged.rating || merged.avgRating || '')) || undefined) ??
-        4.5;
-
       const rcMerge = merged.reviewCount;
       const parsedRc =
         typeof rcMerge === 'number' && !Number.isNaN(rcMerge)
@@ -305,6 +300,16 @@ export function HomeServiceProviderProfile({
           : Number.isFinite(parsedRc)
             ? parsedRc
             : reviews.length;
+
+      const rawAvg =
+        ratingMeta.average ??
+        (typeof merged.rating === 'number'
+          ? merged.rating
+          : merged.rating != null || merged.avgRating != null
+            ? parseFloat(String(merged.rating ?? merged.avgRating ?? ''))
+            : NaN);
+      const ratingAvg =
+        reviewCount > 0 && Number.isFinite(rawAvg) && rawAvg > 0 ? rawAvg : undefined;
 
       const specs = merged.specializations;
       const specFallback = merged.services;
@@ -331,7 +336,8 @@ export function HomeServiceProviderProfile({
         website: (merged.website as string) || '',
         bio: (merged.bio as string) || (merged.description as string) || '',
         description: (merged.description as string) || (merged.bio as string) || '',
-        rating: Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 4.5,
+        rating:
+          ratingAvg != null && Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 0,
         reviewCount,
         specializations,
         amenities: (Array.isArray(merged.amenities) ? merged.amenities : []) as string[],

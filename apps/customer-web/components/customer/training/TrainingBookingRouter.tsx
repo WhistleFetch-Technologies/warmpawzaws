@@ -688,7 +688,7 @@ export function TrainingBookingRouter({
   const dashboardStats = [
     { value: '45+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
     { value: '800+', label: 'Sessions' },
-    { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   const getHeaderSubtitle = () =>

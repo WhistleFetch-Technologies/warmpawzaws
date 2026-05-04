@@ -18,6 +18,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ApiService } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type ViewType = 
   | 'landing'
@@ -39,6 +40,7 @@ interface InsuranceProvider {
   id: string;
   name: string;
   rating: number;
+  reviewCount: number;
   completedPolicies: number;
   basePrice: number;
   description?: string;
@@ -73,7 +75,7 @@ export function InsuranceServicesScreen({
   const [stats, setStats] = useState({
     activeProviders: 0,
     policiesIssued: '10K+',
-    rating: '4.7',
+    rating: '—' as string,
   });
 
   useEffect(() => {
@@ -105,10 +107,17 @@ export function InsuranceServicesScreen({
       insuranceServices.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!vendorMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const r =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           vendorMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
-            rating: service.vendorRating || 4.7,
+            rating,
+            reviewCount: rc,
             completedPolicies: service.vendorReviewCount || 0,
             basePrice: service.price || 999,
             description: service.description,
@@ -119,12 +128,20 @@ export function InsuranceServicesScreen({
       const allProviders = Array.from(vendorMap.values()) as InsuranceProvider[];
       setProviders(allProviders);
       
+      const rated = allProviders.filter(
+        (p) => (p.reviewCount ?? 0) > 0 && p.rating != null && Number(p.rating) > 0
+      );
+      const avgRating =
+        rated.length > 0
+          ? (
+              rated.reduce((acc, p) => acc + Number(p.rating), 0) / rated.length
+            ).toFixed(1)
+          : '—';
+
       setStats({
-        activeProviders: allProviders.length || 12,
+        activeProviders: allProviders.length || 0,
         policiesIssued: '10K+',
-        rating: allProviders.length > 0 
-          ? (allProviders.reduce((acc, p) => acc + (p.rating || 4.7), 0) / allProviders.length).toFixed(1)
-          : '4.7',
+        rating: avgRating,
       });
 
       // Load insurance plans from API
@@ -244,7 +261,9 @@ export function InsuranceServicesScreen({
             <Text style={styles.statLabel}>Policies Issued</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>⭐ {stats.rating}</Text>
+            <Text style={styles.statNumber}>
+              {stats.rating !== '—' ? `⭐ ${stats.rating}` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Average Rating</Text>
           </View>
         </View>
@@ -297,7 +316,9 @@ export function InsuranceServicesScreen({
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
         <ScrollView style={styles.providerList}>
-          {providers.map((provider) => (
+          {providers.map((provider) => {
+            const face = customerFacingRating(provider.rating, provider.reviewCount);
+            return (
             <TouchableOpacity
               key={provider.id}
               style={styles.providerCard}
@@ -306,7 +327,7 @@ export function InsuranceServicesScreen({
               <View style={styles.providerHeader}>
                 <Text style={styles.providerName}>{provider.name}</Text>
                 <Text style={styles.providerRating}>
-                  ⭐ {provider.rating.toFixed(1)}
+                  {face != null ? `⭐ ${face.toFixed(1)}` : 'No reviews'}
                 </Text>
               </View>
               <Text style={styles.providerPolicies}>
@@ -317,7 +338,8 @@ export function InsuranceServicesScreen({
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
-          ))}
+          );
+          })}
         </ScrollView>
       )}
     </OrangeBrandedScreenLayout>

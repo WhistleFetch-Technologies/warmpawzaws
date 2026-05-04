@@ -3,6 +3,7 @@
  */
 
 import { select, query } from '../database/rds-connection';
+import { geocodeIndiaPincode } from '../lib/utils/geocode';
 
 /** Resolve customer ID from phone (same rules as legacy discovery helper). */
 export async function resolveCustomerIdFromPhone(phone: string): Promise<string | null> {
@@ -20,11 +21,13 @@ export async function resolveCustomerIdFromPhone(phone: string): Promise<string 
 
 /**
  * Customer coordinates from default address (customer_addresses.coordinates JSON: lat/lng).
+ * Falls back to pincode centroid via Google Geocoding when coordinates are absent.
+ * Returns `approximate: true` when pincode-centroid is used.
  */
 export async function getCustomerCoordinates(
   customerPhone?: string | null,
   customerId?: string | null
-): Promise<{ latitude: number; longitude: number } | null> {
+): Promise<{ latitude: number; longitude: number; approximate?: boolean } | null> {
   try {
     let resolvedCustomerId: string | null = customerId || null;
     if (resolvedCustomerId === null && customerPhone) {
@@ -36,9 +39,9 @@ export async function getCustomerCoordinates(
     }
 
     const addressResult = await query(
-      `SELECT coordinates 
-       FROM customer_addresses 
-       WHERE customer_id = $1 AND is_default = true 
+      `SELECT coordinates, pincode
+       FROM customer_addresses
+       WHERE customer_id = $1 AND is_default = true
        LIMIT 1`,
       [resolvedCustomerId]
     );
@@ -48,7 +51,7 @@ export async function getCustomerCoordinates(
       return null;
     }
 
-    const addr = addressResult.rows[0] as { coordinates?: unknown };
+    const addr = addressResult.rows[0] as { coordinates?: unknown; pincode?: unknown };
     let latitude: number | null = null;
     let longitude: number | null = null;
 
@@ -68,12 +71,23 @@ export async function getCustomerCoordinates(
     }
 
     if (latitude != null && longitude != null && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
-      return { latitude, longitude };
+      return { latitude, longitude, approximate: false };
+    }
+
+    // Fallback: use pincode centroid when exact coordinates are missing
+    const pin = String(addr.pincode ?? '').replace(/\D/g, '');
+    if (pin.length === 6) {
+      console.log('[getCustomerCoordinates] No coords — falling back to pincode centroid', { pin });
+      const geo = await geocodeIndiaPincode(pin);
+      if (geo) {
+        return { latitude: geo.latitude, longitude: geo.longitude, approximate: true };
+      }
     }
 
     console.warn('[getCustomerCoordinates] Could not extract valid coordinates', {
       customerId: resolvedCustomerId,
       hasCoordinates: !!addr.coordinates,
+      hasPincode: pin.length === 6,
     });
 
     return null;

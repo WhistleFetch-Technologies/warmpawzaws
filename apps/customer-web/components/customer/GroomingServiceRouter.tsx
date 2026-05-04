@@ -152,11 +152,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       if (p) {
         const vid = p.vendor_id ?? p.vendorId ?? p.id;
         if (vid) {
+          const rc = Number(p.review_count ?? p.reviewCount ?? 0) || 0;
+          const r = Number(p.vendor_rating ?? p.rating);
           setPreviousGroomer({
             id: vid,
             name: p.vendor_name || p.vendorName || p.business_name || p.businessName || p.name,
             photo: p.profile_image_url || p.photo || null,
-            rating: Number(p.vendor_rating ?? p.rating) || 4.9,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : null,
             lastVisit: p.last_booking_date || p.lastVisit,
             sessionsCount: p.sessionsCount || 5,
             lastServiceId: p.last_service_id || p.service_id || p.serviceId,
@@ -173,7 +175,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             id: pkg.vendorId,
             name: pkg.vendorName,
             photo: null,
-            rating: 4.9,
+            rating: null,
             lastVisit: pkg.lastUsed || '3 weeks ago',
             sessionsCount: pkg.sessionsUsed || 5,
             lastServiceId: pkg.serviceId || pkg.service_id || pkg.defaultServiceId,
@@ -228,12 +230,22 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const dashboardStats = useMemo(() => {
     const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '-';
+    const withReviews = vendors.filter((v: { rating?: number; reviewCount?: number; review_count?: number }) => {
+      const c = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+      const r = Number(v.rating);
+      return c > 0 && Number.isFinite(r) && r > 0;
+    });
+    const rating =
+      withReviews.length > 0
+        ? (
+            withReviews.reduce((a, v) => a + Number(v.rating), 0) / withReviews.length
+          ).toFixed(1)
+        : '—';
     const sessions = n > 0 ? `${Math.max(n * 25, 100)}+` : '0';
     return [
       { value: `${n}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
       { value: sessions, label: 'Sessions' },
-      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+      { value: rating, label: 'Avg rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ];
   }, [vendors]);
 
@@ -287,12 +299,19 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   )}
                   <div className="flex-1">
                     <h3 className="font-bold text-slate-900 text-lg">{previousGroomer.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
-                      <div className="flex items-center gap-1 text-orange-600 font-bold">
-                        <Star className="w-4 h-4 fill-orange-500" />
-                        {previousGroomer.rating}
-                      </div>
-                      <span>•</span>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1 flex-wrap">
+                      {previousGroomer.rating != null &&
+                      Number(previousGroomer.rating) > 0 ? (
+                        <>
+                          <div className="flex items-center gap-1 text-orange-600 font-bold">
+                            <Star className="w-4 h-4 fill-orange-500" />
+                            {Number(previousGroomer.rating).toFixed(1)}
+                          </div>
+                          <span>•</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-500">No reviews yet</span>
+                      )}
                       <span>Last visit: {previousGroomer.lastVisit || '3 weeks ago'}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">

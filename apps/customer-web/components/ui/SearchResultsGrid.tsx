@@ -339,10 +339,12 @@ export function VendorResultCard({
             </div>
           )}
           
-          {distance !== undefined && (
+          {distance != null && (
             <div className="flex items-center gap-1 text-sm text-gray-600">
               <MapPin className="w-4 h-4" />
-              <span>{distance.toFixed(1)} km</span>
+              <span>{distance < 1
+                ? `${Math.round(distance * 1000)} m`
+                : `${Math.round(distance)} km`}</span>
             </div>
           )}
         </div>

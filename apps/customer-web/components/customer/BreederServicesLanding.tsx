@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, ShieldCheck, Star, Sparkles, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Sparkles, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -37,10 +37,8 @@ export function BreederServicesLanding({ phone, onBack, onNavigate }: BreederSer
              <div className="text-xs text-white/80">Puppies</div>
           </div>
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-             <div className="flex items-center gap-1 text-2xl font-bold text-white">
-               4.9 <Star className="w-4 h-4 fill-white" />
-             </div>
-             <div className="text-xs text-white/80">Rating</div>
+             <div className="text-2xl font-bold text-white leading-tight">Verified</div>
+             <div className="text-xs text-white/80">Network</div>
           </div>
         </div>
       </div>

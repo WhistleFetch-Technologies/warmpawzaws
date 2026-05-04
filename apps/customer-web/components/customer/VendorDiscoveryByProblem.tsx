@@ -9,11 +9,12 @@
  */
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Star, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
+import { ArrowLeft, MapPin, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -563,11 +564,13 @@ function VendorCard({
             <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">
               {vendor.businessName || vendor.fullName}
             </h3>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex items-center gap-1 text-amber-500">
-                <Star className="w-4 h-4 fill-current" />
-                <span className="text-sm font-medium">{vendor.rating || '4.5'}</span>
-              </div>
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <StarRating
+                rating={vendor.rating}
+                reviewCount={vendor.reviewCount ?? vendor.review_count}
+                starsClassName="w-3.5 h-3.5"
+                textClassName="text-xs text-gray-600"
+              />
               {formatDistanceDisplay(vendor) && (
                 <>
                   <span className="text-gray-300">•</span>

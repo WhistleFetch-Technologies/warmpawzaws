@@ -45,7 +45,7 @@ interface DiagnosticsServicesLandingProps {
 interface DiagnosticCenter {
   id: string;
   businessName: string;
-  rating: number;
+  rating?: number;
   reviewCount: number;
   /** Omitted when the lab has no coordinates (still bookable; shown after in-range labs). */
   distance?: number;
@@ -70,8 +70,8 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-1',
     businessName: 'PetPath Diagnostics',
-    rating: 4.8,
-    reviewCount: 256,
+    rating: undefined,
+    reviewCount: 0,
     distance: 2.3,
     address: 'MG Road, Bangalore',
     homeCollectionAvailable: true,
@@ -86,8 +86,8 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-2',
     businessName: 'VetLab Plus',
-    rating: 4.6,
-    reviewCount: 189,
+    rating: undefined,
+    reviewCount: 0,
     distance: 3.5,
     address: 'Koramangala, Bangalore',
     homeCollectionAvailable: true,
@@ -101,8 +101,8 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-3',
     businessName: 'PawCare Labs',
-    rating: 4.7,
-    reviewCount: 312,
+    rating: undefined,
+    reviewCount: 0,
     distance: 1.8,
     address: 'Indiranagar, Bangalore',
     homeCollectionAvailable: false,
@@ -240,8 +240,11 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         centers = vendorsList.map((v: any) => ({
           id: v.id,
           businessName: v.businessName || 'Diagnostic Center',
-          rating: v.rating ?? 4.5,
-          reviewCount: 0,
+          rating:
+            Number(v.reviewCount ?? v.review_count ?? 0) > 0 && v.rating != null
+              ? Number(v.rating)
+              : undefined,
+          reviewCount: Number(v.reviewCount ?? v.review_count ?? 0) || 0,
           distance:
             v.distance != null && !Number.isNaN(Number(v.distance))
               ? Math.round(Number(v.distance) * 10) / 10
@@ -425,11 +428,11 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       label: 'Labs',
     },
     { value: stats.tests, label: 'Tests' },
-    { value: `*${stats.rating}`, label: 'Rating' },
+    { value: String(stats.rating), label: 'Rating' },
   ] : [
     { value: '15+', label: 'Labs' },
     { value: '500+', label: 'Tests' },
-    { value: '*4.6', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   const categoriesToShow =

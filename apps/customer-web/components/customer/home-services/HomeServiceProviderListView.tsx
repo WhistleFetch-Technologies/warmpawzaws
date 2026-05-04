@@ -219,7 +219,11 @@ export function HomeServiceProviderListView({
             address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
             phone: p.phone || '',
             distance: typeof p.distance === 'number' ? p.distance : (userLocation ? calculateDistance(userLocation, p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : undefined) : 999),
-            rating: Number(p.rating) || 4.5,
+            rating: (() => {
+              const rc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+              const r = p.rating != null ? Number(p.rating) : NaN;
+              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
+            })(),
             reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
             specializations: Array.isArray(p.specializations) ? p.specializations : [],
             amenities: Array.isArray(p.amenities) ? p.amenities : [],
@@ -261,8 +265,13 @@ export function HomeServiceProviderListView({
             address: service.vendorAddress || service.vendorLocation || 'Location not specified',
             phone: service.vendorPhone || '',
             distance: 999,
-            rating: service.vendorRating || 4.5,
-            reviewCount: service.vendorReviewCount || 0,
+            rating: (() => {
+              const rc = Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0;
+              const r =
+                service.vendorRating != null ? Number(service.vendorRating) : NaN;
+              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
+            })(),
+            reviewCount: Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0,
             specializations: service.specializations || [],
             amenities: service.amenities || [],
             nextAvailableSlot: 'Today',
@@ -585,9 +594,13 @@ export function HomeServiceProviderListView({
                     <div className="flex items-center gap-1 text-sm text-gray-500 mb-2">
                       <MapPin className="w-4 h-4" />
                       <span className="truncate">{provider.address}</span>
-                      <span className="flex-shrink-0 text-orange-600 font-medium">
-                        • {provider.distance} km
-                      </span>
+                      {provider.distance != null && provider.distance < 999 && (
+                        <span className="flex-shrink-0 text-orange-600 font-medium">
+                          • {Number(provider.distance) < 1
+                            ? `${Math.round(Number(provider.distance) * 1000)} m`
+                            : `${Math.round(Number(provider.distance))} km`}
+                        </span>
+                      )}
                     </div>
 
                     {/* Specializations */}

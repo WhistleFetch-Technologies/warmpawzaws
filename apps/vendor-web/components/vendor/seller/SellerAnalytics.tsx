@@ -224,7 +224,13 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
           </div>
           <div className="bg-white/10 rounded-xl p-4">
             <p className="text-slate-400 text-sm">Seller Rating</p>
-            <p className="text-2xl font-bold mt-1">⭐ {analytics?.sellerRating || 4.5}</p>
+            <p className="text-2xl font-bold mt-1">
+              {analytics?.sellerRating != null &&
+              Number.isFinite(Number(analytics.sellerRating)) &&
+              Number(analytics.sellerRating) > 0
+                ? `⭐ ${Number(analytics.sellerRating).toFixed(1)}`
+                : '—'}
+            </p>
           </div>
         </div>
       </div>

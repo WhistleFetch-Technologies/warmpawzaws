@@ -55,9 +55,9 @@ export const quickServices = [
 
 
 export const defaultGroomingServices = [
-    { title: 'At Home Grooming', price: '₹999', rating: 4.8, Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
-    { title: 'Salon Appointment', price: '₹799', rating: 4.9, Icon: Scissors, description: 'Premium salon experience' },
-    { title: 'Spa Package', price: '₹1499', rating: 5.0, Icon: Sparkles, description: 'Complete spa & wellness' },
+    { title: 'At Home Grooming', price: '₹999', Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
+    { title: 'Salon Appointment', price: '₹799', Icon: Scissors, description: 'Premium salon experience' },
+    { title: 'Spa Package', price: '₹1499', Icon: Sparkles, description: 'Complete spa & wellness' },
 ];
 
 export const defaultVetServices = [
@@ -67,9 +67,9 @@ export const defaultVetServices = [
 ];
 
 export const defaultHotDeals = [
-    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone, rating: 4.7 },
-    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon, rating: 4.5 },
-    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin, rating: 4.9 },
+    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone },
+    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon },
+    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin },
 ];
 
 export const serviceNavigationMap: Record<string, string> = {

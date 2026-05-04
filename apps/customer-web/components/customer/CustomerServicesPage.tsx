@@ -78,7 +78,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         stats: [
           { value: '50+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '1K+', label: 'Bookings' },
-          { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
         ]
       };
     } else if (isTraining) {
@@ -89,7 +89,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         stats: [
           { value: '45+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '800+', label: 'Sessions' },
-          { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
         ]
       };
     }
@@ -100,7 +100,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
       stats: [
         { value: '100+', label: 'Services' },
         { value: '5K+', label: 'Bookings' },
-        { value: '4.7', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
       ]
     };
   };

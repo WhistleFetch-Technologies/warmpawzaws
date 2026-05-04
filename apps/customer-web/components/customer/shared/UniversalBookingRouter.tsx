@@ -852,7 +852,7 @@ export function UniversalBookingRouter({
   const dashboardStats = [
     { value: '50+', label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
     { value: '1K+', label: 'Bookings' },
-    { value: '*4.8', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   // Phase 1: Step indicators include summary (staff skipped)

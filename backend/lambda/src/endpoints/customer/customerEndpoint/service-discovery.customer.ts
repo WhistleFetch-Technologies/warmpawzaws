@@ -32,21 +32,16 @@ import {
   type SqlClient,
 } from '../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
+import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../lib/utils/vendor-customer-distance';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
 /**
- * Calculate distance between two coordinates (Haversine formula)
+ * Calculate distance between two coordinates (Haversine formula).
+ * Kept for backward-compat with the SQL-level distance_km enrichment paths.
  */
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in km
+  return haversineKm(lat1, lon1, lat2, lon2);
 }
 
 /**
@@ -1355,14 +1350,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let latitude = c.req.query('latitude');
       let longitude = c.req.query('longitude');
 
-      // If coordinates not provided, fetch from customer address
+      // If coordinates not provided, fetch from customer address (with pincode fallback)
+      let customerApproximateDiscover = false;
       if (!latitude || !longitude) {
         const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
         const coords = await getCustomerCoordinates(customerPhone || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
-          console.log(`[discover-services] Using coordinates from customer address: ${latitude}, ${longitude}`);
+          customerApproximateDiscover = !!coords.approximate;
+          console.log(`[discover-services] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateDiscover}`);
         }
       }
 
@@ -1489,14 +1486,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
 
-      const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
-        return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
-      };
-      const fmtDistance = (km: number | null): string | null => {
-        if (km == null) return null;
-        return km < 1 ? `${Math.round(km * 1000)}m away` : `${km.toFixed(1)} km away`;
-      };
+      const distResolverDiscover = new DistanceResolver(customerLat, customerLng, customerApproximateDiscover);
 
       const SITTER_ROLE_NAMES_LOWER = ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'];
 
@@ -1649,10 +1639,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
         const customerService = roleCfg?.customer_service || null;
 
-        const dist = getDistanceKm(
-          vendor.latitude ? parseFloat(vendor.latitude) : null,
-          vendor.longitude ? parseFloat(vendor.longitude) : null,
-        );
+        const distResult = await distResolverDiscover.resolve({
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          pincode: vendor.pincode,
+        });
 
         let nextAvailable: any = null;
         try {
@@ -1714,9 +1705,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photoUrl: photoUrl,
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: dist,
-          distanceKm: dist,
-          distanceText: fmtDistance(dist),
+          distance: distResult?.km ?? null,
+          distanceKm: distResult?.km ?? null,
+          distanceText: distResult?.distanceText ?? null,
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
@@ -1839,7 +1830,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.metadata,
+          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -3946,7 +3937,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             );
           }
           const distanceKm = distance != null ? parseFloat(distance.toFixed(2)) : null;
-          const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+          const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
 
           let specializations: string[] = [];
           try {
@@ -4318,7 +4309,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         } catch (_) { }
         const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
-        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+        const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
         const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
         return {
           id: vendorId,
@@ -5261,15 +5252,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const problemTitle = c.req.query('problemTitle');
       let latitude = c.req.query('latitude');
       let longitude = c.req.query('longitude');
+      let customerApproximateByStyle = false;
 
-      // If coordinates not provided, fetch from customer's default address
+      // If coordinates not provided, fetch from customer's default address (with pincode fallback)
       if (!latitude || !longitude) {
         const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
         const coords = await getCustomerCoordinates(customerPhone || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
-          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}`);
+          customerApproximateByStyle = !!coords.approximate;
+          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateByStyle}`);
         }
       }
 
@@ -5463,16 +5456,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
 
-      /** Haversine distance in km — null when coordinates are missing */
-      const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
-        return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
-      };
-      /** Human-readable distance label */
-      const fmtDistance = (km: number | null): string | null => {
-        if (km == null) return null;
-        return km < 1 ? `${Math.round(km * 1000)}m away` : `${km.toFixed(1)} km away`;
-      };
+      const distResolverByStyle = new DistanceResolver(customerLat, customerLng, customerApproximateByStyle);
 
       /** Fetch published vendor_services rows matching the requested styles and targeted categories */
       const fetchServices = async (vendorId: string, vendorRoleName?: string | null) => {
@@ -5566,10 +5550,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
         const customerService = roleCfg?.customer_service || null;
 
-        const dist = getDistanceKm(
-          vendor.latitude ? parseFloat(vendor.latitude) : null,
-          vendor.longitude ? parseFloat(vendor.longitude) : null,
-        );
+        const distResult = await distResolverByStyle.resolve({
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          pincode: vendor.pincode,
+        });
         let nextAvailable: any = null;
         try {
           nextAvailable = await getNextAvailableSlot(
@@ -5586,7 +5571,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
 
         // Photos from vendor metadata (facility_photos / photos)
-        // ✅ FIX: Regenerate presigned URLs for facility photos
         let photos: string[] = [];
         try {
           const meta = typeof vendor.metadata === 'string'
@@ -5594,7 +5578,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : vendor.metadata;
           const raw = meta?.facility_photos || meta?.photos || [];
           const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
-          // Regenerate presigned URLs for all photos
           const regeneratedPhotos = await Promise.all(
             rawPhotos.map(async (photoUrl: string) => {
               const regenerated = await regeneratePresignedUrl(photoUrl);
@@ -5604,7 +5587,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
 
-        // ✅ FIX: Get photo URL once and use for both photo and photoUrl fields
         const photoUrl = await getVendorPhotoUrl(vendor);
 
         return {
@@ -5625,13 +5607,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           roleCategory,
           customerService,
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photo: photoUrl, // ✅ Frontend expects 'photo' field
-          photoUrl: photoUrl, // ✅ Keep 'photoUrl' for backward compatibility
+          photo: photoUrl,
+          photoUrl: photoUrl,
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: dist,
-          distanceKm: dist,
-          distanceText: fmtDistance(dist),
+          distance: distResult?.km ?? null,
+          distanceKm: distResult?.km ?? null,
+          distanceText: distResult?.distanceText ?? null,
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
@@ -5651,7 +5633,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.metadata,
+          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -5810,10 +5792,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.role_id,
           r.name as role_name,
           r.display_name as role_display_name,
-          COALESCE(
-            (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id),
-            4.5
-          ) as avg_rating,
+          (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id) as avg_rating,
           COALESCE(
             (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id),
             0
@@ -5857,23 +5836,34 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const result = await query(vendorQuery, params);
 
-      const vendors = result.rows.map((v: any) => ({
-        id: v.id,
-        businessName: v.business_name || v.owner_name,
-        ownerName: v.owner_name,
-        phone: v.phone,
-        address: v.address,
-        city: v.city,
-        latitude: v.latitude,
-        longitude: v.longitude,
-        status: v.status,
-        roleId: v.role_id,
-        roleName: v.role_name,
-        roleDisplayName: v.role_display_name,
-        rating: parseFloat(v.avg_rating || '4.5').toFixed(1),
-        reviewCount: parseInt(v.review_count || '0', 10),
-        completedBookings: parseInt(v.completed_bookings || '0', 10),
-      }));
+      const vendors = result.rows.map((v: any) => {
+        const reviewCount = parseInt(v.review_count || '0', 10);
+        const avgNum =
+          v.avg_rating != null && v.avg_rating !== ''
+            ? parseFloat(String(v.avg_rating))
+            : NaN;
+        const rating =
+          reviewCount > 0 && Number.isFinite(avgNum)
+            ? parseFloat(avgNum.toFixed(1))
+            : null;
+        return {
+          id: v.id,
+          businessName: v.business_name || v.owner_name,
+          ownerName: v.owner_name,
+          phone: v.phone,
+          address: v.address,
+          city: v.city,
+          latitude: v.latitude,
+          longitude: v.longitude,
+          status: v.status,
+          roleId: v.role_id,
+          roleName: v.role_name,
+          roleDisplayName: v.role_display_name,
+          rating,
+          reviewCount,
+          completedBookings: parseInt(v.completed_bookings || '0', 10),
+        };
+      });
 
       return c.json({
         success: true,

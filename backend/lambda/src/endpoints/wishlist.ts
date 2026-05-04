@@ -143,7 +143,7 @@ export function registerWishlistEndpoints(app: Hono) {
             original_price: item.original_price != null ? parseFloat(String(item.original_price)) : null,
             images,
             emoji: item.emoji || '🐾',
-            rating: item.rating != null ? Number(item.rating) : 4.5,
+            rating: item.rating != null ? Number(item.rating) : null,
             review_count: item.review_count != null ? Number(item.review_count) : 0,
             stock: item.stock != null ? Number(item.stock) : 0,
             vendor_id: item.vendor_id,

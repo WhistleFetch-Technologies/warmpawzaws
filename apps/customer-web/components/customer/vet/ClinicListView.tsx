@@ -512,7 +512,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const dashboardStats = [
     { value: `${filteredClinics.length}+`, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
   ];
 
   return (
@@ -645,7 +645,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                             <>
                               <span className="text-gray-300">•</span>
                               <span className="text-sm text-gray-500">
-                                {clinic.distanceKm.toFixed(1)} km
+                                {clinic.distanceKm < 1
+                                  ? `${Math.round(clinic.distanceKm * 1000)} m`
+                                  : `${Math.round(clinic.distanceKm)} km`}
                               </span>
                             </>
                           )}

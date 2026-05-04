@@ -18,6 +18,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface VendorProfileScreenProps {
   vendorId: string;
@@ -141,6 +142,8 @@ export function VendorProfileScreen({
     );
   }
 
+  const profileRating = customerFacingRating(vendor.rating, vendor.reviewCount);
+
   return (
     <ScreenShell style={styles.container}>
       <View style={styles.header}>
@@ -163,8 +166,17 @@ export function VendorProfileScreen({
             )}
           </View>
           <View style={styles.ratingContainer}>
-            <Text style={styles.rating}>⭐ {vendor.rating.toFixed(1)}</Text>
-            <Text style={styles.reviewCount}>({vendor.reviewCount} reviews)</Text>
+            {profileRating != null ? (
+              <>
+                <Text style={styles.rating}>⭐ {profileRating.toFixed(1)}</Text>
+                <Text style={styles.reviewCount}>
+                  ({vendor.reviewCount}{' '}
+                  {vendor.reviewCount === 1 ? 'review' : 'reviews'})
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.reviewCount}>No customer reviews</Text>
+            )}
           </View>
         </View>
 

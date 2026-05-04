@@ -18,6 +18,7 @@ import {
   Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { libraryPickerAllowsEditing } from '../../utils/image-picker-platform';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi } from '../../services/api';
 
@@ -74,13 +75,14 @@ export function ProfileScreen({ vendorId, onBack }: ProfileScreenProps) {
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
+      allowsEditing: libraryPickerAllowsEditing,
+      ...(libraryPickerAllowsEditing ? { aspect: [1, 1] as const } : {}),
       quality: 1,
     });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setProfileImage(result.assets[0].uri);
+    const first = result.assets?.[0];
+    if (!result.canceled && first?.uri) {
+      setProfileImage(first.uri);
     }
   };
 

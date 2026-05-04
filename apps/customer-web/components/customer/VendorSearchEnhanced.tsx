@@ -314,9 +314,11 @@ export function VendorSearchEnhanced() {
                                   ⭐ {Number(vendor.rating || 0).toFixed(1)}
                                 </span>
                               )}
-                              {vendor.distance !== undefined && (
+                              {vendor.distance != null && (
                                 <span className="text-sm text-gray-600">
-                                  📍 {Number(vendor.distance || 0).toFixed(1)} km
+                                  📍 {Number(vendor.distance) < 1
+                                    ? `${Math.round(Number(vendor.distance) * 1000)} m`
+                                    : `${Math.round(Number(vendor.distance))} km`}
                                 </span>
                               )}
                             </div>
