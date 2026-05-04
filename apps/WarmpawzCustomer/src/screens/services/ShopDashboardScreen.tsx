@@ -21,6 +21,7 @@ import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBel
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 type ViewType = 
   | 'dashboard'
@@ -447,7 +448,8 @@ export function ShopDashboardScreen({
                   </View>
                   <View style={styles.productPriceContainer}>
                     <Text style={styles.productPrice}>₹{product.price}</Text>
-                    {product.originalPrice && (
+                    {product.originalPrice != null &&
+                      hasEffectivePriceReduction(product.originalPrice, product.price) && (
                       <Text style={styles.originalPrice}>
                         ₹{product.originalPrice}
                       </Text>
@@ -619,7 +621,8 @@ export function ShopDashboardScreen({
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
-              {selectedProduct.originalPrice && (
+              {selectedProduct.originalPrice != null &&
+                hasEffectivePriceReduction(selectedProduct.originalPrice, selectedProduct.price) && (
                 <Text style={styles.productDetailOriginalPrice}>
                   ₹{selectedProduct.originalPrice}
                 </Text>

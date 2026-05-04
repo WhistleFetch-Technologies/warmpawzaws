@@ -17,6 +17,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface ShopDashboardProps {
   phone?: string;
@@ -468,7 +469,8 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[#FF8C42] font-bold">₹{deal.price.toLocaleString()}</span>
-                      {deal.originalPrice && (
+                      {deal.originalPrice != null &&
+                        hasEffectivePriceReduction(deal.originalPrice, deal.price) && (
                         <span className="text-gray-400 line-through text-sm">₹{deal.originalPrice.toLocaleString()}</span>
                       )}
                     </div>

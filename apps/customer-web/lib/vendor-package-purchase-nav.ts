@@ -9,13 +9,25 @@ export function isVendorServicePackageRow(row: VendorServiceLike | null | undefi
   if (!row || typeof row !== 'object') return false;
   if (Boolean(row.isPackage)) return true;
   const meta = row.metadata;
-  if (meta && typeof meta === 'object' && !Array.isArray(meta) && Boolean((meta as Record<string, unknown>).isPackage)) {
-    return true;
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    const m = meta as Record<string, unknown>;
+    if (Boolean(m.isPackage)) return true;
+    const pt = m.packageType;
+    if (pt !== undefined && pt !== null && String(pt).trim() !== '') return true;
+    const mpd = m.packageDetails;
+    if (mpd && typeof mpd === 'object' && !Array.isArray(mpd)) {
+      const mp = mpd as Record<string, unknown>;
+      if (Number(mp.totalSessions ?? mp.total_sessions) > 0) return true;
+      if (Number(mp.packagePrice ?? mp.price ?? 0) > 0) return true;
+    }
   }
   const pd = row.packageDetails;
   if (pd && typeof pd === 'object' && !Array.isArray(pd)) {
-    const ts = Number((pd as Record<string, unknown>).totalSessions ?? (pd as Record<string, unknown>).total_sessions);
+    const p = pd as Record<string, unknown>;
+    const ts = Number(p.totalSessions ?? p.total_sessions);
     if (Number.isFinite(ts) && ts > 0) return true;
+    const pr = Number(p.packagePrice ?? p.price ?? 0);
+    if (Number.isFinite(pr) && pr > 0) return true;
   }
   return false;
 }
