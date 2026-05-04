@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { SupportTicketMessageBubble } from './SupportTicketMessageBubble';
 import type { SupportTicketResponseRow } from './types';
-
-const POLL_MS = 5000;
 
 export interface SupportTicketMessagesProps {
   initialMessage?: string | null;
   initialCreatedAt?: string | null;
   responses: SupportTicketResponseRow[];
-  /** Re-fetch ticket thread from parent (e.g. `getTicket`) so new agent/customer messages appear. */
+  /** Re-fetch ticket thread from parent (e.g. `getTicket`) when the user taps Refresh. */
   onRefresh?: () => void | Promise<void>;
 }
 
@@ -21,20 +20,26 @@ export function SupportTicketMessages({
   responses,
   onRefresh,
 }: SupportTicketMessagesProps) {
-  useEffect(() => {
-    if (!onRefresh) return;
-    const id = window.setInterval(() => {
-      void onRefresh();
-    }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [onRefresh]);
-
   const hasInitial =
     initialMessage != null && String(initialMessage).trim().length > 0;
 
   return (
     <Card className="p-4">
-      <h4 className="text-sm font-medium text-gray-700 mb-3">Messages</h4>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className="text-sm font-medium text-gray-700">Messages</h4>
+        {onRefresh ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => void onRefresh()}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        ) : null}
+      </div>
       <div className="space-y-3 max-h-[min(50vh,420px)] overflow-y-auto pr-1">
         {hasInitial ? (
           <SupportTicketMessageBubble
