@@ -816,75 +816,13 @@ export function registerAuthEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // Silent token refresh — issues new access + id tokens from a valid refresh token.
-  // Does NOT issue a new refresh token (90-day clock stays fixed from login time).
+  // Silent token refresh (legacy router; canonical registration is auth-enhanced)
   app.post('/auth/refresh', async (c) => {
-    try {
-      const body = await c.req.json();
-      const { refreshToken } = body as { refreshToken?: string };
-
-      if (!refreshToken) {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      const { decodeTokenUnsafe } = await import('../utils/jwt-verification');
-      const decoded = decodeTokenUnsafe(refreshToken);
-
-      if (!decoded || !decoded.iss) {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      // token_use must be 'refresh' — checked before and after cryptographic verification
-      if ((decoded as any).token_use !== 'refresh') {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      let verified: { valid: boolean; payload?: any; error?: string };
-
-      if (decoded.iss === 'warmpawz-uat') {
-        const { verifyUATJWTToken } = await import('../utils/jwt-generator');
-        verified = await verifyUATJWTToken(refreshToken);
-      } else if (decoded.iss === 'warmpawz-api') {
-        const { verifyProductionJWTToken } = await import('../utils/jwt-generator');
-        verified = await verifyProductionJWTToken(refreshToken);
-      } else {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      if (!verified.valid || !verified.payload) {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      const payload = verified.payload;
-      if (payload.token_use !== 'refresh') {
-        return c.json({ error: 'Invalid or expired refresh token' }, 401);
-      }
-
-      const sub: string = payload.sub;
-      const phone: string = payload['cognito:username'];
-      const role: 'customer' | 'vendor' | 'admin' = payload['custom:user_type'];
-      const authVersion: number | undefined = payload.auth_version;
-      const expiresIn = 24 * 60 * 60; // keep access token at 24 h
-
-      let accessToken: string;
-      let idToken: string;
-
-      if (decoded.iss === 'warmpawz-uat') {
-        const { generateUATJWTToken } = await import('../utils/jwt-generator');
-        const result = await generateUATJWTToken({ userId: sub, phone, role, expiresIn, authVersion });
-        accessToken = result.accessToken;
-        idToken = result.idToken;
-      } else {
-        const { generateProductionJWTToken } = await import('../utils/jwt-generator');
-        const result = await generateProductionJWTToken({ userId: sub, phone, role, expiresIn, authVersion });
-        accessToken = result.accessToken;
-        idToken = result.idToken;
-      }
-
-      return c.json({ accessToken, idToken, expiresIn });
-    } catch {
-      return c.json({ error: 'Invalid or expired refresh token' }, 401);
-    }
+    const body = await c.req.json().catch(() => ({}));
+    const { executeAuthRefresh } = await import('../lib/services/auth/auth-token-refresh');
+    const refreshToken = typeof (body as any)?.refreshToken === 'string' ? (body as any).refreshToken : '';
+    const out = await executeAuthRefresh(refreshToken);
+    return c.json(out.body, out.status);
   });
 }
 

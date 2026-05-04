@@ -31,6 +31,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/e
 import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
 import { issueAuthTokensAfterOtp } from '../../lib/services/auth/vendor-otp-success-payload';
+import { executeAuthRefresh } from '../../lib/services/auth/auth-token-refresh';
 import { isUatRelaxedAuthContext } from '../../lib/services/auth/uat-auth-env';
 import { consumeVendorPortalCodeAndBuildPayload } from '../../lib/services/admin/vendor-portal-session-service';
 import { consumeCustomerPortalCodeAndBuildPayload } from '../../lib/services/admin/customer-portal-session-service';
@@ -1656,6 +1657,15 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
         statusCode
       );
     }
+  });
+
+  /** Silent refresh: custom JWT refresh (warmpawz-uat / warmpawz-api) or Cognito opaque refresh. */
+  app.post('/auth/refresh', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const refreshToken =
+      typeof (body as any)?.refreshToken === 'string' ? (body as any).refreshToken : '';
+    const out = await executeAuthRefresh(refreshToken);
+    return c.json(out.body as Parameters<typeof c.json>[0], out.status);
   });
 
   app.post('/auth/send-otp', async (c) => {

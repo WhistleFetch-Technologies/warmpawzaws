@@ -185,21 +185,33 @@ function AuthPageContent() {
 
     // Check if already logged in (after session init)
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = getStoredCustomerJwtForSession();
+    const cognitoAuth = require('@/lib/cognito-auth') as typeof import('@/lib/cognito-auth');
+    const { isTokenExpired } = require('@/lib/session-utils');
 
-    if (storedPhone && storedToken) {
-      // Verify token is not expired
-      const { isTokenExpired } = require('@/lib/session-utils');
-      if (!isTokenExpired(storedToken)) {
+    if (!storedPhone || !cognitoAuth.isAuthenticated()) {
+      return;
+    }
+
+    const storedJwt = getStoredCustomerJwtForSession();
+
+    if (storedJwt && !isTokenExpired(storedJwt)) {
+      const redirect = (typeof window !== 'undefined' && window.location?.search)
+        ? new URLSearchParams(window.location.search).get('redirect') : null;
+      router.push(redirect && redirect.startsWith('/') ? redirect : '/');
+      return;
+    }
+
+    cognitoAuth.refreshCognitoTokensIfNeeded().then(() => {
+      const jwtAfter = getStoredCustomerJwtForSession();
+      if (jwtAfter && !isTokenExpired(jwtAfter)) {
         const redirect = (typeof window !== 'undefined' && window.location?.search)
           ? new URLSearchParams(window.location.search).get('redirect') : null;
         router.push(redirect && redirect.startsWith('/') ? redirect : '/');
-      } else {
-        // Token expired, clear session
+      } else if (!cognitoAuth.isAuthenticated()) {
         const { clearCustomerSession } = require('@/lib/session-utils');
         clearCustomerSession();
       }
-    }
+    });
   }, [router]);
 
   useEffect(() => {
@@ -299,12 +311,16 @@ function AuthPageContent() {
 
       if (idToken && accessToken) {
         const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-        storeCognitoTokens({
+        storeCognitoTokens(
+          {
           accessToken,
           idToken,
           refreshToken: refreshToken || '',
           expiresIn,
-        });
+          },
+          { isNewLogin: true }
+        );
+        localStorage.setItem('authToken', idToken || accessToken);
         if (userData?.id) {
           storeUserInfo({
             userId: userData.id,
@@ -543,12 +559,16 @@ function AuthPageContent() {
         // Store Cognito tokens (AWS Serverless compatible)
         if (idToken && accessToken) {
           const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-          storeCognitoTokens({
-            accessToken: accessToken,
-            idToken: idToken,
-            refreshToken: refreshToken || '',
-            expiresIn: expiresIn,
-          });
+          storeCognitoTokens(
+            {
+              accessToken: accessToken,
+              idToken: idToken,
+              refreshToken: refreshToken || '',
+              expiresIn: expiresIn,
+            },
+            { isNewLogin: true }
+          );
+          localStorage.setItem('authToken', idToken || accessToken);
           const userData = responseData?.user || response.user;
           const prof = responseData?.profile;
           if (userData?.id) {
