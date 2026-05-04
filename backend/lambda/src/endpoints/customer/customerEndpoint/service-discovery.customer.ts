@@ -3514,6 +3514,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'pet_walker';
         const boardingBookingCategoryRequest =
           catLower === 'boarding' || catLower === 'pet_boarding';
+        /** Training / behavior: same category rules as discover-services (null category + behaviorist role, Behavioral label). */
+        const trainingBookingCategoryRequest =
+          catLower === 'training' ||
+          catLower === 'pet_training' ||
+          catLower === 'dog_training' ||
+          catLower === 'behaviorist' ||
+          catLower === 'behaviourist';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -3604,6 +3611,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             ${boardingCatIdOr}
+          )`;
+        } else if (trainingBookingCategoryRequest) {
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            OR ${sqlTrainingCategoryAliasOrVs('vs')}
+            OR (
+              TRIM(COALESCE(vs.category, '')) = ''
+              AND EXISTS (
+                SELECT 1 FROM vendors v_tr
+                LEFT JOIN roles r_tr ON v_tr.role_id = r_tr.id
+                WHERE v_tr.id = vs.vendor_id
+                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+              )
+            )
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
