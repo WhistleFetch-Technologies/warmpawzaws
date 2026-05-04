@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface PackageTrackingDashboardProps {
   phone: string;
@@ -644,7 +645,15 @@ export function PackageTrackingDashboard({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Original Price</span>
-                  <span className="text-gray-400 line-through">₹{pkg.originalPrice}</span>
+                  <span
+                    className={
+                      hasEffectivePriceReduction(pkg.originalPrice, pkg.paidPrice)
+                        ? 'text-gray-400 line-through'
+                        : 'text-gray-600'
+                    }
+                  >
+                    ₹{pkg.originalPrice}
+                  </span>
                 </div>
                 {pkg.discount > 0 && (
                   <div className="flex justify-between text-green-600">

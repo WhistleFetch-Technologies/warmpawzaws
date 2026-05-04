@@ -21,6 +21,7 @@ import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBel
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 type ViewType = 
   | 'landing'
@@ -425,7 +426,8 @@ export function PharmacyStoreScreen({
                       <Text style={styles.rxBadgeText}>RX</Text>
                     </View>
                   )}
-                  {product.originalPrice && (
+                  {product.originalPrice != null &&
+                    hasEffectivePriceReduction(product.originalPrice, product.price) && (
                     <View style={styles.discountBadge}>
                       <Text style={styles.discountBadgeText}>
                         {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF
@@ -448,7 +450,8 @@ export function PharmacyStoreScreen({
                   <View style={styles.productFooter}>
                     <View>
                       <Text style={styles.productPrice}>₹{product.price}</Text>
-                      {product.originalPrice && (
+                      {product.originalPrice != null &&
+                        hasEffectivePriceReduction(product.originalPrice, product.price) && (
                         <Text style={styles.originalPrice}>₹{product.originalPrice}</Text>
                       )}
                     </View>
@@ -518,7 +521,8 @@ export function PharmacyStoreScreen({
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
-              {selectedProduct.originalPrice && (
+              {selectedProduct.originalPrice != null &&
+                hasEffectivePriceReduction(selectedProduct.originalPrice, selectedProduct.price) && (
                 <Text style={styles.productDetailOriginalPrice}>
                   ₹{selectedProduct.originalPrice}
                 </Text>
