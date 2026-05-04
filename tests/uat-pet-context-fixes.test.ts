@@ -260,6 +260,46 @@ async function testPetBookingsEndpoint() {
   } catch (error: any) {
     logResult('Pet Bookings - Response Structure', 'SKIP', `Request failed: ${error.message}`);
   }
+
+  // Test 2.3: React Native CustomerApi uses phone-scoped pet bookings URL (regression guard)
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const apiPath = path.join(__dirname, '../apps/WarmpawzCustomer/src/services/api.ts');
+    if (fs.existsSync(apiPath)) {
+      const content = fs.readFileSync(apiPath, 'utf-8');
+      const hasWrongLegacyPath = content.includes('/customer/bookings/pet/');
+      const hasLambdaPath =
+        content.includes('/customer/${encodeURIComponent(phone)}/pets/${encodeURIComponent(petId)}/bookings') ||
+        content.includes('/pets/${encodeURIComponent(petId)}/bookings');
+      if (hasWrongLegacyPath && !hasLambdaPath) {
+        logResult(
+          'Pet Bookings - Mobile API path',
+          'FAIL',
+          'api.ts still references legacy /customer/bookings/pet/ path',
+          { apiPath }
+        );
+      } else if (hasLambdaPath) {
+        logResult(
+          'Pet Bookings - Mobile API path',
+          'PASS',
+          'getPetBookings targets GET /customer/:phone/pets/:petId/bookings',
+          { apiPath }
+        );
+      } else {
+        logResult(
+          'Pet Bookings - Mobile API path',
+          'SKIP',
+          'Could not confirm Lambda-aligned path in api.ts',
+          { apiPath }
+        );
+      }
+    } else {
+      logResult('Pet Bookings - Mobile API path', 'SKIP', 'api.ts not found', { apiPath });
+    }
+  } catch (error: any) {
+    logResult('Pet Bookings - Mobile API path', 'SKIP', `Cannot read file: ${error.message}`);
+  }
 }
 
 // ============================================================================

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import ArticleDetailClient from './[slug]/ArticleDetailClient';
 import {
   ArrowLeft,
@@ -149,7 +150,7 @@ export default function ArticlesPageClient() {
                     : 'bg-white text-slate-600 border-slate-200'
                 }`}
               >
-                {c}
+                {getCustomerArticleCategoryLabel(c)}
               </button>
             ))}
           </div>
@@ -198,7 +199,7 @@ export default function ArticlesPageClient() {
                       )}
                       {a.category && (
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full capitalize">
-                          {a.category}
+                          {getCustomerArticleCategoryLabel(a.category)}
                         </span>
                       )}
                       {a.readTime && (

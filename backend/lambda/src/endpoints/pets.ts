@@ -438,6 +438,12 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { petId } = c.req.param();
 
+      // Unlink booking history from this pet (preserves rows; avoids bookings_pet_id_fkey on DELETE)
+      await query(
+        'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1',
+        [petId]
+      );
+
       await query('DELETE FROM pets WHERE id = $1', [petId]);
 
       return c.json({
@@ -584,6 +590,12 @@ export function registerPetEndpoints(app: Hono) {
           activeBookingsCount: activeCount
         }, 400);
       }
+
+      // Preserve booking rows but remove FK: completed/cancelled history still references pet_id
+      await query(
+        'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1 AND customer_id = $2',
+        [petId, customer.id]
+      );
 
       await query('DELETE FROM pets WHERE id = $1 AND customer_id = $2', [petId, customer.id]);
 

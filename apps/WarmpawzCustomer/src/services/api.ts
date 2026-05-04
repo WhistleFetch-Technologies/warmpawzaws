@@ -205,6 +205,11 @@ export const CustomerApi = {
     );
     return response.pets || response;
   },
+  /** GET /customer/:phone/pets/:petId — aligns with Lambda pets routes */
+  getPet: (phone: string, petId: string) =>
+    ApiService.get(
+      `/customer/${encodeURIComponent(phone)}/pets/${encodeURIComponent(petId)}`
+    ),
   addPet: (phone: string, petData: any) => ApiService.post(`/customer/pets`, { phone, pets: [petData] }),
   updatePet: (petId: string, petData: any) => ApiService.put(`/pet/${petId}`, petData),
   deletePet: (petId: string) => ApiService.delete(`/pet/${petId}`),
@@ -309,9 +314,11 @@ export const CustomerApi = {
     }
   },
   
-  // Pet Bookings
-  getPetBookings: (phone: string, petId: string) => 
-    ApiService.get(`/customer/bookings/pet/${phone}/${petId}`),
+  // Pet Bookings — GET /customer/:phone/pets/:petId/bookings (Lambda)
+  getPetBookings: (phone: string, petId: string) =>
+    ApiService.get(
+      `/customer/${encodeURIComponent(phone)}/pets/${encodeURIComponent(petId)}/bookings`
+    ),
   
   // OTP (API Gateway uses /auth/otp/* — include E.164 phone + optional referral)
   generateOtp: (phone: string) =>

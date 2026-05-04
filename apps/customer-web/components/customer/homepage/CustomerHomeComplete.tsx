@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { PromotionBanner } from '../shared/PromotionBanner';
@@ -2749,8 +2750,8 @@ export function CustomerHomeComplete({
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
-                        {article.category}
+                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium capitalize">
+                        {getCustomerArticleCategoryLabel(article.category)}
                       </span>
                       <span className="text-xs text-gray-500 flex items-center gap-1">
                         <Clock className="w-3 h-3" /> {article.readTime}

@@ -1,0 +1,84 @@
+-- ============================================================================
+-- MIGRATION 745: Complete stale “active” bookings (past service date)
+-- ============================================================================
+-- Date: 2026-05-04
+--
+-- Context:
+-- DELETE /customer/:phone/pets/:petId counts bookings WHERE pet_id matches AND
+-- status IN ('confirmed','in_progress','scheduled'). Historical rows left in
+-- those statuses (data drift) block deletion while customer GET …/bookings
+-- lists all rows by pet_id — UI filters / casing mismatch previously hid them.
+--
+-- Scope (narrow):
+-- Only rows with booking_date strictly BEFORE CURRENT_DATE (session timezone).
+-- Does NOT touch future-dated confirmed/scheduled rows.
+-- Does NOT blanket-complete all confirmed rows.
+--
+-- Canonical schedule column: bookings.booking_date (see 001_initial_schema).
+-- If your cluster adds scheduled_date later, prefer COALESCE(scheduled_date, booking_date)
+-- in a follow-up migration after verifying the column exists.
+--
+-- ---------------------------------------------------------------------------
+-- INVESTIGATION (run before UPDATE — explain blocking counts)
+-- ---------------------------------------------------------------------------
+-- SELECT status, COUNT(*) AS n
+-- FROM bookings
+-- WHERE pet_id IS NOT NULL
+--   AND status IN ('confirmed', 'in_progress', 'scheduled')
+-- GROUP BY status
+-- ORDER BY status;
+--
+-- SELECT
+--   CASE
+--     WHEN booking_date >= CURRENT_DATE THEN 'future_or_today'
+--     WHEN booking_date >= CURRENT_DATE - INTERVAL '30 days' THEN 'past_0_30d'
+--     ELSE 'past_older'
+--   END AS bucket,
+--   COUNT(*) AS n
+-- FROM bookings
+-- WHERE pet_id IS NOT NULL
+--   AND status IN ('confirmed', 'in_progress', 'scheduled')
+-- GROUP BY 1
+-- ORDER BY 1;
+--
+-- Optional spot-check for one pet_id:
+-- SELECT id, status, booking_date, updated_at
+-- FROM bookings
+-- WHERE pet_id = '…uuid…'
+-- ORDER BY booking_date DESC
+-- LIMIT 50;
+--
+-- ---------------------------------------------------------------------------
+-- FORWARD (applies data fix)
+-- ---------------------------------------------------------------------------
+
+UPDATE bookings
+SET status = 'completed',
+    updated_at = NOW()
+WHERE pet_id IS NOT NULL
+  AND status IN ('confirmed', 'in_progress', 'scheduled')
+  AND booking_date < CURRENT_DATE;
+
+-- ---------------------------------------------------------------------------
+-- VERIFY (expect remaining past-dated blockers = 0)
+-- ---------------------------------------------------------------------------
+-- SELECT COUNT(*) AS past_active_remaining
+-- FROM bookings
+-- WHERE pet_id IS NOT NULL
+--   AND status IN ('confirmed', 'in_progress', 'scheduled')
+--   AND booking_date < CURRENT_DATE;
+--
+-- ---------------------------------------------------------------------------
+-- ROLLBACK (manual — no snapshot table)
+-- ---------------------------------------------------------------------------
+-- There is no automatic rollback without a prior backup of affected rows.
+-- To reverse mistakenly updated rows you would need either:
+--   (a) A dump taken immediately before this UPDATE listing id + prior status, or
+--   (b) Business validation row-by-row (e.g. restore only if vendor confirms).
+-- Example pattern IF you captured ids and old statuses in a temp table:
+--   UPDATE bookings b
+--   SET status = s.old_status, updated_at = NOW()
+--   FROM booking_745_rollback_staging s
+--   WHERE b.id = s.id;
+--
+-- ============================================================================

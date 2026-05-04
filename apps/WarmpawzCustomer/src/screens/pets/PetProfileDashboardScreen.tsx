@@ -39,14 +39,14 @@ export function PetProfileDashboardScreen({
 
   useEffect(() => {
     loadPetData();
-  }, [petId]);
+  }, [phone, petId]);
 
   const loadPetData = async () => {
     try {
       setLoading(true);
       const [petResponse, bookingsResponse] = await Promise.all([
-        CustomerApi.getPetProfile(petId),
-        CustomerApi.getPetBookings(petId),
+        CustomerApi.getPet(phone, petId),
+        CustomerApi.getPetBookings(phone, petId),
       ]);
 
       setPet(petResponse.pet || petResponse);
@@ -175,7 +175,17 @@ export function PetProfileDashboardScreen({
                 <View style={styles.bookingInfo}>
                   <Text style={styles.bookingService}>{booking.serviceName}</Text>
                   <Text style={styles.bookingDate}>
-                    {new Date(booking.appointmentDate || booking.date).toLocaleDateString()}
+                    {(() => {
+                      const raw =
+                        booking.scheduledDate ||
+                        booking.scheduled_date ||
+                        booking.appointmentDate ||
+                        booking.date ||
+                        booking.bookingDate;
+                      if (!raw) return '—';
+                      const d = new Date(raw);
+                      return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+                    })()}
                   </Text>
                 </View>
                 <View style={styles.bookingStatus}>
