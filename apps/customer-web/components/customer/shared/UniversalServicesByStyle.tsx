@@ -376,7 +376,24 @@ export function UniversalServicesByStyle({
                   inActivePackage: !!s.inActivePackage,
                 }));
               } else {
-                // For solo vendors, fetch their services
+                // Prefer services already on discover-services payload (same filters as listing). Secondary fetch
+                // uses GET /customer/vendor/:id/services — if category rules drift, listing could succeed but this
+                // returned 0 rows and the provider disappeared from "main" at-home.
+                if (Array.isArray(provider.services) && provider.services.length > 0) {
+                  services = provider.services.map((s: any) => ({
+                    id: s.id || s.service_id,
+                    serviceId: s.serviceId || s.id || s.service_id,
+                    name: s.name || s.serviceName || s.service_name || `${config.roleName} Service`,
+                    price: Number(s.price || s.custom_price || 499),
+                    originalPrice: Number(s.price || s.custom_price || 499),
+                    vendorDiscount: s.vendor_discount || s.discount || 0,
+                    duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
+                    description: s.description || s.custom_description,
+                    category: s.category || s.categoryName || s.category_name,
+                    isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
+                    inActivePackage: !!s.inActivePackage,
+                  }));
+                } else {
                 const servicesResponse = await apiClient.get(
                   `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
                 ) as any;
@@ -397,6 +414,7 @@ export function UniversalServicesByStyle({
                   isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
                   inActivePackage: !!s.inActivePackage,
                 }));
+                }
               }
             } catch (serviceError) {
               console.warn(`⚠️ [${config.roleName}] Could not fetch services for provider ${providerId}:`, serviceError);

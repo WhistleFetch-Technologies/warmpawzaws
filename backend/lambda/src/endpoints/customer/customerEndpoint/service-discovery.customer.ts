@@ -200,6 +200,38 @@ function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v'): string {
   )`;
 }
 
+/** `roles.name` values for the customer Training hub (trainers + behaviorists). */
+const TRAINING_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'trainer',
+  'pet_trainer',
+  'trainer_solo',
+  'trainer_center',
+  'training_solo',
+  'behaviorist_solo',
+  'behaviorist_center',
+  'behaviourist',
+  'behaviourist_solo',
+  'behaviourist_center',
+];
+
+const TRAINING_HUB_ROLE_SQL_IN_LIST = TRAINING_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(', ');
+
+function vendorRoleIsTrainingHub(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return TRAINING_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
+}
+
+/** SQL: `vs.category` text that should match customer ?category=training (e.g. Behavioral). */
+function sqlTrainingCategoryAliasOrVs(vsAlias = 'vs'): string {
+  return `(
+        LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) IN (
+          'behavioral','behaviour','behavioural','behaviourist','behavior','behavior_modification'
+        )
+        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behavior%'
+        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behaviour%'
+      )`;
+}
+
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
 
 /**
@@ -1430,6 +1462,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
+      /**
+       * Training hub (?category=training): vendor_services often use "Behavioral" while discovery filters on "training".
+       * Mirror nutrition/boarding: alias category text + allow empty category for trainer/behaviorist roles.
+       */
+      const trainingDiscoverySearch =
+        !sittingDiscoveryRelaxed &&
+        catTextExact.some((c) => c === 'training' || c.includes('training'));
+
       /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
       const walkerCategoryDiscoveryOr =
         !sittingDiscoveryRelaxed &&
@@ -1515,10 +1555,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const trainingUncatSql =
+          !sitterRoleBypass &&
+          trainingDiscoverySearch &&
+          vendorRoleIsTrainingHub(_vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
             ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
             : '';
+        const trainingCategoryAliasFetchOr =
+          !sitterRoleBypass && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -1528,6 +1576,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
             ${nutritionUncatSql}
+            ${trainingUncatSql}
+            ${trainingCategoryAliasFetchOr}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
@@ -1721,10 +1771,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       };
 
-      // 4) Vendor SQL: require VA2 match OR no VA2 rows yet (new vendors with services but calendar not saved)
-      const availabilityRequiredSql = sittingDiscoveryRelaxed
-        ? ''
-        : `
+      // 4) Vendor SQL: VA2 gate (sitting + training hubs skip — solo sitters/trainers often have published
+      // services but empty or all-disabled calendars; booking still uses slots API.)
+      const availabilityRequiredSql =
+        sittingDiscoveryRelaxed || trainingDiscoverySearch
+          ? ''
+          : `
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
@@ -1790,6 +1842,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         !sittingDiscoveryRelaxed && nutritionDiscoverySearch
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
+      const trainingRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && trainingDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+      const trainingCategoryAliasVendorOr =
+        !sittingDiscoveryRelaxed && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
       const vetCategoryEmptyOr =
         !sittingDiscoveryRelaxed && isVetCategoryDiscovery
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -1816,6 +1874,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
                 ${nutritionRoleUncategorizedOr}
+                ${trainingRoleUncategorizedOr}
+                ${trainingCategoryAliasVendorOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
@@ -3445,6 +3505,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'pet_walker';
         const boardingBookingCategoryRequest =
           catLower === 'boarding' || catLower === 'pet_boarding';
+        /** Training / behavior: same category rules as discover-services (null category + behaviorist role, Behavioral label). */
+        const trainingBookingCategoryRequest =
+          catLower === 'training' ||
+          catLower === 'pet_training' ||
+          catLower === 'dog_training' ||
+          catLower === 'behaviorist' ||
+          catLower === 'behaviourist';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -3535,6 +3602,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             ${boardingCatIdOr}
+          )`;
+        } else if (trainingBookingCategoryRequest) {
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            OR ${sqlTrainingCategoryAliasOrVs('vs')}
+            OR (
+              TRIM(COALESCE(vs.category, '')) = ''
+              AND EXISTS (
+                SELECT 1 FROM vendors v_tr
+                LEFT JOIN roles r_tr ON v_tr.role_id = r_tr.id
+                WHERE v_tr.id = vs.vendor_id
+                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+              )
+            )
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
@@ -5417,6 +5498,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
+      const trainingDiscoverySearchByStyle = catTextExact.some(
+        (c) => c === 'training' || c.includes('training')
+      );
+
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
@@ -5426,6 +5511,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         nutritionDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
+
+      const trainingRoleUncategorizedOrByStyle =
+        trainingDiscoverySearchByStyle
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+
+      const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
+        ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+        : '';
 
       const walkerCategoryDiscoveryOrByStyle =
         catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
@@ -5474,6 +5568,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const trainingUncatSqlByStyle =
+          trainingDiscoverySearchByStyle && vendorRoleIsTrainingHub(vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
+        const trainingCategoryAliasFetchOrByStyle = trainingDiscoverySearchByStyle
+          ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+          : '';
         const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
           : '';
@@ -5484,6 +5585,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
             ${nutritionUncatSqlByStyle}
+            ${trainingUncatSqlByStyle}
+            ${trainingCategoryAliasFetchOrByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
             ${boardingCustomCategoryIdOrByStyleSql}
@@ -5659,13 +5762,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
                 ${nutritionRoleUncategorizedOrByStyle}
+                ${trainingRoleUncategorizedOrByStyle}
+                ${trainingCategoryAliasVendorOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
           )
-          AND ${sqlVendorAvailabilityOrNotConfigured('v')}
+          ${trainingDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
       `;
 
       const vendorParams: any[] =
