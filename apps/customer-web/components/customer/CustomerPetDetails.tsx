@@ -7,6 +7,7 @@ import {
   AlertCircle, ChevronRight, ArrowLeft
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ApiError } from '@/lib/error-handling';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { fetchPetById } from '@/lib/fetch-customer-pet';
 
@@ -97,6 +98,39 @@ function petTypeEmoji(type: string): string {
   return '🐾';
 }
 
+/** Map GET /customer/:phone/pets/:petId/bookings row to UI booking card shape. */
+function mapPetBookingFromApi(raw: any): Booking {
+  const st = String(raw?.status ?? '').toLowerCase();
+  let uiStatus: Booking['status'] = 'active';
+  if (st === 'completed' || st === 'partially_completed') uiStatus = 'completed';
+  else if (st === 'cancelled' || st === 'no_show') uiStatus = 'cancelled';
+  else uiStatus = 'active';
+
+  const schedule =
+    raw?.scheduledDate ??
+    raw?.scheduled_date ??
+    raw?.bookingDate ??
+    raw?.booking_date ??
+    raw?.startDate;
+  const priceRaw = raw?.price ?? raw?.total_amount ?? 0;
+  const priceNum = typeof priceRaw === 'number' ? priceRaw : parseFloat(String(priceRaw)) || 0;
+
+  return {
+    id: String(raw?.id ?? ''),
+    serviceType: String(raw?.serviceName ?? raw?.service_name ?? 'Service'),
+    vendorName: String(raw?.vendorName ?? raw?.vendor_name ?? ''),
+    startDate: schedule != null && schedule !== '' ? String(schedule) : '',
+    totalSessions: raw?.totalSessions ?? 1,
+    completedSessions: raw?.completedSessions ?? 0,
+    upcomingSessions: raw?.upcomingSessions ?? 0,
+    status: uiStatus,
+    price: priceNum,
+    requiresOTP: raw?.requiresOTP,
+    completionOTP: raw?.completionOTP ?? raw?.otp_code,
+    scheduledDate: schedule != null && schedule !== '' ? String(schedule) : undefined,
+  };
+}
+
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
   const [pet, setPet] = useState<Pet | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -106,6 +140,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const [deleting, setDeleting] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -160,13 +195,14 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const loadPetBookings = async () => {
     try {
       setLoadingBookings(true);
+      setBookingsLoadError(null);
       const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
-
-      // Filter bookings for this specific pet
-      const petBookings = (data?.bookings || []).filter((b: any) => b.petId === petId);
-      setBookings(petBookings);
+      const rows = data?.bookings || [];
+      setBookings(rows.map(mapPetBookingFromApi));
     } catch (error) {
       console.error('Error loading bookings:', error);
+      setBookings([]);
+      setBookingsLoadError('Could not load bookings. Please try again in a moment.');
     } finally {
       setLoadingBookings(false);
     }
@@ -258,23 +294,13 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     
     try {
       console.log(`=== DELETING PET ${petId} ===`);
-      
-      const deleteData = await apiClient.delete(`/customer/${phone}/pets/${petId}`) as any;
-      
+
+      const deleteData = (await apiClient.delete(`/customer/${phone}/pets/${petId}`)) as any;
+
       if (!deleteData || !deleteData.success) {
-        // Check if it's because of active bookings
-        if (deleteData?.activeBookingsCount && deleteData.activeBookingsCount > 0) {
-          alert(
-            `Cannot delete ${pet.name}'s profile\n\n` +
-            `This pet has ${deleteData.activeBookingsCount} active booking(s). ` +
-            `Please complete or cancel all active bookings before deleting the pet profile.`
-          );
-          return;
-        } else {
-          throw new Error(deleteData?.error || 'Failed to delete pet');
-        }
+        throw new Error(deleteData?.error || 'Failed to delete pet');
       }
-      
+
       console.log('Pet deleted successfully');
       
       // Show success message
@@ -289,6 +315,21 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       
     } catch (error) {
       console.error('Error deleting pet:', error);
+      if (error instanceof ApiError && error.statusCode === 400) {
+        const data = ((error as any).responseData ?? (error as any).response) as {
+          activeBookingsCount?: number;
+          error?: string;
+        } | null;
+        const count = data?.activeBookingsCount;
+        if (count != null && count > 0) {
+          alert(
+            `Cannot delete ${pet.name}'s profile\n\n` +
+              `This pet has ${count} active booking(s). ` +
+              `Please complete or cancel all active bookings before deleting the pet profile.`
+          );
+          return;
+        }
+      }
       alert(`Error: ${error instanceof Error ? error.message : 'Failed to delete pet. Please try again.'}`);
     } finally {
       setDeleting(false);
@@ -705,6 +746,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             {loadingBookings ? (
               <div className="text-center py-6">
                 <div className="w-8 h-8 border-2 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto"></div>
+              </div>
+            ) : bookingsLoadError ? (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 p-6 text-center">
+                <AlertCircle className="mx-auto mb-3 h-12 w-12 text-amber-600" />
+                <p className="text-sm text-gray-800">{bookingsLoadError}</p>
               </div>
             ) : bookings.length === 0 ? (
               <div className="bg-gray-50 rounded-xl p-6 text-center">
