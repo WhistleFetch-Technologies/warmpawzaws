@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { ArrowLeft, BookOpen, Clock, Loader2, AlertCircle } from 'lucide-react';
 
 interface ArticleDetail {
@@ -130,7 +131,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
               )}
               {article.category && (
                 <span className="text-[10px] font-semibold uppercase text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full capitalize">
-                  {article.category}
+                  {getCustomerArticleCategoryLabel(article.category)}
                 </span>
               )}
               {article.readTime && (
