@@ -56,6 +56,8 @@ interface CommunicationHubProps {
   onNavigate?: (screen: string, data?: any) => void; // ✅ NEW: For video call navigation
   meetingId?: string; // ✅ NEW: Meeting ID for video calls
   onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<string | void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate; may return meetingId
+  /** Called after booking chat messages from the provider are marked read (header badge refresh). */
+  onBookingChatMarkedRead?: () => void;
 }
 
 // ============================================================================
@@ -111,6 +113,7 @@ export function CommunicationHub({
   onNavigate, // ✅ NEW
   meetingId, // ✅ NEW
   onStartVideoCall, // Rule 2: Customer starts video from chat → create + notify vendor then navigate
+  onBookingChatMarkedRead,
 }: CommunicationHubProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -252,20 +255,36 @@ export function CommunicationHub({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Mark messages as read when they appear
+  // Mark all provider-side messages read when customer views chat (one bulk call + refresh).
+  const lastBulkReadMsRef = useRef(0);
   useEffect(() => {
-    const unreadFromVendor = messages.filter(
-      m => m.sender_type === 'vendor' && !m.is_read
-    );
-    
-    unreadFromVendor.forEach(async (msg) => {
-      try {
-        await apiClient.put(`/chat/messages/${msg.id}/read`, {});
-      } catch (e) {
-        // Silent fail for read receipts
-      }
+    if (!chatActive || !bookingId) return;
+    const hasUnreadFromOthers = messages.some((m) => {
+      const st = String(m.sender_type || '').toLowerCase();
+      const read = m.is_read ?? (m as { isRead?: boolean }).isRead;
+      return st !== 'customer' && !read;
     });
-  }, [messages]);
+    if (!hasUnreadFromOthers) return;
+
+    const now = Date.now();
+    if (now - lastBulkReadMsRef.current < 2000) return;
+
+    let cancelled = false;
+    (async () => {
+      lastBulkReadMsRef.current = Date.now();
+      try {
+        await apiClient.post(`/chat/conversations/${encodeURIComponent(bookingId)}/read`, {});
+        await loadConversation(true);
+      } catch {
+        /* allow retry after debounce window */
+      }
+      if (!cancelled) onBookingChatMarkedRead?.();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, bookingId, chatActive, loadConversation, onBookingChatMarkedRead]);
 
   // ============================================================================
   // ACTIONS

@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
+import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { PromotionBanner } from '../shared/PromotionBanner';
@@ -354,11 +356,16 @@ export function CustomerHomeComplete({
     [persistAiFabOffset]
   );
 
+  const { messagesInboxVersion } = useCustomerBookingMessagesModal();
+
   /** Unread inbox count for header bell; refreshed infrequently (same API as useNotificationService). */
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   /** Bumps when inbox changes (modal read/delete) so the header badge refetches. */
   const [notificationInboxVersion, setNotificationInboxVersion] = useState(0);
+
+  /** Vendor booking chat + support ticket threads (see `fetchCustomerMessageUnreadBreakdown`). */
+  const [combinedMessageUnreadCount, setCombinedMessageUnreadCount] = useState(0);
 
   // ✅ FIX GAP-6.2: 5-minute notification state
   const [upcomingCall, setUpcomingCall] = useState<{
@@ -1311,6 +1318,32 @@ export function CustomerHomeComplete({
     };
   }, [phone, refreshKey, notificationInboxVersion]);
 
+  useEffect(() => {
+    const clean = (phone || '').replace(/[^0-9]/g, '');
+    if (clean.length < 10) {
+      setCombinedMessageUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const b = await fetchCustomerMessageUnreadBreakdown({
+          customerId: customerId || undefined,
+          phoneForApi: phone,
+        });
+        if (!cancelled) setCombinedMessageUnreadCount(b.total);
+      } catch {
+        if (!cancelled) setCombinedMessageUnreadCount(0);
+      }
+    };
+    void fetchUnread();
+    const interval = setInterval(fetchUnread, 90_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [phone, refreshKey, customerId, messagesInboxVersion]);
+
   const loadActiveBookings = async () => {
     try {
       // Rule 1: Include vendor_on_way so customer sees "track provider" when vendor has started travel
@@ -1786,6 +1819,11 @@ export function CustomerHomeComplete({
                 aria-label="Messages"
               >
                 <MessageSquare className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+                {combinedMessageUnreadCount > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {combinedMessageUnreadCount > 99 ? '99+' : combinedMessageUnreadCount}
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"

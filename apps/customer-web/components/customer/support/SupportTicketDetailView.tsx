@@ -16,7 +16,7 @@ export interface SupportTicketDetailViewProps {
   sendingReply: boolean;
   onSendReply: () => void;
   onBack: () => void;
-  /** Passed to message list: poll parent to reload `GET /support/tickets/:id`. */
+  /** Passed to message list: user taps Refresh to reload `GET /support/tickets/:id`. */
   onMessagesRefresh?: () => void | Promise<void>;
 }
 
