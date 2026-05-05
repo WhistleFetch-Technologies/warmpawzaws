@@ -260,12 +260,14 @@ public class PidgeOrderPayloadBuilder {
 		return a;
 	}
 
-	private String text(JsonNode node, String primary, String alternate) {
-		if (node != null && node.hasNonNull(primary)) {
-			return node.get(primary).asText();
+	private String text(JsonNode node, String... keys) {
+		if (node == null || keys == null) {
+			return null;
 		}
-		if (alternate != null && node != null && node.hasNonNull(alternate)) {
-			return node.get(alternate).asText();
+		for (String k : keys) {
+			if (k != null && node.hasNonNull(k)) {
+				return node.get(k).asText();
+			}
 		}
 		return null;
 	}

@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -18,7 +19,13 @@ public class ApiExceptionAdvice {
 		if (s == null) {
 			s = HttpStatus.BAD_GATEWAY;
 		}
-		return ResponseEntity.status(s).body(Map.of("success", false, "error", ex.getMessage()));
+		Map<String, Object> body = new LinkedHashMap<>();
+		body.put("success", false);
+		body.put("error", ex.getMessage());
+		if (ex.getResponseBody() != null && !ex.getResponseBody().isBlank()) {
+			body.put("pidgeResponseBody", ex.getResponseBody());
+		}
+		return ResponseEntity.status(s).body(body);
 	}
 
 	@ExceptionHandler(ResponseStatusException.class)

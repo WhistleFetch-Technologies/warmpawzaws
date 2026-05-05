@@ -76,16 +76,28 @@ public class PidgeIntegrationService {
 		if (data.has("data") && data.get("data").isObject()) {
 			JsonNode inner = data.get("data");
 			if (inner.hasNonNull("token")) {
-				return inner.get("token").asText();
+				return stripBearerPrefix(inner.get("token").asText());
 			}
 		}
 		if (data.hasNonNull("token")) {
-			return data.get("token").asText();
+			return stripBearerPrefix(data.get("token").asText());
 		}
 		if (data.hasNonNull("access_token")) {
-			return data.get("access_token").asText();
+			return stripBearerPrefix(data.get("access_token").asText());
 		}
 		throw new IllegalStateException("Pidge login succeeded but no token in response");
+	}
+
+	/** Pidge sometimes returns {@code Bearer <jwt>}; outbound calls always add {@code Bearer} themselves. */
+	private static String stripBearerPrefix(String raw) {
+		if (raw == null) {
+			return "";
+		}
+		String t = raw.trim();
+		if (t.length() >= 7 && "bearer ".equalsIgnoreCase(t.substring(0, 7))) {
+			return t.substring(7).trim();
+		}
+		return t;
 	}
 
 	public String getPidgeToken() {
@@ -218,7 +230,7 @@ public class PidgeIntegrationService {
 				ub.queryParam("brand_name", br.get("name").asText());
 			}
 		}
-		return exchangeWithRetry("GET", ub.encode().toUri().toASCIIString(), null);
+		return exchangeWithRetry("GET", ub.build().encode().toUriString(), null);
 	}
 
 	public JsonNode getOrderFulfillmentServices(List<String> ids) {
@@ -231,7 +243,7 @@ public class PidgeIntegrationService {
 				ub.queryParam("ids", id.trim());
 			}
 		}
-		return exchangeWithRetry("GET", ub.encode().toUri().toASCIIString(), null);
+		return exchangeWithRetry("GET", ub.build().encode().toUriString(), null);
 	}
 
 	public JsonNode createTicket(JsonNode body) {
@@ -257,7 +269,7 @@ public class PidgeIntegrationService {
 		if (dummyStatus != null && !dummyStatus.isBlank()) {
 			ub.queryParam("dummy_status", dummyStatus);
 		}
-		return exchangeWithRetry("GET", ub.encode().toUri().toASCIIString(), null);
+		return exchangeWithRetry("GET", ub.build().encode().toUriString(), null);
 	}
 
 	public JsonNode sandboxDummyWebhook(String pidgeOrderId, JsonNode body) {
@@ -322,7 +334,15 @@ public class PidgeIntegrationService {
 			return doExchange(method, fullUrl, body);
 		} catch (PidgeUnauthorizedException e) {
 			clearTokenCache();
-			return doExchange(method, fullUrl, body);
+			try {
+				return doExchange(method, fullUrl, body);
+			} catch (PidgeUnauthorizedException e2) {
+				throw new PidgeHttpException(401, "",
+						"Pidge returned 401 Unauthorized twice (even after fetching a fresh token). "
+								+ "Check: (1) POST /admin/logistics/pidge/vendor-login works with same baseUrl; "
+								+ "(2) no conflicting logistics_partners pidge row with wrong credentials; "
+								+ "(3) PIDGE_API_BASE matches the host where login succeeded (e.g. https://store.dev.pidge.in).");
+			}
 		}
 	}
 

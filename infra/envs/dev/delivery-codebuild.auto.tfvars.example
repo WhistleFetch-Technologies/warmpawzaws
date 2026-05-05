@@ -1,0 +1,19 @@
+# CodeBuild for delivery-service Docker image (Maven runs inside the Dockerfile).
+# Copy to delivery-codebuild.auto.tfvars in this directory (gitignored as *.tfvars)
+# or merge into your existing terraform.tfvars.
+#
+# Requires: enable_delivery_stack = true and non-empty delivery_service_image (ECR URI),
+# same as the ECS module.
+#
+# Git branch: CodeBuild clones `delivery_codebuild_branch_ref` from GitHub (default in variables.tf is main).
+# That commit on the remote must include `services/delivery-service/buildspec.yml` and Dockerfile.
+# Uncomment to build from a feature branch (must be pushed to GitHub):
+# delivery_codebuild_branch_ref = "refs/heads/dev-bindushree-java"
+
+delivery_codebuild_github_url = "https://github.com/WhistleFetch-Technologies/warmpawzaws.git"
+
+# Public GitHub repos: leave false so CodeBuild clones without CodeStar (avoids broken CreateProject + connection IAM in some accounts).
+# Private repos: set true, set delivery_codebuild_codestar_connection_arn or let Terraform create a connection and finish OAuth.
+# delivery_codebuild_use_github_codeconnection = false
+
+# delivery_codebuild_codestar_connection_arn = "arn:aws:codestar-connections:..."

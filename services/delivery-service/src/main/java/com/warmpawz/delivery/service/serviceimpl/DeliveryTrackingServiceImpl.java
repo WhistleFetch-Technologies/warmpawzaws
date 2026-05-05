@@ -1,8 +1,7 @@
 package com.warmpawz.delivery.service.serviceimpl;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.warmpawz.delivery.repository.DeliveryLocationHistoryRepository;
-import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
+import com.warmpawz.delivery.entity.CourierPartner;
 import com.warmpawz.delivery.entity.DeliveryLocationHistory;
 import com.warmpawz.delivery.entity.DeliveryTracking;
 import com.warmpawz.delivery.repository.CourierPartnerRepository;
