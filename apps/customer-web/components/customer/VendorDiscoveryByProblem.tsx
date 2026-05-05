@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { StarRating } from '@/components/customer/shared/StarRating';

@@ -33,6 +33,7 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { aggregateAverageRatingStat } from '@/lib/rating-display';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 import { StarRating } from '../shared/StarRating';

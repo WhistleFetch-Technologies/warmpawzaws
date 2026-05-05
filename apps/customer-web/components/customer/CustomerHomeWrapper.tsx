@@ -932,7 +932,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'adoption_questionnaire') return <AdoptionQuestionnaire onBack={handleBack} onComplete={() => { toast.success('Preferences saved'); handleBack(); }} />;
 
   // ✅ NEW: Services Browser
-  if (currentScreen === 'services') return <CustomerServicesPage onBack={handleBack} onNavigate={(screen, data) => { 
+  if (currentScreen === 'services') return <CustomerServicesPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'create-booking') { 
       setSelectedService(data?.serviceId);
       setSelectedVendorId(data?.vendorId);

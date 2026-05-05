@@ -870,7 +870,7 @@ export function UniversalServiceProviderList({
               <button
                 key={chip}
                 onClick={() => {
-                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: 4.5 }));
+                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: null }));
                   if (chip === 'Nearest') setFilters(f => ({ ...f, sortBy: 'distance' }));
                   if (chip === 'Available Now') setFilters(f => ({ ...f, sortBy: 'availability' }));
                 }}

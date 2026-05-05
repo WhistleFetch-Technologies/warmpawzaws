@@ -2695,7 +2695,13 @@ export function CustomerHomeWrapper({
             } else if (screen === 'add-pet' || screen === 'pets') {
               navigateToPets();
             } else if (screen === 'nutritionist-booking') {
-              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceId || 'pet_nutritionist', nutritionist: data?.nutritionist });
+              setVetServiceData({
+                vendorId: data?.vendorId,
+                serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
+                serviceStyle: data?.serviceStyle || 'tele',
+                nutritionist: data?.nutritionist,
+                serviceId: data?.serviceId,
+              });
               setPreviousScreen('nutritionist-tele');
               setCurrentScreen('nutritionist-booking');
             } else {
@@ -2717,7 +2723,7 @@ export function CustomerHomeWrapper({
         serviceType={vetServiceData?.serviceType || 'pet_nutritionist'}
         serviceId={vetServiceData?.serviceId}
         serviceName={vetServiceData?.service?.name}
-        serviceStyle={vetServiceData?.serviceStyle}
+        serviceStyle={vetServiceData?.serviceStyle ?? 'tele'}
         price={vetServiceData?.price}
         duration={vetServiceData?.duration}
         onBack={() => setCurrentScreen(previousScreen || 'nutritionist')}
@@ -2755,7 +2761,13 @@ export function CustomerHomeWrapper({
             } else if (screen === 'nutritionist-booking') {
               setPreviousScreen('nutritionist');
               setSelectedVendorId(data?.vendorId);
-              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceId || 'pet_nutritionist', nutritionist: data?.nutritionist });
+              setVetServiceData({
+                vendorId: data?.vendorId,
+                serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
+                serviceStyle: data?.serviceStyle || 'tele',
+                nutritionist: data?.nutritionist,
+                serviceId: data?.serviceId,
+              });
               setCurrentScreen('nutritionist-booking');
             } else if (screen === 'create-booking') {
               setSelectedVendorId(data?.vendorId);
@@ -2798,6 +2810,7 @@ export function CustomerHomeWrapper({
                 vendorId: data?.vendorId, 
                 serviceId: data?.serviceId,
                 serviceType: data?.serviceType || 'pet_nutritionist',
+                serviceStyle: data?.serviceStyle || 'tele',
                 serviceName: data?.serviceName,
                 price: data?.price,
                 duration: data?.duration
@@ -3258,7 +3271,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'adoption_questionnaire') return <AdoptionQuestionnaire onBack={() => setCurrentScreen('adoption')} onComplete={() => { toast.success('Preferences saved'); setCurrentScreen('adoption'); }} />;
 
   // ✅ NEW: Services Browser
-  if (currentScreen === 'services') return <CustomerServicesPage onBack={handleBack} onNavigate={(screen, data) => { 
+  if (currentScreen === 'services') return <CustomerServicesPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'create-booking') { 
       setSelectedService(data?.serviceId);
       setSelectedVendorId(data?.vendorId);

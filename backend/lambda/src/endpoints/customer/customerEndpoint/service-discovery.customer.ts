@@ -276,6 +276,180 @@ async function getVendorPhotoUrl(v: any): Promise<string | null> {
   return null;
 }
 
+/** Flatten metadata.gallery / facility_photos entries (strings or { url, key, … }). */
+function flattenMetadataGalleryItems(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      const t = item.trim();
+      if (t) out.push(t);
+      continue;
+    }
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const o = item as Record<string, unknown>;
+      const cand =
+        o.url ??
+        o.photoUrl ??
+        o.photo_url ??
+        o.src ??
+        o.imageUrl ??
+        o.image ??
+        o.photo;
+      if (typeof cand === 'string' && cand.trim()) {
+        out.push(cand.trim());
+        continue;
+      }
+      if (typeof o.key === 'string' && o.key.trim()) {
+        out.push(o.key.trim());
+      }
+    }
+  }
+  return out;
+}
+
+/** Dedupe gallery inputs by S3 key / path so the same object is not presigned twice. */
+function dedupeGalleryInputsPreserveOrder(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of urls) {
+    const trimmed = u.trim();
+    if (!trimmed) continue;
+    let norm =
+      extractS3KeyFromUrl(trimmed) ||
+      (() => {
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          try {
+            return new URL(trimmed).pathname.replace(/^\/+/, '') || trimmed.split('?')[0];
+          } catch {
+            return trimmed.split('?')[0];
+          }
+        }
+        return trimmed.split('?')[0].split('#')[0];
+      })();
+    norm = (norm || trimmed).toLowerCase();
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * Turn one facility/gallery metadata value into a fresh presigned GET URL (or public URL / fallback).
+ * Mirrors GET /customer/facility photo logic so GET /customer/vendor can return the same shape.
+ */
+async function resolveOneFacilityPhotoToPresignedUrl(
+  vendorId: string,
+  photoItem: string,
+  // Dynamic import('@aws-sdk/client-s3') is not typed as namespace in this project; runtime has S3Client.
+  s3Client: { send: (command: unknown) => Promise<unknown> },
+  BUCKET_NAME: string
+): Promise<string | null> {
+  try {
+    if (!photoItem || typeof photoItem !== 'string') {
+      return null;
+    }
+
+    let fileKey = photoItem.trim();
+
+    if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
+      const urlParts = photoItem.split('.amazonaws.com/');
+      if (urlParts.length > 1) {
+        fileKey = urlParts[1].split('?')[0].split('#')[0];
+      }
+    } else if (
+      photoItem.includes('?') &&
+      (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))
+    ) {
+      const urlParts = photoItem.split('?')[0];
+      if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
+        const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
+        if (keyMatch && keyMatch[1]) {
+          fileKey = `vendors/${vendorId}/facility/${keyMatch[1]}`;
+        } else {
+          const vendorsIndex = urlParts.indexOf('vendors/');
+          if (vendorsIndex >= 0) {
+            fileKey = urlParts.substring(vendorsIndex);
+          }
+        }
+      }
+    } else if (photoItem.startsWith('vendors/')) {
+      if (!fileKey.startsWith(`vendors/${vendorId}/`)) {
+        const keyParts = fileKey.split('/');
+        if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
+          fileKey = `vendors/${vendorId}/${keyParts.slice(2).join('/')}`;
+        }
+      }
+    } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
+      return photoItem;
+    }
+
+    if (!fileKey || fileKey.length === 0) {
+      console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
+      return null;
+    }
+
+    const s3: any = await import('@aws-sdk/client-s3');
+    const { GetObjectCommand, HeadObjectCommand } = s3;
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+
+    try {
+      const headCommand = new HeadObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+      });
+      await s3Client.send(headCommand);
+    } catch (headError: any) {
+      if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+        console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
+        return null;
+      }
+      console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: fileKey,
+    });
+
+    const presignedUrl = await getSignedUrl(s3Client as any, command, { expiresIn: 604800 });
+
+    if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
+      console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
+      return null;
+    }
+
+    return presignedUrl;
+  } catch (error: any) {
+    console.error(
+      `[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`,
+      error?.message || error
+    );
+    if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
+      return photoItem;
+    }
+    return null;
+  }
+}
+
+/** Presign all facility gallery items for customer display; deduped and order-stable. */
+async function presignCustomerFacilityGalleryUrls(vendorId: string, rawInput: unknown[]): Promise<string[]> {
+  const items = dedupeGalleryInputsPreserveOrder(flattenMetadataGalleryItems(rawInput));
+  if (items.length === 0) return [];
+
+  const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+  const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
+  const s3Module: any = await import('@aws-sdk/client-s3');
+  const s3Client = new s3Module.S3Client({ region: AWS_REGION });
+
+  const photos = await Promise.all(
+    items.map((photoItem) => resolveOneFacilityPhotoToPresignedUrl(vendorId, photoItem, s3Client, BUCKET_NAME))
+  );
+
+  return photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
+}
+
 const columnExistsCache = new Map<string, boolean>();
 async function columnExists(tableName: string, columnName: string): Promise<boolean> {
   const key = `${tableName}.${columnName}`;
@@ -893,6 +1067,291 @@ function mapVendorServiceRowForCustomerDiscoveryList(s: any): any {
   };
 }
 
+/**
+ * Count vendors that match GET /customer/discover-services base SQL + the same minRating
+ * and radius behaviour as the listing endpoint (without per-vendor enrichment).
+ */
+async function countDiscoverableVendorsForDiscoveryQuery(opts: {
+  serviceStyleRaw: string;
+  category?: string;
+  roleId?: string;
+  latitude: string | null;
+  longitude: string | null;
+  radiusQ?: string;
+  maxDistanceQ?: string;
+  minRatingQ?: string;
+}): Promise<number> {
+  const serviceStyleNorm = normalizeServiceStyle(opts.serviceStyleRaw) || opts.serviceStyleRaw;
+  const category = opts.category;
+  const roleId = opts.roleId;
+
+  const rules = await getDiscoveryRules(
+    roleId || category || 'all',
+    'discover',
+    serviceStyleNorm as string,
+    category || undefined
+  );
+  const radiusDefault =
+    serviceStyleNorm === 'tele'
+      ? (rules.discovery_radius_km_tele ?? 0)
+      : (rules.discovery_radius_km ?? 50);
+  const radius = opts.radiusQ ? parseInt(opts.radiusQ, 10) : radiusDefault;
+  const maxDistanceKm = opts.maxDistanceQ ? parseFloat(opts.maxDistanceQ) : null;
+  const minRatingVal = opts.minRatingQ ? parseFloat(opts.minRatingQ) : null;
+
+  const acceptableStyles = acceptableStylesForService(serviceStyleNorm);
+  const customerLat = opts.latitude ? parseFloat(opts.latitude) : null;
+  const customerLng = opts.longitude ? parseFloat(opts.longitude) : null;
+
+  const isUuid = (s?: string) =>
+    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+  const rawCategoryKeys: string[] = [];
+  if (category) rawCategoryKeys.push(String(category));
+  if (roleId) rawCategoryKeys.push(String(roleId));
+  if (category && category.toLowerCase() === 'vet') {
+    rawCategoryKeys.push('vet care', 'veterinary', 'veterinarian');
+  }
+  const catTextExact: string[] = rawCategoryKeys.filter((k) => !isUuid(k)).map((k) => k.toLowerCase());
+  const catTextLike: string[] = catTextExact.map((k) => `%${k}%`);
+  const catUUIDs: string[] = rawCategoryKeys.filter((k) => isUuid(k));
+  const isVetCategoryDiscovery = catTextExact.some((c) =>
+    ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
+  );
+
+  const sittingDiscoveryRelaxed = Boolean(
+    catTextExact.some((c) =>
+      ['sitting', 'pet_sitter', 'sitter', 'sitter_solo'].includes(c)
+    ) ||
+      (Boolean(roleId) &&
+        ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
+          String(roleId).toLowerCase().replace(/-/g, '_')
+        ))
+  );
+
+  const boardingDiscoverySearch =
+    catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
+    (roleId &&
+      ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+
+  const nutritionDiscoverySearch =
+    catTextExact.some(
+      (c) =>
+        ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
+        c.includes('nutritionist') ||
+        c === 'pet nutrition' ||
+        (c.length >= 8 && c.startsWith('nutrition'))
+    ) ||
+    (roleId &&
+      ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
+        String(roleId).toLowerCase().replace(/-/g, '_')
+      ));
+
+  const walkerCategoryDiscoveryOr =
+    !sittingDiscoveryRelaxed &&
+    catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
+      ? ` OR (
+              vs.service_style = 'at_home'
+              AND (
+                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
+                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
+                OR (
+                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
+                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
+                )
+              )
+              AND (
+                TRIM(COALESCE(vs.category, '')) = ''
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
+              )
+            )`
+      : '';
+
+  const hasVsCategoryIdDiscover = await columnExists('vendor_services', 'category_id');
+  let boardingCustomCategoryIdOrSql = '';
+  if (boardingDiscoverySearch && hasVsCategoryIdDiscover) {
+    const slugRes = await query(
+      `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+      [['boarding', 'pet_boarding', 'pet boarding']]
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    const ids = (slugRes.rows || []).map((r: any) => r?.id).filter(Boolean);
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const clean = ids.filter((id: string) => UUID_RE.test(String(id).trim()));
+    if (clean.length > 0) {
+      const uuidList = clean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+      boardingCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidList}]::uuid[])
+                )`;
+    }
+  }
+
+  const availabilityRequiredSql = sittingDiscoveryRelaxed
+    ? ''
+    : `
+          AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
+
+  const sittingCatalogBoardingNonCustomOr = sittingDiscoveryRelaxed
+    ? `OR (
+                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
+                AND COALESCE(vs.is_custom_service, false) = false
+              )`
+    : '';
+
+  const sittingCategoryTypoOr = sittingDiscoveryRelaxed
+    ? `OR (
+                LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
+              )`
+    : '';
+
+  const sittingRoleUncategorizedOr = sittingDiscoveryRelaxed
+    ? `OR (
+                TRIM(COALESCE(vs.category, '')) = ''
+                AND COALESCE(vs.is_custom_service, false) = false
+                AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
+              )`
+    : '';
+
+  const sittingCustomNameOr = sittingDiscoveryRelaxed
+    ? `OR (
+                COALESCE(vs.is_custom_service, false) = true
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
+                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
+              )`
+    : '';
+
+  const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
+    ? `
+              AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+    : '';
+
+  const boardingRoleUncategorizedOr =
+    !sittingDiscoveryRelaxed && boardingDiscoverySearch
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
+      : '';
+
+  const nutritionRoleUncategorizedOr =
+    !sittingDiscoveryRelaxed && nutritionDiscoverySearch
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
+      : '';
+
+  const vetCategoryEmptyOr =
+    !sittingDiscoveryRelaxed && isVetCategoryDiscovery
+      ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+      : '';
+
+  const vendorServiceCategorySql =
+    catTextExact.length + catUUIDs.length > 0
+      ? sittingDiscoveryRelaxed
+        ? `
+              AND (
+                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
+                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
+                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
+                ${sittingCatalogBoardingNonCustomOr}
+                ${sittingCategoryTypoOr}
+                ${sittingRoleUncategorizedOr}
+                ${sittingCustomNameOr}
+              )
+              ${sittingExcludeNonSittingSql}`
+        : `
+              AND (
+                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
+                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
+                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
+                ${boardingRoleUncategorizedOr}
+                ${nutritionRoleUncategorizedOr}
+                ${walkerCategoryDiscoveryOr}
+                ${vetCategoryEmptyOr}
+                ${boardingCustomCategoryIdOrSql}
+              )`
+      : '';
+
+  const vendorVsDiscoverSql = sqlVendorServiceDiscoverable('vs', sittingDiscoveryRelaxed);
+  const vendorVsStyleSql = sittingDiscoveryRelaxed
+    ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
+    : 'vs.service_style = ANY($1::text[])';
+
+  const vendorListSql = `
+        SELECT v.id AS vendor_id,
+               v.latitude, v.longitude,
+               COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0)::float AS avg_rating
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.is_active = true
+          AND ${sqlVendorDiscoverableStatus('v')}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
+          AND EXISTS (
+            SELECT 1
+            FROM vendor_services vs
+            WHERE vs.vendor_id = v.id
+              AND ${vendorVsDiscoverSql}
+              AND ${vendorVsStyleSql}
+              ${vendorServiceCategorySql}
+          )
+          ${availabilityRequiredSql}
+      `;
+
+  const vendorParams: any[] =
+    catTextExact.length + catUUIDs.length > 0
+      ? catTextExact.length > 0
+        ? catUUIDs.length > 0
+          ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
+          : [acceptableStyles, catTextExact, catTextLike]
+        : [acceptableStyles, [], [], catUUIDs]
+      : [acceptableStyles];
+
+  const vendorRows = await query(vendorListSql, vendorParams);
+  let candidates = vendorRows.rows as {
+    vendor_id: string;
+    latitude: unknown;
+    longitude: unknown;
+    avg_rating: unknown;
+  }[];
+
+  if (minRatingVal != null && minRatingVal > 0) {
+    candidates = candidates.filter((row) => parseFloat(String(row.avg_rating ?? 0)) >= minRatingVal);
+  }
+
+  const effectiveMaxKm =
+    maxDistanceKm ?? (customerLat != null && customerLng != null && radius > 0 ? radius : null);
+
+  if (effectiveMaxKm != null && customerLat != null && customerLng != null) {
+    const withinRadius = candidates.filter((row) => {
+      const lat = row.latitude != null ? parseFloat(String(row.latitude)) : null;
+      const lng = row.longitude != null ? parseFloat(String(row.longitude)) : null;
+      if (lat == null || lng == null) return true;
+      const dist = calculateDistance(customerLat, customerLng, lat, lng);
+      return dist <= effectiveMaxKm;
+    });
+    if (withinRadius.length > 0) {
+      candidates = withinRadius;
+    } else if (!sittingDiscoveryRelaxed) {
+      candidates = withinRadius;
+    }
+  }
+
+  return candidates.length;
+}
+
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discovery/meta
@@ -949,6 +1408,50 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         serviceStyles: ['at_center', 'at_home', 'tele'],
         categories: ['vet', 'grooming', 'training', 'walker', 'nutrition', 'boarding', 'diagnostics', 'shop', 'cafes', 'photography', 'insurance', 'ambulance', 'breeder', 'adoption', 'relocation', 'resort', 'holiday', 'sunset'],
       }, 200);
+    }
+  });
+
+  /**
+   * GET /customer/discovery/count
+   * Same discovery rules as /customer/discover-services — returns only a count (no rows).
+   * Query: serviceStyle (required), category?, roleId?, latitude?, longitude?, phone|customerPhone?,
+   * radius?, maxDistance?, minRating?
+   */
+  app.get('/customer/discovery/count', async (c) => {
+    try {
+      const serviceStyle = c.req.query('serviceStyle') || c.req.query('style');
+      if (!serviceStyle) {
+        return c.json(
+          { success: false, error: 'Service style is required (tele, at_home, at_center)', count: 0 },
+          400
+        );
+      }
+      const category = c.req.query('category') || undefined;
+      const roleId = c.req.query('roleId') || undefined;
+      let latitude = c.req.query('latitude') || null;
+      let longitude = c.req.query('longitude') || null;
+      if (!latitude || !longitude) {
+        const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
+        const coords = await getCustomerCoordinates(customerPhone || undefined);
+        if (coords) {
+          latitude = String(coords.latitude);
+          longitude = String(coords.longitude);
+        }
+      }
+      const count = await countDiscoverableVendorsForDiscoveryQuery({
+        serviceStyleRaw: serviceStyle,
+        category,
+        roleId,
+        latitude,
+        longitude,
+        radiusQ: c.req.query('radius') || undefined,
+        maxDistanceQ: c.req.query('maxDistance') || undefined,
+        minRatingQ: c.req.query('minRating') || undefined,
+      });
+      return c.json({ success: true, count });
+    } catch (error: any) {
+      console.error('[discovery/count] Error:', error);
+      return c.json({ success: false, error: error?.message || 'Count failed', count: 0 }, 500);
     }
   });
 
@@ -3830,8 +4333,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       try {
         const meta = vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : null;
         const raw = meta?.facility_photos || meta?.photos || [];
-        facilityPhotos = Array.isArray(raw) ? raw.filter(Boolean) : [];
-      } catch (_) { }
+        const rawArr = Array.isArray(raw) ? raw : [];
+        facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
+      } catch (_) {
+        facilityPhotos = [];
+      }
 
       const vendorMeta = (() => {
         try {
@@ -4483,119 +4989,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const metadata = (vendor.metadata as any) || {};
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
-      // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
-      const rawPhotos = metadata.facility_photos || [];
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-      const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
+      const rawMixed = metadata.facility_photos || metadata.photos || [];
+      const rawCount = Array.isArray(rawMixed) ? rawMixed.length : 0;
+      console.log(`[FACILITY-PHOTOS] Found ${rawCount} photos in metadata for vendor ${vendor.id}`);
 
-      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
-
-      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      const s3Client = new S3Client({ region: AWS_REGION });
-
-      const photos = await Promise.all(
-        rawPhotos.map(async (photoItem: string) => {
-          try {
-            if (!photoItem || typeof photoItem !== 'string') {
-              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
-              return null;
-            }
-
-            let fileKey = photoItem.trim();
-
-            // Extract key from various formats
-            if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
-              const urlParts = photoItem.split('.amazonaws.com/');
-              if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
-              }
-            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
-              // Extract key from presigned URL
-              const urlParts = photoItem.split('?')[0];
-              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
-                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-                if (keyMatch && keyMatch[1]) {
-                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
-                } else {
-                  // Try to extract from any path containing vendors/
-                  const vendorsIndex = urlParts.indexOf('vendors/');
-                  if (vendorsIndex >= 0) {
-                    fileKey = urlParts.substring(vendorsIndex);
-                  }
-                }
-              }
-            } else if (photoItem.startsWith('vendors/')) {
-              // Already a key - ensure it's for this vendor
-              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
-                // If key is for different vendor or missing vendor ID, fix it
-                const keyParts = fileKey.split('/');
-                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
-                  // Replace vendor ID in key
-                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
-                }
-              }
-            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
-              // Full URL but not S3 - might be CloudFront or other CDN
-              // Try to extract key or return as-is for public URLs
-              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
-              return photoItem;
-            }
-
-            if (!fileKey || fileKey.length === 0) {
-              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
-              return null;
-            }
-
-            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
-
-            // ✅ FIX: Verify the object exists before generating presigned URL
-            try {
-              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-              const headCommand = new HeadObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: fileKey,
-              });
-              await s3Client.send(headCommand);
-            } catch (headError: any) {
-              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
-                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
-                return null;
-              }
-              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
-            }
-
-            // Generate fresh presigned URL (valid for 7 days)
-            const command = new GetObjectCommand({
-              Bucket: BUCKET_NAME,
-              Key: fileKey,
-            });
-
-            const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
-
-            // ✅ FIX: Validate presigned URL format
-            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
-              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
-              return null;
-            }
-
-            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
-            return presignedUrl;
-          } catch (error: any) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
-            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
-            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
-              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
-              return photoItem;
-            }
-            return null;
-          }
-        })
+      const validPhotos = await presignCustomerFacilityGalleryUrls(
+        vendor.id,
+        Array.isArray(rawMixed) ? rawMixed : []
       );
-
-      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
-      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawCount} total`);
 
       const boardingDisc = resolveBoardingDisclaimerFromVendor(vendor, metadata);
       return c.json({
@@ -4608,6 +5010,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           state: vendor.state,
           phone: vendor.phone,
           email: vendor.email,
+          /** Same as discovery /customer/vendor — solo providers often only have profile photo, not facility_photos */
+          photoUrl: await getVendorPhotoUrl(vendor),
           roleId: vendor.role_id, // ✅ FIX: Include roleId for CenterProfileManager
           role_id: vendor.role_id,
           boardingDisclaimer: boardingDisc.disclaimer,
@@ -4912,7 +5316,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       console.log(`📸 [FACILITY-PHOTOS] Processing ${photos.length} photos`);
 
       // Upload photos to S3
-      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const s3Upload: any = await import('@aws-sdk/client-s3');
+      const { S3Client, PutObjectCommand, GetObjectCommand } = s3Upload;
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
 
       const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
@@ -5039,119 +5444,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const metadata = (vendor.metadata as any) || {};
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
-      // ✅ FIX: Generate presigned URLs for photos on-demand (since bucket has public access blocked)
-      const rawPhotos = metadata.facility_photos || [];
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-      const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
+      const rawMixed = metadata.facility_photos || metadata.photos || [];
+      const rawCount = Array.isArray(rawMixed) ? rawMixed.length : 0;
+      console.log(`[FACILITY-PHOTOS] Found ${rawCount} photos in metadata for vendor ${vendor.id}`);
 
-      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
-
-      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      const s3Client = new S3Client({ region: AWS_REGION });
-
-      const photos = await Promise.all(
-        rawPhotos.map(async (photoItem: string) => {
-          try {
-            if (!photoItem || typeof photoItem !== 'string') {
-              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
-              return null;
-            }
-
-            let fileKey = photoItem.trim();
-
-            // Extract key from various formats
-            if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
-              const urlParts = photoItem.split('.amazonaws.com/');
-              if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
-              }
-            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
-              // Extract key from presigned URL
-              const urlParts = photoItem.split('?')[0];
-              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
-                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-                if (keyMatch && keyMatch[1]) {
-                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
-                } else {
-                  // Try to extract from any path containing vendors/
-                  const vendorsIndex = urlParts.indexOf('vendors/');
-                  if (vendorsIndex >= 0) {
-                    fileKey = urlParts.substring(vendorsIndex);
-                  }
-                }
-              }
-            } else if (photoItem.startsWith('vendors/')) {
-              // Already a key - ensure it's for this vendor
-              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
-                // If key is for different vendor or missing vendor ID, fix it
-                const keyParts = fileKey.split('/');
-                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
-                  // Replace vendor ID in key
-                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
-                }
-              }
-            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
-              // Full URL but not S3 - might be CloudFront or other CDN
-              // Try to extract key or return as-is for public URLs
-              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
-              return photoItem;
-            }
-
-            if (!fileKey || fileKey.length === 0) {
-              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
-              return null;
-            }
-
-            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
-
-            // ✅ FIX: Verify the object exists before generating presigned URL
-            try {
-              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-              const headCommand = new HeadObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: fileKey,
-              });
-              await s3Client.send(headCommand);
-            } catch (headError: any) {
-              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
-                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
-                return null;
-              }
-              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
-            }
-
-            // Generate fresh presigned URL (valid for 7 days)
-            const command = new GetObjectCommand({
-              Bucket: BUCKET_NAME,
-              Key: fileKey,
-            });
-
-            const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
-
-            // ✅ FIX: Validate presigned URL format
-            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
-              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
-              return null;
-            }
-
-            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
-            return presignedUrl;
-          } catch (error: any) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
-            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
-            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
-              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
-              return photoItem;
-            }
-            return null;
-          }
-        })
+      const validPhotos = await presignCustomerFacilityGalleryUrls(
+        vendor.id,
+        Array.isArray(rawMixed) ? rawMixed : []
       );
-
-      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
-      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawCount} total`);
 
       return c.json({
         success: true,
@@ -5172,6 +5473,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           coverImageUrl: vendor.cover_image_url,
           role: vendor.role_name,
           roleDisplayName: vendor.role_display_name,
+          /** Presigned headshot / listing photo so customer profile hero matches discover-services cards */
+          photoUrl: await getVendorPhotoUrl(vendor),
         },
         facility: {
           address: vendor.address,

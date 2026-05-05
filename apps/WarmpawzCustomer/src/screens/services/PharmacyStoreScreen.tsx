@@ -45,7 +45,7 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
@@ -444,7 +444,7 @@ export function PharmacyStoreScreen({
                   </Text>
                   <View style={styles.productRating}>
                     <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
+                    <Text style={styles.ratingText}>{formatRatingOrDash(product.rating)}</Text>
                     <Text style={styles.reviewsText}>({product.reviews})</Text>
                   </View>
                   <View style={styles.productFooter}>
@@ -516,7 +516,7 @@ export function PharmacyStoreScreen({
             </Text>
             <View style={styles.productDetailRating}>
               <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
+              <Text style={styles.ratingText}>{formatRatingOrDash(selectedProduct.rating)}</Text>
               <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
             </View>
             <View style={styles.productDetailPriceContainer}>

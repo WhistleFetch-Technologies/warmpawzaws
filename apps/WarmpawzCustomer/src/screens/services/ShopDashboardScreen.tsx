@@ -44,13 +44,13 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
   vendor: {
     name: string;
-    rating: number;
+    rating?: number;
     location: string;
     deliveryTime: string;
   };

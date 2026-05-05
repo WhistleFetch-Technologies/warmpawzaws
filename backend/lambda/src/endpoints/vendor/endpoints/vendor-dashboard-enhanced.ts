@@ -624,7 +624,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         success: true,
         analytics: {
           ...analytics,
-          rating: ratingRounded,
+          rating: totalReviews > 0 ? ratingRounded : null,
           totalReviews,
           overview,
         },

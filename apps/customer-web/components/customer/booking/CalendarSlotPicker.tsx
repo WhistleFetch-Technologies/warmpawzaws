@@ -166,10 +166,11 @@ export function CalendarSlotPicker({
       {/* Time Slots */}
       {selectedDateState && (
         <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-3">
+          <h3 className="font-bold text-gray-900 mb-1 flex items-center gap-3">
             <Clock className="w-5 h-5" />
             Available Time Slots
           </h3>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
           <div className="grid grid-cols-3 gap-3">
             {timeSlots.map((slot) => (
               <button

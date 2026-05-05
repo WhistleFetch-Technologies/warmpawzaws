@@ -15,6 +15,8 @@ import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
@@ -123,6 +125,28 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
+  const {
+    data: vetClinicCount = 0,
+    isLoading: vetClinicCountLoading,
+    isFetching: vetClinicCountFetching,
+    isError: vetClinicCountError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'vet',
+  });
+
+  const vetClinicBadgeText = useMemo(() => {
+    const st =
+      vetClinicCountLoading || vetClinicCountFetching
+        ? 'loading'
+        : vetClinicCountError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(vetClinicCount, st);
+    return `${n} Clinics`;
+  }, [vetClinicCountLoading, vetClinicCountFetching, vetClinicCountError, vetClinicCount]);
+
   const loadDashboardConfig = async () => {
     try {
       // Get customer's role
@@ -164,8 +188,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     'physiotherapy': ['at_center', 'at_home', 'physiotherapy', 'rehabilitation'],
   };
 
-  // Get filtered service types based on dashboard config
-  const getFilteredServiceTypes = () => {
+  const serviceTypes = useMemo(() => {
     const allServiceTypes = [
       {
         id: 'tele',
@@ -183,7 +206,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Building2,
         color: '#7FD47F',
         bgColor: 'bg-green-50',
-        badge: '200+ Clinics'
+        badge: vetClinicBadgeText,
       },
       {
         id: 'home',
@@ -225,12 +248,10 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       }
     ];
 
-    // If no restrictions, return all
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
       return allServiceTypes;
     }
 
-    // Filter based on allowedServiceStyles
     return allServiceTypes.filter(service => {
       const styleMap = serviceTypeStyleMap[service.id] || [];
       return styleMap.some(style => 
@@ -240,9 +261,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         )
       );
     });
-  };
-
-  const serviceTypes = getFilteredServiceTypes();
+  }, [allowedServiceStyles, vetClinicBadgeText]);
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
@@ -331,14 +350,26 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const dashboardStats = useMemo(() => {
     const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '-';
-    const consultations = n > 0 ? `${Math.max(n * 10, 100)}+` : '0';
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
+    const clinicSt =
+      vetClinicCountLoading || vetClinicCountFetching
+        ? 'loading'
+        : vetClinicCountError
+          ? 'error'
+          : 'success';
+    const clinicsStat = formatDiscoveryCountStat(vetClinicCount, clinicSt);
     return [
-      { value: `${n}+`, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-      { value: consultations, label: 'Consults' },
+      { value: clinicsStat, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+      { value: String(n), label: 'Featured' },
       { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ];
-  }, [vendors]);
+  }, [
+    vendors,
+    vetClinicCount,
+    vetClinicCountLoading,
+    vetClinicCountFetching,
+    vetClinicCountError,
+  ]);
 
   if (vendorsLoading) {
     return (

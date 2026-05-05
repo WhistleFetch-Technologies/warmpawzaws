@@ -632,7 +632,8 @@ export function PhotographyBookingRouter({
 
             {selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">

@@ -1357,7 +1357,8 @@ export function HomeServiceRouter({
 
             {selectedDate && (
               <div>
-                <h3 className="mb-3 font-semibold text-gray-900">Select Time</h3>
+                <h3 className="mb-1 font-semibold text-gray-900">Select Time</h3>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <RefreshCw className={`h-6 w-6 ${colors.text} animate-spin`} />

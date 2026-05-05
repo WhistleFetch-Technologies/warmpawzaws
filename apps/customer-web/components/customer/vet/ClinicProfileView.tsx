@@ -5,6 +5,7 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,

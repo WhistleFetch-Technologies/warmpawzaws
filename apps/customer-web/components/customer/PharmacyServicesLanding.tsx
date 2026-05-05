@@ -26,6 +26,11 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import {
+  aggregateAverageRatingStat,
+  formatRatingNumberOrDash,
+  headerRatingStatValue,
+} from '@/lib/rating-display';
 
 interface PharmacyServicesLandingProps {
   phone: string;

@@ -12,7 +12,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import {
@@ -411,7 +411,7 @@ export function VetServicesByStyle({
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
-    const photos = getVendorHeroPhotoUrls({ facility, vendor, profileProvider });
+    const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
     const amenities = facility?.amenities || vendor?.amenities || [];
     const address = vendor?.address || facility?.address || profileProvider.address || '';

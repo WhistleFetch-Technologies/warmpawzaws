@@ -94,7 +94,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     try {
       onNavigate?.('nutritionist-booking', {
         vendorId: nutritionist.id || nutritionist.vendorId,
-        serviceId: 'pet_nutritionist'
+        category: 'pet_nutritionist',
       });
     } catch (err: any) {
       console.error('Navigation error:', err);

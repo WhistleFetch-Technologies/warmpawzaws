@@ -117,7 +117,7 @@ export function SampleCollectionTracker({
             name: collectorName,
             phone: collectorPhone,
             photo: a.staffPhoto,
-            rating: 4.8,
+            rating: 0,
             totalCollections: 0
           } : undefined,
           otp: a.otp,
@@ -176,7 +176,7 @@ export function SampleCollectionTracker({
           id: 'collector-1',
           name: 'Rahul Kumar',
           phone: '+91 98765 43210',
-          rating: 4.9,
+          rating: 0,
           totalCollections: 156
         },
         otp: '4521',

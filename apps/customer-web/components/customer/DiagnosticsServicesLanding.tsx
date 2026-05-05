@@ -65,8 +65,40 @@ const SHOW_DIAGNOSTICS_MOCK_LABS =
   process.env.NODE_ENV !== 'production' &&
   process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS === 'true';
 
-const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' };
+const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' as const };
 
+/** Header rating: average only labs with real reviews — no client-side fake defaults. */
+function computeDiagnosticsHeaderRating(
+  centers: ReadonlyArray<Pick<DiagnosticCenter, 'rating' | 'reviewCount'>>
+): string {
+  const rated = centers.filter(
+    (c) =>
+      c.reviewCount > 0 &&
+      typeof c.rating === 'number' &&
+      Number.isFinite(c.rating) &&
+      c.rating > 0 &&
+      c.rating <= 5
+  );
+  if (rated.length === 0) return '—';
+  const avg = rated.reduce((sum, c) => sum + c.rating, 0) / rated.length;
+  return (Math.round(avg * 10) / 10).toFixed(1);
+}
+
+function reviewCountFromVendorRow(v: Record<string, unknown>): number {
+  const raw = v.reviewCount ?? v.review_count;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function vendorRatingFromRow(v: Record<string, unknown>, reviewCount: number): number {
+  if (reviewCount <= 0) return 0;
+  const raw = v.rating;
+  const num =
+    typeof raw === 'number' ? raw : typeof raw === 'string' && raw !== '' ? parseFloat(raw) : NaN;
+  if (!Number.isFinite(num) || num <= 0 || num > 5) return 0;
+  return num;
+}
 const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-1',

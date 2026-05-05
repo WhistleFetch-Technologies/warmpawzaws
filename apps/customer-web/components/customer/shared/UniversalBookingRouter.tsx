@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -13,6 +13,8 @@ import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-di
 import { safeNumber } from '@/lib/validation';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -90,6 +92,32 @@ export function UniversalBookingRouter({
   // ✅ FIX: Map 'clinic' to 'at_center', use serviceStyle if provided, otherwise fall back to serviceType
   const normalizedServiceType = (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
   const [selectedServiceType, setSelectedServiceType] = useState(normalizedServiceType);
+
+  const providerDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType,
+    category: config.category,
+    roleId: config.roleId,
+  });
+
+  const providerStatValue = useMemo(() => {
+    const st =
+      providerDiscovery.isLoading || providerDiscovery.isFetching
+        ? 'loading'
+        : providerDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(providerDiscovery.data, st);
+  }, [
+    providerDiscovery.data,
+    providerDiscovery.isLoading,
+    providerDiscovery.isFetching,
+    providerDiscovery.isError,
+  ]);
+
+  const providerStatLabel =
+    config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers';
+
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);

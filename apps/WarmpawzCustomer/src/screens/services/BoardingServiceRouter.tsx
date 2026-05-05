@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -18,6 +19,11 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { formatDistanceDisplay } from '../../utils/distance-display';
+import {
+  boardingBilled24hUnits,
+  computeBoardingListTotalRupees,
+  computeStayBilledMinutes,
+} from '../../utils/boarding-stay-pricing';
 
 type ViewType = 
   | 'landing'
@@ -65,6 +71,9 @@ export function BoardingServiceRouter({
   const [services, setServices] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  /** Asia/Kolkata wall times (HH:MM), aligned with web boarding + API. */
+  const [stayCheckInTime, setStayCheckInTime] = useState('09:00');
+  const [stayCheckOutTime, setStayCheckOutTime] = useState('10:00');
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceCategory: null,
@@ -178,25 +187,71 @@ export function BoardingServiceRouter({
       Alert.alert('Dates', 'Please set check-in and check-out dates.');
       return;
     }
+    const timeRe = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRe.test(stayCheckInTime.trim()) || !timeRe.test(stayCheckOutTime.trim())) {
+      Alert.alert('Times', 'Use check-in and check-out times as HH:MM (24h), e.g. 09:00 and 10:00.');
+      return;
+    }
+    if (!customerId) {
+      Alert.alert('Account', 'Customer profile not loaded. Please try again.');
+      return;
+    }
+    const bm = computeStayBilledMinutes(
+      bookingFlow.checkInDate,
+      stayCheckInTime.trim(),
+      bookingFlow.checkOutDate,
+      stayCheckOutTime.trim()
+    );
+    if (!bookingFlow.services[0]?.isPackage && bm < 1) {
+      Alert.alert('Stay length', 'Check-out must be after check-in (or next-day checkout). Adjust times.');
+      return;
+    }
     setCurrentView('payment');
   };
 
   const handlePayment = async (paymentData: any) => {
     try {
       setLoading(true);
+      if (!customerId) {
+        Alert.alert('Account', 'Customer profile not loaded. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const svc = bookingFlow.services[0];
+      const isPkg = !!svc?.isPackage;
+      const unitPrice = Number(svc?.price || 0);
+      const billed =
+        !isPkg && bookingFlow.checkInDate && bookingFlow.checkOutDate
+          ? computeStayBilledMinutes(
+              bookingFlow.checkInDate,
+              stayCheckInTime.trim(),
+              bookingFlow.checkOutDate,
+              stayCheckOutTime.trim()
+            )
+          : 0;
+      const totalAmount = isPkg ? unitPrice : computeBoardingListTotalRupees(unitPrice, billed);
+
       const booking = await CustomerApi.createBooking({
+        customerId,
         vendorId: bookingFlow.vendorId!,
-        serviceId: bookingFlow.services[0]?.id,
-        petId: bookingFlow.pet!.id,
-        checkInDate: bookingFlow.checkInDate!,
+        serviceId: svc?.id,
+        bookingDate: bookingFlow.checkInDate!,
+        bookingTime: stayCheckInTime.trim(),
         checkOutDate: bookingFlow.checkOutDate!,
-        payment: paymentData,
-        serviceType: 'boarding',
-        serviceCategory: bookingFlow.serviceCategory!,
-        addOns: bookingFlow.addOns,
+        checkOutTime: stayCheckOutTime.trim(),
+        serviceType: 'at_center',
+        petId: bookingFlow.pet!.id,
+        customerPhone: phone,
+        flowVariant: 'boarding',
+        numberOfNights: isPkg ? 0 : boardingBilled24hUnits(billed),
+        amount: totalAmount,
+        notes:
+          bookingFlow.serviceCategory === 'daycare'
+            ? 'Daycare booking (mobile)'
+            : 'Boarding booking (mobile)',
       });
 
-      setBookingFlow(prev => ({ ...prev, booking, payment: paymentData }));
+      setBookingFlow((prev) => ({ ...prev, booking, payment: paymentData }));
       setCurrentView('confirmation');
     } catch (error) {
       console.error('Error creating booking:', error);
@@ -420,6 +475,33 @@ export function BoardingServiceRouter({
           ))
         )}
 
+        <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Stay times (24h, Asia/Kolkata)</Text>
+        <Text style={styles.infoText}>
+          Price uses full stay length: each started 24-hour block bills one daily rate (same as website).
+        </Text>
+        <View style={styles.timeRow}>
+          <Text style={styles.timeLabel}>Check-in time</Text>
+          <TextInput
+            style={styles.timeInput}
+            value={stayCheckInTime}
+            onChangeText={setStayCheckInTime}
+            placeholder="09:00"
+            keyboardType="numbers-and-punctuation"
+            maxLength={5}
+          />
+        </View>
+        <View style={styles.timeRow}>
+          <Text style={styles.timeLabel}>Check-out time</Text>
+          <TextInput
+            style={styles.timeInput}
+            value={stayCheckOutTime}
+            onChangeText={setStayCheckOutTime}
+            placeholder="10:00"
+            keyboardType="numbers-and-punctuation"
+            maxLength={5}
+          />
+        </View>
+
         <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Stay dates</Text>
         <Text style={styles.infoText}>
           {bookingFlow.serviceCategory === 'boarding' ? 'Check-in & check-out' : 'Select dates'} — calendar
@@ -440,13 +522,20 @@ export function BoardingServiceRouter({
   );
 
   const renderPayment = () => {
-    const days = bookingFlow.checkInDate && bookingFlow.checkOutDate 
-      ? Math.ceil((new Date(bookingFlow.checkOutDate).getTime() - new Date(bookingFlow.checkInDate).getTime()) / (1000 * 60 * 60 * 24))
-      : 1;
-    const dailyRate = bookingFlow.services[0]?.price || 0;
-    const totalPrice = bookingFlow.services[0]?.isPackage 
-      ? bookingFlow.services[0].price 
-      : dailyRate * days;
+    const svc = bookingFlow.services[0];
+    const isPkg = !!svc?.isPackage;
+    const dailyRate = Number(svc?.price || 0);
+    const billed =
+      !isPkg && bookingFlow.checkInDate && bookingFlow.checkOutDate
+        ? computeStayBilledMinutes(
+            bookingFlow.checkInDate,
+            stayCheckInTime.trim(),
+            bookingFlow.checkOutDate,
+            stayCheckOutTime.trim()
+          )
+        : 0;
+    const units24 = !isPkg ? boardingBilled24hUnits(billed) : 0;
+    const totalPrice = isPkg ? dailyRate : computeBoardingListTotalRupees(dailyRate, billed);
 
     return (
       <View style={styles.container}>
@@ -479,14 +568,14 @@ export function BoardingServiceRouter({
             Pet: {bookingFlow.pet?.name}
           </Text>
           <Text style={styles.summaryItem}>
-            Check-in: {bookingFlow.checkInDate}
+            Check-in: {bookingFlow.checkInDate} {stayCheckInTime}
           </Text>
           <Text style={styles.summaryItem}>
-            Check-out: {bookingFlow.checkOutDate}
+            Check-out: {bookingFlow.checkOutDate} {stayCheckOutTime}
           </Text>
-          {!bookingFlow.services[0]?.isPackage && (
+          {!isPkg && (
             <Text style={styles.summaryItem}>
-              Duration: {days} {days === 1 ? 'day' : 'days'}
+              Stay: {Math.floor(billed / 60)}h {billed % 60}m · {units24}×24h @ ₹{dailyRate}
             </Text>
           )}
           {bookingFlow.addOns.length > 0 && (
@@ -846,6 +935,30 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     textAlign: 'center',
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  timeLabel: {
+    fontSize: typography.body,
+    color: colors.text,
+    fontWeight: '600',
+    flex: 1,
+  },
+  timeInput: {
+    borderWidth: 1,
+    borderColor: colors.gray['300'],
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minWidth: 96,
+    fontSize: typography.body,
+    color: colors.text,
+    backgroundColor: colors.white,
   },
   dateLabel: {
     fontSize: typography.body,

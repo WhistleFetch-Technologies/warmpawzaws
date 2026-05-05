@@ -35,13 +35,13 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   images: string[];
   category: string;
   vendor: {
     name: string;
-    rating: number;
+    rating?: number;
     location: string;
   };
   stock: string;

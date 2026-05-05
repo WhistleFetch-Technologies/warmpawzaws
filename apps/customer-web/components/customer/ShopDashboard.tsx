@@ -15,6 +15,7 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
 import { hasEffectivePriceReduction } from '@warmpawz/shared-types';

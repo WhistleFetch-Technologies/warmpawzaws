@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { StarRating } from './shared/StarRating';
 

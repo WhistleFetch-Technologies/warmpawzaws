@@ -20,7 +20,7 @@ interface MetricsData {
   completedBookings: number;
   cancelledBookings: number;
   totalRevenue: number;
-  averageRating: number;
+  averageRating?: number | null;
   customerRetention: number;
   responseTime: number;
   completionRate: number;

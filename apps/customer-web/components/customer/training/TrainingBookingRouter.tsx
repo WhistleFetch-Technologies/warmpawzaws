@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, GraduationCap, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -18,6 +18,8 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -135,6 +137,27 @@ export function TrainingBookingRouter({
       serviceStyle: serviceStyle || serviceType
     } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
   );
+
+  const trainingProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
+    category: 'training',
+  });
+
+  const trainingProviderStatValue = useMemo(() => {
+    const st =
+      trainingProvidersDiscovery.isLoading || trainingProvidersDiscovery.isFetching
+        ? 'loading'
+        : trainingProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(trainingProvidersDiscovery.data, st);
+  }, [
+    trainingProvidersDiscovery.data,
+    trainingProvidersDiscovery.isLoading,
+    trainingProvidersDiscovery.isFetching,
+    trainingProvidersDiscovery.isError,
+  ]);
 
   useEffect(() => {
     if (packageRedirectRef.current) return;
@@ -880,7 +903,8 @@ export function TrainingBookingRouter({
 
             {dates.length > 0 && selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">

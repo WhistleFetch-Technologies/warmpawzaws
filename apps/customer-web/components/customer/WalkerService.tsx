@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { WALKING_NEEDS } from './ProblemGridSection';
@@ -27,6 +28,8 @@ import {
   isVendorServicePackageRow,
   buildWalkerServiceDataForVendorPackagePurchase,
 } from '@/lib/vendor-package-purchase-nav';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 export interface WalkerPendingWalkSession {
   serviceId: string;
@@ -173,6 +176,12 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     { kind: 'vendor_service' | 'service_package'; raw: any; dedupeKey: string }[]
   >([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
+
+  const walkerDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'walker',
+  });
 
   useEffect(() => {
     loadActiveWalks();

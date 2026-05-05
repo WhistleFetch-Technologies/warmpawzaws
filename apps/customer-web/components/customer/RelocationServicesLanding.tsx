@@ -5,6 +5,7 @@ import { ArrowLeft, Plane, Star, Sparkles, ChevronRight, Package, Truck, Shield 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface RelocationServicesLandingProps {
