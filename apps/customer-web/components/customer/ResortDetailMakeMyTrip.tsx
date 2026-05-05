@@ -150,7 +150,10 @@ export function ResortDetailMakeMyTrip(props: ResortDetailMakeMyTripProps) {
           description: vendor.description || "A luxurious pet boarding facility with 24/7 care and modern amenities.",
           address: vendor.location?.address || vendor.address || "Location",
           city: vendor.city || "City",
-          rating: vendor.rating || 4.8,
+          rating: (() => {
+            const r = Number(vendor.rating);
+            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+          })(),
           reviewsCount: vendor.reviews_count || 0,
           photos: vendor.photos || [
             "https://images.unsplash.com/photo-1587300003388-59208cc962cb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80",

@@ -33,6 +33,7 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { aggregateAverageRatingStat } from '@/lib/rating-display';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 import { StarRating } from '../shared/StarRating';
@@ -158,7 +159,10 @@ export function HomeServiceLanding({
               id: vendorId,
               name: service.vendorName || 'Provider',
               photo: service.vendorPhoto || service.vendorLogo,
-              rating: service.vendorRating || 4.5,
+              rating: (() => {
+                const r = Number(service.vendorRating);
+                return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+              })(),
               reviewCount: service.vendorReviewCount || 0,
               distance: Math.random() * 5 + 0.5,
               price: service.price || 0
@@ -172,12 +176,15 @@ export function HomeServiceLanding({
         setStats({
           activeProviders: allProviders.length || 50,
           sessions: '5K',
-          rating: allProviders.length > 0
-            ? (allProviders.reduce((acc: number, p: any) => acc + (p.rating || 4.5), 0) / allProviders.length).toFixed(1)
-            : '4.7'
+          rating: aggregateAverageRatingStat(
+            allProviders.map((p: any) => ({
+              vendorRating: p.rating,
+              reviewCount: p.reviewCount,
+            }))
+          ),
         });
       } catch (e) {
-        setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+        setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
       }
 
       // Load previous providers for this customer
@@ -194,7 +201,10 @@ export function HomeServiceLanding({
                 id: booking.vendorId,
                 name: booking.vendorName || 'Provider',
                 photo: booking.vendorPhoto,
-                rating: booking.vendorRating || 4.5,
+                rating: (() => {
+                  const r = Number(booking.vendorRating);
+                  return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+                })(),
                 lastVisit: new Date(booking.scheduledDate).toLocaleDateString()
               });
             }
@@ -216,7 +226,7 @@ export function HomeServiceLanding({
       }
     } catch (error) {
       console.error('Error loading landing data:', error);
-      setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+      setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
     } finally {
       setLoading(false);
     }

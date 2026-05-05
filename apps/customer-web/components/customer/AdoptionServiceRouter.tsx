@@ -5,6 +5,7 @@ import { Heart, Star, MapPin, Sparkles, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface AdoptionServiceRouterProps {
@@ -34,14 +35,12 @@ export function AdoptionServiceRouter({ phone, onBack, onViewBooking, onNavigate
       setStats({
         availablePets: shelterList.reduce((acc: number, s: any) => acc + (s.availablePets || 0), 0) || 200,
         adopted: '500+',
-        rating: shelterList.length > 0 
-          ? Number(shelterList.reduce((acc: number, s: any) => acc + Number(s.rating || 4.9), 0) / shelterList.length).toFixed(1) 
-          : '4.9'
+        rating: averageStarDisplayFromNumbers(shelterList.map((s: any) => s.rating)),
       });
     } catch (error) {
       console.error('Error loading shelters:', error);
       setShelters([]);
-      setStats({ availablePets: 200, adopted: '500+', rating: '4.9' });
+      setStats({ availablePets: 200, adopted: '500+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -77,7 +76,7 @@ export function AdoptionServiceRouter({ phone, onBack, onViewBooking, onNavigate
           <div className="bg-orange-50 rounded-xl p-2.5 border border-orange-100 text-center">
             <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
               <Star className="w-3.5 h-3.5 fill-orange-500" />
-              {stats?.rating || '4.9'}
+              {stats?.rating ?? '—'}
             </div>
             <div className="text-orange-700 text-xs">Happy Homes</div>
           </div>
@@ -169,7 +168,7 @@ export function AdoptionServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                       <span className="flex items-center gap-1 text-orange-500 font-bold">
                         <Star className="w-3 h-3 fill-current" />
-                        {shelter.rating || 4.9}
+                        {formatRatingNumberOrDash(shelter.rating)}
                       </span>
                       <span>•</span>
                       <span>{shelter.availablePets || 0} pets</span>

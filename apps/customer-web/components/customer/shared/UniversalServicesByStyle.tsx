@@ -26,6 +26,7 @@ import {
   serviceTypeCategoryFromRoleId,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { aggregateAverageRatingStat, formatAverageForDisplay } from '@/lib/rating-display';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -151,10 +152,11 @@ async function fetchEmbeddedVendorAsProvider(args: {
   const v = vendorRes?.vendor || vendorRes;
   const name =
     (v && typeof v === 'object' && (v.businessName || v.business_name || v.name || v.fullName)) || 'Provider';
-  const ratingNum =
-    v && typeof v === 'object' ? Number(v.rating ?? v.avgRating ?? 4.5) : 4.5;
   const reviewCount =
     v && typeof v === 'object' ? Number(v.reviewCount ?? v.review_count ?? 0) : 0;
+  const rawR = v && typeof v === 'object' ? Number(v.rating ?? v.avgRating ?? NaN) : NaN;
+  const ratingStr =
+    reviewCount > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR.toFixed(1) : '\u2014';
 
   return {
     providerId: embedVendorId,
@@ -170,7 +172,7 @@ async function fetchEmbeddedVendorAsProvider(args: {
     experienceYears:
       v && typeof v === 'object' ? Number(v.experience ?? v.yearsOfExperience ?? v.years_of_experience ?? 0) || undefined : undefined,
     qualifications: v && typeof v === 'object' ? (v.qualifications as string | undefined) : undefined,
-    rating: Number.isFinite(ratingNum) ? ratingNum.toFixed(1) : '4.5',
+    rating: ratingStr,
     reviewCount,
     isVerified: v && typeof v === 'object' ? Boolean(v.isVerified ?? v.verified ?? v.is_verified) : false,
     isIndividualProvider: true,
@@ -415,7 +417,12 @@ export function UniversalServicesByStyle({
               role: provider.role,
               experienceYears: provider.experienceYears,
               qualifications: provider.qualifications,
-              rating: Number(provider.rating || 4.5),
+              rating: (() => {
+                const rc = Number(provider.reviewCount || 0);
+                const r = Number(provider.rating);
+                if (rc > 0 && Number.isFinite(r) && r > 0) return r.toFixed(1);
+                return '\u2014';
+              })(),
               reviewCount: Number(provider.reviewCount || 0),
               distance: provider.distance || null,
               isVerified: provider.isVerified,
@@ -862,7 +869,10 @@ export function UniversalServicesByStyle({
                 <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
                   <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                   <span className="font-bold text-lg text-gray-900">
-                    {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                    {formatAverageForDisplay(
+                      rating?.averageRating ?? profileProvider.rating,
+                      rating?.totalReviews ?? profileProvider.reviewCount
+                    )}
                   </span>
                   <span className="text-gray-600 text-sm">
                     ({rating?.totalReviews || profileProvider.reviewCount || 0} reviews)
@@ -1199,7 +1209,10 @@ export function UniversalServicesByStyle({
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                            {formatAverageForDisplay(
+                      rating?.averageRating ?? profileProvider.rating,
+                      rating?.totalReviews ?? profileProvider.reviewCount
+                    )}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
@@ -1300,7 +1313,7 @@ export function UniversalServicesByStyle({
   const listingStats = [
     { value: `${providers.length}+`, label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.7', label: 'Rating' }
+    { value: aggregateAverageRatingStat(providers), label: 'Rating' }
   ];
 
   const getServiceSubtitle = () => {

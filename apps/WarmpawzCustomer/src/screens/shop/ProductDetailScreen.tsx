@@ -19,6 +19,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 interface ProductDetailScreenProps {
   productId: string;
@@ -33,13 +34,13 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   images: string[];
   category: string;
   vendor: {
     name: string;
-    rating: number;
+    rating?: number;
     location: string;
   };
   stock: string;
@@ -76,13 +77,13 @@ export function ProductDetailScreen({
         description: prod.description || '',
         price: prod.price || prod.unitPrice || 0,
         originalPrice: prod.originalPrice || prod.mrp,
-        rating: prod.rating || prod.averageRating || 4.5,
+        rating: starRatingOrUndefined(prod.rating ?? prod.averageRating),
         reviews: prod.reviewCount || prod.reviews || 0,
         images: prod.images || (prod.image ? [prod.image] : []) || (prod.imageUrl ? [prod.imageUrl] : []),
         category: prod.category || 'general',
         vendor: {
           name: prod.vendorName || 'Vendor',
-          rating: prod.vendorRating || 4.5,
+          rating: starRatingOrUndefined(prod.vendorRating),
           location: prod.vendorLocation || '',
         },
         stock: prod.inStock ? 'In Stock' : 'Out of Stock',
@@ -232,14 +233,14 @@ export function ProductDetailScreen({
 
           <View style={styles.ratingContainer}>
             <Text style={styles.ratingIcon}>⭐</Text>
-            <Text style={styles.rating}>{product.rating}</Text>
+            <Text style={styles.rating}>{formatRatingOrDash(product.rating)}</Text>
             <Text style={styles.reviews}>({product.reviews} reviews)</Text>
           </View>
 
           <View style={styles.vendorInfo}>
             <Text style={styles.vendorLabel}>Sold by</Text>
             <Text style={styles.vendorName}>{product.vendor.name}</Text>
-            <Text style={styles.vendorRating}>⭐ {product.vendor.rating}</Text>
+            <Text style={styles.vendorRating}>⭐ {formatRatingOrDash(product.vendor.rating)}</Text>
           </View>
 
           <View style={styles.stockBadge}>

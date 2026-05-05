@@ -93,12 +93,12 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=training`).catch(() => null);
       if (response?.provider) {
-        setPreviousTrainer({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+        setPreviousTrainer({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: (() => { const r = Number(response.provider.rating); return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0; })(), lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`).catch(() => null);
         if (pkgRes?.packages?.length > 0) {
           const pkg = pkgRes.packages[0];
-          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
         }
       }
     } catch { /* ignore */ }

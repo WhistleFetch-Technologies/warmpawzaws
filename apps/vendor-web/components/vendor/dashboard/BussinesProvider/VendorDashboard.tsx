@@ -159,7 +159,7 @@ export function VendorDashboard({
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 4.8,
+    rating: 0,
     totalReviews: 0,
     activeOrders: 0
   });
@@ -952,10 +952,16 @@ export function VendorDashboard({
               onClick={() => setReviewsModalOpen(true)}
               className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
               title="View customer reviews"
-              aria-label={`Rating ${stats.rating.toFixed(1)}, ${stats.totalReviews} reviews. Open reviews`}
+              aria-label={
+                (stats.totalReviews ?? 0) > 0 && stats.rating > 0
+                  ? `Rating ${stats.rating.toFixed(1)}, ${stats.totalReviews} reviews. Open reviews`
+                  : `No rating yet, ${stats.totalReviews} reviews. Open reviews`
+              }
             >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
+              <span className="text-sm font-semibold">
+                {(stats.totalReviews ?? 0) > 0 && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
+              </span>
               <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
             </button>
           </div>

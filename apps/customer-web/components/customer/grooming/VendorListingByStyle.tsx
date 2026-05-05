@@ -112,7 +112,10 @@ export function VendorListingByStyle({
             id: v.id,
             name: v.businessName || v.name,
             type: 'vendor' as const,
-            rating: v.rating || 4.5,
+            rating: (() => {
+              const r = Number(v.rating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             reviewCount: v.completedBookings || 0,
             distance: v.distance_km ?? v.distance ?? null,
             city: v.city,
@@ -169,7 +172,10 @@ export function VendorListingByStyle({
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Service Provider',
               type: providerType,
-              rating: parseFloat(item.rating || '4.5'),
+              rating: (() => {
+                const r = Number(item.rating);
+                return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+              })(),
               reviewCount: parseInt(item.reviewCount || item.reviewsCount || '0', 10),
               distance: item.distance || null,
               city: item.city,

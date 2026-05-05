@@ -504,7 +504,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
   const dashboardStats = [
     { value: `${tests.length}+`, label: 'Tests' },
     { value: '1K+', label: 'Bookings' },
-    { value: '*4.7', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   if (loading) {

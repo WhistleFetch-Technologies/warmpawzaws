@@ -512,7 +512,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const dashboardStats = [
     { value: String(filteredClinics.length), label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
   ];
 
   return (

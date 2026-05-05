@@ -5,6 +5,7 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -235,7 +236,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const dashboardStats = [
-    { value: `${clinic.rating?.toFixed(1) || '4.5'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: formatAverageForDisplay(clinic.rating, clinic.review_count), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: `${clinic.review_count || 0}`, label: 'Reviews' },
     { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
   ];

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { aggregateAverageRatingStat, formatRatingNumberOrDash } from '@/lib/rating-display';
 
 interface ResortServicesLandingProps {
   phone: string;
@@ -33,14 +34,12 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
       setStats({
         activeResorts: resortList.length || 15,
         bookings: '2K+',
-        rating: resortList.length > 0 
-          ? Number(resortList.reduce((acc: number, r: any) => acc + Number(r.rating || 4.8), 0) / resortList.length).toFixed(1) 
-          : '4.8'
+        rating: aggregateAverageRatingStat(resortList),
       });
     } catch (error) {
       console.error('Error loading resorts:', error);
       setResorts([]);
-      setStats({ activeResorts: 15, bookings: '2K+', rating: '4.8' });
+      setStats({ activeResorts: 15, bookings: '2K+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -209,7 +208,7 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {resort.rating || 4.8}
+                          {resort.rating != null ? formatRatingNumberOrDash(resort.rating) : '—'}
                         </span>
                         <span>•</span>
                         <span>{resort.priceRange || '₹3,999/day'}</span>

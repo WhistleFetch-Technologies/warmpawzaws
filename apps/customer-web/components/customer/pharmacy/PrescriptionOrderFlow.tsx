@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from '../PrescriptionDocument';
 
@@ -230,7 +231,10 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
                       distance: acceptingPharmacy.distance || 0,
                       deliveryFee: 40,
                       eta: { minutes: 30, rangeMin: 25, rangeMax: 40 },
-                      rating: acceptingPharmacy.rating || 4.5,
+                      rating: (() => {
+                        const r = Number(acceptingPharmacy.rating);
+                        return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+                      })(),
                     });
                   }
                   setStep('confirmed');
@@ -493,7 +497,7 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
                   <p className="font-semibold text-slate-800">{confirmedPharmacy.name}</p>
                   <div className="flex items-center gap-1 text-amber-500">
                     {Icons.star}
-                    <span className="text-sm text-slate-600">{confirmedPharmacy.rating || 4.8}</span>
+                    <span className="text-sm text-slate-600">{formatRatingNumberOrDash(confirmedPharmacy.rating)}</span>
                   </div>
                 </div>
               </div>

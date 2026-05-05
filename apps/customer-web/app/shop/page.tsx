@@ -12,6 +12,7 @@ import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPay
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 
 // ============================================================================
 // TYPES
@@ -157,8 +158,13 @@ export default function ShopPage() {
             compareOrOriginal != null && String(compareOrOriginal) !== ''
               ? parseFloat(String(compareOrOriginal))
               : undefined,
-          rating: p.rating || 4.5,
-          review_count: p.review_count || 0,
+          review_count: Number(p.review_count) || 0,
+          rating: (() => {
+            const rc = Number(p.review_count) || 0;
+            const r = Number(p.rating);
+            if (rc <= 0 || !Number.isFinite(r) || r <= 0 || r > 5) return 0;
+            return r;
+          })(),
           images: p.images || [],
           emoji: p.emoji || '🐾',
         };
@@ -1208,7 +1214,9 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
 
         <div className="flex items-center gap-1">
           <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
-          <span className="text-[11px] font-semibold text-slate-800">{product.rating || 4.5}</span>
+          <span className="text-[11px] font-semibold text-slate-800">
+            {formatAverageForDisplay(product.rating, product.review_count)}
+          </span>
           <span className="text-[11px] text-slate-400">({product.review_count || 0})</span>
         </div>
 

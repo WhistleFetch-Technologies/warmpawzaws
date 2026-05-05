@@ -18,6 +18,7 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -143,7 +144,7 @@ export function GroomingServicesByStyle({
         icon: <Scissors className="w-4 h-4" />,
       },
       { value: '1K+', label: 'Bookings' },
-      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ],
     [groomingSalonStatValue, groomingSalonStatLabel]
   );
@@ -687,7 +688,10 @@ export function GroomingServicesByStyle({
                 <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
                   <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                   <span className="font-bold text-lg text-gray-900">
-                    {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                    {formatAverageForDisplay(
+                      rating?.averageRating ?? profileProvider.rating,
+                      rating?.totalReviews ?? profileProvider.reviewCount
+                    )}
                   </span>
                   <span className="text-gray-600 text-sm">
                     ({rating?.totalReviews || profileProvider.reviewCount || 0} reviews)
@@ -994,7 +998,10 @@ export function GroomingServicesByStyle({
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                            {formatAverageForDisplay(
+                      rating?.averageRating ?? profileProvider.rating,
+                      rating?.totalReviews ?? profileProvider.reviewCount
+                    )}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">

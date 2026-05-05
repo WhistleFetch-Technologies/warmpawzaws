@@ -180,7 +180,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             id: vid,
             name: p.vendor_name || p.vendorName || p.business_name || p.businessName || p.name,
             photo: p.profile_image_url || p.photo || null,
-            rating: Number(p.vendor_rating ?? p.rating) || 4.9,
+            rating: (() => {
+              const r = Number(p.vendor_rating ?? p.rating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             lastVisit: p.last_booking_date || p.lastVisit,
             sessionsCount: p.sessionsCount || 5,
             lastServiceId: p.last_service_id || p.service_id || p.serviceId,
@@ -197,7 +200,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             id: pkg.vendorId,
             name: pkg.vendorName,
             photo: null,
-            rating: 4.9,
+            rating: 0,
             lastVisit: pkg.lastUsed || '3 weeks ago',
             sessionsCount: pkg.sessionsUsed || 5,
             lastServiceId: pkg.serviceId || pkg.service_id || pkg.defaultServiceId,

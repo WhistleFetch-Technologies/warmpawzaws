@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { StarRating } from './shared/StarRating';
 
@@ -38,7 +39,17 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
 
       if (vendorRes.vendor || vendorRes.success) {
         setVendor(vendorRes.vendor || vendorRes);
-        setRating(vendorRes.rating || { averageRating: vendorRes.rating || 4.5, totalReviews: vendorRes.reviewCount || 0 });
+        const rr = vendorRes.rating;
+        const rc = Number(vendorRes.reviewCount) || 0;
+        if (typeof rr === 'object' && rr != null && 'averageRating' in rr) {
+          setRating(rr);
+        } else {
+          const avg = Number(rr);
+          setRating({
+            averageRating: rc > 0 && Number.isFinite(avg) && avg > 0 ? avg : null,
+            totalReviews: rc,
+          });
+        }
       }
 
       if (productsRes.products) {
@@ -81,7 +92,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
 
   const vendorName = vendor.businessName || vendor.vendorName || vendor.name || 'Vendor';
   const vendorImage = vendor.vendorProfileImage || vendor.image;
-  const averageRating = rating?.averageRating || vendor.rating || 4.5;
+  const averageRating = rating?.averageRating ?? vendor.rating ?? 0;
   const totalReviews = rating?.totalReviews || vendor.reviewCount || vendor.totalReviews || 0;
   
   return (
@@ -127,7 +138,9 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
               <div className="text-xs text-gray-600 mt-1">Products</div>
             </Card>
             <Card className="p-3 text-center">
-              <div className="text-lg font-bold text-[#FF8C42]">{averageRating.toFixed(1)}</div>
+              <div className="text-lg font-bold text-[#FF8C42]">
+                {formatAverageForDisplay(averageRating, totalReviews)}
+              </div>
               <div className="text-xs text-gray-600 mt-1">Rating</div>
             </Card>
             <Card className="p-3 text-center">

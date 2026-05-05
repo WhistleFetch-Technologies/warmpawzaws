@@ -79,7 +79,10 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           id: response.provider.id,
           name: response.provider.businessName || response.provider.name,
           photo: response.provider.photo || null,
-          rating: response.provider.rating || 4.8,
+          rating: (() => {
+            const r = Number(response.provider.rating);
+            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+          })(),
           lastVisit: response.provider.lastVisit,
           sessionsCount: response.provider.sessionsCount || 1
         });
@@ -88,7 +91,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         if (packagesResponse?.packages?.length > 0) {
           const pkg = packagesResponse.packages[0];
           if (pkg.vendorId && pkg.vendorName) {
-            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
           }
         }
       }

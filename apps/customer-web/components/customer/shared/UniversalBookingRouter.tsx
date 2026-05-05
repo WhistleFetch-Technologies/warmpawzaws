@@ -881,7 +881,7 @@ export function UniversalBookingRouter({
     () => [
       { value: providerStatValue, label: providerStatLabel },
       { value: '1K+', label: 'Bookings' },
-      { value: '*4.8', label: 'Rating' }
+      { value: '—', label: 'Rating' }
     ],
     [providerStatValue, providerStatLabel]
   );

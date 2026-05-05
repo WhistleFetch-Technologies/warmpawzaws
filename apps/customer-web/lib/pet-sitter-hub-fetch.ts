@@ -100,7 +100,10 @@ export async function fetchPetSitterHubRows(phone: string): Promise<any[]> {
             vendorId: vid,
             businessName: s.vendorName,
             name: s.vendorName,
-            rating: 4.7,
+            rating: (() => {
+              const r = Number(s.vendorRating ?? s.rating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             basePrice: s.price,
           });
         }

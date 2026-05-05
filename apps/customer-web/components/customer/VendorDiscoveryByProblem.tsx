@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 
@@ -566,7 +567,7 @@ function VendorCard({
             <div className="flex items-center gap-2 mb-2">
               <div className="flex items-center gap-1 text-amber-500">
                 <Star className="w-4 h-4 fill-current" />
-                <span className="text-sm font-medium">{vendor.rating || '4.5'}</span>
+                <span className="text-sm font-medium">{formatRatingNumberOrDash(vendor.rating)}</span>
               </div>
               {formatDistanceDisplay(vendor) && (
                 <>

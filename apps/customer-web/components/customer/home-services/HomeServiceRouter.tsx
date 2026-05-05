@@ -431,7 +431,10 @@ export function HomeServiceRouter({
             businessName: v.businessName,
             photo: v.photo || v.profilePhoto,
             description: v.description || v.bio,
-            rating: v.rating || 4.5,
+            rating: (() => {
+              const r = Number(v.rating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             totalReviews: v.totalReviews || 0,
             completedServices: v.completedServices || v.bookingsCompleted || 0,
             distance: v.distance || calculateDistance(customerLocation, v.latitude, v.longitude),

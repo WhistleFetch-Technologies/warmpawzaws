@@ -5,6 +5,7 @@ import { ArrowLeft, Camera, Star, Sparkles, ChevronRight, Video, Users, ImageIco
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface PhotographyServicesLandingProps {
@@ -33,14 +34,12 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
       setStats({
         activePhotographers: photographerList.length || 85,
         sessions: '2K+',
-        rating: photographerList.length > 0 
-          ? Number(photographerList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / photographerList.length).toFixed(1) 
-          : '4.8'
+        rating: averageStarDisplayFromNumbers(photographerList.map((p: any) => p.rating)),
       });
     } catch (error) {
       console.error('Error loading photographers:', error);
       setPhotographers([]);
-      setStats({ activePhotographers: 85, sessions: '2K+', rating: '4.8' });
+      setStats({ activePhotographers: 85, sessions: '2K+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -158,7 +157,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {photographer.rating || 4.8}
+                          {formatRatingNumberOrDash(photographer.rating)}
                         </span>
                         <span>•</span>
                         <span>Professional</span>

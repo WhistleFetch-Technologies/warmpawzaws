@@ -566,7 +566,7 @@ export function WalkerBookingRouter({
     () => [
       { value: walkerStatValue, label: 'Walkers' },
       { value: '2K+', label: 'Walks' },
-      { value: '*4.8', label: 'Rating' },
+      { value: '—', label: 'Rating' },
     ],
     [walkerStatValue]
   );

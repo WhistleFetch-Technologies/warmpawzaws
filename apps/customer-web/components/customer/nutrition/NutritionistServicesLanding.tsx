@@ -12,6 +12,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes, MEAL_PLANS_COMING_SOON } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
+import { aggregateAverageRatingStat, formatRatingNumberOrDash, headerRatingStatValue } from '@/lib/rating-display';
 
 
 
@@ -58,14 +59,12 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       setStats({
         activeNutritionists: nutritionistList.length || 45,
         consultations: '1.5K+',
-        rating: nutritionistList.length > 0
-          ? Number(nutritionistList.reduce((acc: number, n: any) => acc + Number(n.rating || 4.9), 0) / nutritionistList.length).toFixed(1)
-          : '4.9'
+        rating: aggregateAverageRatingStat(nutritionistList),
       });
     } catch (error) {
       console.error('Error loading nutritionists:', error);
       setNutritionists([]);
-      setStats({ activeNutritionists: 45, consultations: '1.5K+', rating: '4.9' });
+      setStats({ activeNutritionists: 45, consultations: '1.5K+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -106,11 +105,11 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const dashboardStats = stats ? [
     { value: `${stats.activeNutritionists}+`, label: 'Experts' },
     { value: stats.consultations, label: 'Consultations' },
-    { value: `*${stats.rating}`, label: 'Rating' }
+    { value: headerRatingStatValue(stats.rating), label: 'Rating' }
   ] : [
     { value: '45+', label: 'Experts' },
     { value: '1.5K+', label: 'Consultations' },
-    { value: '*4.9', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
 
@@ -137,7 +136,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           stats={[
             { value: '45+', label: 'Experts' },
             { value: '1.5K+', label: 'Consultations' },
-            { value: '*4.9', label: 'Rating' }
+            { value: '—', label: 'Rating' }
           ]}
           onBack={onBack}
           showBackButton={true}
@@ -355,7 +354,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {nutritionist.rating || 4.9}
+                          {formatRatingNumberOrDash(nutritionist.rating)}
                         </span>
                         <span>•</span>
                         <span>Certified Expert</span>

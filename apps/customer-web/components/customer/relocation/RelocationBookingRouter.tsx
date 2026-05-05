@@ -484,7 +484,7 @@ export function RelocationBookingRouter({
 
   const relocationPrePaymentStats = [
     { value: '100+', label: 'Moves' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: '24/7', label: 'Support' },
   ];
 

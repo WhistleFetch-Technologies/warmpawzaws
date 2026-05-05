@@ -5,6 +5,7 @@ import { ArrowLeft, Star, MapPin, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface ExpertNutritionistsListProps {
@@ -117,7 +118,6 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
               {nutritionists.map((nutritionist: any, index: number) => {
                 const vendorId = nutritionist.id || nutritionist.vendorId;
                 const vendorName = nutritionist.businessName || nutritionist.name || `Nutritionist ${index + 1}`;
-                const rating = nutritionist.rating || 4.9;
 
                 return (
                   <Card
@@ -140,7 +140,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
                         <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
                           <span className="flex items-center gap-1 text-orange-500 font-bold">
                             <Star className="w-3 h-3 fill-current" />
-                            {typeof rating === 'number' ? rating.toFixed(1) : parseFloat(rating)?.toFixed(1) || '4.9'}
+                            {formatRatingNumberOrDash(nutritionist.rating)}
                           </span>
                           <span>•</span>
                           <span>Certified Expert</span>

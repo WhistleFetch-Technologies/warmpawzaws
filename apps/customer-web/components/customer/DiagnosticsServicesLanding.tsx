@@ -64,14 +64,46 @@ const SHOW_DIAGNOSTICS_MOCK_LABS =
   process.env.NODE_ENV !== 'production' &&
   process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS === 'true';
 
-const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' };
+const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' as const };
 
+/** Header rating: average only labs with real reviews — no client-side fake defaults. */
+function computeDiagnosticsHeaderRating(
+  centers: ReadonlyArray<Pick<DiagnosticCenter, 'rating' | 'reviewCount'>>
+): string {
+  const rated = centers.filter(
+    (c) =>
+      c.reviewCount > 0 &&
+      typeof c.rating === 'number' &&
+      Number.isFinite(c.rating) &&
+      c.rating > 0 &&
+      c.rating <= 5
+  );
+  if (rated.length === 0) return '—';
+  const avg = rated.reduce((sum, c) => sum + c.rating, 0) / rated.length;
+  return (Math.round(avg * 10) / 10).toFixed(1);
+}
+
+function reviewCountFromVendorRow(v: Record<string, unknown>): number {
+  const raw = v.reviewCount ?? v.review_count;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function vendorRatingFromRow(v: Record<string, unknown>, reviewCount: number): number {
+  if (reviewCount <= 0) return 0;
+  const raw = v.rating;
+  const num =
+    typeof raw === 'number' ? raw : typeof raw === 'string' && raw !== '' ? parseFloat(raw) : NaN;
+  if (!Number.isFinite(num) || num <= 0 || num > 5) return 0;
+  return num;
+}
 const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-1',
     businessName: 'PetPath Diagnostics',
-    rating: 4.8,
-    reviewCount: 256,
+    rating: 0,
+    reviewCount: 0,
     distance: 2.3,
     address: 'MG Road, Bangalore',
     homeCollectionAvailable: true,
@@ -86,8 +118,8 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-2',
     businessName: 'VetLab Plus',
-    rating: 4.6,
-    reviewCount: 189,
+    rating: 0,
+    reviewCount: 0,
     distance: 3.5,
     address: 'Koramangala, Bangalore',
     homeCollectionAvailable: true,
@@ -101,8 +133,8 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-3',
     businessName: 'PawCare Labs',
-    rating: 4.7,
-    reviewCount: 312,
+    rating: 0,
+    reviewCount: 0,
     distance: 1.8,
     address: 'Indiranagar, Bangalore',
     homeCollectionAvailable: false,
@@ -237,27 +269,34 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
 
       let centers: DiagnosticCenter[] = [];
       if (vendorsList.length > 0) {
-        centers = vendorsList.map((v: any) => ({
-          id: v.id,
-          businessName: v.businessName || 'Diagnostic Center',
-          rating: v.rating ?? 4.5,
-          reviewCount: 0,
-          distance:
-            v.distance != null && !Number.isNaN(Number(v.distance))
-              ? Math.round(Number(v.distance) * 10) / 10
-              : undefined,
-          address: v.address || [v.city, v.state].filter(Boolean).join(', '),
-          homeCollectionAvailable: v.homeCollectionAvailable === true,
-          testCount: (v.tests || []).length,
-          packages: [],
-          tests: (v.tests || []).map((t: any) => ({
-            id: t.id,
-            name: t.test_name,
-            price: t.price,
-            category: t.category,
-            service_style: t.service_style,
-          })),
-        }));
+        centers = vendorsList.map((v: Record<string, unknown>) => {
+          const reviewCount = reviewCountFromVendorRow(v);
+          const rating = vendorRatingFromRow(v, reviewCount);
+          const testsRaw = Array.isArray(v.tests) ? v.tests : [];
+          return {
+            id: String(v.id ?? ''),
+            businessName: (typeof v.businessName === 'string' && v.businessName) || 'Diagnostic Center',
+            rating,
+            reviewCount,
+            distance:
+              v.distance != null && !Number.isNaN(Number(v.distance))
+                ? Math.round(Number(v.distance) * 10) / 10
+                : undefined,
+            address:
+              (typeof v.address === 'string' && v.address) ||
+              [v.city, v.state].filter((x) => typeof x === 'string' && x).join(', '),
+            homeCollectionAvailable: v.homeCollectionAvailable === true,
+            testCount: testsRaw.length,
+            packages: [],
+            tests: testsRaw.map((t: Record<string, unknown>) => ({
+              id: String(t.id ?? ''),
+              name: (typeof t.test_name === 'string' ? t.test_name : undefined) || '',
+              price: typeof t.price === 'number' ? t.price : parseFloat(String(t.price ?? '')) || 0,
+              category: typeof t.category === 'string' ? t.category : undefined,
+              service_style: t.service_style,
+            })),
+          };
+        });
       } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
         centers = MOCK_DIAGNOSTIC_CENTERS;
       }
@@ -268,7 +307,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           ? {
               activeCenters: centers.length,
               tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
-              rating: (centers.reduce((acc, c) => acc + c.rating, 0) / centers.length).toFixed(1),
+              rating: computeDiagnosticsHeaderRating(centers),
             }
           : EMPTY_DIAGNOSTICS_STATS
       );
@@ -425,11 +464,11 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       label: 'Labs',
     },
     { value: stats.tests, label: 'Tests' },
-    { value: `*${stats.rating}`, label: 'Rating' },
+    { value: stats.rating === '—' ? '—' : `*${stats.rating}`, label: 'Rating' },
   ] : [
     { value: '15+', label: 'Labs' },
     { value: '500+', label: 'Tests' },
-    { value: '*4.6', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   const categoriesToShow =

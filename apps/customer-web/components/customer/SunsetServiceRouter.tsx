@@ -5,6 +5,7 @@ import { Heart, Moon, Star, Sparkles, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface SunsetServiceRouterProps {
@@ -34,14 +35,12 @@ export function SunsetServiceRouter({ phone, onBack, onViewBooking, onNavigate }
       setStats({
         providers: providerList.length || 15,
         services: '1K+',
-        rating: providerList.length > 0 
-          ? Number(providerList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / providerList.length).toFixed(1) 
-          : '4.8'
+        rating: averageStarDisplayFromNumbers(providerList.map((p: any) => p.rating)),
       });
     } catch (error) {
       console.error('Error loading sunset service providers:', error);
       setProviders([]);
-      setStats({ providers: 15, services: '1K+', rating: '4.8' });
+      setStats({ providers: 15, services: '1K+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -134,7 +133,7 @@ export function SunsetServiceRouter({ phone, onBack, onViewBooking, onNavigate }
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                       <span className="flex items-center gap-1 text-orange-500 font-bold">
                         <Star className="w-3 h-3 fill-current" />
-                        {provider.rating || 4.8}
+                        {formatRatingNumberOrDash(provider.rating)}
                       </span>
                       <span>•</span>
                       <span>24/7 Available</span>

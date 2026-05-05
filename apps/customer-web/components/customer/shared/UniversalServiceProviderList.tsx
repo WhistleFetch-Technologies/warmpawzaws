@@ -767,7 +767,7 @@ export function UniversalServiceProviderList({
   const dashboardStats = [
     { value: `${filteredProviders.length}+`, label: category === 'vet' ? 'Vets' : 'Providers', icon: <CategoryIcon className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
@@ -868,7 +868,7 @@ export function UniversalServiceProviderList({
               <button
                 key={chip}
                 onClick={() => {
-                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: 4.5 }));
+                  if (chip === 'Top Rated') setFilters(f => ({ ...f, sortBy: 'rating', rating: null }));
                   if (chip === 'Nearest') setFilters(f => ({ ...f, sortBy: 'distance' }));
                   if (chip === 'Available Now') setFilters(f => ({ ...f, sortBy: 'availability' }));
                 }}

@@ -15,6 +15,7 @@ import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { getAggregatedRatingFromServices } from '@/lib/aggregated-service-rating';
 
 interface Service {
   id: string;
@@ -26,7 +27,8 @@ interface Service {
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   vendorId: string;
   vendorName: string;
-  vendorRating: number;
+  vendorRating?: number | null;
+  vendorReviewCount?: number | null;
   vendorLocation?: {
     lat: number;
     lng: number;
@@ -38,7 +40,7 @@ interface Service {
 
 interface CustomerServicesPageProps {
   onBack: () => void;
-  onNavigate: (screen: string, data?: any) => void;
+  onNavigate: (screen: string, data?: Record<string, unknown>) => void;
   /** When omitted, phone is read from localStorage after mount. */
   phone?: string;
   initialFilters?: {
@@ -121,6 +123,11 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
     q.isLoading || q.isFetching ? ('loading' as const) : q.isError ? ('error' as const) : ('success' as const);
 
   const serviceConfig = useMemo(() => {
+    const ratingStatValue = getAggregatedRatingFromServices(services, {
+      category,
+      roleId,
+      serviceStyle,
+    });
     const isAtCenter = serviceStyle === 'at_center';
     const isAtHome = serviceStyle === 'at_home';
 
@@ -135,7 +142,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           stats: [
             { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
             { value: '1K+', label: 'Bookings' },
-            { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
           ],
         };
       }
@@ -149,7 +156,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           stats: [
             { value: v, label: 'Pros', icon: <Building2 className="w-4 h-4" /> },
             { value: '1K+', label: 'Bookings' },
-            { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
           ],
         };
       }
@@ -162,7 +169,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         stats: [
           { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '1K+', label: 'Bookings' },
-          { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
         ],
       };
     }
@@ -178,7 +185,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           stats: [
             { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
             { value: '800+', label: 'Sessions' },
-            { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
           ],
         };
       }
@@ -192,7 +199,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           stats: [
             { value: v, label: 'Trainers', icon: <Building2 className="w-4 h-4" /> },
             { value: '800+', label: 'Sessions' },
-            { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
           ],
         };
       }
@@ -205,7 +212,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         stats: [
           { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '800+', label: 'Sessions' },
-          { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
         ],
       };
     }
@@ -216,10 +223,13 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
       stats: [
         { value: '100+', label: 'Services' },
         { value: '5K+', label: 'Bookings' },
-        { value: '4.7', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+        { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
       ],
     };
   }, [
+    services,
+    category,
+    roleId,
     isGrooming,
     isTraining,
     serviceStyle,
@@ -418,6 +428,11 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
   );
 }
 
+function formatCardVendorRating(rating: number | null | undefined): string {
+  if (typeof rating !== 'number' || !Number.isFinite(rating) || rating <= 0) return '—';
+  return rating.toFixed(1);
+}
+
 function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => void }) {
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow">
@@ -429,7 +444,7 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
           </div>
           <div className="flex items-center bg-yellow-50 px-2 py-1 rounded text-yellow-700 text-xs font-bold">
             <Star className="w-3 h-3 fill-yellow-500 mr-1" />
-            {service.vendorRating}
+            {formatCardVendorRating(service.vendorRating)}
           </div>
         </div>
 

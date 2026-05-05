@@ -556,7 +556,7 @@ export function NutritionistBookingRouter({
   const dashboardStats = [
     { value: '45+', label: 'Experts' },
     { value: '1.5K+', label: 'Consultations' },
-    { value: '*4.9', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   const getServiceTitle = () => {

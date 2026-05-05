@@ -107,7 +107,7 @@ export function BoardingVendorListView({
   const dashboardStats = [
     { value: `${sortedVendors.length}+`, label: 'Centers', icon: <Home className="w-4 h-4" /> },
     { value: '5K+', label: 'Stays' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
   ];
 
   const subtitle = BOARDING_SERVICE_LABELS[serviceSlug];

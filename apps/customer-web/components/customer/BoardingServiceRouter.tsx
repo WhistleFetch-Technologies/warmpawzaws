@@ -109,7 +109,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           id: response.provider.id,
           name: response.provider.businessName || response.provider.name,
           photo: response.provider.photo,
-          rating: response.provider.rating || 4.8,
+          rating:
+            typeof response.provider.rating === 'number' && Number.isFinite(response.provider.rating)
+              ? response.provider.rating
+              : undefined,
           lastVisit: response.provider.lastVisit,
         });
       } else {
@@ -121,7 +124,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               id: pkg.vendorId,
               name: pkg.vendorName,
               photo: null,
-              rating: 4.8,
+              rating: undefined,
               lastVisit: pkg.lastUsed || '3 weeks ago',
             });
         }
@@ -166,9 +169,14 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const boardingStats = useMemo(() => {
-    const n = vendors.length;
+    const rated = vendors.filter(
+      (v) => typeof v.rating === 'number' && Number.isFinite(v.rating) && v.rating > 0
+    );
     const rating =
-      n > 0 ? (vendors.reduce((acc, v) => acc + v.rating, 0) / n).toFixed(1) : '4.6';
+      rated.length > 0
+        ? (rated.reduce((acc, v) => acc + v.rating, 0) / rated.length).toFixed(1)
+        : '—';
+    const n = vendors.length;
     return [
       { value: `${n > 0 ? n : 35}+`, label: 'Facilities' },
       { value: '5K+', label: 'Happy Pets' },

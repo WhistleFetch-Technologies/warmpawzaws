@@ -107,7 +107,7 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: '<5min', label: 'Avg Wait' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
@@ -237,7 +237,7 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
   const dashboardStats = [
     { value: vendors.length.toString(), label: 'Available now' },
     { value: '<5min', label: 'Connect' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
@@ -330,7 +330,7 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: `${services.length}`, label: 'Services' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
@@ -426,7 +426,7 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: `₹${selectedService.price}`, label: 'Price' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (

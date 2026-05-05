@@ -302,8 +302,9 @@ export function HomeServiceProviderProfile({
 
       const ratingAvg =
         ratingMeta.average ??
-        (typeof merged.rating === 'number' ? merged.rating : parseFloat(String(merged.rating || merged.avgRating || '')) || undefined) ??
-        4.5;
+        (typeof merged.rating === 'number'
+          ? merged.rating
+          : parseFloat(String(merged.rating || merged.avgRating || '')) || undefined);
 
       const rcMerge = merged.reviewCount;
       const parsedRc =
@@ -344,7 +345,11 @@ export function HomeServiceProviderProfile({
         website: (merged.website as string) || '',
         bio: (merged.bio as string) || (merged.description as string) || '',
         description: (merged.description as string) || (merged.bio as string) || '',
-        rating: Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 4.5,
+        rating: (() => {
+          const r = Number(ratingAvg);
+          if (reviewCount <= 0 || !Number.isFinite(r) || r <= 0 || r > 5) return 0;
+          return r;
+        })(),
         reviewCount,
         specializations,
         amenities: (Array.isArray(merged.amenities) ? merged.amenities : []) as string[],

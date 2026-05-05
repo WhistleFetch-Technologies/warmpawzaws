@@ -76,7 +76,7 @@ export function VendorDashboardScreen({
                     earnings: 0,
                     pendingEarnings: 0,
                     completedServices: 0,
-                    rating: 4.5,
+                    rating: 0,
                     totalReviews: 0,
                   },
                   bookings: [],
@@ -98,7 +98,7 @@ export function VendorDashboardScreen({
                 earnings: 0,
                 pendingEarnings: 0,
                 completedServices: 0,
-                rating: 4.5,
+                rating: 0,
                 totalReviews: 0,
               },
               bookings: [],
@@ -119,7 +119,8 @@ export function VendorDashboardScreen({
           earnings: data.stats?.earnings || 0,
           pendingEarnings: data.stats?.pendingEarnings || 0,
           completedServices: data.stats?.completedServices || 0,
-          rating: data.stats?.rating || 4.5,
+          rating:
+            typeof data.stats?.rating === 'number' && data.stats.rating > 0 ? data.stats.rating : 0,
           totalReviews: data.stats?.totalReviews || 0,
         });
 
@@ -176,7 +177,7 @@ export function VendorDashboardScreen({
           earnings: 0,
           pendingEarnings: 0,
           completedServices: 0,
-          rating: 4.5,
+          rating: 0,
           totalReviews: 0,
         });
       }
@@ -191,7 +192,7 @@ export function VendorDashboardScreen({
         earnings: 0,
         pendingEarnings: 0,
         completedServices: 0,
-        rating: 4.5,
+        rating: 0,
         totalReviews: 0,
       });
     } finally {
@@ -303,7 +304,9 @@ export function VendorDashboardScreen({
 
             <div className="bg-white rounded-xl p-4 border border-gray-200 text-center">
               <div className="text-2xl mb-2">⭐</div>
-              <div className="text-xl font-bold text-gray-900">{stats.rating.toFixed(1)}</div>
+              <div className="text-xl font-bold text-gray-900">
+                {(stats.totalReviews ?? 0) > 0 && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
+              </div>
               <div className="text-xs text-gray-500">Rating</div>
             </div>
 

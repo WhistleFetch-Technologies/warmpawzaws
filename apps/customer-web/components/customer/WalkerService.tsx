@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { WALKING_NEEDS } from './ProblemGridSection';
@@ -192,7 +193,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=walking`).catch(() => null);
       if (response?.provider) {
-        setPreviousWalker({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+        setPreviousWalker({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: (() => { const r = Number(response.provider.rating); return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0; })(), lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/packages`).catch(() => null);
         const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
@@ -204,7 +205,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
           const pkg = walkish[0];
           const used = Number(pkg.sessionsUsed ?? pkg.sessions_used ?? 0);
           const total = Number(pkg.totalSessions ?? pkg.total_sessions ?? 0);
-          if (pkg.vendorId && pkg.vendorName) setPreviousWalker({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: total > 0 ? `${used}/${total}` : used || 1 });
+          if (pkg.vendorId && pkg.vendorName) setPreviousWalker({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: total > 0 ? `${used}/${total}` : used || 1 });
         }
       }
     } catch { /* ignore */ }
@@ -639,7 +640,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return [
       { value: wv, label: 'Walkers' },
       { value: '2K+', label: 'Walks' },
-      { value: '*4.8', label: 'Rating' },
+      { value: '—', label: 'Rating' },
     ];
   }, [stats, walkerDiscovery.data, walkerDiscovery.isLoading, walkerDiscovery.isFetching, walkerDiscovery.isError]);
 
@@ -932,7 +933,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                     <WalkerListCardHero walker={walker as Record<string, unknown>} />
                     <div className="absolute top-3 left-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
                       <Star className="w-3 h-3 fill-white" />
-                      {walker.rating || 4.5}
+                      {formatRatingNumberOrDash(walker.rating)}
                     </div>
                     <button
                       type="button"

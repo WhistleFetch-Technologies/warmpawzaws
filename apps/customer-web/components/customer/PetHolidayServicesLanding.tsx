@@ -5,6 +5,7 @@ import { ArrowLeft, Palmtree, Star, Sparkles, ChevronRight, Hotel, Camera, Utens
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface PetHolidayServicesLandingProps {
@@ -33,14 +34,12 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
       setStats({
         activePackages: packageList.length || 30,
         bookings: '800+',
-        rating: packageList.length > 0 
-          ? Number(packageList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / packageList.length).toFixed(1) 
-          : '4.8'
+        rating: averageStarDisplayFromNumbers(packageList.map((p: any) => p.rating)),
       });
     } catch (error) {
       console.error('Error loading holiday packages:', error);
       setHolidayPackages([]);
-      setStats({ activePackages: 30, bookings: '800+', rating: '4.8' });
+      setStats({ activePackages: 30, bookings: '800+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -190,7 +189,7 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {pkg.rating || 4.8}
+                          {formatRatingNumberOrDash(pkg.rating)}
                         </span>
                         {pkg.price && (
                           <>

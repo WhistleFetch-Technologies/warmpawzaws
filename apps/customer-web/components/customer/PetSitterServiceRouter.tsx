@@ -121,7 +121,10 @@ export function PetSitterServiceRouter({
             response.provider.businessName ||
             response.provider.name,
           photo: response.provider.photo,
-          rating: response.provider.rating || 4.8,
+          rating: (() => {
+            const r = Number(response.provider.rating);
+            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+          })(),
           lastVisit: response.provider.lastVisit,
         });
       } else {
@@ -135,7 +138,7 @@ export function PetSitterServiceRouter({
               id: pkg.vendorId,
               name: pkg.vendorName,
               photo: null,
-              rating: 4.8,
+              rating: 0,
               lastVisit: pkg.lastUsed || "Recently",
             });
           }

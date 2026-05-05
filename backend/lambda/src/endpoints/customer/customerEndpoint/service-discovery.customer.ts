@@ -6160,7 +6160,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const result = await query(vendorQuery, params);
 
-      const vendors = result.rows.map((v: any) => ({
+      const vendors = result.rows.map((v: any) => {
+        const rc = parseInt(v.review_count || '0', 10);
+        const rawAvg = v.avg_rating != null && v.avg_rating !== '' ? parseFloat(String(v.avg_rating)) : NaN;
+        const ratingOut =
+          rc > 0 && Number.isFinite(rawAvg) ? parseFloat(rawAvg.toFixed(1)) : null;
+        return {
         id: v.id,
         businessName: v.business_name || v.owner_name,
         ownerName: v.owner_name,
@@ -6173,10 +6178,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         roleId: v.role_id,
         roleName: v.role_name,
         roleDisplayName: v.role_display_name,
-        rating: parseFloat(v.avg_rating || '4.5').toFixed(1),
-        reviewCount: parseInt(v.review_count || '0', 10),
+        rating: ratingOut,
+        reviewCount: rc,
         completedBookings: parseInt(v.completed_bookings || '0', 10),
-      }));
+      };
+      });
 
       return c.json({
         success: true,

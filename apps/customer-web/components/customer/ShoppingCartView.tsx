@@ -33,6 +33,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { calculateTax } from '@/lib/tax-system';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
 import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
 import { CartPromotionResult } from '@/lib/promotions-engine';
@@ -105,11 +106,14 @@ const availableCoupons: Coupon[] = [
 ];
 
 // Mock vendor data - in production this would come from your backend
-const vendorData: Record<string, { name: string; rating: number; reviews: number; deliveryTime: string; freeDeliveryMin: number }> = {
-  'vendor1': { name: 'PawSome Pets Store', rating: 4.8, reviews: 2340, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
-  'vendor2': { name: 'Pet Paradise', rating: 4.6, reviews: 1820, deliveryTime: '1-2 days', freeDeliveryMin: 799 },
-  'vendor3': { name: 'Furry Friends Shop', rating: 4.9, reviews: 3100, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
-  'default': { name: 'Warmpawz Store', rating: 4.7, reviews: 1500, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
+const vendorData: Record<
+  string,
+  { name: string; rating?: number; reviews: number; deliveryTime: string; freeDeliveryMin: number }
+> = {
+  vendor1: { name: 'PawSome Pets Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
+  vendor2: { name: 'Pet Paradise', reviews: 0, deliveryTime: '1-2 days', freeDeliveryMin: 799 },
+  vendor3: { name: 'Furry Friends Shop', reviews: 0, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
+  default: { name: 'Warmpawz Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
 export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
@@ -437,7 +441,7 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
                       <div className="flex items-center gap-2 text-xs text-gray-600">
                         <div className="flex items-center gap-1">
                           <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                          <span>{vendor.rating}</span>
+                          <span>{formatRatingNumberOrDash(vendor.rating)}</span>
                         </div>
                         <span>•</span>
                         <span>{vendor.reviews.toLocaleString()} reviews</span>

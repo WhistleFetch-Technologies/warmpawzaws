@@ -7,6 +7,7 @@ import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import {
   ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -184,8 +185,13 @@ export default function ProductDetailClient() {
             compareOrOriginal != null && String(compareOrOriginal) !== ''
               ? parseFloat(String(compareOrOriginal))
               : undefined,
-          rating: p.rating || 4.5,
-          review_count: p.review_count || 0,
+          review_count: Number(p.review_count) || 0,
+          rating: (() => {
+            const rc = Number(p.review_count) || 0;
+            const r = Number(p.rating);
+            if (rc <= 0 || !Number.isFinite(r) || r <= 0 || r > 5) return 0;
+            return r;
+          })(),
           images: p.images || [],
           emoji: p.emoji || '🐾',
         });
@@ -353,8 +359,10 @@ export default function ProductDetailClient() {
   const averageRatingRaw =
     reviews.length > 0
       ? reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / reviews.length
-      : product?.rating ?? 4.5;
-  const averageRating = Number(averageRatingRaw || 0) || 0;
+      : product && product.review_count > 0
+        ? Number(product.rating)
+        : NaN;
+  const averageRating = Number.isFinite(averageRatingRaw) && averageRatingRaw > 0 ? averageRatingRaw : 0;
 
   // ============================================================================
   // RENDER
@@ -522,7 +530,13 @@ export default function ProductDetailClient() {
                   />
                 ))}
               </div>
-              <span className="font-semibold text-slate-900">{Number(averageRating || 0).toFixed(1)}</span>
+              <span className="font-semibold text-slate-900">
+                {reviews.length > 0
+                  ? formatRatingNumberOrDash(averageRating)
+                  : product
+                    ? formatAverageForDisplay(product.rating, product.review_count)
+                    : '—'}
+              </span>
               <span className="text-slate-500">({product.review_count} reviews)</span>
             </div>
 

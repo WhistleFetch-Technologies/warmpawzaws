@@ -37,7 +37,7 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [prescriptionUploaded, setPrescriptionUploaded] = useState(false);
   const { addToCart, itemCount } = useCart();
-  const [stats, setStats] = useState({ totalMedicines: 0, orders: 0, rating: '4.8' });
+  const [stats, setStats] = useState({ totalMedicines: 0, orders: 0, rating: '—' });
 
   const categories = [
     { id: 'all', label: 'All', icon: Pill },
@@ -62,7 +62,7 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
       setStats({
         totalMedicines: filteredMedicines.length,
         orders: 0, // Can be loaded from API if available
-        rating: '4.8'
+        rating: '—'
       });
     } catch (error) {
       console.error('Error loading medicines:', error);

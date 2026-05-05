@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -821,7 +822,7 @@ export function CustomerHomeComplete({
             id: s.id || s.vendorServiceId,
             title: s.serviceName || s.name || 'Grooming Service',
             price: `₹${s.price || s.basePrice || 999}`,
-            rating: s.rating || 4.8,
+            rating: s.rating ?? s.vendorRating,
             serviceStyle: s.serviceStyle || 'at_center',
             description: s.description || 'Professional grooming service',
             vendorId: s.vendorId
@@ -874,7 +875,7 @@ export function CustomerHomeComplete({
               originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
               discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
               iconType: 'product',
-              rating: p.rating || 4.5
+              rating: p.rating ?? p.averageRating,
             }));
             setHotDeals(mappedDeals);
           } else {
@@ -2261,7 +2262,7 @@ export function CustomerHomeComplete({
                     </div>
                     <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
                       <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs font-medium">{service.rating}</span>
+                      <span className="text-xs font-medium">{formatRatingNumberOrDash(service.rating)}</span>
                     </div>
                   </div>
                   <h3 className="text-black font-semibold mb-1">{service.title}</h3>

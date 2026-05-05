@@ -5,6 +5,7 @@ import { ArrowLeft, Plane, Star, Sparkles, ChevronRight, Package, Truck, Shield 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface RelocationServicesLandingProps {
@@ -33,14 +34,12 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
       setStats({
         activeServices: serviceList.length || 25,
         relocations: '500+',
-        rating: serviceList.length > 0 
-          ? Number(serviceList.reduce((acc: number, s: any) => acc + Number(s.rating || 4.7), 0) / serviceList.length).toFixed(1) 
-          : '4.7'
+        rating: averageStarDisplayFromNumbers(serviceList.map((s: any) => s.rating)),
       });
     } catch (error) {
       console.error('Error loading relocation services:', error);
       setRelocationServices([]);
-      setStats({ activeServices: 25, relocations: '500+', rating: '4.7' });
+      setStats({ activeServices: 25, relocations: '500+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -158,7 +157,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {service.rating || 4.7}
+                          {formatRatingNumberOrDash(service.rating)}
                         </span>
                         <span>•</span>
                         <span>{service.serviceName || 'Full Service'}</span>

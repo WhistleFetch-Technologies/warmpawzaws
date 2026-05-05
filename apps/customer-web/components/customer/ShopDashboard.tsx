@@ -15,6 +15,7 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
 
@@ -135,7 +136,10 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         category: prod.category || prod.category_name || 'general',
         vendor: {
           name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
-          rating: prod.vendor_rating || 4.7,
+          rating: (() => {
+            const r = Number(prod.vendor_rating);
+            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+          })(),
           location: prod.vendor_location || prod.vendor?.city || '',
           deliveryTime: prod.delivery_time || '2-3 days',
         },
@@ -326,10 +330,10 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
 
           <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 sm:px-5">
             {[
-              { name: 'PetMart India', rating: 4.7, products: '1500+', logo: '🏪', verified: true },
-              { name: 'Pet Tech Store', rating: 4.8, products: '800+', logo: '🤖', verified: true },
-              { name: 'Gadgets4Pets', rating: 4.9, products: '1200+', logo: '⚡', verified: true },
-              { name: 'Groom & Care', rating: 4.7, products: '600+', logo: '✨', verified: true }
+              { name: 'PetMart India', products: '1500+', logo: '🏪', verified: true },
+              { name: 'Pet Tech Store', products: '800+', logo: '🤖', verified: true },
+              { name: 'Gadgets4Pets', products: '1200+', logo: '⚡', verified: true },
+              { name: 'Groom & Care', products: '600+', logo: '✨', verified: true }
             ].map((vendor, idx) => (
               <Card key={idx} className="flex-shrink-0 min-w-[9rem] w-36 sm:w-40 p-4 hover:shadow-lg transition-shadow cursor-pointer">
                 <div className="text-center">
@@ -343,7 +347,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                   )}
                   <div className="flex items-center justify-center gap-1 mb-1">
                     <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs font-medium">{vendor.rating}</span>
+                    <span className="text-xs font-medium">{formatRatingNumberOrDash(vendor.rating)}</span>
                   </div>
                   <p className="text-xs text-gray-500">{vendor.products} products</p>
                 </div>

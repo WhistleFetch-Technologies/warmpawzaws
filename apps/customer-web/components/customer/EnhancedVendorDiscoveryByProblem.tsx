@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface EnhancedVendorDiscoveryByProblemProps {
@@ -278,7 +279,7 @@ export function EnhancedVendorDiscoveryByProblem({
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <div className="flex items-center gap-1 text-amber-500">
                           <Star className="w-3.5 h-3.5 fill-current" />
-                          <span className="text-sm font-medium text-gray-700">{result.rating?.toFixed(1) || '4.5'}</span>
+                          <span className="text-sm font-medium text-gray-700">{formatRatingNumberOrDash(result.rating)}</span>
                         </div>
                         {formatDistanceDisplay(result) && (
                           <>

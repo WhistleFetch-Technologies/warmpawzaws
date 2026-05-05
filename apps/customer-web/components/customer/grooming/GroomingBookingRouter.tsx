@@ -863,7 +863,7 @@ export function GroomingBookingRouter({
     () => [
       { value: groomingProviderStatValue, label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
-      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ],
     [groomingProviderStatValue]
   );

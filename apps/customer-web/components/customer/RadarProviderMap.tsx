@@ -64,7 +64,7 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
             const mockProviders = Array.from({ length: 5 }).map((_, i) => ({
                 id: `p-${i}`,
                 name: `Provider ${i + 1}`,
-                rating: 4.5 + (Math.random() * 0.5),
+                rating: 0,
                 coordinates: {
                     lat: userLocation.lat + (Math.random() - 0.5) * 0.05,
                     lng: userLocation.lng + (Math.random() - 0.5) * 0.05

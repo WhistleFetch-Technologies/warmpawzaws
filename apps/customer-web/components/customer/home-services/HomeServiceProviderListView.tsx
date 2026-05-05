@@ -219,7 +219,10 @@ export function HomeServiceProviderListView({
             address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
             phone: p.phone || '',
             distance: typeof p.distance === 'number' ? p.distance : (userLocation ? calculateDistance(userLocation, p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : undefined) : 999),
-            rating: Number(p.rating) || 4.5,
+            rating: (() => {
+              const r = Number(p.rating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
             specializations: Array.isArray(p.specializations) ? p.specializations : [],
             amenities: Array.isArray(p.amenities) ? p.amenities : [],
@@ -261,7 +264,10 @@ export function HomeServiceProviderListView({
             address: service.vendorAddress || service.vendorLocation || 'Location not specified',
             phone: service.vendorPhone || '',
             distance: 999,
-            rating: service.vendorRating || 4.5,
+            rating: (() => {
+              const r = Number(service.vendorRating);
+              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            })(),
             reviewCount: service.vendorReviewCount || 0,
             specializations: service.specializations || [],
             amenities: service.amenities || [],

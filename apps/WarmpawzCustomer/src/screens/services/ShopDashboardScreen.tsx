@@ -20,6 +20,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 type ViewType = 
   | 'dashboard'
@@ -42,13 +43,13 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
   vendor: {
     name: string;
-    rating: number;
+    rating?: number;
     location: string;
     deliveryTime: string;
   };
@@ -147,13 +148,13 @@ export function ShopDashboardScreen({
         description: prod.description || '',
         price: prod.price || prod.unitPrice || 0,
         originalPrice: prod.originalPrice || prod.mrp,
-        rating: prod.rating || prod.averageRating || 4.5,
+        rating: starRatingOrUndefined(prod.rating ?? prod.averageRating),
         reviews: prod.reviewCount || prod.reviews || 0,
         image: prod.image || prod.imageUrl || '',
         category: prod.category || 'general',
         vendor: {
           name: prod.vendorName || 'Vendor',
-          rating: prod.vendorRating || 4.5,
+          rating: starRatingOrUndefined(prod.vendorRating),
           location: prod.vendorLocation || '',
           deliveryTime: prod.deliveryTime || '2-3 days',
         },
@@ -413,12 +414,12 @@ export function ShopDashboardScreen({
                     <Text style={styles.vendorName}>{product.vendor.name}</Text>
                     <Text style={styles.ratingIcon}>⭐</Text>
                     <Text style={styles.ratingText}>
-                      {product.vendor.rating}
+                      {formatRatingOrDash(product.vendor.rating)}
                     </Text>
                   </View>
                   <View style={styles.productRating}>
                     <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
+                    <Text style={styles.ratingText}>{formatRatingOrDash(product.rating)}</Text>
                     <Text style={styles.reviewsText}>({product.reviews})</Text>
                   </View>
                   <View style={styles.productPriceContainer}>
@@ -478,7 +479,7 @@ export function ShopDashboardScreen({
                     </View>
                     <View style={styles.productRating}>
                       <Text style={styles.ratingIcon}>⭐</Text>
-                      <Text style={styles.ratingText}>{product.rating}</Text>
+                      <Text style={styles.ratingText}>{formatRatingOrDash(product.rating)}</Text>
                       <Text style={styles.deliveryText}>
                         • {product.vendor.deliveryTime}
                       </Text>
@@ -570,7 +571,7 @@ export function ShopDashboardScreen({
             </Text>
             <View style={styles.productDetailRating}>
               <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
+              <Text style={styles.ratingText}>{formatRatingOrDash(selectedProduct.rating)}</Text>
               <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
             </View>
             <View style={styles.productDetailPriceContainer}>
@@ -583,7 +584,7 @@ export function ShopDashboardScreen({
             </View>
             <View style={styles.vendorInfoDetail}>
               <Text style={styles.vendorInfoText}>
-                Vendor: {selectedProduct.vendor.name} ⭐ {selectedProduct.vendor.rating}
+                Vendor: {selectedProduct.vendor.name} ⭐ {formatRatingOrDash(selectedProduct.vendor.rating)}
               </Text>
               <Text style={styles.vendorInfoText}>
                 Delivery: {selectedProduct.vendor.deliveryTime}

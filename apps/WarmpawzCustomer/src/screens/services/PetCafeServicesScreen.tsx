@@ -24,6 +24,7 @@ import {
   applyWarmpawzCustomerToRazorpayOptions,
   profileEmailAndName,
 } from '../../utils/razorpay-checkout-options';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 type ViewType = 
   | 'landing'
@@ -44,7 +45,7 @@ interface Cafe {
   id: string;
   name: string;
   address: string;
-  rating: number;
+  rating?: number;
   image?: string;
 }
 
@@ -93,7 +94,7 @@ export function PetCafeServicesScreen({
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: service.vendorRating || 4.5,
+            rating: starRatingOrUndefined(service.vendorRating),
             image: service.vendorImage || 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1000',
           });
         }
@@ -340,7 +341,7 @@ export function PetCafeServicesScreen({
                   <View style={styles.cafeHeader}>
                     <Text style={styles.cafeName}>{cafe.name}</Text>
                     <Text style={styles.cafeRating}>
-                      ⭐ {cafe.rating.toFixed(1)}
+                      ⭐ {formatRatingOrDash(cafe.rating)}
                     </Text>
                   </View>
                   <Text style={styles.cafeAddress}>{cafe.address}</Text>
@@ -373,7 +374,7 @@ export function PetCafeServicesScreen({
           <View style={styles.cafeDetailInfo}>
             <Text style={styles.cafeDetailName}>{selectedCafe?.name}</Text>
             <Text style={styles.cafeDetailRating}>
-              ⭐ {selectedCafe?.rating.toFixed(1)} Rating
+              ⭐ {formatRatingOrDash(selectedCafe?.rating)} Rating
             </Text>
             <Text style={styles.cafeDetailAddress}>{selectedCafe?.address}</Text>
           </View>

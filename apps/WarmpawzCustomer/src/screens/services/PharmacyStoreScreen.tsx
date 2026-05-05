@@ -20,6 +20,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 type ViewType = 
   | 'landing'
@@ -43,7 +44,7 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
@@ -91,7 +92,7 @@ export function PharmacyStoreScreen({
   const [stats, setStats] = useState({
     activePharmacies: 0,
     orders: '50K+',
-    rating: '4.7',
+    rating: '—',
   });
 
   useEffect(() => {
@@ -116,7 +117,7 @@ export function PharmacyStoreScreen({
           pharmacyMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
-            rating: service.vendorRating || 4.7,
+            rating: starRatingOrUndefined(service.vendorRating),
             completedOrders: service.vendorReviewCount || 0,
           });
         }
@@ -124,13 +125,22 @@ export function PharmacyStoreScreen({
       
       const allPharmacies = Array.from(pharmacyMap.values());
       setPharmacies(allPharmacies);
-      
+
+      const withRatings = allPharmacies.filter(
+        (p: { rating?: number }) => starRatingOrUndefined(p.rating) != null
+      );
       setStats({
         activePharmacies: allPharmacies.length || 25,
         orders: '50K+',
-        rating: allPharmacies.length > 0 
-          ? (allPharmacies.reduce((acc: number, p: any) => acc + (p.rating || 4.7), 0) / allPharmacies.length).toFixed(1)
-          : '4.7',
+        rating:
+          withRatings.length > 0
+            ? (
+                withRatings.reduce(
+                  (acc: number, p: { rating?: number }) => acc + starRatingOrUndefined(p.rating)!,
+                  0
+                ) / withRatings.length
+              ).toFixed(1)
+            : '—',
       });
 
       // Load products from API
@@ -146,7 +156,7 @@ export function PharmacyStoreScreen({
             description: prod.description || '',
             price: prod.price || prod.unitPrice || 0,
             originalPrice: prod.originalPrice || prod.mrp,
-            rating: prod.rating || prod.averageRating || 4.5,
+            rating: starRatingOrUndefined(prod.rating ?? prod.averageRating),
             reviews: prod.reviewCount || prod.reviews || 0,
             image: prod.image || prod.imageUrl || '',
             category: prod.category || 'otc',
@@ -415,7 +425,7 @@ export function PharmacyStoreScreen({
                   </Text>
                   <View style={styles.productRating}>
                     <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
+                    <Text style={styles.ratingText}>{formatRatingOrDash(product.rating)}</Text>
                     <Text style={styles.reviewsText}>({product.reviews})</Text>
                   </View>
                   <View style={styles.productFooter}>
@@ -486,7 +496,7 @@ export function PharmacyStoreScreen({
             </Text>
             <View style={styles.productDetailRating}>
               <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
+              <Text style={styles.ratingText}>{formatRatingOrDash(selectedProduct.rating)}</Text>
               <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
             </View>
             <View style={styles.productDetailPriceContainer}>

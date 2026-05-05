@@ -88,7 +88,10 @@ export function PetCafeListingZomatoStyle(props: PetCafeListingZomatoStyleProps)
           name: vendor.business_name || vendor.name,
           description: "A cozy place for you and your pet.",
           address: vendor.location?.address || vendor.address || "Location",
-          rating: vendor.rating || 4.5,
+          rating: (() => {
+            const r = Number(vendor.rating);
+            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+          })(),
           reviewsCount: vendor.reviews_count || 0,
           costForTwo: 500,
           cuisines: ["Cafe", "Snacks"],

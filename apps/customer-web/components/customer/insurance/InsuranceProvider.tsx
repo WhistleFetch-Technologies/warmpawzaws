@@ -10,6 +10,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 
 interface InsuranceProviderProps {
   phone?: string;
@@ -309,7 +310,7 @@ This is a digital policy document. Please keep this for your records.
         {provider && (
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold text-white">{provider.rating || '4.7'}</div>
+              <div className="text-2xl font-bold text-white">{formatRatingNumberOrDash(provider.rating)}</div>
               <div className="text-white/80 text-xs">Rating</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">

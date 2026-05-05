@@ -5,6 +5,7 @@ import { Coffee, ArrowLeft, Star, Sparkles, ChevronRight, MapPin } from 'lucide-
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { aggregateAverageRatingStat, formatAverageForDisplay } from '@/lib/rating-display';
 
 interface PetCafeServicesLandingProps {
   phone: string;
@@ -38,7 +39,7 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
             vendorId: vendorId,
             businessName: s.vendorName || s.businessName || s.name,
             vendorLocation: s.vendorLocation?.address || s.location?.address || 'Location unavailable',
-            vendorRating: s.vendorRating || s.rating || 4.5,
+            vendorRating: s.vendorRating ?? s.rating,
             vendorReviewCount: s.vendorReviewCount || s.reviewsCount || 0,
             price: s.price,
             serviceName: s.serviceName,
@@ -53,14 +54,17 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
       setStats({
         activeCafes: uniqueCafes.length || 25,
         reservations: '3K+',
-        rating: uniqueCafes.length > 0 
-          ? Number(uniqueCafes.reduce((acc: number, c: any) => acc + Number(c.vendorRating || 4.5), 0) / uniqueCafes.length).toFixed(1) 
-          : '4.5'
+        rating: aggregateAverageRatingStat(
+          uniqueCafes.map((c: any) => ({
+            vendorRating: c.vendorRating,
+            reviewCount: c.vendorReviewCount,
+          }))
+        ),
       });
     } catch (error: any) {
       console.error('Error loading cafes:', error);
       setCafes([]);
-      setStats({ activeCafes: 25, reservations: '3K+', rating: '4.5' });
+      setStats({ activeCafes: 25, reservations: '3K+', rating: '—' });
       // ✅ FIX: Show error toast for API failures (toast is not imported, but error is handled)
       console.warn('Failed to load cafes. Please try again.');
     } finally {
@@ -178,7 +182,7 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {cafe.vendorRating || 4.5}
+                          {formatAverageForDisplay(cafe.vendorRating, cafe.vendorReviewCount)}
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1">

@@ -18,6 +18,7 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ApiService } from '../../services/api';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 type ViewType = 
   | 'landing'
@@ -38,7 +39,7 @@ interface InsuranceServicesScreenProps {
 interface InsuranceProvider {
   id: string;
   name: string;
-  rating: number;
+  rating?: number;
   completedPolicies: number;
   basePrice: number;
   description?: string;
@@ -73,7 +74,7 @@ export function InsuranceServicesScreen({
   const [stats, setStats] = useState({
     activeProviders: 0,
     policiesIssued: '10K+',
-    rating: '4.7',
+    rating: '—',
   });
 
   useEffect(() => {
@@ -108,7 +109,7 @@ export function InsuranceServicesScreen({
           vendorMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
-            rating: service.vendorRating || 4.7,
+            rating: starRatingOrUndefined(service.vendorRating),
             completedPolicies: service.vendorReviewCount || 0,
             basePrice: service.price || 999,
             description: service.description,
@@ -118,13 +119,22 @@ export function InsuranceServicesScreen({
       
       const allProviders = Array.from(vendorMap.values()) as InsuranceProvider[];
       setProviders(allProviders);
-      
+
+      const withRatings = allProviders.filter(
+        (p) => starRatingOrUndefined(p.rating) != null
+      );
       setStats({
         activeProviders: allProviders.length || 12,
         policiesIssued: '10K+',
-        rating: allProviders.length > 0 
-          ? (allProviders.reduce((acc, p) => acc + (p.rating || 4.7), 0) / allProviders.length).toFixed(1)
-          : '4.7',
+        rating:
+          withRatings.length > 0
+            ? (
+                withRatings.reduce(
+                  (acc, p) => acc + starRatingOrUndefined(p.rating)!,
+                  0
+                ) / withRatings.length
+              ).toFixed(1)
+            : '—',
       });
 
       // Load insurance plans from API
@@ -306,7 +316,7 @@ export function InsuranceServicesScreen({
               <View style={styles.providerHeader}>
                 <Text style={styles.providerName}>{provider.name}</Text>
                 <Text style={styles.providerRating}>
-                  ⭐ {provider.rating.toFixed(1)}
+                  ⭐ {formatRatingOrDash(provider.rating)}
                 </Text>
               </View>
               <Text style={styles.providerPolicies}>
@@ -340,7 +350,7 @@ export function InsuranceServicesScreen({
       <ScrollView style={styles.providerDetailContainer}>
         <View style={styles.ratingContainer}>
           <Text style={styles.ratingText}>
-            ⭐ {selectedProvider?.rating.toFixed(1)} Rating
+            ⭐ {formatRatingOrDash(selectedProvider?.rating)} Rating
           </Text>
           <Text style={styles.policiesText}>
             {selectedProvider?.completedPolicies} policies issued

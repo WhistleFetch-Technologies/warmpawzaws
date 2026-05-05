@@ -26,6 +26,11 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import {
+  aggregateAverageRatingStat,
+  formatRatingNumberOrDash,
+  headerRatingStatValue,
+} from '@/lib/rating-display';
 
 interface PharmacyServicesLandingProps {
   phone: string;
@@ -62,7 +67,8 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
             vendorMap.set(vendorId, {
               id: vendorId,
               businessName: service.vendorName,
-              rating: service.vendorRating || 4.7,
+              rating: Number(service.vendorRating),
+              reviewCount: Number(service.vendorReviewCount ?? service.reviewCount ?? 0),
               completedOrders: service.vendorReviewCount || 0,
               distance: Math.random() * 5 + 0.5,
               deliveryTime: Math.floor(Math.random() * 30) + 20
@@ -76,15 +82,13 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
         setStats({
           activePharmacies: allPharmacies.length || 25,
           orders: '50K+',
-          rating: allPharmacies.length > 0 
-            ? Number(allPharmacies.reduce((acc: number, p: any) => acc + Number(p.rating || 4.7), 0) / allPharmacies.length).toFixed(1) 
-            : '4.7'
+          rating: aggregateAverageRatingStat(allPharmacies),
         });
       } else {
         setStats({
           activePharmacies: 25,
           orders: '50K+',
-          rating: '4.7'
+          rating: '—',
         });
       }
     } catch (error) {
@@ -92,7 +96,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
       setStats({
         activePharmacies: 25,
         orders: '50K+',
-        rating: '4.7'
+        rating: '—',
       });
     } finally {
       setLoading(false);
@@ -111,11 +115,11 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
   const dashboardStats = stats ? [
     { value: `${stats.activePharmacies}+`, label: 'Pharmacies' },
     { value: stats.orders, label: 'Orders' },
-    { value: `*${stats.rating}`, label: 'Rating' }
+    { value: headerRatingStatValue(stats.rating), label: 'Rating' }
   ] : [
     { value: '25+', label: 'Pharmacies' },
     { value: '50K+', label: 'Orders' },
-    { value: '*4.7', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   return (
@@ -328,7 +332,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
                       <div className="flex items-center gap-3 text-xs">
                         <div className="flex items-center gap-1 text-amber-500">
                           <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{pharmacy.rating || 4.7}</span>
+                          <span className="font-semibold">{formatRatingNumberOrDash(pharmacy.rating)}</span>
                           <span className="text-gray-400">({pharmacy.completedOrders || 0})</span>
                         </div>
                         <div className="flex items-center gap-1 text-gray-500">

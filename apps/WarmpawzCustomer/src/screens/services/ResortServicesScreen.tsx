@@ -24,6 +24,7 @@ import {
   applyWarmpawzCustomerToRazorpayOptions,
   profileEmailAndName,
 } from '../../utils/razorpay-checkout-options';
+import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
 
 type ViewType = 
   | 'landing'
@@ -46,7 +47,7 @@ interface Resort {
   id: string;
   name: string;
   address: string;
-  rating: number;
+  rating?: number;
   image?: string;
 }
 
@@ -125,7 +126,7 @@ export function ResortServicesScreen({
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: service.vendorRating || 4.7,
+            rating: starRatingOrUndefined(service.vendorRating),
             image: service.vendorImage,
           });
         }
@@ -467,7 +468,7 @@ export function ResortServicesScreen({
                 <View style={styles.resortInfo}>
                   <Text style={styles.resortName}>{resort.name}</Text>
                   <Text style={styles.resortRating}>
-                    ⭐ {resort.rating.toFixed(1)}
+                    ⭐ {formatRatingOrDash(resort.rating)}
                   </Text>
                   <Text style={styles.resortAddress}>{resort.address}</Text>
                 </View>

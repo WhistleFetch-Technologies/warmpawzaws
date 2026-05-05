@@ -4,6 +4,7 @@ import { MapPin, Star, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar,
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { trackClick } from '@/lib/analytics';
+import { getAverageRatingLabel, hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -80,8 +81,11 @@ export function UniversalVendorCard({
   onToggleFavorite,
   showEnrichedData = true
 }: UniversalVendorCardProps) {
-  const rating = vendor.vendorRating || 4.5;
-  const reviewCount = vendor.vendorReviewCount || 0;
+  const reviewCount = normalizeRatingCount(vendor.vendorReviewCount);
+  const showRated =
+    hasRatings(reviewCount) &&
+    Number.isFinite(Number(vendor.vendorRating)) &&
+    Number(vendor.vendorRating) > 0;
   const location = vendor.vendorLocation || 'Location not specified';
   const profileImage = vendor.vendorProfileImage || vendor.photoUrl;
 
@@ -260,15 +264,26 @@ export function UniversalVendorCard({
           
           {/* Rating, Reviews & Service Style */}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-medium">{Number(rating || 0).toFixed(1)}</span>
-            </div>
-            {reviewCount > 0 && (
+            {showRated ? (
               <>
+                <div className="flex items-center gap-1">
+                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                  <span className="text-sm font-medium">
+                    {getAverageRatingLabel(vendor.vendorRating, reviewCount)}
+                  </span>
+                </div>
                 <span className="text-gray-400">•</span>
                 <span className="text-sm text-gray-600">{reviewCount} reviews</span>
               </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-0.5" aria-hidden>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <Star key={i} className="w-4 h-4 text-gray-300" />
+                  ))}
+                </span>
+                <span className="text-sm text-gray-500">No customer reviews</span>
+              </div>
             )}
             {showEnrichedData && vendor.completedBookings && vendor.completedBookings > 0 && (
               <>

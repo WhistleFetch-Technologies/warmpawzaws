@@ -43,7 +43,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
   const [showPreReview, setShowPreReview] = useState(false);
 
   const cafePrePaymentStats = [
-    { value: '4.8', label: 'Café', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '—', label: 'Café', icon: <Star className="w-4 h-4 fill-white" /> },
     { value: '1h+', label: 'Stays' },
     { value: 'Pet', label: 'OK' },
   ];
