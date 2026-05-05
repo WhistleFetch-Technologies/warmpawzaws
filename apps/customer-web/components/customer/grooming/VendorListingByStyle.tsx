@@ -108,20 +108,21 @@ export function VendorListingByStyle({
         const response = await apiClient.get(`/search?${searchParams}`) as any;
         
         if (response.success || response.vendors) {
-          const searchVendors = (response.vendors || []).map((v: any) => ({
+          const searchVendors = (response.vendors || []).map((v: any) => {
+            const rc = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+            const r = v.rating != null ? Number(v.rating) : NaN;
+            return {
             id: v.id,
             name: v.businessName || v.name,
             type: 'vendor' as const,
-            rating: (() => {
-              const r = Number(v.rating);
-              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-            })(),
-            reviewCount: v.completedBookings || 0,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+            reviewCount: rc,
             distance: v.distance_km ?? v.distance ?? null,
             city: v.city,
             isVerified: true,
             specialization: v.specialization,
-          }));
+          };
+          });
           setVendors(searchVendors);
         }
       } catch (error) {
@@ -168,15 +169,14 @@ export function VendorListingByStyle({
           const providerType = item.providerType || 'vendor';
           
           if (!vendorMap.has(vendorId)) {
+            const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
+            const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Service Provider',
               type: providerType,
-              rating: (() => {
-                const r = Number(item.rating);
-                return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-              })(),
-              reviewCount: parseInt(item.reviewCount || item.reviewsCount || '0', 10),
+              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+              reviewCount: rc,
               distance: item.distance || null,
               city: item.city,
               address: item.address,

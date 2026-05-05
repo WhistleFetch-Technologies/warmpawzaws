@@ -160,10 +160,12 @@ export function PreviousProvidersCarousel({
                 <span>{formatDate(provider.lastServiceDate)}</span>
               </div>
 
-              {provider.distance !== undefined && (
+              {provider.distance != null && (
                 <div className="flex items-center gap-1 text-gray-600">
                   <MapPin className="w-4 h-4" />
-                  <span>{Number(provider.distance || 0).toFixed(1)} km</span>
+                  <span>{Number(provider.distance) < 1
+                    ? `${Math.round(Number(provider.distance) * 1000)} m`
+                    : `${Math.round(Number(provider.distance))} km`}</span>
                 </div>
               )}
             </div>

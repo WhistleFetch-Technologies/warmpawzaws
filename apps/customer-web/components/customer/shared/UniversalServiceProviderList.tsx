@@ -432,10 +432,12 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
                 <span>{provider.experienceYears}+ yrs</span>
               </div>
             )}
-            {provider.distance != null && serviceStyle === 'at_center' && (
+            {provider.distance != null && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-gray-400" />
-                <span>{Number(provider.distance || 0).toFixed(1)} km</span>
+                <span>{Number(provider.distance) < 1
+                  ? `${Math.round(Number(provider.distance) * 1000)} m`
+                  : `${Math.round(Number(provider.distance))} km`}</span>
               </div>
             )}
           </div>

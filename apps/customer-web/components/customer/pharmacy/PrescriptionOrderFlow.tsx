@@ -225,16 +225,21 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
                   // Pharmacy accepted - get accepting pharmacy info
                   const acceptingPharmacy = broadcastStatus.acceptedPharmacy || (response as any).pharmacies?.[0];
                   if (acceptingPharmacy) {
+                    const prc = Number(
+                      acceptingPharmacy.reviewCount ?? acceptingPharmacy.review_count ?? 0
+                    );
+                    const pr =
+                      acceptingPharmacy.rating != null
+                        ? Number(acceptingPharmacy.rating)
+                        : NaN;
                     setConfirmedPharmacy({
                       id: acceptingPharmacy.id,
                       name: acceptingPharmacy.name || acceptingPharmacy.businessName || 'Pharmacy',
                       distance: acceptingPharmacy.distance || 0,
                       deliveryFee: 40,
                       eta: { minutes: 30, rangeMin: 25, rangeMax: 40 },
-                      rating: (() => {
-                        const r = Number(acceptingPharmacy.rating);
-                        return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-                      })(),
+                      rating:
+                        prc > 0 && Number.isFinite(pr) && pr > 0 ? pr : undefined,
                     });
                   }
                   setStep('confirmed');
@@ -495,10 +500,17 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
                 </div>
                 <div>
                   <p className="font-semibold text-slate-800">{confirmedPharmacy.name}</p>
-                  <div className="flex items-center gap-1 text-amber-500">
-                    {Icons.star}
-                    <span className="text-sm text-slate-600">{formatRatingNumberOrDash(confirmedPharmacy.rating)}</span>
-                  </div>
+                  {confirmedPharmacy.rating != null &&
+                  Number(confirmedPharmacy.rating) > 0 ? (
+                    <div className="flex items-center gap-1 text-amber-500">
+                      {Icons.star}
+                      <span className="text-sm text-slate-600">
+                        {Number(confirmedPharmacy.rating).toFixed(1)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-slate-500">No reviews yet</span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-4 text-sm text-slate-500">

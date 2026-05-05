@@ -5,7 +5,7 @@ import { Coffee, ArrowLeft, Star, Sparkles, ChevronRight, MapPin } from 'lucide-
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
-import { aggregateAverageRatingStat, formatAverageForDisplay } from '@/lib/rating-display';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 interface PetCafeServicesLandingProps {
   phone: string;
@@ -51,20 +51,28 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
       const uniqueCafes = Array.from(uniqueVendors.values());
       setCafes(uniqueCafes);
       
+      const withReviews = uniqueCafes.filter((c: any) => {
+        const rc = Number(c.vendorReviewCount ?? c.review_count ?? 0) || 0;
+        const r = Number(c.vendorRating ?? c.rating);
+        return rc > 0 && Number.isFinite(r) && r > 0;
+      });
+      const avgRating =
+        withReviews.length > 0
+          ? (
+              withReviews.reduce((acc: number, c: any) => acc + Number(c.vendorRating ?? c.rating), 0) /
+              withReviews.length
+            ).toFixed(1)
+          : null;
+
       setStats({
-        activeCafes: uniqueCafes.length || 25,
+        activeCafes: uniqueCafes.length || 0,
         reservations: '3K+',
-        rating: aggregateAverageRatingStat(
-          uniqueCafes.map((c: any) => ({
-            vendorRating: c.vendorRating,
-            reviewCount: c.vendorReviewCount,
-          }))
-        ),
+        rating: avgRating,
       });
     } catch (error: any) {
       console.error('Error loading cafes:', error);
       setCafes([]);
-      setStats({ activeCafes: 25, reservations: '3K+', rating: '—' });
+      setStats({ activeCafes: 0, reservations: '3K+', rating: null });
       // ✅ FIX: Show error toast for API failures (toast is not imported, but error is handled)
       console.warn('Failed to load cafes. Please try again.');
     } finally {
@@ -107,9 +115,9 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
             </div>
             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
                <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
+                 {stats.rating != null ? stats.rating : '—'} {stats.rating != null ? <Star className="w-4 h-4 fill-white" /> : null}
                </div>
-               <div className="text-xs text-white/80">Rating</div>
+               <div className="text-xs text-white/80">Avg rating</div>
             </div>
           </div>
         )}
@@ -179,12 +187,14 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{cafe.businessName || `Pet Cafe ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                        <span className="flex items-center gap-1 text-orange-500 font-bold">
-                          <Star className="w-3 h-3 fill-current" />
-                          {formatAverageForDisplay(cafe.vendorRating, cafe.vendorReviewCount)}
-                        </span>
-                        <span>•</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
+                        <StarRating
+                          rating={cafe.vendorRating}
+                          reviewCount={cafe.vendorReviewCount}
+                          starsClassName="w-3 h-3"
+                          textClassName="text-xs text-slate-500"
+                        />
+                        <span className="hidden sm:inline">•</span>
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {cafe.vendorLocation || 'Location'}

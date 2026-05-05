@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle, Plus, Video, Zap } from 'lucide-react';
+import { ArrowLeft, Apple, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle, Plus, Video, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -12,7 +12,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes, MEAL_PLANS_COMING_SOON } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
-import { aggregateAverageRatingStat, formatRatingNumberOrDash, headerRatingStatValue } from '@/lib/rating-display';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 
 
@@ -56,15 +56,28 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
 
+      const withReviews = nutritionistList.filter((n: any) => {
+        const c = Number(n.reviewCount ?? n.review_count ?? 0);
+        const r = Number(n.rating);
+        return c > 0 && Number.isFinite(r) && r > 0;
+      });
+      const avgFromReviews =
+        withReviews.length > 0
+          ? (
+              withReviews.reduce((acc: number, n: any) => acc + Number(n.rating), 0) /
+              withReviews.length
+            ).toFixed(1)
+          : null;
+
       setStats({
-        activeNutritionists: nutritionistList.length || 45,
+        activeNutritionists: nutritionistList.length || 0,
         consultations: '1.5K+',
-        rating: aggregateAverageRatingStat(nutritionistList),
+        rating: avgFromReviews,
       });
     } catch (error) {
       console.error('Error loading nutritionists:', error);
       setNutritionists([]);
-      setStats({ activeNutritionists: 45, consultations: '1.5K+', rating: '—' });
+      setStats({ activeNutritionists: 0, consultations: '1.5K+', rating: null });
     } finally {
       setLoading(false);
     }
@@ -102,15 +115,20 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   //---------------------------Basics----------------------------------//
-  const dashboardStats = stats ? [
-    { value: `${stats.activeNutritionists}+`, label: 'Experts' },
-    { value: stats.consultations, label: 'Consultations' },
-    { value: headerRatingStatValue(stats.rating), label: 'Rating' }
-  ] : [
-    { value: '45+', label: 'Experts' },
-    { value: '1.5K+', label: 'Consultations' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = stats
+    ? [
+        { value: `${stats.activeNutritionists}+`, label: 'Experts' },
+        { value: stats.consultations, label: 'Consultations' },
+        {
+          value: stats.rating != null ? stats.rating : '—',
+          label: 'Avg rating',
+        },
+      ]
+    : [
+        { value: '—', label: 'Experts' },
+        { value: '1.5K+', label: 'Consultations' },
+        { value: '—', label: 'Avg rating' },
+      ];
 
 
   //---------------------------render----------------------------------//
@@ -351,12 +369,14 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{nutritionist.businessName || nutritionist.name || `Nutritionist ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                        <span className="flex items-center gap-1 text-orange-500 font-bold">
-                          <Star className="w-3 h-3 fill-current" />
-                          {formatRatingNumberOrDash(nutritionist.rating)}
-                        </span>
-                        <span>•</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
+                        <StarRating
+                          rating={nutritionist.rating}
+                          reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
+                          starsClassName="w-3 h-3"
+                          textClassName="text-xs text-slate-500"
+                        />
+                        <span className="hidden sm:inline">•</span>
                         <span>Certified Expert</span>
                       </div>
                     </div>

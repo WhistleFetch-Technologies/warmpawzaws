@@ -31,10 +31,18 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
       const serviceList = data.vendors || data.services || [];
       setRelocationServices(serviceList);
       
+      const rated = serviceList.filter((s: any) => {
+        const rc = Number(s.reviewCount ?? s.reviews_count ?? s.totalReviews ?? 0) || 0;
+        const raw = s.rating != null ? Number(s.rating) : NaN;
+        return rc > 0 && Number.isFinite(raw) && raw > 0;
+      });
       setStats({
         activeServices: serviceList.length || 25,
         relocations: '500+',
-        rating: averageStarDisplayFromNumbers(serviceList.map((s: any) => s.rating)),
+        rating:
+          rated.length > 0
+            ? (rated.reduce((acc: number, s: any) => acc + Number(s.rating), 0) / rated.length).toFixed(1)
+            : '—',
       });
     } catch (error) {
       console.error('Error loading relocation services:', error);
@@ -154,12 +162,23 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{service.vendorName || service.businessName || `Relocation Service ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                        {(() => {
+                          const rc = Number(service.reviewCount ?? service.reviews_count ?? service.totalReviews ?? 0) || 0;
+                          const raw = service.rating != null ? Number(service.rating) : NaN;
+                          const ok = rc > 0 && Number.isFinite(raw) && raw > 0;
+                          return ok ? (
+                        <>
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {formatRatingNumberOrDash(service.rating)}
+                          {raw.toFixed(1)}
                         </span>
                         <span>•</span>
+                        </>
+                          ) : (
+                        <span className="text-slate-400">No reviews yet</span>
+                          );
+                        })()}
                         <span>{service.serviceName || 'Full Service'}</span>
                       </div>
                     </div>

@@ -31,10 +31,18 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
       const resortList = data.vendors || data.services || [];
       setResorts(resortList);
       
+      const rated = resortList.filter((r: any) => {
+        const rc = Number(r.reviewCount ?? r.reviews_count ?? r.totalReviews ?? 0) || 0;
+        const raw = r.rating != null ? Number(r.rating) : NaN;
+        return rc > 0 && Number.isFinite(raw) && raw > 0;
+      });
       setStats({
         activeResorts: resortList.length || 15,
         bookings: '2K+',
-        rating: aggregateAverageRatingStat(resortList),
+        rating:
+          rated.length > 0
+            ? (rated.reduce((acc: number, r: any) => acc + Number(r.rating), 0) / rated.length).toFixed(1)
+            : '—',
       });
     } catch (error) {
       console.error('Error loading resorts:', error);
@@ -205,12 +213,23 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{resort.businessName || resort.name || `Pet Resort ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                        {(() => {
+                          const rc = Number(resort.reviewCount ?? resort.reviews_count ?? resort.totalReviews ?? 0) || 0;
+                          const raw = resort.rating != null ? Number(resort.rating) : NaN;
+                          const ok = rc > 0 && Number.isFinite(raw) && raw > 0;
+                          return ok ? (
+                        <>
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {resort.rating != null ? formatRatingNumberOrDash(resort.rating) : '—'}
+                          {raw.toFixed(1)}
                         </span>
                         <span>•</span>
+                        </>
+                          ) : (
+                        <span className="text-slate-400">No reviews yet</span>
+                          );
+                        })()}
                         <span>{resort.priceRange || '₹3,999/day'}</span>
                       </div>
                     </div>

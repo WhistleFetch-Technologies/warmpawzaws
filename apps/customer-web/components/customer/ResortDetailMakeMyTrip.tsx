@@ -151,8 +151,9 @@ export function ResortDetailMakeMyTrip(props: ResortDetailMakeMyTripProps) {
           address: vendor.location?.address || vendor.address || "Location",
           city: vendor.city || "City",
           rating: (() => {
-            const r = Number(vendor.rating);
-            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            const rc = Number(vendor.reviews_count ?? vendor.reviewCount ?? 0) || 0;
+            const raw = vendor.rating != null ? Number(vendor.rating) : NaN;
+            return rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
           })(),
           reviewsCount: vendor.reviews_count || 0,
           photos: vendor.photos || [

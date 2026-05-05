@@ -18,6 +18,7 @@ import { canonicalProductId } from '@/lib/product-id';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface ShopDashboardProps {
   phone?: string;
@@ -124,22 +125,33 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
       }
       
       // Format products from API response (vendor-listed products)
-      const formattedProducts: Product[] = productsData.map((prod: any) => ({
+      const formattedProducts: Product[] = productsData.map((prod: any) => {
+        const reviews = prod.review_count || prod.reviews || 0;
+        const rc = Number(reviews) || 0;
+        const avg =
+          prod.rating != null || prod.average_rating != null
+            ? Number(prod.rating ?? prod.average_rating)
+            : NaN;
+        const productRating =
+          rc > 0 && Number.isFinite(avg) && avg > 0 ? avg : 0;
+        const vrc = Number(prod.vendor_review_count ?? prod.vendorReviewCount ?? 0) || 0;
+        const vr =
+          prod.vendor_rating != null ? Number(prod.vendor_rating) : NaN;
+        const vendorRating =
+          vrc > 0 && Number.isFinite(vr) && vr > 0 ? vr : 0;
+        return {
         id: canonicalProductId(prod as Record<string, unknown>) || String(prod.id || prod.product_id || ''),
         name: prod.name || prod.product_name,
         description: prod.description || '',
         price: parseFloat(prod.price || prod.unit_price || 0),
         originalPrice: prod.original_price || prod.mrp ? parseFloat(prod.original_price || prod.mrp) : undefined,
-        rating: prod.rating || prod.average_rating || 0,
-        reviews: prod.review_count || prod.reviews || 0,
+        rating: productRating,
+        reviews: rc,
         image: prod.image || prod.image_url || prod.primary_image || '',
         category: prod.category || prod.category_name || 'general',
         vendor: {
           name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
-          rating: (() => {
-            const r = Number(prod.vendor_rating);
-            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-          })(),
+          rating: vendorRating,
           location: prod.vendor_location || prod.vendor?.city || '',
           deliveryTime: prod.delivery_time || '2-3 days',
         },
@@ -147,7 +159,8 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         stock: prod.in_stock !== false && prod.stock_quantity > 0 ? 'In Stock' : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount_percentage ? `${prod.discount_percentage}%` : undefined,
-      }));
+      };
+      });
       
       setProducts(formattedProducts);
     } catch (error) {
@@ -345,10 +358,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                       <span>Verified</span>
                     </div>
                   )}
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs font-medium">{formatRatingNumberOrDash(vendor.rating)}</span>
-                  </div>
                   <p className="text-xs text-gray-500">{vendor.products} products</p>
                 </div>
               </Card>
@@ -461,7 +470,8 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[#FF8C42] font-bold">₹{deal.price.toLocaleString()}</span>
-                      {deal.originalPrice && (
+                      {deal.originalPrice != null &&
+                        hasEffectivePriceReduction(deal.originalPrice, deal.price) && (
                         <span className="text-gray-400 line-through text-sm">₹{deal.originalPrice.toLocaleString()}</span>
                       )}
                     </div>

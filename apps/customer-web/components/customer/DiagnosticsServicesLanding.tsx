@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +46,7 @@ interface DiagnosticsServicesLandingProps {
 interface DiagnosticCenter {
   id: string;
   businessName: string;
-  rating: number;
+  rating?: number;
   reviewCount: number;
   /** Omitted when the lab has no coordinates (still bookable; shown after in-range labs). */
   distance?: number;
@@ -102,7 +103,7 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-1',
     businessName: 'PetPath Diagnostics',
-    rating: 0,
+    rating: undefined,
     reviewCount: 0,
     distance: 2.3,
     address: 'MG Road, Bangalore',
@@ -118,7 +119,7 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-2',
     businessName: 'VetLab Plus',
-    rating: 0,
+    rating: undefined,
     reviewCount: 0,
     distance: 3.5,
     address: 'Koramangala, Bangalore',
@@ -133,7 +134,7 @@ const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
   {
     id: 'center-3',
     businessName: 'PawCare Labs',
-    rating: 0,
+    rating: undefined,
     reviewCount: 0,
     distance: 1.8,
     address: 'Indiranagar, Bangalore',
@@ -261,42 +262,34 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         setDiscoveryError(msg);
       }
 
-      const labsDiscoveryFailed =
-        vendorsRes.status === 'rejected' ||
-        !!(vendorsData && typeof vendorsData === 'object' && vendorsData.success === false);
-
       const vendorsList = Array.isArray(vendorsData?.vendors) ? vendorsData.vendors : [];
 
       let centers: DiagnosticCenter[] = [];
       if (vendorsList.length > 0) {
-        centers = vendorsList.map((v: Record<string, unknown>) => {
-          const reviewCount = reviewCountFromVendorRow(v);
-          const rating = vendorRatingFromRow(v, reviewCount);
-          const testsRaw = Array.isArray(v.tests) ? v.tests : [];
-          return {
-            id: String(v.id ?? ''),
-            businessName: (typeof v.businessName === 'string' && v.businessName) || 'Diagnostic Center',
-            rating,
-            reviewCount,
-            distance:
-              v.distance != null && !Number.isNaN(Number(v.distance))
-                ? Math.round(Number(v.distance) * 10) / 10
-                : undefined,
-            address:
-              (typeof v.address === 'string' && v.address) ||
-              [v.city, v.state].filter((x) => typeof x === 'string' && x).join(', '),
-            homeCollectionAvailable: v.homeCollectionAvailable === true,
-            testCount: testsRaw.length,
-            packages: [],
-            tests: testsRaw.map((t: Record<string, unknown>) => ({
-              id: String(t.id ?? ''),
-              name: (typeof t.test_name === 'string' ? t.test_name : undefined) || '',
-              price: typeof t.price === 'number' ? t.price : parseFloat(String(t.price ?? '')) || 0,
-              category: typeof t.category === 'string' ? t.category : undefined,
-              service_style: t.service_style,
-            })),
-          };
-        });
+        centers = vendorsList.map((v: any) => ({
+          id: v.id,
+          businessName: v.businessName || 'Diagnostic Center',
+          rating:
+            Number(v.reviewCount ?? v.review_count ?? 0) > 0 && v.rating != null
+              ? Number(v.rating)
+              : undefined,
+          reviewCount: Number(v.reviewCount ?? v.review_count ?? 0) || 0,
+          distance:
+            v.distance != null && !Number.isNaN(Number(v.distance))
+              ? Math.round(Number(v.distance) * 10) / 10
+              : undefined,
+          address: v.address || [v.city, v.state].filter(Boolean).join(', '),
+          homeCollectionAvailable: v.homeCollectionAvailable === true,
+          testCount: (v.tests || []).length,
+          packages: [],
+          tests: (v.tests || []).map((t: any) => ({
+            id: t.id,
+            name: t.test_name,
+            price: t.price,
+            category: t.category,
+            service_style: t.service_style,
+          })),
+        }));
       } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
         centers = MOCK_DIAGNOSTIC_CENTERS;
       }
@@ -307,7 +300,9 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           ? {
               activeCenters: centers.length,
               tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
-              rating: computeDiagnosticsHeaderRating(centers),
+              rating: (
+                centers.reduce((acc, c) => acc + (c.rating ?? 0), 0) / centers.length
+              ).toFixed(1),
             }
           : EMPTY_DIAGNOSTICS_STATS
       );
@@ -347,46 +342,16 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         ]);
       }
 
-      // Process packages (do not show demo packages when lab discovery failed—avoids false "Book" flows)
+      // Popular packages: only from API (no client-side demo fallback)
       if (
         packagesRes.status === 'fulfilled' &&
-        Array.isArray(packagesRes.value?.packages) &&
+        packagesRes.value &&
+        typeof packagesRes.value === 'object' &&
+        packagesRes.value.success !== false &&
+        Array.isArray(packagesRes.value.packages) &&
         packagesRes.value.packages.length > 0
       ) {
         setPopularPackages(packagesRes.value.packages);
-      } else if (!labsDiscoveryFailed) {
-        setPopularPackages([
-          {
-            id: 'pkg-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          },
-          {
-            id: 'pkg-2',
-            name: 'Senior Pet Package',
-            description: 'For pets above 7 years',
-            tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-            price: 3999,
-            originalPrice: 5500,
-            homeCollection: true,
-            turnaroundHours: 48
-          },
-          {
-            id: 'pkg-3',
-            name: 'Basic Blood Panel',
-            description: 'Essential blood tests',
-            tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-            price: 799,
-            originalPrice: 1200,
-            homeCollection: true,
-            turnaroundHours: 12
-          }
-        ]);
       } else {
         setPopularPackages([]);
       }
@@ -464,7 +429,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       label: 'Labs',
     },
     { value: stats.tests, label: 'Tests' },
-    { value: stats.rating === '—' ? '—' : `*${stats.rating}`, label: 'Rating' },
+    { value: String(stats.rating), label: 'Rating' },
   ] : [
     { value: '15+', label: 'Labs' },
     { value: '500+', label: 'Tests' },
@@ -662,7 +627,8 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xl font-bold text-teal-600">₹{pkg.price}</span>
-                      {pkg.originalPrice && (
+                      {pkg.originalPrice != null &&
+                        hasEffectivePriceReduction(pkg.originalPrice, pkg.price) && (
                         <span className="text-sm text-gray-400 line-through">₹{pkg.originalPrice}</span>
                       )}
                     </div>

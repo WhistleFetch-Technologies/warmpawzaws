@@ -946,14 +946,11 @@ export function VetBookingRouter({
     return 'Book your veterinary service';
   };
 
-  const dashboardStats = useMemo(
-    () => [
-      { value: vetProviderStatValue, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [vetProviderStatValue]
-  );
+  const dashboardStats = [
+    { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
 
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {
@@ -1620,7 +1617,13 @@ export function VetBookingRouter({
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => setShowPaymentPage(false)}
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  // at_home auto-opens payment when step stays 'payment' and showPaymentPage is false — leave summary or we snap straight back into payment
+                  if (step === 'payment') {
+                    setStep('summary');
+                  }
+                }}
                 onPaymentAbandoned={() => {
                   if (selectedDate) void loadTimeSlots(selectedDate);
                 }}

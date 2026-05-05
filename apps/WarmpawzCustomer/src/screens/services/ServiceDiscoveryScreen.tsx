@@ -20,6 +20,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { formatDistanceDisplay } from '../../utils/distance-display';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceDiscoveryScreenProps {
   phone: string;
@@ -148,7 +149,12 @@ export function ServiceDiscoveryScreen({
           data={vendors}
           keyExtractor={(item) => item.id || item.vendorId}
           contentContainerStyle={styles.vendorList}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const face = customerFacingRating(
+              item.rating,
+              item.reviewCount ?? item.review_count
+            );
+            return (
             <TouchableOpacity
               style={styles.vendorCard}
               onPress={() =>
@@ -165,9 +171,9 @@ export function ServiceDiscoveryScreen({
                     {CATEGORIES.find((c) => c.id === selectedCategory)?.name}
                   </Text>
                 </View>
-                {item.rating && (
+                {face != null && (
                   <View style={styles.ratingContainer}>
-                    <Text style={styles.ratingText}>⭐ {item.rating.toFixed(1)}</Text>
+                    <Text style={styles.ratingText}>⭐ {face.toFixed(1)}</Text>
                   </View>
                 )}
               </View>
@@ -178,7 +184,8 @@ export function ServiceDiscoveryScreen({
                 <Text style={styles.vendorDistance}>{formatDistanceDisplay(item)}</Text>
               )}
             </TouchableOpacity>
-          )}
+            );
+          }}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No vendors found</Text>

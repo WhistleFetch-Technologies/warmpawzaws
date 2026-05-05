@@ -424,18 +424,20 @@ export function HomeServiceRouter({
         
         if (altResponse.vendors) {
           // Transform to provider format
-          const transformedProviders = altResponse.vendors.map((v: any) => ({
+          const transformedProviders = altResponse.vendors.map((v: any) => {
+            const tr = Number(v.totalReviews ?? v.review_count ?? 0) || 0;
+            const rawR = v.rating != null ? Number(v.rating) : NaN;
+            const rating =
+              tr > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR : 0;
+            return {
             id: v.id,
             vendorId: v.id,
             name: v.fullName || v.ownerName || v.businessName,
             businessName: v.businessName,
             photo: v.photo || v.profilePhoto,
             description: v.description || v.bio,
-            rating: (() => {
-              const r = Number(v.rating);
-              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-            })(),
-            totalReviews: v.totalReviews || 0,
+            rating,
+            totalReviews: tr,
             completedServices: v.completedServices || v.bookingsCompleted || 0,
             distance: v.distance || calculateDistance(customerLocation, v.latitude, v.longitude),
             nextAvailability: v.nextAvailability,
@@ -448,7 +450,8 @@ export function HomeServiceRouter({
             responseTime: v.responseTime,
             businessAddress:
               v.businessAddress || v.address || v.serviceArea || v.service_area || v.clinicAddress,
-          }));
+          };
+          });
           setProviders(transformedProviders);
         } else {
           setProviders([]);
@@ -805,7 +808,11 @@ export function HomeServiceRouter({
           <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
             <span className="flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5" />
-              {Number(provider.distance || 0).toFixed(1)} km
+              {provider.distance != null
+                ? (Number(provider.distance) < 1
+                  ? `${Math.round(Number(provider.distance) * 1000)} m`
+                  : `${Math.round(Number(provider.distance))} km`)
+                : '—'}
             </span>
             <span className="flex items-center gap-1">
               <Briefcase className="w-3.5 h-3.5" />

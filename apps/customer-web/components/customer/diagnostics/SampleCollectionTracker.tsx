@@ -137,8 +137,8 @@ export function SampleCollectionTracker({
             phone: collection.staff.phone,
             photo: collection.staff.photo,
             rating: (() => {
-              const r = Number(collection.staff.rating);
-              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+              const r = collection.staff.rating != null ? Number(collection.staff.rating) : NaN;
+              return Number.isFinite(r) && r > 0 ? r : 0;
             })(),
             totalCollections: collection.staff.total_collections || 0
           } : undefined,

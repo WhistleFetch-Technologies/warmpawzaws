@@ -66,7 +66,13 @@ import { VendorAnalytics } from '../../VendorAnalytics';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
-import { formatBookingTime, vendorNotificationUnreadCount, SHOW_VENDOR_FOOTER_REPORTING_TAB } from '../helpers';
+import {
+  formatBookingTime,
+  vendorNotificationUnreadCount,
+  SHOW_VENDOR_FOOTER_REPORTING_TAB,
+  getVendorDashboardRatingPresentation,
+  mergeVendorDashboardStats,
+} from '../helpers';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
 import { DashboardStats } from '@/components/shared/DashboardStats';
@@ -86,7 +92,7 @@ export function SoloProviderDashboard({
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 0,
+    rating: null,
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
@@ -192,6 +198,11 @@ export function SoloProviderDashboard({
 
   const vendorId = session.vendorId;
 
+  const ratingPresentation = useMemo(
+    () => getVendorDashboardRatingPresentation(stats.totalReviews, stats.rating),
+    [stats.totalReviews, stats.rating]
+  );
+
   // Fetch dashboard data
   const fetchDashboardData = useCallback(async (showRefresh = false) => {
     try {
@@ -204,15 +215,13 @@ export function SoloProviderDashboard({
       const dashboardRes = await apiClient.get<any>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`).catch(() => ({ success: false }));
 
       if (dashboardRes && dashboardRes.success) {
-        setStats(dashboardRes.stats || dashboardRes.data?.stats || {
-          appointments: 0,
-          consultations: 0,
-          earnings: 0,
-          pendingEarnings: 0,
-          completedServices: 0,
-          rating: 0,
-          totalReviews: 0,
-        });
+        const rawStats = dashboardRes.stats || dashboardRes.data?.stats;
+        setStats((prev) =>
+          mergeVendorDashboardStats(
+            prev,
+            rawStats && typeof rawStats === 'object' ? (rawStats as Record<string, unknown>) : null
+          )
+        );
         setVendor(dashboardRes.vendor || dashboardRes.data?.vendor || vendorData);
 
         // Transform bookings
@@ -729,17 +738,17 @@ export function SoloProviderDashboard({
               onClick={() => setReviewsModalOpen(true)}
               className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
               title="View customer reviews"
-              aria-label={
-                (stats.totalReviews ?? 0) > 0 && stats.rating > 0
-                  ? `Rating ${stats.rating.toFixed(1)}, ${stats.totalReviews} reviews. Open reviews`
-                  : `No rating yet, ${stats.totalReviews} reviews. Open reviews`
-              }
+              aria-label={ratingPresentation.ariaLabel}
             >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-semibold">
-                {(stats.totalReviews ?? 0) > 0 && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
+              <span
+                className={`text-sm font-semibold ${ratingPresentation.showNumeric ? '' : 'text-gray-500 font-normal text-xs max-w-[7rem] leading-tight'}`}
+              >
+                {ratingPresentation.label}
               </span>
-              <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
+              <span className="text-xs text-gray-500">
+                ({stats.totalReviews} {stats.totalReviews === 1 ? 'review' : 'reviews'})
+              </span>
             </button>
           </div>
 
@@ -1164,7 +1173,7 @@ export function SoloProviderDashboard({
           bookingId={selectedAppointment.bookingId}
           vendorData={vendorData}
           roleId={vendorData?.roleId || vendorData?.role_id}
-          roleName={roleName}
+          roleName={roleName ?? undefined}
           capabilities={capabilities}
           onClose={() => {
             setAppointmentDetailModalOpen(false);

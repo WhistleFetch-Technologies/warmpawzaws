@@ -50,7 +50,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             earnings: 0,
             pendingEarnings: 0,
             completedServices: 0,
-            rating: null,
+            rating: 0,
             totalReviews: 0,
           },
           bookings: [],
@@ -232,7 +232,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             completedToday: 0,
             earnings: 0,
             pendingSettlement: 0,
-            rating: null,
+            rating: 0,
             totalReviews: 0,
           },
           bookings: [],
@@ -302,10 +302,19 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const ratingQuery = vendorIds.length === 1
         ? `SELECT AVG(rating) as rating, COUNT(*)::int as total_reviews FROM reviews WHERE vendor_id = $1 AND is_approved = true`
         : `SELECT AVG(rating) as rating, COUNT(*)::int as total_reviews FROM reviews WHERE (vendor_id = $1 OR vendor_id = $2) AND is_approved = true`;
-      const ratingStats = await query(ratingQuery, vendorIds).catch(() => ({ rows: [{ rating: null, total_reviews: '0' }] }));
+      const ratingStats = await query(ratingQuery, vendorIds).catch(() => ({ rows: [{ rating: null, total_reviews: 0 }] }));
 
       const stats = bookingsStats.rows[0];
       const rating = ratingStats.rows[0];
+      const totalReviewsDash = parseInt(String(rating?.total_reviews ?? '0'), 10);
+      const avgDash =
+        rating?.rating != null && rating.rating !== ''
+          ? parseFloat(String(rating.rating))
+          : NaN;
+      const statsRating =
+        totalReviewsDash > 0 && Number.isFinite(avgDash)
+          ? parseFloat(avgDash.toFixed(1))
+          : null;
 
       // ✅ FIX: Get bookings for display (vendor_id IN resolved/param), include service_catalog for center/clinic service names
       let startDate = new Date();
@@ -383,12 +392,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           completedToday: parseInt(stats.completed_today || '0', 10),
           earnings: parseFloat(earnings.earnings || '0'),
           pendingSettlement: parseFloat(earnings.pending_settlement || '0'),
-          rating: (() => {
-            const tr = parseInt(rating.total_reviews || '0', 10);
-            const rv = rating.rating != null ? parseFloat(String(rating.rating)) : NaN;
-            return tr > 0 && Number.isFinite(rv) ? rv : null;
-          })(),
-          totalReviews: parseInt(rating.total_reviews || '0', 10),
+          rating: statsRating,
+          totalReviews: totalReviewsDash,
         },
         bookings: enrichedBookings, // ✅ Include sorted bookings
         timeframe,

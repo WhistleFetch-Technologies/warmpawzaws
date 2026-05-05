@@ -169,8 +169,8 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         stats: [
           { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '1K+', label: 'Bookings' },
-          { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-        ],
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        ]
       };
     }
 
@@ -212,8 +212,8 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         stats: [
           { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '800+', label: 'Sessions' },
-          { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-        ],
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        ]
       };
     }
     return {
@@ -223,8 +223,8 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
       stats: [
         { value: '100+', label: 'Services' },
         { value: '5K+', label: 'Bookings' },
-        { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-      ],
+        { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+      ]
     };
   }, [
     services,

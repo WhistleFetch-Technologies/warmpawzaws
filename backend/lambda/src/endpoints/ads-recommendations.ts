@@ -56,21 +56,22 @@ export function registerAdsRecommendationEndpoints(app: Hono) {
 
     const providers = (result.rows || []).map((row: any) => {
       const reviewCount = parseInt(row.review_count || '0', 10);
-      const r = row.rating != null && row.rating !== '' ? parseFloat(String(row.rating)) : NaN;
-      const rating = reviewCount > 0 && Number.isFinite(r) ? r : null;
+      const raw = row.rating != null ? parseFloat(String(row.rating)) : NaN;
+      const rating =
+        reviewCount > 0 && Number.isFinite(raw) ? raw : null;
       return {
-      id: row.campaign_id,
-      vendorId: row.vendor_id,
-      campaignId: row.campaign_id,
-      name: row.vendor_name,
-      businessName: row.business_name,
-      photo: row.photo,
-      rating,
-      reviewCount,
-      specialization: row.specialization,
-      isVerified: row.is_verified,
-      adCreative: row.ad_creative || {},
-    };
+        id: row.campaign_id,
+        vendorId: row.vendor_id,
+        campaignId: row.campaign_id,
+        name: row.vendor_name,
+        businessName: row.business_name,
+        photo: row.photo,
+        rating,
+        reviewCount,
+        specialization: row.specialization,
+        isVerified: row.is_verified,
+        adCreative: row.ad_creative || {},
+      };
     });
 
     return c.json({ success: true, providers });
@@ -299,23 +300,24 @@ app.get('/providers/top', async (c) => {
 
     const providers = (result.rows || []).map((row: any) => {
       const reviewCount = parseInt(row.review_count || '0', 10);
-      const r = row.rating != null && row.rating !== '' ? parseFloat(String(row.rating)) : NaN;
-      const rating = reviewCount > 0 && Number.isFinite(r) ? r : null;
+      const raw = row.rating != null ? parseFloat(String(row.rating)) : NaN;
+      const rating =
+        reviewCount > 0 && Number.isFinite(raw) ? raw : null;
       return {
-      providerId: row.id,
-      vendorId: row.id,
-      name: row.name,
-      businessName: row.business_name,
-      photo: row.photo,
-      rating,
-      reviewCount,
-      specialization: row.specialization,
-      isVerified: row.is_verified,
-      nextAvailableSlot: row.next_available_slot,
-      startingPrice: row.starting_price ? parseFloat(row.starting_price) : null,
-      completedServices: parseInt(row.completed_services || '0'),
-      score: parseFloat(row.score || '0'),
-    };
+        providerId: row.id,
+        vendorId: row.id,
+        name: row.name,
+        businessName: row.business_name,
+        photo: row.photo,
+        rating,
+        reviewCount,
+        specialization: row.specialization,
+        isVerified: row.is_verified,
+        nextAvailableSlot: row.next_available_slot,
+        startingPrice: row.starting_price ? parseFloat(row.starting_price) : null,
+        completedServices: parseInt(row.completed_services || '0'),
+        score: parseFloat(row.score || '0'),
+      };
     });
 
     return c.json({ success: true, providers });

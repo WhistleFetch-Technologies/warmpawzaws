@@ -877,14 +877,11 @@ export function UniversalBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = useMemo(
-    () => [
-      { value: providerStatValue, label: providerStatLabel },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating' }
-    ],
-    [providerStatValue, providerStatLabel]
-  );
+  const dashboardStats = [
+    { value: '50+', label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
+    { value: '1K+', label: 'Bookings' },
+    { value: '—', label: 'Rating' }
+  ];
 
   // Phase 1: Step indicators include summary (staff skipped)
   const getStepIndicators = (): StepInfo[] | undefined => {

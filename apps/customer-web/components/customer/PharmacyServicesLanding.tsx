@@ -64,12 +64,14 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
         pharmacyServices.forEach((service: any) => {
           const vendorId = service.vendorId;
           if (!vendorMap.has(vendorId)) {
+            const rc = Number(service.vendorReviewCount ?? 0) || 0;
+            const raw = service.vendorRating != null ? Number(service.vendorRating) : NaN;
+            const vr = rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
             vendorMap.set(vendorId, {
               id: vendorId,
               businessName: service.vendorName,
-              rating: Number(service.vendorRating),
-              reviewCount: Number(service.vendorReviewCount ?? service.reviewCount ?? 0),
-              completedOrders: service.vendorReviewCount || 0,
+              rating: vr,
+              completedOrders: rc,
               distance: Math.random() * 5 + 0.5,
               deliveryTime: Math.floor(Math.random() * 30) + 20
             });
@@ -79,16 +81,20 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
         const allPharmacies = Array.from(vendorMap.values());
         setFeaturedPharmacies(allPharmacies.slice(0, 5));
         
+        const rated = allPharmacies.filter((p: any) => p.completedOrders > 0 && p.rating > 0);
         setStats({
           activePharmacies: allPharmacies.length || 25,
           orders: '50K+',
-          rating: aggregateAverageRatingStat(allPharmacies),
+          rating:
+            rated.length > 0
+              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
+              : '—',
         });
       } else {
         setStats({
           activePharmacies: 25,
           orders: '50K+',
-          rating: '—',
+          rating: '—'
         });
       }
     } catch (error) {
@@ -96,7 +102,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
       setStats({
         activePharmacies: 25,
         orders: '50K+',
-        rating: '—',
+        rating: '—'
       });
     } finally {
       setLoading(false);
@@ -115,7 +121,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
   const dashboardStats = stats ? [
     { value: `${stats.activePharmacies}+`, label: 'Pharmacies' },
     { value: stats.orders, label: 'Orders' },
-    { value: headerRatingStatValue(stats.rating), label: 'Rating' }
+    { value: String(stats.rating), label: 'Rating' }
   ] : [
     { value: '25+', label: 'Pharmacies' },
     { value: '50K+', label: 'Orders' },
@@ -329,12 +335,16 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">{pharmacy.businessName || 'Pet Pharmacy'}</h3>
                       <p className="text-xs text-gray-500 mb-2">Licensed • Home Delivery</p>
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-3 text-xs flex-wrap">
+                        {pharmacy.completedOrders > 0 && pharmacy.rating > 0 ? (
                         <div className="flex items-center gap-1 text-amber-500">
                           <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{formatRatingNumberOrDash(pharmacy.rating)}</span>
-                          <span className="text-gray-400">({pharmacy.completedOrders || 0})</span>
+                          <span className="font-semibold">{Number(pharmacy.rating).toFixed(1)}</span>
+                          <span className="text-gray-400">({pharmacy.completedOrders})</span>
                         </div>
+                        ) : (
+                        <span className="text-gray-400 text-xs">No reviews yet</span>
+                        )}
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
                           <span>{pharmacy.distance ? `${Number(pharmacy.distance).toFixed(1)}km` : 'Nearby'}</span>

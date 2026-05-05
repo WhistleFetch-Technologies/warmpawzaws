@@ -103,25 +103,17 @@ export function SupportHelpCenter({
     }
   }, [initialTab]);
 
-  // Load tickets when tab is active with auto-refresh
-  useEffect(() => {
-    if (activeTab === 'tickets' && phone) {
-      loadTickets();
-      
-      // Auto-refresh tickets every 15 seconds to see agent replies
-      const refreshInterval = setInterval(() => {
-        loadTickets();
-      }, 15000);
-      
-      return () => clearInterval(refreshInterval);
-    }
-  }, [activeTab, phone]);
-
   const loadTickets = async () => {
     if (!phone) return;
     setLoadingTickets(true);
     try {
-      const response = await apiClient.get<any>(`/support/tickets?customerPhone=${encodeURIComponent(phone)}`);
+      const cid = getResolvedCustomerId() || undefined;
+      const response = (await supportCrmApi.getTickets({
+        customerId: cid,
+        customerPhone: phone,
+        limit: 50,
+        offset: 0,
+      })) as { success?: boolean; tickets?: Ticket[] };
       if (response.success) {
         setTickets(response.tickets || []);
       }
@@ -265,6 +257,7 @@ export function SupportHelpCenter({
         setContactForm({ subject: '', message: '', category: 'general' });
         setShowContactForm(false);
         setActiveTab('tickets');
+        void loadTickets();
       }
     } catch (error: any) {
       console.error('Error creating support ticket:', error);
@@ -566,8 +559,8 @@ export function SupportHelpCenter({
                 {!loadingTickets && tickets.length === 0 && (
                   <Card className="p-8 text-center">
                     <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 mb-2">No support tickets yet</p>
-                    <p className="text-sm text-gray-400">Create a ticket if you need help</p>
+                    <p className="text-gray-500 mb-2">No support tickets loaded</p>
+                    <p className="text-sm text-gray-400">Tap Refresh to load your tickets, or create a new one</p>
                   </Card>
                 )}
 

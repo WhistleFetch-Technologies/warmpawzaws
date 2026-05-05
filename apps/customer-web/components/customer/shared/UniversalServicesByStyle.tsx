@@ -26,7 +26,11 @@ import {
   serviceTypeCategoryFromRoleId,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
-import { aggregateAverageRatingStat, formatAverageForDisplay } from '@/lib/rating-display';
+import {
+  getAverageRatingLabel,
+  hasRatings,
+  normalizeRatingCount,
+} from '@/lib/rating-display';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -56,7 +60,7 @@ interface Provider {
   role?: string;
   experienceYears?: number;
   qualifications?: string;
-  rating: string;
+  rating: number;
   reviewCount: number;
   distance?: number | null;
   isVerified?: boolean;
@@ -153,10 +157,15 @@ async function fetchEmbeddedVendorAsProvider(args: {
   const name =
     (v && typeof v === 'object' && (v.businessName || v.business_name || v.name || v.fullName)) || 'Provider';
   const reviewCount =
-    v && typeof v === 'object' ? Number(v.reviewCount ?? v.review_count ?? 0) : 0;
-  const rawR = v && typeof v === 'object' ? Number(v.rating ?? v.avgRating ?? NaN) : NaN;
-  const ratingStr =
-    reviewCount > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR.toFixed(1) : '\u2014';
+    v && typeof v === 'object' ? Number(v.reviewCount ?? v.review_count ?? 0) || 0 : 0;
+  const rawVendorRating =
+    v && typeof v === 'object' && (v.rating != null || v.avgRating != null)
+      ? Number(v.rating ?? v.avgRating)
+      : NaN;
+  const ratingNum =
+    reviewCount > 0 && Number.isFinite(rawVendorRating) && rawVendorRating > 0
+      ? rawVendorRating
+      : 0;
 
   return {
     providerId: embedVendorId,
@@ -172,7 +181,7 @@ async function fetchEmbeddedVendorAsProvider(args: {
     experienceYears:
       v && typeof v === 'object' ? Number(v.experience ?? v.yearsOfExperience ?? v.years_of_experience ?? 0) || undefined : undefined,
     qualifications: v && typeof v === 'object' ? (v.qualifications as string | undefined) : undefined,
-    rating: ratingStr,
+    rating: ratingNum,
     reviewCount,
     isVerified: v && typeof v === 'object' ? Boolean(v.isVerified ?? v.verified ?? v.is_verified) : false,
     isIndividualProvider: true,
@@ -367,7 +376,24 @@ export function UniversalServicesByStyle({
                   inActivePackage: !!s.inActivePackage,
                 }));
               } else {
-                // For solo vendors, fetch their services
+                // Prefer services already on discover-services payload (same filters as listing). Secondary fetch
+                // uses GET /customer/vendor/:id/services — if category rules drift, listing could succeed but this
+                // returned 0 rows and the provider disappeared from "main" at-home.
+                if (Array.isArray(provider.services) && provider.services.length > 0) {
+                  services = provider.services.map((s: any) => ({
+                    id: s.id || s.service_id,
+                    serviceId: s.serviceId || s.id || s.service_id,
+                    name: s.name || s.serviceName || s.service_name || `${config.roleName} Service`,
+                    price: Number(s.price || s.custom_price || 499),
+                    originalPrice: Number(s.price || s.custom_price || 499),
+                    vendorDiscount: s.vendor_discount || s.discount || 0,
+                    duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
+                    description: s.description || s.custom_description,
+                    category: s.category || s.categoryName || s.category_name,
+                    isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
+                    inActivePackage: !!s.inActivePackage,
+                  }));
+                } else {
                 const servicesResponse = await apiClient.get(
                   `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
                 ) as any;
@@ -388,6 +414,7 @@ export function UniversalServicesByStyle({
                   isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
                   inActivePackage: !!s.inActivePackage,
                 }));
+                }
               }
             } catch (serviceError) {
               console.warn(`⚠️ [${config.roleName}] Could not fetch services for provider ${providerId}:`, serviceError);
@@ -418,12 +445,13 @@ export function UniversalServicesByStyle({
               experienceYears: provider.experienceYears,
               qualifications: provider.qualifications,
               rating: (() => {
-                const rc = Number(provider.reviewCount || 0);
-                const r = Number(provider.rating);
-                if (rc > 0 && Number.isFinite(r) && r > 0) return r.toFixed(1);
-                return '\u2014';
+                const rc =
+                  Number(provider.reviewCount ?? provider.review_count ?? 0) || 0;
+                const raw =
+                  provider.rating != null ? Number(provider.rating) : NaN;
+                return rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
               })(),
-              reviewCount: Number(provider.reviewCount || 0),
+              reviewCount: Number(provider.reviewCount ?? provider.review_count ?? 0) || 0,
               distance: provider.distance || null,
               isVerified: provider.isVerified,
               isOnline: provider.isOnline ?? provider.is_online,
@@ -805,11 +833,22 @@ export function UniversalServicesByStyle({
     const description = vendor?.description || facility?.description || `${providerName} provides professional ${config.category} services.`;
     const specializationText = facility?.specialization || vendor?.specialization || specialization || `General ${config.roleName} Care`;
 
+    const profileReviewTotal = normalizeRatingCount(
+      rating?.totalReviews ?? profileProvider.reviewCount
+    );
+    const profileAvgRaw = rating?.averageRating ?? profileProvider.rating;
+    const profileRatingLabel = getAverageRatingLabel(profileAvgRaw, profileReviewTotal);
+    const showProfileRatingPill = hasRatings(profileReviewTotal);
+    const ratingHeaderStat =
+      showProfileRatingPill && Number(profileProvider.rating) > 0
+        ? Number(profileProvider.rating).toFixed(1)
+        : '—';
+
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
     const dashboardStats = [
       { value: `${providers.length}+`, label: 'Providers', icon: <RoleIcon className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
-      { value: `${Number(profileProvider.rating).toFixed(1)}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+      { value: ratingHeaderStat, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
     ];
 
     return (
@@ -866,18 +905,26 @@ export function UniversalServicesByStyle({
               
               {/* Rating and Reviews */}
               <div className="flex items-center gap-3 mb-3">
+                {showProfileRatingPill ? (
                 <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
                   <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                   <span className="font-bold text-lg text-gray-900">
-                    {formatAverageForDisplay(
-                      rating?.averageRating ?? profileProvider.rating,
-                      rating?.totalReviews ?? profileProvider.reviewCount
-                    )}
+                    {profileRatingLabel}
                   </span>
                   <span className="text-gray-600 text-sm">
-                    ({rating?.totalReviews || profileProvider.reviewCount || 0} reviews)
+                    ({profileReviewTotal} {profileReviewTotal === 1 ? 'review' : 'reviews'})
                   </span>
                 </div>
+                ) : (
+                <div className="flex flex-wrap items-center gap-2 text-gray-500">
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star key={s} className="w-4 h-4 text-slate-200" />
+                    ))}
+                  </div>
+                  <span className="text-sm">No customer reviews</span>
+                </div>
+                )}
                 
                 {facility?.isPremium && (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -1202,21 +1249,29 @@ export function UniversalServicesByStyle({
             {activeTab === 'reviews' && (
               <div className="space-y-4">
                 {/* Reviews Summary */}
-                {reviews.length > 0 && rating && (
+                {reviews.length > 0 && rating && (() => {
+                  const tabTotal = normalizeRatingCount(
+                    rating.totalReviews ?? profileProvider.reviewCount ?? reviews.length
+                  );
+                  let tabAvg = Number(rating.averageRating ?? profileProvider.rating ?? 0);
+                  if ((!Number.isFinite(tabAvg) || tabAvg <= 0) && reviews.length > 0) {
+                    tabAvg =
+                      reviews.reduce((sum: number, r: any) => sum + Number(r.rating || 0), 0) /
+                      reviews.length;
+                  }
+                  if (tabTotal <= 0 || !Number.isFinite(tabAvg) || tabAvg <= 0) return null;
+                  return (
                   <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-5 border border-amber-200 mb-6">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {formatAverageForDisplay(
-                      rating?.averageRating ?? profileProvider.rating,
-                      rating?.totalReviews ?? profileProvider.reviewCount
-                    )}
+                            {tabAvg.toFixed(1)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
-                          Based on {rating.totalReviews || profileProvider.reviewCount || 0} reviews
+                          Based on {tabTotal} {tabTotal === 1 ? 'review' : 'reviews'}
                         </p>
                       </div>
                       <div className="text-right">
@@ -1227,7 +1282,8 @@ export function UniversalServicesByStyle({
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Reviews List */}
                 {reviews.length > 0 ? (
@@ -1310,10 +1366,20 @@ export function UniversalServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const ratedForListing = providers.filter(
+    (p) => p.reviewCount > 0 && Number(p.rating) > 0
+  );
+  const listingRatingStat =
+    ratedForListing.length > 0
+      ? (
+          ratedForListing.reduce((a, p) => a + Number(p.rating), 0) /
+          ratedForListing.length
+        ).toFixed(1)
+      : '—';
   const listingStats = [
     { value: `${providers.length}+`, label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
     { value: '1K+', label: 'Bookings' },
-    { value: aggregateAverageRatingStat(providers), label: 'Rating' }
+    { value: listingRatingStat, label: 'Rating' }
   ];
 
   const getServiceSubtitle = () => {
@@ -1438,20 +1504,26 @@ export function UniversalServicesByStyle({
                         </div>
                         <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
                         <div className="flex items-center gap-3 mt-1">
+                          {provider.reviewCount > 0 && provider.rating > 0 ? (
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="text-sm font-medium">{provider.rating}</span>
+                            <span className="text-sm font-medium">{Number(provider.rating).toFixed(1)}</span>
                             <span className="text-gray-400 text-sm">({provider.reviewCount})</span>
                           </div>
+                          ) : (
+                          <span className="text-xs text-gray-400">No reviews yet</span>
+                          )}
                           {provider.city && (
                             <div className="flex items-center gap-1 text-gray-500 text-sm">
                               <MapPin className="w-3 h-3" />
                               {provider.city}
                             </div>
                           )}
-                          {serviceStyle === 'at_center' && provider.distance != null && (
+                          {provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance).toFixed(1)} km away
+                              {Number(provider.distance) < 1
+                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
+                                : `${Math.round(Number(provider.distance))} km away`}
                             </span>
                           )}
                         </div>

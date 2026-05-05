@@ -859,14 +859,11 @@ export function GroomingBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = useMemo(
-    () => [
-      { value: groomingProviderStatValue, label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [groomingProviderStatValue]
-  );
+  const dashboardStats = [
+    { value: '50+', label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
 
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {

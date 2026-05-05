@@ -95,15 +95,16 @@ export async function fetchPetSitterHubRows(phone: string): Promise<any[]> {
         for (const s of services) {
           const vid = s.vendorId;
           if (!vid || byVendor.has(vid)) continue;
+          const rc = Number(s.vendorReviewCount ?? 0) || 0;
+          const raw = s.vendorRating != null ? Number(s.vendorRating) : NaN;
+          const vr = rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
           byVendor.set(vid, {
             id: vid,
             vendorId: vid,
             businessName: s.vendorName,
             name: s.vendorName,
-            rating: (() => {
-              const r = Number(s.vendorRating ?? s.rating);
-              return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-            })(),
+            rating: vr,
+            reviewCount: rc,
             basePrice: s.price,
           });
         }

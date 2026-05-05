@@ -562,14 +562,11 @@ export function WalkerBookingRouter({
   const selectedServiceOption = serviceOptions.find((s) => s.id === selectedVendorServiceId);
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = useMemo(
-    () => [
-      { value: walkerStatValue, label: 'Walkers' },
-      { value: '2K+', label: 'Walks' },
-      { value: '—', label: 'Rating' },
-    ],
-    [walkerStatValue]
-  );
+  const dashboardStats = [
+    { value: '30+', label: 'Walkers' },
+    { value: '2K+', label: 'Walks' },
+    { value: '—', label: 'Rating' }
+  ];
 
   const getServiceTitle = () => {
     if (walker?.name) return `Book with ${walker.name}`;

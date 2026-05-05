@@ -708,14 +708,11 @@ export function TrainingBookingRouter({
   };
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = useMemo(
-    () => [
-      { value: trainingProviderStatValue, label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
-      { value: '800+', label: 'Sessions' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [trainingProviderStatValue]
-  );
+  const dashboardStats = [
+    { value: '45+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: '800+', label: 'Sessions' },
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
 
   const getHeaderSubtitle = () =>
     trainer?.name ? `Book with ${trainer.name}` : 'Book your training session';

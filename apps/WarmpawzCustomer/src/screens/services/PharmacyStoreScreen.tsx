@@ -20,7 +20,8 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
-import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
+import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 type ViewType = 
   | 'landing'
@@ -92,7 +93,7 @@ export function PharmacyStoreScreen({
   const [stats, setStats] = useState({
     activePharmacies: 0,
     orders: '50K+',
-    rating: '—',
+    rating: '—' as string,
   });
 
   useEffect(() => {
@@ -114,10 +115,17 @@ export function PharmacyStoreScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!pharmacyMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const r =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           pharmacyMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
-            rating: starRatingOrUndefined(service.vendorRating),
+            rating,
+            reviewCount: rc,
             completedOrders: service.vendorReviewCount || 0,
           });
         }
@@ -125,22 +133,23 @@ export function PharmacyStoreScreen({
       
       const allPharmacies = Array.from(pharmacyMap.values());
       setPharmacies(allPharmacies);
-
-      const withRatings = allPharmacies.filter(
-        (p: { rating?: number }) => starRatingOrUndefined(p.rating) != null
+      
+      const rated = allPharmacies.filter(
+        (p: any) =>
+          (p.reviewCount ?? 0) > 0 && p.rating != null && Number(p.rating) > 0
       );
+      const avgRating =
+        rated.length > 0
+          ? (
+              rated.reduce((acc: number, p: any) => acc + Number(p.rating), 0) /
+              rated.length
+            ).toFixed(1)
+          : '—';
+
       setStats({
-        activePharmacies: allPharmacies.length || 25,
+        activePharmacies: allPharmacies.length || 0,
         orders: '50K+',
-        rating:
-          withRatings.length > 0
-            ? (
-                withRatings.reduce(
-                  (acc: number, p: { rating?: number }) => acc + starRatingOrUndefined(p.rating)!,
-                  0
-                ) / withRatings.length
-              ).toFixed(1)
-            : '—',
+        rating: avgRating,
       });
 
       // Load products from API
@@ -150,21 +159,28 @@ export function PharmacyStoreScreen({
           const pharmacyProducts = await CustomerApi.getPharmacyProducts(allPharmacies[0].id);
           const productsData = Array.isArray(pharmacyProducts) ? pharmacyProducts : (pharmacyProducts as any).products || [];
           
-          const formattedProducts: Product[] = productsData.map((prod: any) => ({
+          const formattedProducts: Product[] = productsData.map((prod: any) => {
+            const reviewCount = normalizeReviewCount(prod.reviewCount ?? prod.reviews);
+            const avgRating = customerFacingRating(
+              prod.rating ?? prod.averageRating,
+              reviewCount
+            );
+            return {
             id: prod.id || prod.productId,
             name: prod.name || prod.productName,
             description: prod.description || '',
             price: prod.price || prod.unitPrice || 0,
             originalPrice: prod.originalPrice || prod.mrp,
-            rating: starRatingOrUndefined(prod.rating ?? prod.averageRating),
-            reviews: prod.reviewCount || prod.reviews || 0,
+            rating: avgRating ?? 0,
+            reviews: reviewCount,
             image: prod.image || prod.imageUrl || '',
             category: prod.category || 'otc',
             prescriptionRequired: prod.prescriptionRequired || prod.requiresPrescription || false,
             vendorId: prod.vendorId || allPharmacies[0].id,
             vendorName: prod.vendorName || allPharmacies[0].name,
             inStock: prod.inStock !== false && prod.stockQuantity > 0,
-          }));
+          };
+          });
           
           setProducts(formattedProducts);
         } else {
@@ -288,7 +304,9 @@ export function PharmacyStoreScreen({
             <Text style={styles.statLabel}>Orders</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>⭐ {stats.rating}</Text>
+            <Text style={styles.statNumber}>
+              {stats.rating !== '—' ? `⭐ ${stats.rating}` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Avg Rating</Text>
           </View>
         </View>
@@ -408,7 +426,8 @@ export function PharmacyStoreScreen({
                       <Text style={styles.rxBadgeText}>RX</Text>
                     </View>
                   )}
-                  {product.originalPrice && (
+                  {product.originalPrice != null &&
+                    hasEffectivePriceReduction(product.originalPrice, product.price) && (
                     <View style={styles.discountBadge}>
                       <Text style={styles.discountBadgeText}>
                         {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF
@@ -431,7 +450,8 @@ export function PharmacyStoreScreen({
                   <View style={styles.productFooter}>
                     <View>
                       <Text style={styles.productPrice}>₹{product.price}</Text>
-                      {product.originalPrice && (
+                      {product.originalPrice != null &&
+                        hasEffectivePriceReduction(product.originalPrice, product.price) && (
                         <Text style={styles.originalPrice}>₹{product.originalPrice}</Text>
                       )}
                     </View>
@@ -501,7 +521,8 @@ export function PharmacyStoreScreen({
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
-              {selectedProduct.originalPrice && (
+              {selectedProduct.originalPrice != null &&
+                hasEffectivePriceReduction(selectedProduct.originalPrice, selectedProduct.price) && (
                 <Text style={styles.productDetailOriginalPrice}>
                   ₹{selectedProduct.originalPrice}
                 </Text>

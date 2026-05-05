@@ -38,18 +38,30 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
       ]);
 
       if (vendorRes.vendor || vendorRes.success) {
-        setVendor(vendorRes.vendor || vendorRes);
-        const rr = vendorRes.rating;
-        const rc = Number(vendorRes.reviewCount) || 0;
-        if (typeof rr === 'object' && rr != null && 'averageRating' in rr) {
-          setRating(rr);
-        } else {
-          const avg = Number(rr);
-          setRating({
-            averageRating: rc > 0 && Number.isFinite(avg) && avg > 0 ? avg : null,
-            totalReviews: rc,
-          });
-        }
+        const v = vendorRes.vendor || vendorRes;
+        setVendor(v);
+        const tr =
+          Number(
+            v.reviewCount ??
+              v.totalReviews ??
+              vendorRes.reviewCount ??
+              vendorRes.totalReviews ??
+              0
+          ) || 0;
+        const arRaw =
+          (typeof vendorRes.rating === 'object' && vendorRes.rating != null
+            ? (vendorRes.rating as { averageRating?: number }).averageRating
+            : undefined) ??
+          v.averageRating ??
+          v.rating ??
+          vendorRes.averageRating ??
+          (typeof vendorRes.rating === 'number' ? vendorRes.rating : undefined);
+        const ar =
+          arRaw != null && arRaw !== '' ? Number(arRaw) : NaN;
+        setRating({
+          averageRating: tr > 0 && Number.isFinite(ar) && ar > 0 ? ar : 0,
+          totalReviews: tr,
+        });
       }
 
       if (productsRes.products) {
@@ -92,8 +104,21 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
 
   const vendorName = vendor.businessName || vendor.vendorName || vendor.name || 'Vendor';
   const vendorImage = vendor.vendorProfileImage || vendor.image;
-  const averageRating = rating?.averageRating ?? vendor.rating ?? 0;
-  const totalReviews = rating?.totalReviews || vendor.reviewCount || vendor.totalReviews || 0;
+  const totalReviews =
+    Number(
+      rating?.totalReviews ??
+        vendor.reviewCount ??
+        vendor.totalReviews ??
+        0
+    ) || 0;
+  const rawAvg =
+    rating?.averageRating ?? vendor.rating ?? vendor.avgRating;
+  const parsedAvg =
+    rawAvg != null && rawAvg !== '' ? Number(rawAvg) : NaN;
+  const averageRating =
+    totalReviews > 0 && Number.isFinite(parsedAvg) && parsedAvg > 0
+      ? parsedAvg
+      : 0;
   
   return (
     <div>
@@ -139,7 +164,9 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             </Card>
             <Card className="p-3 text-center">
               <div className="text-lg font-bold text-[#FF8C42]">
-                {formatAverageForDisplay(averageRating, totalReviews)}
+                {totalReviews > 0 && averageRating > 0
+                  ? averageRating.toFixed(1)
+                  : '—'}
               </div>
               <div className="text-xs text-gray-600 mt-1">Rating</div>
             </Card>

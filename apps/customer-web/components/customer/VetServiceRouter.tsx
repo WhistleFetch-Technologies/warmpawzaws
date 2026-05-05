@@ -75,16 +75,17 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=vet`).catch(() => null);
       if (response?.provider) {
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
         setPreviousVet({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo || null,
-          rating: (() => {
-            const r = Number(response.provider.rating);
-            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-          })(),
-          lastVisit: response.provider.lastVisit,
-          sessionsCount: response.provider.sessionsCount || 1
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo || null,
+          rating: pr,
+          lastVisit: p.lastVisit,
+          sessionsCount: p.sessionsCount || 1
         });
       } else {
         const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=vet`).catch(() => null);

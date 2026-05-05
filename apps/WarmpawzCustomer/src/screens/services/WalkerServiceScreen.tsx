@@ -23,6 +23,7 @@ import { CustomerApi } from '../../services/api';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { openVendorProfile } from '../../navigation/openVendorProfile';
 import { formatDistanceDisplay } from '../../utils/distance-display';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type StepType = 'select' | 'walkers' | 'confirm';
 
@@ -415,6 +416,10 @@ export function WalkerServiceScreen({
               pickWalkerVendorId(walker as Record<string, unknown>) || walker.id || walker.vendorId || ''
             );
             const profileVid = pickWalkerVendorId(walker as Record<string, unknown>);
+            const wFace = customerFacingRating(
+              walker.rating,
+              walker.reviewCount ?? walker.review_count
+            );
             return (
             <View
               key={rowKey ? rowKey : `walker-row-${index}`}
@@ -429,10 +434,8 @@ export function WalkerServiceScreen({
                 <WalkerListThumb uri={photoUri} />
                 <View style={styles.walkerInfo}>
                   <Text style={styles.walkerName}>{walker.name}</Text>
-                  {walker.rating && (
-                    <Text style={styles.walkerRating}>
-                      ⭐ {walker.rating.toFixed(1)}
-                    </Text>
+                  {wFace != null && (
+                    <Text style={styles.walkerRating}>⭐ {wFace.toFixed(1)}</Text>
                   )}
                   {walker.experience && (
                     <Text style={styles.walkerExperience}>

@@ -23,6 +23,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { generateSupportTicketNumber } from '../../../utils/support-ticket-number';
 import { isValidUUID } from '../../../types/entities';
 import { invokeBedrock } from '../../../utils/bedrock-client';
+import { buildSupportTicketsListQuery } from '../build-support-tickets-list-query';
 
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
@@ -145,62 +146,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const limit = parseInt(c.req.query("limit") || "50", 10);
       const offset = parseInt(c.req.query("offset") || "0", 10);
 
-      let ticketsQuery = `SELECT * FROM support_tickets WHERE 1=1`;
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      /**
-       * Mobile/web send various phone shapes (+91…, 91…, 10 digits). `customer_phone` in DB
-       * may not match a single string. Match by: exact row, full digits equality, or last-10-digits
-       * equality. When both customerId and customerPhone are present, use OR (previously: only id,
-       * which missed rows with phone set but id null or mismatched).
-       */
-      const customerClauses: string[] = [];
-      if (customerId) {
-        params.push(customerId);
-        customerClauses.push(`customer_id = $${paramIndex}`);
-        paramIndex += 1;
-      }
-      if (customerPhone) {
-        const digits = customerPhone.replace(/\D/g, "");
-        const last10 = digits.length >= 10 ? digits.slice(-10) : "";
-        if (last10) {
-          params.push(customerPhone, digits, last10);
-          const i1 = paramIndex;
-          const i2 = paramIndex + 1;
-          const i3 = paramIndex + 2;
-          paramIndex += 3;
-          customerClauses.push(`(
-            customer_phone = $${i1}
-            OR NULLIF(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), '') = $${i2}
-            OR (length(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g')) >= 10
-                AND right(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), 10) = $${i3}
-            )
-          `);
-        } else {
-          params.push(customerPhone);
-          customerClauses.push(`customer_phone = $${paramIndex}`);
-          paramIndex += 1;
-        }
-      }
-      if (customerClauses.length > 0) {
-        ticketsQuery += ` AND (${customerClauses.join(" OR ")})`;
-      }
-
-      if (agentId) {
-        ticketsQuery += ` AND assigned_to = $${paramIndex}`;
-        params.push(agentId);
-        paramIndex++;
-      }
-
-      if (status) {
-        ticketsQuery += ` AND status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-
-      ticketsQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
+      const { sql: ticketsQuery, params } = buildSupportTicketsListQuery({
+        customerId,
+        customerPhone,
+        agentId: agentId?.trim() || undefined,
+        status: status?.trim() || undefined,
+        limit,
+        offset,
+      });
 
       const tickets = await query(ticketsQuery, params);
 

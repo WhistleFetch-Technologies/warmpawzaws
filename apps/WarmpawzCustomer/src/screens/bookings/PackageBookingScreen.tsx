@@ -17,6 +17,7 @@ import {
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface PackageBookingScreenProps {
   serviceType: string;
@@ -165,10 +166,6 @@ export function PackageBookingScreen({
     return labels[freq] || freq;
   };
 
-  const discount = selectedPackage && selectedPackage.originalPrice
-    ? Math.round(((selectedPackage.originalPrice - selectedPackage.price) / selectedPackage.originalPrice) * 100)
-    : 0;
-
   return (
     <ScreenShell style={styles.container}>
       <View style={styles.header}>
@@ -189,7 +186,15 @@ export function PackageBookingScreen({
         {/* Package Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Select Package</Text>
-          {packages.map((pkg) => (
+          {packages.map((pkg) => {
+            const listPrice = pkg.originalPrice;
+            const pkgShowReduction =
+              listPrice != null && hasEffectivePriceReduction(listPrice, pkg.price);
+            const pkgDiscountPct =
+              pkgShowReduction && listPrice
+                ? Math.round(((listPrice - pkg.price) / listPrice) * 100)
+                : 0;
+            return (
             <TouchableOpacity
               key={pkg.id}
               style={[
@@ -230,17 +235,18 @@ export function PackageBookingScreen({
               </View>
               <View style={styles.packagePrice}>
                 <Text style={styles.price}>₹{pkg.price.toLocaleString()}</Text>
-                {pkg.originalPrice && (
+                {pkgShowReduction && listPrice != null && (
                   <>
-                    <Text style={styles.originalPrice}>₹{pkg.originalPrice.toLocaleString()}</Text>
+                    <Text style={styles.originalPrice}>₹{listPrice.toLocaleString()}</Text>
                     <View style={styles.discountBadge}>
-                      <Text style={styles.discountText}>{discount}% OFF</Text>
+                      <Text style={styles.discountText}>{pkgDiscountPct}% OFF</Text>
                     </View>
                   </>
                 )}
               </View>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
 
         {/* Pet Selection */}

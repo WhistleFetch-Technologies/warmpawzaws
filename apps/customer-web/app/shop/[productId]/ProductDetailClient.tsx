@@ -176,6 +176,10 @@ export default function ProductDetailClient() {
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
         const compareOrOriginal = p.original_price ?? p.compare_at_price;
+        const rc = Number(p.review_count ?? 0) || 0;
+        const rawRating = p.rating != null ? Number(p.rating) : NaN;
+        const rating =
+          rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
         setProduct({
           ...p,
           id: resolvedId,
@@ -185,13 +189,8 @@ export default function ProductDetailClient() {
             compareOrOriginal != null && String(compareOrOriginal) !== ''
               ? parseFloat(String(compareOrOriginal))
               : undefined,
-          review_count: Number(p.review_count) || 0,
-          rating: (() => {
-            const rc = Number(p.review_count) || 0;
-            const r = Number(p.rating);
-            if (rc <= 0 || !Number.isFinite(r) || r <= 0 || r > 5) return 0;
-            return r;
-          })(),
+          rating,
+          review_count: rc,
           images: p.images || [],
           emoji: p.emoji || '🐾',
         });
@@ -356,13 +355,21 @@ export default function ProductDetailClient() {
     : 0;
 
   const finalPrice = product ? product.price * quantity : 0;
-  const averageRatingRaw =
-    reviews.length > 0
-      ? reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / reviews.length
-      : product && product.review_count > 0
-        ? Number(product.rating)
-        : NaN;
-  const averageRating = Number.isFinite(averageRatingRaw) && averageRatingRaw > 0 ? averageRatingRaw : 0;
+
+  const loadedReviewCount = reviews.length;
+  const productReviewCount = product?.review_count ?? 0;
+  let displayAvg = 0;
+  let reviewDisplayCount = 0;
+  if (loadedReviewCount > 0) {
+    displayAvg =
+      reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / loadedReviewCount;
+    reviewDisplayCount = loadedReviewCount;
+  } else if (product && productReviewCount > 0) {
+    const pr = Number(product.rating);
+    displayAvg = Number.isFinite(pr) && pr > 0 ? pr : 0;
+    reviewDisplayCount = productReviewCount;
+  }
+  const showProductRatingRow = displayAvg > 0 && reviewDisplayCount > 0;
 
   // ============================================================================
   // RENDER
@@ -517,27 +524,32 @@ export default function ProductDetailClient() {
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{product.name}</h1>
 
             {/* Rating */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
                     className={`w-5 h-5 ${
-                      star <= Math.round(averageRating)
+                      showProductRatingRow && star <= Math.round(displayAvg)
                         ? 'text-amber-400 fill-amber-400'
                         : 'text-slate-200'
                     }`}
                   />
                 ))}
               </div>
-              <span className="font-semibold text-slate-900">
-                {reviews.length > 0
-                  ? formatRatingNumberOrDash(averageRating)
-                  : product
-                    ? formatAverageForDisplay(product.rating, product.review_count)
-                    : '—'}
-              </span>
-              <span className="text-slate-500">({product.review_count} reviews)</span>
+              {showProductRatingRow ? (
+                <>
+                  <span className="font-semibold text-slate-900">
+                    {Number(displayAvg).toFixed(1)}
+                  </span>
+                  <span className="text-slate-500">
+                    ({reviewDisplayCount}{' '}
+                    {reviewDisplayCount === 1 ? 'review' : 'reviews'})
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm text-slate-500">No customer reviews</span>
+              )}
             </div>
 
             {/* Price */}

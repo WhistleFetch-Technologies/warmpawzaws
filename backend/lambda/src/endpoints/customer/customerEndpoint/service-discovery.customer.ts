@@ -32,21 +32,16 @@ import {
   type SqlClient,
 } from '../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
+import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../lib/utils/vendor-customer-distance';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
 /**
- * Calculate distance between two coordinates (Haversine formula)
+ * Calculate distance between two coordinates (Haversine formula).
+ * Kept for backward-compat with the SQL-level distance_km enrichment paths.
  */
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in km
+  return haversineKm(lat1, lon1, lat2, lon2);
 }
 
 /**
@@ -203,6 +198,38 @@ function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v'): string {
          OR va0.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone)
     )
   )`;
+}
+
+/** `roles.name` values for the customer Training hub (trainers + behaviorists). */
+const TRAINING_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'trainer',
+  'pet_trainer',
+  'trainer_solo',
+  'trainer_center',
+  'training_solo',
+  'behaviorist_solo',
+  'behaviorist_center',
+  'behaviourist',
+  'behaviourist_solo',
+  'behaviourist_center',
+];
+
+const TRAINING_HUB_ROLE_SQL_IN_LIST = TRAINING_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(', ');
+
+function vendorRoleIsTrainingHub(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return TRAINING_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
+}
+
+/** SQL: `vs.category` text that should match customer ?category=training (e.g. Behavioral). */
+function sqlTrainingCategoryAliasOrVs(vsAlias = 'vs'): string {
+  return `(
+        LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) IN (
+          'behavioral','behaviour','behavioural','behaviourist','behavior','behavior_modification'
+        )
+        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behavior%'
+        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behaviour%'
+      )`;
 }
 
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
@@ -1858,14 +1885,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let latitude = c.req.query('latitude');
       let longitude = c.req.query('longitude');
 
-      // If coordinates not provided, fetch from customer address
+      // If coordinates not provided, fetch from customer address (with pincode fallback)
+      let customerApproximateDiscover = false;
       if (!latitude || !longitude) {
         const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
         const coords = await getCustomerCoordinates(customerPhone || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
-          console.log(`[discover-services] Using coordinates from customer address: ${latitude}, ${longitude}`);
+          customerApproximateDiscover = !!coords.approximate;
+          console.log(`[discover-services] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateDiscover}`);
         }
       }
 
@@ -1936,6 +1965,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
+      /**
+       * Training hub (?category=training): vendor_services often use "Behavioral" while discovery filters on "training".
+       * Mirror nutrition/boarding: alias category text + allow empty category for trainer/behaviorist roles.
+       */
+      const trainingDiscoverySearch =
+        !sittingDiscoveryRelaxed &&
+        catTextExact.some((c) => c === 'training' || c.includes('training'));
+
       /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
       const walkerCategoryDiscoveryOr =
         !sittingDiscoveryRelaxed &&
@@ -1992,14 +2029,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
 
-      const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
-        return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
-      };
-      const fmtDistance = (km: number | null): string | null => {
-        if (km == null) return null;
-        return km < 1 ? `${Math.round(km * 1000)}m away` : `${km.toFixed(1)} km away`;
-      };
+      const distResolverDiscover = new DistanceResolver(customerLat, customerLng, customerApproximateDiscover);
 
       const SITTER_ROLE_NAMES_LOWER = ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'];
 
@@ -2028,10 +2058,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const trainingUncatSql =
+          !sitterRoleBypass &&
+          trainingDiscoverySearch &&
+          vendorRoleIsTrainingHub(_vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
             ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
             : '';
+        const trainingCategoryAliasFetchOr =
+          !sitterRoleBypass && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -2041,6 +2079,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSql}
             ${nutritionUncatSql}
+            ${trainingUncatSql}
+            ${trainingCategoryAliasFetchOr}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
@@ -2152,10 +2192,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
         const customerService = roleCfg?.customer_service || null;
 
-        const dist = getDistanceKm(
-          vendor.latitude ? parseFloat(vendor.latitude) : null,
-          vendor.longitude ? parseFloat(vendor.longitude) : null,
-        );
+        const distResult = await distResolverDiscover.resolve({
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          pincode: vendor.pincode,
+        });
 
         let nextAvailable: any = null;
         try {
@@ -2217,9 +2258,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photoUrl: photoUrl,
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: dist,
-          distanceKm: dist,
-          distanceText: fmtDistance(dist),
+          distance: distResult?.km ?? null,
+          distanceKm: distResult?.km ?? null,
+          distanceText: distResult?.distanceText ?? null,
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
@@ -2233,10 +2274,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       };
 
-      // 4) Vendor SQL: require VA2 match OR no VA2 rows yet (new vendors with services but calendar not saved)
-      const availabilityRequiredSql = sittingDiscoveryRelaxed
-        ? ''
-        : `
+      // 4) Vendor SQL: VA2 gate (sitting + training hubs skip — solo sitters/trainers often have published
+      // services but empty or all-disabled calendars; booking still uses slots API.)
+      const availabilityRequiredSql =
+        sittingDiscoveryRelaxed || trainingDiscoverySearch
+          ? ''
+          : `
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
 
       /**
@@ -2302,6 +2345,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         !sittingDiscoveryRelaxed && nutritionDiscoverySearch
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
+      const trainingRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && trainingDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+      const trainingCategoryAliasVendorOr =
+        !sittingDiscoveryRelaxed && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
       const vetCategoryEmptyOr =
         !sittingDiscoveryRelaxed && isVetCategoryDiscovery
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -2328,6 +2377,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
                 ${nutritionRoleUncategorizedOr}
+                ${trainingRoleUncategorizedOr}
+                ${trainingCategoryAliasVendorOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
@@ -2342,7 +2393,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.metadata,
+          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -3957,6 +4008,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'pet_walker';
         const boardingBookingCategoryRequest =
           catLower === 'boarding' || catLower === 'pet_boarding';
+        /** Training / behavior: same category rules as discover-services (null category + behaviorist role, Behavioral label). */
+        const trainingBookingCategoryRequest =
+          catLower === 'training' ||
+          catLower === 'pet_training' ||
+          catLower === 'dog_training' ||
+          catLower === 'behaviorist' ||
+          catLower === 'behaviourist';
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -4047,6 +4105,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             ${boardingCatIdOr}
+          )`;
+        } else if (trainingBookingCategoryRequest) {
+          servicesQuery += ` AND (
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
+            OR ${sqlTrainingCategoryAliasOrVs('vs')}
+            OR (
+              TRIM(COALESCE(vs.category, '')) = ''
+              AND EXISTS (
+                SELECT 1 FROM vendors v_tr
+                LEFT JOIN roles r_tr ON v_tr.role_id = r_tr.id
+                WHERE v_tr.id = vs.vendor_id
+                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+              )
+            )
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
@@ -4452,7 +4524,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             );
           }
           const distanceKm = distance != null ? parseFloat(distance.toFixed(2)) : null;
-          const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+          const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
 
           let specializations: string[] = [];
           try {
@@ -4824,7 +4896,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         } catch (_) { }
         const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
-        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+        const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
         const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
         return {
           id: vendorId,
@@ -5564,15 +5636,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const problemTitle = c.req.query('problemTitle');
       let latitude = c.req.query('latitude');
       let longitude = c.req.query('longitude');
+      let customerApproximateByStyle = false;
 
-      // If coordinates not provided, fetch from customer's default address
+      // If coordinates not provided, fetch from customer's default address (with pincode fallback)
       if (!latitude || !longitude) {
         const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
         const coords = await getCustomerCoordinates(customerPhone || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
-          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}`);
+          customerApproximateByStyle = !!coords.approximate;
+          console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateByStyle}`);
         }
       }
 
@@ -5727,6 +5801,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
+      const trainingDiscoverySearchByStyle = catTextExact.some(
+        (c) => c === 'training' || c.includes('training')
+      );
+
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
@@ -5736,6 +5814,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         nutritionDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
           : '';
+
+      const trainingRoleUncategorizedOrByStyle =
+        trainingDiscoverySearchByStyle
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+
+      const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
+        ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+        : '';
 
       const walkerCategoryDiscoveryOrByStyle =
         catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
@@ -5766,16 +5853,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
 
-      /** Haversine distance in km — null when coordinates are missing */
-      const getDistanceKm = (lat: number | null, lng: number | null): number | null => {
-        if (customerLat == null || customerLng == null || lat == null || lng == null) return null;
-        return parseFloat(calculateDistance(customerLat, customerLng, lat, lng).toFixed(2));
-      };
-      /** Human-readable distance label */
-      const fmtDistance = (km: number | null): string | null => {
-        if (km == null) return null;
-        return km < 1 ? `${Math.round(km * 1000)}m away` : `${km.toFixed(1)} km away`;
-      };
+      const distResolverByStyle = new DistanceResolver(customerLat, customerLng, customerApproximateByStyle);
 
       /** Fetch published vendor_services rows matching the requested styles and targeted categories */
       const fetchServices = async (vendorId: string, vendorRoleName?: string | null) => {
@@ -5793,6 +5871,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           )
             ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
             : '';
+        const trainingUncatSqlByStyle =
+          trainingDiscoverySearchByStyle && vendorRoleIsTrainingHub(vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
+        const trainingCategoryAliasFetchOrByStyle = trainingDiscoverySearchByStyle
+          ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+          : '';
         const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
           : '';
@@ -5803,6 +5888,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($5::text[])` : ``}
             ${boardingUncatSqlByStyle}
             ${nutritionUncatSqlByStyle}
+            ${trainingUncatSqlByStyle}
+            ${trainingCategoryAliasFetchOrByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
             ${boardingCustomCategoryIdOrByStyleSql}
@@ -5869,10 +5956,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
         const customerService = roleCfg?.customer_service || null;
 
-        const dist = getDistanceKm(
-          vendor.latitude ? parseFloat(vendor.latitude) : null,
-          vendor.longitude ? parseFloat(vendor.longitude) : null,
-        );
+        const distResult = await distResolverByStyle.resolve({
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          pincode: vendor.pincode,
+        });
         let nextAvailable: any = null;
         try {
           nextAvailable = await getNextAvailableSlot(
@@ -5889,7 +5977,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
 
         // Photos from vendor metadata (facility_photos / photos)
-        // ✅ FIX: Regenerate presigned URLs for facility photos
         let photos: string[] = [];
         try {
           const meta = typeof vendor.metadata === 'string'
@@ -5897,7 +5984,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : vendor.metadata;
           const raw = meta?.facility_photos || meta?.photos || [];
           const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
-          // Regenerate presigned URLs for all photos
           const regeneratedPhotos = await Promise.all(
             rawPhotos.map(async (photoUrl: string) => {
               const regenerated = await regeneratePresignedUrl(photoUrl);
@@ -5907,7 +5993,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
 
-        // ✅ FIX: Get photo URL once and use for both photo and photoUrl fields
         const photoUrl = await getVendorPhotoUrl(vendor);
 
         return {
@@ -5928,13 +6013,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           roleCategory,
           customerService,
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photo: photoUrl, // ✅ Frontend expects 'photo' field
-          photoUrl: photoUrl, // ✅ Keep 'photoUrl' for backward compatibility
+          photo: photoUrl,
+          photoUrl: photoUrl,
           rating: parseFloat(vendor.avg_rating || '0'),
           reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: dist,
-          distanceKm: dist,
-          distanceText: fmtDistance(dist),
+          distance: distResult?.km ?? null,
+          distanceKm: distResult?.km ?? null,
+          distanceText: distResult?.distanceText ?? null,
           nextAvailable,
           serviceStyles: acceptableStyles,
           isVerified: true,
@@ -5954,7 +6039,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.metadata,
+          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -5980,13 +6065,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOrByStyle}
                 ${nutritionRoleUncategorizedOrByStyle}
+                ${trainingRoleUncategorizedOrByStyle}
+                ${trainingCategoryAliasVendorOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
           )
-          AND ${sqlVendorAvailabilityOrNotConfigured('v')}
+          ${trainingDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
       `;
 
       const vendorParams: any[] =
@@ -6113,10 +6200,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.role_id,
           r.name as role_name,
           r.display_name as role_display_name,
-          COALESCE(
-            (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id),
-            4.5
-          ) as avg_rating,
+          (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id) as avg_rating,
           COALESCE(
             (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id),
             0
@@ -6161,27 +6245,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const result = await query(vendorQuery, params);
 
       const vendors = result.rows.map((v: any) => {
-        const rc = parseInt(v.review_count || '0', 10);
-        const rawAvg = v.avg_rating != null && v.avg_rating !== '' ? parseFloat(String(v.avg_rating)) : NaN;
-        const ratingOut =
-          rc > 0 && Number.isFinite(rawAvg) ? parseFloat(rawAvg.toFixed(1)) : null;
+        const reviewCount = parseInt(v.review_count || '0', 10);
+        const avgNum =
+          v.avg_rating != null && v.avg_rating !== ''
+            ? parseFloat(String(v.avg_rating))
+            : NaN;
+        const rating =
+          reviewCount > 0 && Number.isFinite(avgNum)
+            ? parseFloat(avgNum.toFixed(1))
+            : null;
         return {
-        id: v.id,
-        businessName: v.business_name || v.owner_name,
-        ownerName: v.owner_name,
-        phone: v.phone,
-        address: v.address,
-        city: v.city,
-        latitude: v.latitude,
-        longitude: v.longitude,
-        status: v.status,
-        roleId: v.role_id,
-        roleName: v.role_name,
-        roleDisplayName: v.role_display_name,
-        rating: ratingOut,
-        reviewCount: rc,
-        completedBookings: parseInt(v.completed_bookings || '0', 10),
-      };
+          id: v.id,
+          businessName: v.business_name || v.owner_name,
+          ownerName: v.owner_name,
+          phone: v.phone,
+          address: v.address,
+          city: v.city,
+          latitude: v.latitude,
+          longitude: v.longitude,
+          status: v.status,
+          roleId: v.role_id,
+          roleName: v.role_name,
+          roleDisplayName: v.role_display_name,
+          rating,
+          reviewCount,
+          completedBookings: parseInt(v.completed_bookings || '0', 10),
+        };
       });
 
       return c.json({

@@ -155,16 +155,16 @@ export function HomeServiceLanding({
         services.forEach((service: any) => {
           const vendorId = service.vendorId;
           if (!vendorMap.has(vendorId)) {
+            const rc = Number(service.vendorReviewCount ?? 0) || 0;
+            const rawV = service.vendorRating != null ? Number(service.vendorRating) : NaN;
+            const vr = rc > 0 && Number.isFinite(rawV) && rawV > 0 ? rawV : 0;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: service.vendorName || 'Provider',
               photo: service.vendorPhoto || service.vendorLogo,
-              rating: (() => {
-                const r = Number(service.vendorRating);
-                return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-              })(),
-              reviewCount: service.vendorReviewCount || 0,
-              distance: Math.random() * 5 + 0.5,
+              rating: vr,
+              reviewCount: rc,
+              distance: service.distance ?? null,
               price: service.price || 0
             });
           }
@@ -173,15 +173,14 @@ export function HomeServiceLanding({
         const allProviders = Array.from(vendorMap.values());
         setFeaturedProviders(allProviders.slice(0, 5));
 
+        const rated = allProviders.filter((p: any) => p.reviewCount > 0 && p.rating > 0);
         setStats({
           activeProviders: allProviders.length || 50,
           sessions: '5K',
-          rating: aggregateAverageRatingStat(
-            allProviders.map((p: any) => ({
-              vendorRating: p.rating,
-              reviewCount: p.reviewCount,
-            }))
-          ),
+          rating:
+            rated.length > 0
+              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
+              : '—',
         });
       } catch (e) {
         setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
@@ -197,14 +196,14 @@ export function HomeServiceLanding({
           const prevVendorMap = new Map();
           bookings.forEach((booking: any) => {
             if (booking.vendorId && !prevVendorMap.has(booking.vendorId)) {
+              const brc = Number(booking.vendorReviewCount ?? 0) || 0;
+              const braw = booking.vendorRating != null ? Number(booking.vendorRating) : NaN;
+              const br = brc > 0 && Number.isFinite(braw) && braw > 0 ? braw : 0;
               prevVendorMap.set(booking.vendorId, {
                 id: booking.vendorId,
                 name: booking.vendorName || 'Provider',
                 photo: booking.vendorPhoto,
-                rating: (() => {
-                  const r = Number(booking.vendorRating);
-                  return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
-                })(),
+                rating: br,
                 lastVisit: new Date(booking.scheduledDate).toLocaleDateString()
               });
             }
@@ -421,7 +420,11 @@ export function HomeServiceLanding({
                         />
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
-                          <span>{provider.distance?.toFixed(1) || '2.0'} km</span>
+                          <span>{provider.distance != null
+                            ? (provider.distance < 1
+                              ? `${Math.round(provider.distance * 1000)} m`
+                              : `${Math.round(provider.distance)} km`)
+                            : null}</span>
                         </div>
                       </div>
                     </div>

@@ -31,10 +31,18 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
       const photographerList = data.vendors || data.services || [];
       setPhotographers(photographerList);
       
+      const rated = photographerList.filter((p: any) => {
+        const rc = Number(p.reviewCount ?? p.reviews_count ?? p.totalReviews ?? 0) || 0;
+        const raw = p.rating != null ? Number(p.rating) : NaN;
+        return rc > 0 && Number.isFinite(raw) && raw > 0;
+      });
       setStats({
         activePhotographers: photographerList.length || 85,
         sessions: '2K+',
-        rating: averageStarDisplayFromNumbers(photographerList.map((p: any) => p.rating)),
+        rating:
+          rated.length > 0
+            ? (rated.reduce((acc: number, p: any) => acc + Number(p.rating), 0) / rated.length).toFixed(1)
+            : '—',
       });
     } catch (error) {
       console.error('Error loading photographers:', error);
@@ -154,12 +162,23 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{photographer.businessName || photographer.name || `Photographer ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                        {(() => {
+                          const rc = Number(photographer.reviewCount ?? photographer.reviews_count ?? photographer.totalReviews ?? 0) || 0;
+                          const raw = photographer.rating != null ? Number(photographer.rating) : NaN;
+                          const ok = rc > 0 && Number.isFinite(raw) && raw > 0;
+                          return ok ? (
+                        <>
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {formatRatingNumberOrDash(photographer.rating)}
+                          {raw.toFixed(1)}
                         </span>
                         <span>•</span>
+                        </>
+                          ) : (
+                        <span className="text-slate-400">No reviews yet</span>
+                          );
+                        })()}
                         <span>Professional</span>
                       </div>
                     </div>

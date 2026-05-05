@@ -645,7 +645,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                             <>
                               <span className="text-gray-300">•</span>
                               <span className="text-sm text-gray-500">
-                                {clinic.distanceKm.toFixed(1)} km
+                                {clinic.distanceKm < 1
+                                  ? `${Math.round(clinic.distanceKm * 1000)} m`
+                                  : `${Math.round(clinic.distanceKm)} km`}
                               </span>
                             </>
                           )}

@@ -6,10 +6,11 @@
  * Adapted for AWS Lambda, RDS, Cognito architecture
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Dashboardstats, ScheduleItem, VendorDashboardScreenProps } from '../types';
+import { getVendorDashboardRatingPresentation, mergeVendorDashboardStats } from '../helpers';
 
 
 export function VendorDashboardScreen({
@@ -25,11 +26,16 @@ export function VendorDashboardScreen({
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 0,
+    rating: null,
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('week');
+
+  const ratingPresentation = useMemo(
+    () => getVendorDashboardRatingPresentation(stats.totalReviews, stats.rating),
+    [stats.totalReviews, stats.rating]
+  );
 
   useEffect(() => {
     loadDashboardData();
@@ -76,7 +82,7 @@ export function VendorDashboardScreen({
                     earnings: 0,
                     pendingEarnings: 0,
                     completedServices: 0,
-                    rating: 0,
+                    rating: null,
                     totalReviews: 0,
                   },
                   bookings: [],
@@ -98,7 +104,7 @@ export function VendorDashboardScreen({
                 earnings: 0,
                 pendingEarnings: 0,
                 completedServices: 0,
-                rating: 0,
+                rating: null,
                 totalReviews: 0,
               },
               bookings: [],
@@ -113,16 +119,9 @@ export function VendorDashboardScreen({
       if (dashboardResponse.success && responseData) {
         const data = responseData;
 
-        setStats({
-          appointments: data.stats?.appointments || 0,
-          consultations: data.stats?.consultations || 0,
-          earnings: data.stats?.earnings || 0,
-          pendingEarnings: data.stats?.pendingEarnings || 0,
-          completedServices: data.stats?.completedServices || 0,
-          rating:
-            typeof data.stats?.rating === 'number' && data.stats.rating > 0 ? data.stats.rating : 0,
-          totalReviews: data.stats?.totalReviews || 0,
-        });
+        if (data.stats && typeof data.stats === 'object') {
+          setStats((prev) => mergeVendorDashboardStats(prev, data.stats as Record<string, unknown>));
+        }
 
         // Set today's schedule if available
         // ✅ FIX: Transform bookings to match ScheduleItem interface
@@ -177,7 +176,7 @@ export function VendorDashboardScreen({
           earnings: 0,
           pendingEarnings: 0,
           completedServices: 0,
-          rating: 0,
+          rating: null,
           totalReviews: 0,
         });
       }
@@ -192,7 +191,7 @@ export function VendorDashboardScreen({
         earnings: 0,
         pendingEarnings: 0,
         completedServices: 0,
-        rating: 0,
+        rating: null,
         totalReviews: 0,
       });
     } finally {
@@ -304,8 +303,11 @@ export function VendorDashboardScreen({
 
             <div className="bg-white rounded-xl p-4 border border-gray-200 text-center">
               <div className="text-2xl mb-2">⭐</div>
-              <div className="text-xl font-bold text-gray-900">
-                {(stats.totalReviews ?? 0) > 0 && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
+              <div
+                className={`text-xl font-bold text-gray-900 ${ratingPresentation.showNumeric ? '' : 'text-sm font-medium text-gray-600'}`}
+                aria-label={ratingPresentation.ariaLabel}
+              >
+                {ratingPresentation.label}
               </div>
               <div className="text-xs text-gray-500">Rating</div>
             </div>

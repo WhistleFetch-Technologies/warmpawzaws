@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { formatRatingNumberOrDash } from '@/lib/rating-display';
+import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
+import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -48,6 +49,7 @@ import {
   mapCatalogCategoryIdToCustomerHomeScreen,
 } from '@warmpawz/service-launch-mappings';
 import { toast } from 'sonner';
+import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -355,11 +357,16 @@ export function CustomerHomeComplete({
     [persistAiFabOffset]
   );
 
+  const { messagesInboxVersion } = useCustomerBookingMessagesModal();
+
   /** Unread inbox count for header bell; refreshed infrequently (same API as useNotificationService). */
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   /** Bumps when inbox changes (modal read/delete) so the header badge refetches. */
   const [notificationInboxVersion, setNotificationInboxVersion] = useState(0);
+
+  /** Vendor booking chat + support ticket threads (see `fetchCustomerMessageUnreadBreakdown`). */
+  const [combinedMessageUnreadCount, setCombinedMessageUnreadCount] = useState(0);
 
   // ✅ FIX GAP-6.2: 5-minute notification state
   const [upcomingCall, setUpcomingCall] = useState<{
@@ -822,7 +829,8 @@ export function CustomerHomeComplete({
             id: s.id || s.vendorServiceId,
             title: s.serviceName || s.name || 'Grooming Service',
             price: `₹${s.price || s.basePrice || 999}`,
-            rating: s.rating ?? s.vendorRating,
+            rating: s.rating != null ? Number(s.rating) : undefined,
+            reviewCount: Number(s.reviewCount ?? s.review_count ?? 0) || 0,
             serviceStyle: s.serviceStyle || 'at_center',
             description: s.description || 'Professional grooming service',
             vendorId: s.vendorId
@@ -868,15 +876,20 @@ export function CustomerHomeComplete({
             (p: any) => p.is_featured === true || p.isFeatured === true
           );
           if (featuredProducts.length > 0) {
-            const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => ({
-              id: p.id,
-              title: p.name || 'Pet Products',
-              price: `₹${p.salePrice || p.price || 999}`,
-              originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
-              discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
-              iconType: 'product',
-              rating: p.rating ?? p.averageRating,
-            }));
+            const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => {
+              const rc = Number(p.reviewCount ?? p.review_count ?? 0) || 0;
+              const rt = p.rating != null && p.rating !== '' ? Number(p.rating) : NaN;
+              return {
+                id: p.id,
+                title: p.name || 'Pet Products',
+                price: `₹${p.salePrice || p.price || 999}`,
+                originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
+                discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
+                iconType: 'product',
+                rating: rc > 0 && Number.isFinite(rt) && rt > 0 ? rt : undefined,
+                reviewCount: rc,
+              };
+            });
             setHotDeals(mappedDeals);
           } else {
             setHotDeals([]);
@@ -1305,6 +1318,32 @@ export function CustomerHomeComplete({
       clearInterval(interval);
     };
   }, [phone, refreshKey, notificationInboxVersion]);
+
+  useEffect(() => {
+    const clean = (phone || '').replace(/[^0-9]/g, '');
+    if (clean.length < 10) {
+      setCombinedMessageUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const b = await fetchCustomerMessageUnreadBreakdown({
+          customerId: customerId || undefined,
+          phoneForApi: phone,
+        });
+        if (!cancelled) setCombinedMessageUnreadCount(b.total);
+      } catch {
+        if (!cancelled) setCombinedMessageUnreadCount(0);
+      }
+    };
+    void fetchUnread();
+    const interval = setInterval(fetchUnread, 90_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [phone, refreshKey, customerId, messagesInboxVersion]);
 
   const loadActiveBookings = async () => {
     try {
@@ -1781,6 +1820,11 @@ export function CustomerHomeComplete({
                 aria-label="Messages"
               >
                 <MessageSquare className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+                {combinedMessageUnreadCount > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {combinedMessageUnreadCount > 99 ? '99+' : combinedMessageUnreadCount}
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"
@@ -2256,14 +2300,20 @@ export function CustomerHomeComplete({
                   className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => handleNavigation('grooming')}
                 >
-                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-3">
                     <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                       <ServiceIcon className="w-6 h-6 text-orange-500" />
                     </div>
-                    <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs font-medium">{formatRatingNumberOrDash(service.rating)}</span>
-                    </div>
+                    {hasRatings(normalizeRatingCount(service.reviewCount)) &&
+                    service.rating != null &&
+                    Number(service.rating) > 0 ? (
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
+                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                        <span className="text-xs font-medium">
+                          {Number(service.rating).toFixed(1)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <h3 className="text-black font-semibold mb-1">{service.title}</h3>
                   <div onClick={(e) => e.stopPropagation()} className="mb-3">
@@ -2913,8 +2963,8 @@ export function CustomerHomeComplete({
                       </div>
                       <div className="h-8 w-px bg-white/20"></div>
                       <div>
-                        <p className="text-lg font-semibold">4.9★</p>
-                        <p className="text-xs text-white/80">250+ reviews</p>
+                        <p className="text-lg font-semibold">Verified hosts</p>
+                        <p className="text-xs text-white/80">Book with confidence</p>
                       </div>
                     </div>
                     <button

@@ -51,6 +51,16 @@ function isHandsOnVetProcedureSpecialization(specializationId: string | null | u
   return false;
 }
 
+/** Destructive-habits sessions are in-person only (no video consult). Problem-grid id: `destructive`. */
+function stripTeleForDestructiveBehaviorProblem(
+  specializationId: string | null | undefined,
+  styles: CustomerDeliveryStyle[]
+): CustomerDeliveryStyle[] {
+  if ((specializationId || '').toLowerCase() !== 'destructive') return styles;
+  const out = styles.filter((s) => s !== 'tele');
+  return out.length > 0 ? out : ['at_home', 'at_center'];
+}
+
 function normalizeRaw(raw: string[] | null | undefined): CustomerDeliveryStyle[] {
   if (!raw?.length) return [];
   const out: CustomerDeliveryStyle[] = [];
@@ -130,7 +140,10 @@ export function sanitizeCustomerAllowedServiceStyles(
   }
 
   if (styles.length === 0) {
-    return normalizeRaw(defaultAllowedServiceStylesForRole(roleId)) as CustomerDeliveryStyle[];
+    return stripTeleForDestructiveBehaviorProblem(
+      specId,
+      normalizeRaw(defaultAllowedServiceStylesForRole(roleId)) as CustomerDeliveryStyle[]
+    );
   }
-  return styles;
+  return stripTeleForDestructiveBehaviorProblem(specId, styles);
 }

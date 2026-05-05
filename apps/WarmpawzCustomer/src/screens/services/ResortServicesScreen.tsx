@@ -24,7 +24,7 @@ import {
   applyWarmpawzCustomerToRazorpayOptions,
   profileEmailAndName,
 } from '../../utils/razorpay-checkout-options';
-import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type ViewType = 
   | 'landing'
@@ -47,7 +47,8 @@ interface Resort {
   id: string;
   name: string;
   address: string;
-  rating?: number;
+  rating: number;
+  reviewCount: number;
   image?: string;
 }
 
@@ -122,11 +123,18 @@ export function ResortServicesScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!resortMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const r =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           resortMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: starRatingOrUndefined(service.vendorRating),
+            rating,
+            reviewCount: rc,
             image: service.vendorImage,
           });
         }
@@ -456,7 +464,9 @@ export function ResortServicesScreen({
               </Text>
             </View>
           ) : (
-            resorts.map((resort) => (
+            resorts.map((resort) => {
+              const face = customerFacingRating(resort.rating, resort.reviewCount);
+              return (
               <TouchableOpacity
                 key={resort.id}
                 style={styles.resortCard}
@@ -468,13 +478,14 @@ export function ResortServicesScreen({
                 <View style={styles.resortInfo}>
                   <Text style={styles.resortName}>{resort.name}</Text>
                   <Text style={styles.resortRating}>
-                    ⭐ {formatRatingOrDash(resort.rating)}
+                    {face != null ? `⭐ ${face.toFixed(1)}` : 'No reviews'}
                   </Text>
                   <Text style={styles.resortAddress}>{resort.address}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
-            ))
+            );
+            })
           )}
         </ScrollView>
       )}

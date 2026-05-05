@@ -615,7 +615,7 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
         vehicleNumber: p.vehicle_number,
         phone: p.phone,
         status: p.status === 'active' ? 'available' : p.status,
-        rating: p.rating != null && p.rating !== '' ? parseFloat(String(p.rating)) : null,
+        rating: p.rating != null ? Number(p.rating) : null,
         estimatedArrival: Math.round(p.distance_km * 2), // Rough estimate: 2 min per km
         distance: p.distance_km,
       }));

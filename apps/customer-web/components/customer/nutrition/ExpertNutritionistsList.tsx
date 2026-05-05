@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { StarRating } from '@/components/customer/shared/StarRating';
 import { apiClient } from '@/lib/api-client';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
@@ -137,12 +138,14 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
                           {vendorName}
                         </h3>
                         
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-                          <span className="flex items-center gap-1 text-orange-500 font-bold">
-                            <Star className="w-3 h-3 fill-current" />
-                            {formatRatingNumberOrDash(nutritionist.rating)}
-                          </span>
-                          <span>•</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mb-2">
+                          <StarRating
+                            rating={nutritionist.rating}
+                            reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
+                            starsClassName="w-3 h-3"
+                            textClassName="text-xs text-slate-500"
+                          />
+                          <span className="hidden sm:inline">•</span>
                           <span>Certified Expert</span>
                         </div>
 

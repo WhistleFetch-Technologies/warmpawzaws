@@ -803,6 +803,9 @@ export function CustomerHomeWrapper({
       if (vsid && vid) {
         setWalkerServiceData(data ?? null);
         setCurrentScreen('purchase-package');
+      } else if (vid) {
+        setWalkerServiceData(data ?? { vendorId: vid, vendorName: (data as any)?.vendorName });
+        setCurrentScreen('package-booking');
       } else {
         setCurrentScreen('package-booking');
       }
@@ -938,6 +941,10 @@ export function CustomerHomeWrapper({
       if (vsid && vid) {
         setWalkerServiceData(data ?? null);
         setCurrentScreen('purchase-package');
+      } else if (vid) {
+        setWalkerServiceData(data ?? { vendorId: vid, vendorName: data?.vendorName });
+        setVetServiceData((prev: any) => ({ ...prev, ...data }));
+        setCurrentScreen('package-booking');
       } else {
         setVetServiceData((prev: any) => ({ ...prev, ...data }));
         setCurrentScreen('package-booking');
@@ -2014,7 +2021,7 @@ export function CustomerHomeWrapper({
           } else if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
             setPreviousScreen('vet-tele-consultation');
-            setPaymentData(data);
+            setPaymentData({ ...(data && typeof data === 'object' ? data : {}), returnScreen: 'vet-tele-consultation' });
             setCurrentScreen('payment');
           } else {
             // Fallback to vet navigation handler
@@ -2036,7 +2043,7 @@ export function CustomerHomeWrapper({
           if (screen === 'payment') {
             // Handle payment navigation - go directly to payment page with booking data
             setPreviousScreen('vet-home-visit');
-            setPaymentData(data);
+            setPaymentData({ ...(data && typeof data === 'object' ? data : {}), returnScreen: 'vet-home-visit' });
             setCurrentScreen('payment');
           } else if (screen === 'add-pet') {
             setCurrentScreen('add-pet');
@@ -2122,19 +2129,28 @@ export function CustomerHomeWrapper({
         customerId={bookingData.customerId}
         flowType={bookingData.flowType}
         onBack={() => {
-          // Go back to provider profile or tele consultation
-          if (bookingData.category === 'nutritionist') {
-            setCurrentScreen(previousScreen || 'nutritionist-tele');
+          const bd = bookingData;
+          const fromPayload = bd?.returnScreen as ScreenType | undefined;
+          const explicitTarget = fromPayload ?? previousScreen;
+          setPaymentData(null);
+          if (explicitTarget) {
+            setCurrentScreen(explicitTarget);
             setPreviousScreen(null);
-          } else if (bookingData.flowType === 'tele-scheduled' || bookingData.flowType === 'tele-instant' || bookingData.flowType === 'tele-queue-accepted') {
-            setCurrentScreen(previousScreen || 'vet-tele-consultation');
-            setPreviousScreen(null);
-          } else if (bookingData.flowType === 'home-visit') {
+            return;
+          }
+          if (bd.category === 'nutritionist') {
+            setCurrentScreen('nutritionist-tele');
+          } else if (
+            bd.flowType === 'tele-scheduled' ||
+            bd.flowType === 'tele-instant' ||
+            bd.flowType === 'tele-queue-accepted'
+          ) {
+            setCurrentScreen('vet-tele-consultation');
+          } else if (bd.flowType === 'home-visit') {
             setCurrentScreen('vet-home-visit');
           } else {
             setCurrentScreen('vet');
           }
-          setPaymentData(null);
         }}
         onSuccess={(bookingId, orderId, otpCode, meta) => {
           setSelectedBookingId(bookingId);
@@ -2669,7 +2685,7 @@ export function CustomerHomeWrapper({
           onBack={() => { setCurrentScreen(previousScreen || 'nutritionist'); setPreviousScreen(null); }}
           onNavigate={(screen, data) => {
             if (screen === 'payment' && data) {
-              setPaymentData(data);
+              setPaymentData({ ...(typeof data === 'object' ? data : {}), returnScreen: 'nutritionist-tele' });
               setPreviousScreen('nutritionist-tele');
               setCurrentScreen('payment');
             } else if (screen === 'video-call' && data?.bookingId) {
@@ -3677,6 +3693,37 @@ export function CustomerHomeWrapper({
     );
   }
 
+  // Shared intent: vendorId alone loads GET /vendor/packages + vendor_services package rows; full row pre-selects one package.
+  const walkSessionForPackage = walkerServiceData?.walkSession ?? null;
+  const wPkg = walkerServiceData;
+  const vendorPackageIntentFromWalker =
+    wPkg?.vendorId
+      ? {
+          vendorId: String(wPkg.vendorId),
+          vendorName: wPkg?.walker?.name || wPkg.vendorName,
+          ...(wPkg.vendorServiceId
+            ? {
+                vendorServiceId: String(wPkg.vendorServiceId),
+                serviceName: String(wPkg.serviceName || 'Package'),
+                totalSessions: Number(wPkg.totalSessions) || 1,
+                sessionsPerDay: Math.max(
+                  1,
+                  Math.min(24, Number(wPkg.sessionsPerDay ?? wPkg.sessions_per_day) || 1)
+                ),
+                sessionIntervalDays: Math.max(
+                  1,
+                  Math.min(366, Number(wPkg.sessionIntervalDays ?? wPkg.session_interval_days) || 7)
+                ),
+                price: Number(wPkg.price ?? 0),
+                duration: wPkg.duration != null ? Number(wPkg.duration) : 60,
+                serviceType: wPkg.serviceType || 'walking',
+                serviceStyle: wPkg.serviceStyle || 'at_home',
+                description: wPkg.description,
+              }
+            : {}),
+        }
+      : null;
+
   // Package Booking
   if (currentScreen === 'package-booking')
     return (
@@ -3685,35 +3732,22 @@ export function CustomerHomeWrapper({
         customerId={phone}
         petId={selectedPetId || undefined}
         onBack={handleBack}
+        vendorPackageIntent={vendorPackageIntentFromWalker}
+        walkSessionIntent={walkSessionForPackage}
+        onContinueToChooseWalker={
+          walkSessionForPackage
+            ? () => {
+                setWalkerServiceData({ pendingWalkSession: walkSessionForPackage });
+                setCurrentScreen('walker');
+              }
+            : undefined
+        }
       />
     );
   // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
   if (currentScreen === 'purchase-package') {
-    const walkSession = walkerServiceData?.walkSession ?? null;
-    const w = walkerServiceData;
-    const vendorPackageIntent =
-      w?.vendorServiceId && w?.vendorId
-        ? {
-            vendorId: String(w.vendorId),
-            vendorServiceId: String(w.vendorServiceId),
-            serviceName: String(w.serviceName || 'Package'),
-            totalSessions: Number(w.totalSessions) || 1,
-            sessionsPerDay: Math.max(
-              1,
-              Math.min(24, Number(w.sessionsPerDay ?? w.sessions_per_day) || 1)
-            ),
-            sessionIntervalDays: Math.max(
-              1,
-              Math.min(366, Number(w.sessionIntervalDays ?? w.session_interval_days) || 7)
-            ),
-            price: Number(w.price ?? 0),
-            duration: w.duration != null ? Number(w.duration) : 60,
-            serviceType: w.serviceType || 'walking',
-            serviceStyle: w.serviceStyle || 'at_home',
-            description: w.description,
-            vendorName: w?.walker?.name,
-          }
-        : null;
+    const walkSession = walkSessionForPackage;
+    const vendorPackageIntent = vendorPackageIntentFromWalker;
     return (
       <PackageBookingPage
         customerPhone={phone}

@@ -138,11 +138,15 @@ export function PerformanceMetricsScreen({ vendorId, onBack }: PerformanceMetric
               <div className="bg-gradient-to-r from-orange-400 to-orange-600 rounded-xl p-6 text-white">
                 <h2 className="text-lg font-semibold mb-2">Customer Satisfaction</h2>
                 <div className="text-3xl font-bold mb-1">
-                  {metrics.averageRating != null && metrics.averageRating > 0
-                    ? `${metrics.averageRating.toFixed(1)} ⭐`
+                  {Number(metrics.averageRating) > 0
+                    ? `${Number(metrics.averageRating).toFixed(1)} ⭐`
                     : '—'}
                 </div>
-                <p className="text-orange-100 text-sm">Based on recent reviews</p>
+                <p className="text-orange-100 text-sm">
+                  {Number(metrics.averageRating) > 0
+                    ? 'Based on recent reviews'
+                    : 'No reviews yet'}
+                </p>
               </div>
 
               {/* Key Metrics Grid */}

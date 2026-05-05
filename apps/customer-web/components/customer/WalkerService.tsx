@@ -193,7 +193,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=walking`).catch(() => null);
       if (response?.provider) {
-        setPreviousWalker({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: (() => { const r = Number(response.provider.rating); return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0; })(), lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
+        setPreviousWalker({ id: p.id, name: p.businessName || p.name, photo: p.photo, rating: pr, lastVisit: p.lastVisit, sessionsCount: p.sessionsCount || 1 });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/packages`).catch(() => null);
         const pkgs = Array.isArray(pkgRes?.packages) ? pkgRes.packages : [];
@@ -621,28 +625,16 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
 
-  const dashboardStats = useMemo(() => {
-    if (stats) {
-      const w = formatExactCentreCount(Number(stats.walkers) || 0);
-      return [
-        { value: w, label: 'Walkers' },
-        { value: stats.walks, label: 'Walks' },
-        { value: `*${stats.rating}`, label: 'Rating' },
-      ];
-    }
-    const st =
-      walkerDiscovery.isLoading || walkerDiscovery.isFetching
-        ? 'loading'
-        : walkerDiscovery.isError
-          ? 'error'
-          : 'success';
-    const wv = formatDiscoveryCountStat(walkerDiscovery.data, st);
-    return [
-      { value: wv, label: 'Walkers' },
-      { value: '2K+', label: 'Walks' },
-      { value: '—', label: 'Rating' },
-    ];
-  }, [stats, walkerDiscovery.data, walkerDiscovery.isLoading, walkerDiscovery.isFetching, walkerDiscovery.isError]);
+  // Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.walkers}+`, label: 'Walkers' },
+    { value: stats.walks, label: 'Walks' },
+    { value: String(stats.rating), label: 'Rating' }
+  ] : [
+    { value: '30+', label: 'Walkers' },
+    { value: '2K+', label: 'Walks' },
+    { value: '—', label: 'Rating' }
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -931,10 +923,17 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 >
                   <div className="relative">
                     <WalkerListCardHero walker={walker as Record<string, unknown>} />
+                    {(() => {
+                      const wc = Number((walker as any).totalReviews ?? (walker as any).reviewCount ?? 0) || 0;
+                      const wr = (walker as any).rating != null ? Number((walker as any).rating) : NaN;
+                      const show = wc > 0 && Number.isFinite(wr) && wr > 0;
+                      return show ? (
                     <div className="absolute top-3 left-3 z-10 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
                       <Star className="w-3 h-3 fill-white" />
-                      {formatRatingNumberOrDash(walker.rating)}
+                      {wr.toFixed(1)}
                     </div>
+                      ) : null;
+                    })()}
                     <button
                       type="button"
                       aria-label={`View ${walker.name || walker.businessName || 'walker'} profile`}

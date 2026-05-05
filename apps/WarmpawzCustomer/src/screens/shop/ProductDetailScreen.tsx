@@ -19,7 +19,8 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { starRatingOrUndefined, formatRatingOrDash } from '../../utils/vendor-rating';
+import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface ProductDetailScreenProps {
   productId: string;
@@ -71,19 +72,29 @@ export function ProductDetailScreen({
       const response = await CustomerApi.getProductDetails(productId);
       const prod = response.product || response;
       
+      const reviewCount = normalizeReviewCount(prod.reviewCount ?? prod.reviews);
+      const avgRating = customerFacingRating(
+        prod.rating ?? prod.averageRating,
+        reviewCount
+      );
+      const vendorRc = normalizeReviewCount(
+        prod.vendorReviewCount ?? prod.vendor_review_count
+      );
+      const vendorAvg = customerFacingRating(prod.vendorRating, vendorRc);
+
       const formattedProduct: Product = {
         id: prod.id || prod.productId,
         name: prod.name || prod.productName,
         description: prod.description || '',
         price: prod.price || prod.unitPrice || 0,
         originalPrice: prod.originalPrice || prod.mrp,
-        rating: starRatingOrUndefined(prod.rating ?? prod.averageRating),
-        reviews: prod.reviewCount || prod.reviews || 0,
+        rating: avgRating ?? 0,
+        reviews: reviewCount,
         images: prod.images || (prod.image ? [prod.image] : []) || (prod.imageUrl ? [prod.imageUrl] : []),
         category: prod.category || 'general',
         vendor: {
           name: prod.vendorName || 'Vendor',
-          rating: starRatingOrUndefined(prod.vendorRating),
+          rating: vendorAvg ?? 0,
           location: prod.vendorLocation || '',
         },
         stock: prod.inStock ? 'In Stock' : 'Out of Stock',
@@ -179,9 +190,13 @@ export function ProductDetailScreen({
     );
   }
 
-  const discount = product.originalPrice
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-    : 0;
+  const listPrice = product.originalPrice;
+  const showPriceReduction =
+    listPrice != null && hasEffectivePriceReduction(listPrice, product.price);
+  const discount =
+    showPriceReduction && listPrice
+      ? Math.round(((listPrice - product.price) / listPrice) * 100)
+      : 0;
 
   return (
     <ScreenShell style={styles.container}>
@@ -221,9 +236,9 @@ export function ProductDetailScreen({
           
           <View style={styles.priceContainer}>
             <Text style={styles.price}>₹{product.price.toLocaleString()}</Text>
-            {product.originalPrice && (
+            {showPriceReduction && listPrice != null && (
               <>
-                <Text style={styles.originalPrice}>₹{product.originalPrice.toLocaleString()}</Text>
+                <Text style={styles.originalPrice}>₹{listPrice.toLocaleString()}</Text>
                 <View style={styles.discountBadge}>
                   <Text style={styles.discountText}>{discount}% OFF</Text>
                 </View>
@@ -231,16 +246,26 @@ export function ProductDetailScreen({
             )}
           </View>
 
-          <View style={styles.ratingContainer}>
-            <Text style={styles.ratingIcon}>⭐</Text>
-            <Text style={styles.rating}>{formatRatingOrDash(product.rating)}</Text>
-            <Text style={styles.reviews}>({product.reviews} reviews)</Text>
-          </View>
+          {product.reviews > 0 && product.rating > 0 ? (
+            <View style={styles.ratingContainer}>
+              <Text style={styles.ratingIcon}>⭐</Text>
+              <Text style={styles.rating}>{product.rating.toFixed(1)}</Text>
+              <Text style={styles.reviews}>
+                ({product.reviews} {product.reviews === 1 ? 'review' : 'reviews'})
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.noReviewsText}>No customer reviews</Text>
+          )}
 
           <View style={styles.vendorInfo}>
             <Text style={styles.vendorLabel}>Sold by</Text>
             <Text style={styles.vendorName}>{product.vendor.name}</Text>
-            <Text style={styles.vendorRating}>⭐ {formatRatingOrDash(product.vendor.rating)}</Text>
+            {product.vendor.rating > 0 ? (
+              <Text style={styles.vendorRating}>⭐ {product.vendor.rating.toFixed(1)}</Text>
+            ) : (
+              <Text style={styles.noReviewsText}>No seller reviews yet</Text>
+            )}
           </View>
 
           <View style={styles.stockBadge}>
@@ -436,6 +461,11 @@ const styles = StyleSheet.create({
   reviews: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  noReviewsText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
   vendorInfo: {
     flexDirection: 'row',

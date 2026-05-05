@@ -235,9 +235,14 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   }
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const rc = Number(clinic.review_count ?? 0) || 0;
+  const avg =
+    clinic.rating != null && rc > 0 && Number.isFinite(Number(clinic.rating))
+      ? Number(clinic.rating).toFixed(1)
+      : '—';
   const dashboardStats = [
-    { value: formatAverageForDisplay(clinic.rating, clinic.review_count), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: `${clinic.review_count || 0}`, label: 'Reviews' },
+    { value: avg, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: `${rc}`, label: 'Reviews' },
     { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
   ];
 

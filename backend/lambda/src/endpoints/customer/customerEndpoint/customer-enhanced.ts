@@ -664,67 +664,20 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         vendorId: p.vendor_id,
       }));
 
-      // If no packages found, return mock data
-      if (formattedPackages.length === 0) {
-        return c.json({
-          success: true,
-          packages: [
-            {
-              id: 'pkg-mock-1',
-              name: 'Full Body Health Checkup',
-              description: 'Comprehensive pet health screening',
-              tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-              price: 2499,
-              originalPrice: 3500,
-              homeCollection: true,
-              turnaroundHours: 24
-            },
-            {
-              id: 'pkg-mock-2',
-              name: 'Senior Pet Package',
-              description: 'For pets above 7 years',
-              tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-              price: 3999,
-              originalPrice: 5500,
-              homeCollection: true,
-              turnaroundHours: 48
-            },
-            {
-              id: 'pkg-mock-3',
-              name: 'Basic Blood Panel',
-              description: 'Essential blood tests',
-              tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-              price: 799,
-              originalPrice: 1200,
-              homeCollection: true,
-              turnaroundHours: 12
-            }
-          ]
-        });
-      }
-
       return c.json({
         success: true,
         packages: formattedPackages,
       });
     } catch (error: any) {
       console.error('Error getting diagnostic packages:', error);
-      // Return mock packages on error
-      return c.json({
-        success: true,
-        packages: [
-          {
-            id: 'pkg-mock-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          }
-        ]
-      });
+      return c.json(
+        {
+          success: false,
+          error: error?.message || 'Failed to load diagnostic packages',
+          packages: [],
+        },
+        500
+      );
     }
   });
 

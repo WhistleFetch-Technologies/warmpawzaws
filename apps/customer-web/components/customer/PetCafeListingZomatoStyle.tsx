@@ -89,10 +89,11 @@ export function PetCafeListingZomatoStyle(props: PetCafeListingZomatoStyleProps)
           description: "A cozy place for you and your pet.",
           address: vendor.location?.address || vendor.address || "Location",
           rating: (() => {
-            const r = Number(vendor.rating);
-            return Number.isFinite(r) && r > 0 && r <= 5 ? r : 0;
+            const rc = Number(vendor.reviews_count ?? vendor.reviewCount ?? 0) || 0;
+            const r = vendor.rating != null ? Number(vendor.rating) : NaN;
+            return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           })(),
-          reviewsCount: vendor.reviews_count || 0,
+          reviewsCount: Number(vendor.reviews_count ?? vendor.reviewCount ?? 0) || 0,
           costForTwo: 500,
           cuisines: ["Cafe", "Snacks"],
           photos: [vendor.profile_image || "https://images.unsplash.com/photo-1554118811-1e0d58224f24?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80"],

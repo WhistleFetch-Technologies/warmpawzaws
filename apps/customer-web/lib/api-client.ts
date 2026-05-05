@@ -880,6 +880,9 @@ export const aiChatbotApi = {
     apiClient.post(`/ai-chatbot/booking-session/${sessionId}/interpret`, body),
 };
 
+/** No HTTP retries for support ticket reads (manual refresh in UI; avoid retry spam). */
+const supportTicketReadRetry: Partial<import('./error-handling').RetryConfig> = { maxRetries: 0 };
+
 // ✅ NEW: Support & CRM API (Phase 3 - AI Chatbot Integration)
 export const supportCrmApi = {
   createTicket: (data: {
@@ -901,11 +904,19 @@ export const supportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
-    return apiClient.get(`/support/tickets${query ? `?${query}` : ''}`);
+    if (!params) {
+      return apiClient.get('/support/tickets', supportTicketReadRetry);
+    }
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      q.set(k, String(v));
+    }
+    const s = q.toString();
+    return apiClient.get(`/support/tickets${s ? `?${s}` : ''}`, supportTicketReadRetry);
   },
   
-  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`),
+  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`, supportTicketReadRetry),
   
   respondToTicket: (ticketId: string, data: {
     message: string;
