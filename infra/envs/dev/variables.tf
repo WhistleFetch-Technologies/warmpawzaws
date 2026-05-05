@@ -106,7 +106,7 @@ variable "delivery_codebuild_github_url" {
 }
 
 variable "delivery_codebuild_branch_ref" {
-  description = "Git ref CodeBuild checks out (examples: refs/heads/main, refs/heads/your-feature-branch). Must exist on the remote and contain services/delivery-service/buildspec.yml."
+  description = "Git ref for CodeBuild source_version (examples: refs/heads/main, refs/heads/develop)"
   type        = string
   default     = "refs/heads/main"
 }

@@ -47,7 +47,7 @@ opensearch_master_password = "REPLACE_WITH_SECURE_PASSWORD"
 #
 # CodeBuild (build/push image from GitHub — see infra/envs/dev/delivery-codebuild.auto.tfvars.example)
 # delivery_codebuild_github_url              = "https://github.com/org/warmpawzaws.git"
-# delivery_codebuild_branch_ref               = "refs/heads/main"
+# delivery_codebuild_branch_ref               = "refs/heads/dev-bindushree-java"
 # delivery_codebuild_use_github_codeconnection = false
 # delivery_codebuild_codestar_connection_arn = ""
 
