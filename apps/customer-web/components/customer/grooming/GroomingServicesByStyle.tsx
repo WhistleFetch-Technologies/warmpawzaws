@@ -17,6 +17,8 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { StarRating } from '@/components/customer/shared/StarRating';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -1103,26 +1105,7 @@ export function GroomingServicesByStyle({
         </div>
       </div>
   );
-}
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
-  
-  const getServiceTitle = () => {
-    if (serviceStyle === 'at_center') return 'Grooming Center';
-    if (serviceStyle === 'at_home') return 'At Home Grooming';
-    return 'Grooming Services';
-  };
-  
-  const getServiceSubtitle = () => {
-    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
-    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
-    return 'Premium pet grooming services';
-  };
+  }
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
