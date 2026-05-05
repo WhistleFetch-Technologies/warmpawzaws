@@ -52,7 +52,8 @@ export interface Dashboardstats {
     earnings: number;
     pendingEarnings: number;
     completedServices: number;
-    rating: number;
+    /** Average from approved reviews only; null when there is no aggregate (e.g. zero reviews). */
+    rating: number | null;
     totalReviews: number;
     activeOrders?: number;
 }
