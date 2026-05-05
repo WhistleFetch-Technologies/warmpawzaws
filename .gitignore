@@ -78,6 +78,10 @@ coverage/
 test-reports/
 test-results/
 
+# Database dumps (local; may contain PII)
+db-dumps/
+*.dump
+
 # =============================================================================
 # SERVERLESS & DEPLOYMENT
 # =============================================================================
