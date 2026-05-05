@@ -384,7 +384,7 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 		p.setVehicleNumber(vehicleNumber);
 		p.setCurrentLocationJson("{\"lat\":12.9716,\"lng\":77.5946}");
 		p.setStatus("available");
-		p.setRating(5.0);
+		p.setRating(BigDecimal.valueOf(5));
 		p.setTotalDeliveries(0);
 		p.setActive(true);
 		try {

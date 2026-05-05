@@ -1,13 +1,14 @@
 # Build context: this directory (services/delivery-service)
 #   docker build -t delivery-service:dev .
-FROM eclipse-temurin:21-jdk-jammy AS build
+# public.ecr.aws avoids Docker Hub anonymous pull rate limits (429) in CodeBuild.
+FROM public.ecr.aws/docker/library/eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /build
 COPY pom.xml mvnw mvnw.cmd ./
 COPY .mvn .mvn
 COPY src ./src
 RUN chmod +x mvnw && ./mvnw -q -DskipTests package
 
-FROM eclipse-temurin:21-jre-jammy
+FROM public.ecr.aws/docker/library/eclipse-temurin:21-jre-jammy
 WORKDIR /app
 COPY --from=build /build/target/delivery-service-*.jar /app/app.jar
 EXPOSE 8082

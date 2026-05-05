@@ -5,6 +5,7 @@ import lombok.Data;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -51,7 +52,9 @@ public class CourierPartner {
 	@Column(nullable = false)
 	private String status = "available";
 
-	private Double rating;
+	/** Matches Postgres {@code numeric} columns (avoid {@code Double} which maps to {@code float8} and fails validate). */
+	@JdbcTypeCode(SqlTypes.NUMERIC)
+	private BigDecimal rating;
 
 	@Column(name = "total_deliveries")
 	private Integer totalDeliveries = 0;
