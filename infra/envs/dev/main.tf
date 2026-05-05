@@ -67,6 +67,8 @@ locals {
   
   # Domain configuration for dev environment
   api_subdomain      = "dev.api.warmpawz.com"
+  # Must match existing HTTP API (see module.api_gateway existing_api_gateway_id) — used for Swagger/OpenAPI Try it out (HTTPS).
+  dev_http_api_invoke_url = "https://z0b3obweb6.execute-api.${var.aws_region}.amazonaws.com"
   admin_subdomain    = "dev.admin.warmpawz.com"
   vendor_subdomain   = "dev.vendor.warmpawz.com"
   customer_subdomain = "dev.customer.warmpawz.com"
@@ -321,6 +323,7 @@ module "delivery_service_ecs" {
 
   container_image    = var.delivery_service_image
   public_api_base_url = "https://${local.api_subdomain}"
+  openapi_public_server_url = local.dev_http_api_invoke_url
   hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
 }
 

@@ -282,12 +282,15 @@ resource "aws_ecs_task_definition" "delivery" {
           protocol      = "tcp"
         }
       ]
-      environment = [
-        { name = "SPRING_PROFILES_ACTIVE", value = "aws" },
-        { name = "SPRING_DATASOURCE_URL", value = local.jdbc_url },
-        { name = "PUBLIC_API_BASE_URL", value = var.public_api_base_url },
-        { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = var.hibernate_ddl_auto }
-      ]
+      environment = concat(
+        [
+          { name = "SPRING_PROFILES_ACTIVE", value = "aws" },
+          { name = "SPRING_DATASOURCE_URL", value = local.jdbc_url },
+          { name = "PUBLIC_API_BASE_URL", value = var.public_api_base_url },
+          { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = var.hibernate_ddl_auto }
+        ],
+        var.openapi_public_server_url != "" ? [{ name = "OPENAPI_PUBLIC_SERVER_URL", value = var.openapi_public_server_url }] : []
+      )
       secrets = [
         {
           name      = "SPRING_DATASOURCE_USERNAME"

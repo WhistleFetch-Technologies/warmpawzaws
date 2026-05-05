@@ -80,6 +80,12 @@ variable "public_api_base_url" {
   type        = string
 }
 
+variable "openapi_public_server_url" {
+  description = "HTTPS origin for OpenAPI/Swagger UI (e.g. API Gateway invoke URL). Prevents mixed-content http:// Try it out behind internal ALB."
+  type        = string
+  default     = ""
+}
+
 variable "hibernate_ddl_auto" {
   description = "spring.jpa.hibernate.ddl-auto on AWS profile"
   type        = string
