@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -229,10 +230,6 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         setDiscoveryError(msg);
       }
 
-      const labsDiscoveryFailed =
-        vendorsRes.status === 'rejected' ||
-        !!(vendorsData && typeof vendorsData === 'object' && vendorsData.success === false);
-
       const vendorsList = Array.isArray(vendorsData?.vendors) ? vendorsData.vendors : [];
 
       let centers: DiagnosticCenter[] = [];
@@ -271,7 +268,9 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           ? {
               activeCenters: centers.length,
               tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
-              rating: (centers.reduce((acc, c) => acc + c.rating, 0) / centers.length).toFixed(1),
+              rating: (
+                centers.reduce((acc, c) => acc + (c.rating ?? 0), 0) / centers.length
+              ).toFixed(1),
             }
           : EMPTY_DIAGNOSTICS_STATS
       );
@@ -311,46 +310,16 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         ]);
       }
 
-      // Process packages (do not show demo packages when lab discovery failed—avoids false "Book" flows)
+      // Popular packages: only from API (no client-side demo fallback)
       if (
         packagesRes.status === 'fulfilled' &&
-        Array.isArray(packagesRes.value?.packages) &&
+        packagesRes.value &&
+        typeof packagesRes.value === 'object' &&
+        packagesRes.value.success !== false &&
+        Array.isArray(packagesRes.value.packages) &&
         packagesRes.value.packages.length > 0
       ) {
         setPopularPackages(packagesRes.value.packages);
-      } else if (!labsDiscoveryFailed) {
-        setPopularPackages([
-          {
-            id: 'pkg-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          },
-          {
-            id: 'pkg-2',
-            name: 'Senior Pet Package',
-            description: 'For pets above 7 years',
-            tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-            price: 3999,
-            originalPrice: 5500,
-            homeCollection: true,
-            turnaroundHours: 48
-          },
-          {
-            id: 'pkg-3',
-            name: 'Basic Blood Panel',
-            description: 'Essential blood tests',
-            tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-            price: 799,
-            originalPrice: 1200,
-            homeCollection: true,
-            turnaroundHours: 12
-          }
-        ]);
       } else {
         setPopularPackages([]);
       }
@@ -626,7 +595,8 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xl font-bold text-teal-600">₹{pkg.price}</span>
-                      {pkg.originalPrice && (
+                      {pkg.originalPrice != null &&
+                        hasEffectivePriceReduction(pkg.originalPrice, pkg.price) && (
                         <span className="text-sm text-gray-400 line-through">₹{pkg.originalPrice}</span>
                       )}
                     </div>

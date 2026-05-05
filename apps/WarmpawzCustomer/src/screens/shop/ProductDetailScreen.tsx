@@ -20,6 +20,7 @@ import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface ProductDetailScreenProps {
   productId: string;
@@ -189,9 +190,13 @@ export function ProductDetailScreen({
     );
   }
 
-  const discount = product.originalPrice
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-    : 0;
+  const listPrice = product.originalPrice;
+  const showPriceReduction =
+    listPrice != null && hasEffectivePriceReduction(listPrice, product.price);
+  const discount =
+    showPriceReduction && listPrice
+      ? Math.round(((listPrice - product.price) / listPrice) * 100)
+      : 0;
 
   return (
     <ScreenShell style={styles.container}>
@@ -231,9 +236,9 @@ export function ProductDetailScreen({
           
           <View style={styles.priceContainer}>
             <Text style={styles.price}>₹{product.price.toLocaleString()}</Text>
-            {product.originalPrice && (
+            {showPriceReduction && listPrice != null && (
               <>
-                <Text style={styles.originalPrice}>₹{product.originalPrice.toLocaleString()}</Text>
+                <Text style={styles.originalPrice}>₹{listPrice.toLocaleString()}</Text>
                 <View style={styles.discountBadge}>
                   <Text style={styles.discountText}>{discount}% OFF</Text>
                 </View>

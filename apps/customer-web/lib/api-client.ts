@@ -361,7 +361,8 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {},
     retryConfig?: Partial<import('./error-handling').RetryConfig>,
-    customTimeoutMs?: number // ✅ FIX: Allow custom timeout for specific endpoints
+    customTimeoutMs?: number,
+    internal401RetryDone?: boolean
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     if (!baseUrl) {
@@ -378,14 +379,13 @@ export class ApiClient {
       this.offlineQueue = new OfflineQueue();
     }
     
-    // Silently refresh the Cognito access token when it has expired but the 90-day
-    // refresh token window is still open.  This runs before getAuthToken() so the
-    // updated token lands in localStorage in time for the synchronous read below.
-    try {
-      const { refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
-      await refreshCognitoTokensIfNeeded();
-    } catch {
-      // Never let a refresh failure block the outgoing request.
+    if (!internal401RetryDone) {
+      try {
+        const { refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
+        await refreshCognitoTokensIfNeeded();
+      } catch {
+        // Never let a refresh failure block the outgoing request.
+      }
     }
 
     // Fix: Normalize URL to avoid double slashes
@@ -545,17 +545,84 @@ export class ApiClient {
           };
         }
         
-        // Handle 401 by clearing token and redirecting to auth (skip for unauthenticated public reads, e.g. legal policies on /auth)
-        // Skip for customer forgot-password verify/reset — expected invalid OTP / token without logging the user out of the page flow.
         const isCustomerForgotPasswordFlow =
           path.includes('/auth/customer/forgot-password/verify-otp') ||
           path.includes('/auth/customer/forgot-password/reset');
-        if (response.status === 401 && !path.startsWith('/public/') && !isCustomerForgotPasswordFlow) {
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('customerPhone');
-            window.location.href = '/auth';
+
+        const hadBearerAuth = !!(headers.Authorization && String(headers.Authorization).length > 'Bearer '.length);
+        /** Some GET catalogue routes may 401 anonymously — never treat as global sign-out */
+        const isOptionalUnauthRead =
+          (options.method ?? 'GET').toUpperCase() === 'GET' &&
+          (/^\/customer\/articles/.test(path) ||
+            /^\/customer\/banners/.test(path) ||
+            /^\/customer\/announcements/.test(path));
+
+        const uatSyntheticBearer =
+          UAT_MODE && !!token && typeof token === 'string' && token.startsWith('uat-token-');
+
+        const hasCognitoPersistedBundle =
+          typeof window !== 'undefined' && !!localStorage.getItem('customerCognitoTokens');
+
+        /** Legacy login may only set `authToken` (JWT) without the Cognito key */
+        const hasLegacyJwtAuthToken =
+          typeof window !== 'undefined' &&
+          !!(localStorage.getItem('authToken') || '').startsWith('eyJ');
+
+        const canSilentRefresh401 =
+          hadBearerAuth && hasCognitoPersistedBundle && !uatSyntheticBearer && !internal401RetryDone;
+
+        const treat401AsFullSignOut =
+          hadBearerAuth && !uatSyntheticBearer && !isOptionalUnauthRead && (
+            hasCognitoPersistedBundle || hasLegacyJwtAuthToken
+          );
+
+        let suppressForcedLogout401 = false;
+
+        if (
+          response.status === 401 &&
+          !path.startsWith('/public/') &&
+          !isCustomerForgotPasswordFlow &&
+          !isOptionalUnauthRead &&
+          typeof window !== 'undefined' &&
+          canSilentRefresh401
+        ) {
+          try {
+            const { refreshCognitoAfterUnauthorized401 } = await import('./cognito-auth');
+            const refreshed = await refreshCognitoAfterUnauthorized401();
+            if (refreshed.kind === 'renewed') {
+              return this.request<T>(
+                endpoint,
+                options,
+                retryConfig,
+                customTimeoutMs,
+                true
+              );
+            }
+            if (refreshed.kind === 'failed_network') {
+              suppressForcedLogout401 = true;
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('[customer-api] 401 + refresh unreachable — no forced logout');
+              }
+            }
+          } catch {
+            /* ignore */
           }
+        }
+
+        if (
+          response.status === 401 &&
+          !path.startsWith('/public/') &&
+          !isCustomerForgotPasswordFlow &&
+          !isOptionalUnauthRead &&
+          typeof window !== 'undefined' &&
+          treat401AsFullSignOut &&
+          !suppressForcedLogout401
+        ) {
+          const { clearCognitoTokens } = await import('./cognito-auth');
+          clearCognitoTokens();
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('customerPhone');
+          window.location.href = '/auth';
         }
         
         // Create ApiError with full error data preserved
@@ -813,6 +880,9 @@ export const aiChatbotApi = {
     apiClient.post(`/ai-chatbot/booking-session/${sessionId}/interpret`, body),
 };
 
+/** No HTTP retries for support ticket reads (manual refresh in UI; avoid retry spam). */
+const supportTicketReadRetry: Partial<import('./error-handling').RetryConfig> = { maxRetries: 0 };
+
 // ✅ NEW: Support & CRM API (Phase 3 - AI Chatbot Integration)
 export const supportCrmApi = {
   createTicket: (data: {
@@ -834,11 +904,19 @@ export const supportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
-    return apiClient.get(`/support/tickets${query ? `?${query}` : ''}`);
+    if (!params) {
+      return apiClient.get('/support/tickets', supportTicketReadRetry);
+    }
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      q.set(k, String(v));
+    }
+    const s = q.toString();
+    return apiClient.get(`/support/tickets${s ? `?${s}` : ''}`, supportTicketReadRetry);
   },
   
-  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`),
+  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`, supportTicketReadRetry),
   
   respondToTicket: (ticketId: string, data: {
     message: string;

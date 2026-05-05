@@ -22,13 +22,34 @@ import {
 } from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
+import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+
+function parseServiceMetadata(m: unknown): Record<string, unknown> {
+  if (m == null) return {};
+  if (typeof m === 'string') {
+    try {
+      const p = JSON.parse(m) as unknown;
+      if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+    return {};
+  }
+  if (typeof m === 'object' && !Array.isArray(m)) return m as Record<string, unknown>;
+  return {};
+}
+
+function isPublishedVendorService(pub: string): boolean {
+  return pub === 'published' || pub === 'auto_published';
+}
 
 export type VendorPackageIntent = {
   vendorId: string;
-  vendorServiceId: string;
-  serviceName: string;
-  totalSessions: number;
-  price: number;
+  /** When set, this row is pre-selected at top (from grooming/vet navigation). */
+  vendorServiceId?: string;
+  serviceName?: string;
+  totalSessions?: number;
+  price?: number;
   duration?: number;
   serviceType?: string;
   serviceStyle?: string;
@@ -332,65 +353,6 @@ export function PackageBookingPage({
     try {
       setLoading(true);
 
-      const mockPackages: PackageItem[] = [
-        {
-          id: 'pkg_training_5',
-          name: '5-Session Obedience Training',
-          description: 'Complete obedience training package with 5 sessions',
-          vendorId: 'vendor_trainer_1',
-          vendorName: 'PawsUp Training Center',
-          totalSessions: 5,
-          pricePerSession: 800,
-          totalPrice: 3500,
-          discount: 500,
-          duration: 60,
-          category: 'training',
-          popular: true
-        },
-        {
-          id: 'pkg_grooming_3',
-          name: '3-Month Grooming Package',
-          description: 'Monthly grooming sessions for 3 months',
-          vendorId: 'vendor_groomer_1',
-          vendorName: 'Furry Friends Spa',
-          totalSessions: 3,
-          pricePerSession: 600,
-          totalPrice: 1500,
-          discount: 300,
-          duration: 90,
-          category: 'grooming',
-          popular: false
-        },
-        {
-          id: 'pkg_training_10',
-          name: '10-Session Advanced Training',
-          description: 'Advanced skills and tricks training over 10 sessions',
-          vendorId: 'vendor_trainer_1',
-          vendorName: 'PawsUp Training Center',
-          totalSessions: 10,
-          pricePerSession: 800,
-          totalPrice: 6500,
-          discount: 1500,
-          duration: 60,
-          category: 'training',
-          popular: false
-        },
-        {
-          id: 'pkg_vet_wellness_6',
-          name: '6-Month Wellness Package',
-          description: 'Bi-monthly health checkups for 6 months',
-          vendorId: 'vendor_vet_1',
-          vendorName: 'Happy Tails Clinic',
-          totalSessions: 6,
-          pricePerSession: 500,
-          totalPrice: 2500,
-          discount: 500,
-          duration: 30,
-          category: 'vet',
-          popular: true
-        }
-      ];
-
       const items: PackageItem[] = [];
 
       if (vendorPackageIntent?.vendorId) {
@@ -462,6 +424,96 @@ export function PackageBookingPage({
         } catch (e) {
           console.warn('[PackageBookingPage] vendor packages:', e);
         }
+
+        // Custom Services / vendor_services rows marked as packages (not service_packages table)
+        try {
+          const vsRes = (await apiClient.get(
+            `/vendor/services/${encodeURIComponent(vendorPackageIntent.vendorId)}`
+          )) as any;
+          const all: unknown[] = Array.isArray(vsRes?.allServices) ? vsRes.allServices : [];
+          for (const raw of all) {
+            const s = raw as Record<string, unknown>;
+            const pub = String(s.publishStatus ?? s.publish_status ?? '').toLowerCase();
+            if (!isPublishedVendorService(pub)) continue;
+            if (s.isEnabled === false || s.is_enabled === false) continue;
+            const meta = parseServiceMetadata(s.metadata);
+            const rowForCheck: Record<string, unknown> = {
+              ...s,
+              isPackage: s.isPackage ?? meta.isPackage,
+              packageDetails: s.packageDetails ?? meta.packageDetails,
+              metadata: meta,
+            };
+            if (!isVendorServicePackageRow(rowForCheck)) continue;
+            const vsid = String(s.id ?? '').trim();
+            if (!vsid) continue;
+            if (
+              vendorPackageIntent.vendorServiceId &&
+              vsid === String(vendorPackageIntent.vendorServiceId)
+            ) {
+              continue;
+            }
+            if (
+              items.some(
+                (it) =>
+                  it.vendorServiceId === vsid || it.id === vsid || it.id === `vs-${vsid}`
+              )
+            ) {
+              continue;
+            }
+            const pd = (s.packageDetails ?? meta.packageDetails) as Record<string, unknown> | undefined;
+            const ts = Math.max(
+              1,
+              Number(pd?.totalSessions ?? pd?.total_sessions ?? meta.totalSessions ?? 1) || 1
+            );
+            const price = Number(
+              pd?.packagePrice ?? pd?.price ?? s.price ?? s.custom_price ?? 0
+            ) || 0;
+            const spd = Math.max(
+              1,
+              Math.min(
+                24,
+                Number(
+                  pd?.sessionsPerDay ?? pd?.sessions_per_day ?? meta.sessionsPerDay ?? 1
+                ) || 1
+              )
+            );
+            const intv = Math.max(
+              1,
+              Math.min(
+                366,
+                Number(
+                  pd?.sessionIntervalDays ??
+                    pd?.session_interval_days ??
+                    meta.sessionIntervalDays ??
+                    7
+                ) || 7
+              )
+            );
+            const name = String(s.serviceName ?? s.name ?? s.service_name ?? 'Package');
+            const desc = String(s.description ?? '');
+            const duration =
+              Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 60) || 60;
+            const category = String(s.category ?? s.categoryName ?? s.subCategory ?? 'walking');
+            items.push({
+              id: `vs-${vsid}`,
+              vendorServiceId: vsid,
+              vendorId: String(vendorPackageIntent.vendorId),
+              name,
+              description: desc,
+              vendorName: String(vendorPackageIntent.vendorName || 'Vendor'),
+              totalSessions: ts,
+              pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+              totalPrice: price,
+              duration,
+              category,
+              popular: false,
+              sessionsPerDay: spd,
+              sessionIntervalDays: intv,
+            });
+          }
+        } catch (e) {
+          console.warn('[PackageBookingPage] vendor_services package offerings:', e);
+        }
       }
 
       if (vendorPackageIntent?.vendorServiceId) {
@@ -474,7 +526,7 @@ export function PackageBookingPage({
           id: `vs-${p.vendorServiceId}`,
           vendorServiceId: p.vendorServiceId,
           vendorId: p.vendorId,
-          name: p.serviceName,
+          name: p.serviceName ?? 'Package',
           description: p.description ?? '',
           vendorName: p.vendorName || 'Your provider',
           totalSessions: ts,
@@ -488,7 +540,7 @@ export function PackageBookingPage({
         });
       }
 
-      setPackages(items.length > 0 ? items : mockPackages);
+      setPackages(items);
     } catch (err) {
       console.error('Error loading packages:', err);
       setError('Failed to load packages');
@@ -912,6 +964,16 @@ export function PackageBookingPage({
       {/* Browse Packages View */}
       {view === 'browse' && (
         <div className="space-y-4">
+          {packages.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center border border-gray-200 shadow-sm">
+              <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" aria-hidden />
+              <p className="text-gray-900 font-semibold mb-1">No packages available</p>
+              <p className="text-sm text-gray-600 max-w-sm mx-auto">
+                This provider has not published any multi-session packages yet. Check back later or choose
+                another service.
+              </p>
+            </div>
+          ) : null}
           {packages.map((pkg) => {
             const savings = pkg.discount || 0;
             const regularPrice = pkg.pricePerSession * pkg.totalSessions;

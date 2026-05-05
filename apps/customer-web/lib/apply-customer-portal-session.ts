@@ -46,12 +46,15 @@ export function applyCustomerPortalSessionFromEnvelope(envelope: CustomerPortalS
   const refreshToken = data.token.refresh_token || '';
   const expiresIn = Number(data.token.expires_in) || 86400;
 
-  storeCognitoTokens({
-    accessToken,
-    idToken,
-    refreshToken,
-    expiresIn,
-  });
+  storeCognitoTokens(
+    {
+      accessToken,
+      idToken,
+      refreshToken,
+      expiresIn,
+    },
+    { isNewLogin: true }
+  );
 
   storeUserInfo({
     userId: data.user.id,
@@ -64,7 +67,7 @@ export function applyCustomerPortalSessionFromEnvelope(envelope: CustomerPortalS
   localStorage.setItem('customer_phone', shortPhone);
   localStorage.setItem('phone', shortPhone);
 
-  localStorage.setItem('authToken', accessToken);
+  localStorage.setItem('authToken', idToken || accessToken);
   if (refreshToken) {
     localStorage.setItem('refreshToken', refreshToken);
   }

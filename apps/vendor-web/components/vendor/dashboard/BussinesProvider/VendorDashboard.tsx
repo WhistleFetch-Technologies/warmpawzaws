@@ -65,6 +65,8 @@ import {
   vendorNotificationUnreadCount,
   SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS,
   SHOW_VENDOR_FOOTER_REPORTING_TAB,
+  getVendorDashboardRatingPresentation,
+  mergeVendorDashboardStats,
 } from '../helpers';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
@@ -159,7 +161,7 @@ export function VendorDashboard({
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 4.8,
+    rating: null,
     totalReviews: 0,
     activeOrders: 0
   });
@@ -289,6 +291,11 @@ export function VendorDashboard({
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
   const logoImage = '/warmpawz-logo.svg';
 
+  const ratingPresentation = useMemo(
+    () => getVendorDashboardRatingPresentation(stats.totalReviews, stats.rating),
+    [stats.totalReviews, stats.rating]
+  );
+
   // ✅ BIG LOGGING: Log vendorData when VendorDashboard loads
   useEffect(() => {
     console.log('═══════════════════════════════════════════════════════════');
@@ -401,7 +408,14 @@ export function VendorDashboard({
       if (dashboardRes && dashboardRes.success) {
         criticalParsing.push(
           Promise.resolve().then(() => {
-            setStats(dashboardRes.stats || dashboardRes);
+            setStats((prev) =>
+              mergeVendorDashboardStats(
+                prev,
+                (dashboardRes.stats && typeof dashboardRes.stats === 'object'
+                  ? dashboardRes.stats
+                  : null) as Record<string, unknown> | null
+              )
+            );
             setVendor(dashboardRes.vendor || vendorData);
             // ✅ FIX: Use bookings from dashboard response (sorted by date/time, includes upcoming)
             if (dashboardRes.bookings && dashboardRes.bookings.length > 0) {
@@ -952,11 +966,17 @@ export function VendorDashboard({
               onClick={() => setReviewsModalOpen(true)}
               className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
               title="View customer reviews"
-              aria-label={`Rating ${stats.rating.toFixed(1)}, ${stats.totalReviews} reviews. Open reviews`}
+              aria-label={ratingPresentation.ariaLabel}
             >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
-              <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
+              <span
+                className={`text-sm font-semibold ${ratingPresentation.showNumeric ? '' : 'text-gray-500 font-normal text-xs max-w-[7rem] leading-tight'}`}
+              >
+                {ratingPresentation.label}
+              </span>
+              <span className="text-xs text-gray-500">
+                ({stats.totalReviews} {stats.totalReviews === 1 ? 'review' : 'reviews'})
+              </span>
             </button>
           </div>
 

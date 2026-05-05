@@ -2211,7 +2211,10 @@ export function registerProblemGridEndpoints(app: Hono) {
             console.warn('Failed to parse allowed_service_styles for problem:', row.id);
           }
           const rId = row.roleId;
-          const finalStyles = mappingStyles.length > 0 ? mappingStyles : ['at_home', 'at_center', 'tele'];
+          const finalStyles = allowedServiceStylesForProblem(
+            row.id,
+            mappingStyles.length > 0 ? mappingStyles : ['at_home', 'at_center', 'tele']
+          );
           return {
             id: row.id,
             name: row.name,
@@ -2288,7 +2291,10 @@ export function registerProblemGridEndpoints(app: Hono) {
         const allowedServiceStyles = mappingStyles.filter((s: string) =>
           roleAllowedStyles.includes((s || '').toLowerCase().replace(/\s+/g, '_'))
         );
-        const finalStyles = allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home'];
+        const finalStyles = allowedServiceStylesForProblem(
+          row.id,
+          allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home']
+        );
 
         return {
           id: row.id,
@@ -2613,6 +2619,13 @@ function getProblemEmoji(problemId: string, roleId: string): string {
   return roleDefaults[roleId] || '🐾';
 }
 
+/** In-person only: destructive-habits work should not offer video consult. */
+function allowedServiceStylesForProblem(problemId: string, styles: string[]): string[] {
+  if (problemId !== 'destructive') return styles;
+  const out = styles.filter((s) => (s || '').toLowerCase() !== 'tele');
+  return out.length > 0 ? out : ['at_home', 'at_center'];
+}
+
 /**
  * Helper: Get default problems for a role when database has no mappings
  * roleId "all" merges every catalog role (matches home "What's your pet needs?" View All).
@@ -2682,7 +2695,7 @@ function getDefaultProblemsForRole(roleId: string): any[] {
       items.map((p) => ({
         ...p,
         roleId: apiRole,
-        allowedServiceStyles: stdStyles,
+        allowedServiceStyles: allowedServiceStylesForProblem(p.id, stdStyles),
         keywords: [p.name.toLowerCase(), String(p.id).toLowerCase()],
       }));
     return [
