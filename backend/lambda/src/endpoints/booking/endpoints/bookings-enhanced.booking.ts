@@ -55,6 +55,11 @@ import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
+import {
+  boardingBilled24hUnits,
+  computeBoardingStayPriceRupeesPublic,
+  computeStayBilledMinutes,
+} from '../../../lib/booking-stay-wall-time';
 
 // ============================================================================
 // CONFIGURATION
@@ -156,29 +161,6 @@ function validateMultiDayStayCheckInDates(
 /** Pet sitting: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
 
-function normalizeBookingTimeForParse(t: string): string {
-  const s = String(t || '0:0').trim();
-  if (/^\d{1,2}:\d{2}$/.test(s)) return `${s}:00`;
-  return s;
-}
-
-function computePetSittingBilledMinutes(
-  bookingDate: string,
-  bookingTime: string,
-  checkOutDate: string,
-  checkOutTime: string
-): number {
-  const bt = normalizeBookingTimeForParse(bookingTime);
-  const ct = normalizeBookingTimeForParse(checkOutTime);
-  const start = new Date(`${bookingDate}T${bt}`).getTime();
-  let end = new Date(`${checkOutDate}T${ct}`).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
-  if (end <= start) {
-    end += 24 * 60 * 60 * 1000;
-  }
-  return Math.round((end - start) / 60000);
-}
-
 function computePetSittingPriceRupees(
   unitPrice: number,
   baseMinutes: number,
@@ -196,17 +178,7 @@ function computePetSittingPriceRupees(
   return Math.max(proportional, floor);
 }
 
-const BOARDING_NIGHT_MINUTES = 24 * 60;
-
-/** List price = per 24h (night) for boarding packages; bill ceil(stay/24h) units. */
-function computeBoardingStayPriceRupees(unitPricePerNight: number, billedMinutes: number): number {
-  const up = Number.isFinite(unitPricePerNight) ? Math.max(0, unitPricePerNight) : 0;
-  const mins = Math.max(0, billedMinutes);
-  if (mins < 1) return 0;
-  const units = Math.max(1, Math.ceil(mins / BOARDING_NIGHT_MINUTES));
-  return Math.round(units * up);
-}
-
+/** Boarding list price uses computeBoardingStayPriceRupeesPublic (ceil stay / 24h in Asia/Kolkata wall time). */
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -640,7 +612,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       reqCheckOutTime &&
       (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit)
     ) {
-      const billed = computePetSittingBilledMinutes(
+      const billed = computeStayBilledMinutes(
         bookingDate,
         bookingTime,
         reqCheckOutDate,
@@ -674,7 +646,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       reqCheckOutDate &&
       reqCheckOutTime
     ) {
-      const billed = computePetSittingBilledMinutes(
+      /**
+       * Stay-based boarding list price: only when `selectedServices` is empty.
+       * Multi-service payloads use `totalSelectedServicesAmount` instead (additive SKUs, not night count).
+       */
+      const billed = computeStayBilledMinutes(
         bookingDate,
         bookingTime,
         reqCheckOutDate,
@@ -695,9 +671,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           : service.price ?? 0
       );
       boardingServerBilledMinutes = billed;
-      boardingServerTotalRupee = computeBoardingStayPriceRupees(unitPrice, billed);
+      boardingServerTotalRupee = computeBoardingStayPriceRupeesPublic(unitPrice, billed);
+      const units24 = boardingBilled24hUnits(billed);
       console.log(
-        `[BOOKING] Boarding priced on server: ${billed} min → ₹${boardingServerTotalRupee} (list ₹${unitPrice} per 24h)`
+        `[BOOKING] Boarding priced on server (Asia/Kolkata wall time): ${billed} min, ${units24}×24h → ₹${boardingServerTotalRupee} (list ₹${unitPrice} / 24h)`
       );
     }
 

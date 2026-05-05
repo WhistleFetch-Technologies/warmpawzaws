@@ -29,7 +29,7 @@ import {
   boardingSlugMatchesText,
   BOARDING_SERVICE_LABELS,
 } from '@/lib/boarding-service-types';
-import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 
 export interface BoardingVendorProfileViewProps {
@@ -94,8 +94,9 @@ export function BoardingVendorProfileView({
   const contextSlug = normalizeBoardingServiceSlug(serviceSlugProp ?? null);
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
-  /** Raw vendor payload for hero photos (same shapes as vet profile). */
+  /** Raw vendor payload + facility row for hero photos (presigned from /customer/facility when available). */
   const [vendorRaw, setVendorRaw] = useState<Record<string, unknown> | null>(null);
+  const [facilityForHero, setFacilityForHero] = useState<Record<string, unknown> | null>(null);
   const [publishedPlans, setPublishedPlans] = useState<MappedBoardingService[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<MappedBoardingService | null>(null);
   /** After user taps "Select Services to Book", show plan list (vet-style: booking is explicit). */
@@ -109,12 +110,20 @@ export function BoardingVendorProfileView({
   const loadVendor = async () => {
     try {
       setLoading(true);
-      const [vendorResponse, servicesResponse] = await Promise.all([
+      const [vendorResponse, servicesResponse, facilityRes] = await Promise.all([
         apiClient.get(`/customer/vendor/${vendorId}`),
         apiClient
           .get(`/customer/vendor/${vendorId}/services?category=boarding`)
           .catch(() => apiClient.get(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)),
+        apiClient.get(`/customer/facility/${vendorId}`).catch(() => null),
       ]);
+
+      const fr = facilityRes as Record<string, unknown> | null;
+      if (fr && typeof fr === 'object' && fr.success !== false && fr.facility && typeof fr.facility === 'object') {
+        setFacilityForHero(fr.facility as Record<string, unknown>);
+      } else {
+        setFacilityForHero(null);
+      }
 
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse;
       const raw =
@@ -165,6 +174,7 @@ export function BoardingVendorProfileView({
       console.error('[BoardingVendorProfileView]', e);
       setVendor(null);
       setVendorRaw(null);
+      setFacilityForHero(null);
       setPublishedPlans([]);
     } finally {
       setLoading(false);
@@ -190,7 +200,10 @@ export function BoardingVendorProfileView({
     setSelectedOffer(null);
   }, [publishedPlans, planMatchingUrlHint]);
 
-  const heroPhotos = useMemo(() => getVendorHeroPhotoUrls({ vendor: vendorRaw }), [vendorRaw]);
+  const heroPhotos = useMemo(
+    () => resolveVendorProfileHeroGallery({ facility: facilityForHero, vendor: vendorRaw, profileProvider: null }),
+    [facilityForHero, vendorRaw]
+  );
 
   const headerSubtitle = useMemo(() => {
     const label = BOARDING_SERVICE_LABELS[contextSlug] ?? 'Pet boarding & daycare';

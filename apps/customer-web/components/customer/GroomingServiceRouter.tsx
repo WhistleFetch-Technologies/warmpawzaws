@@ -14,6 +14,8 @@ import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
@@ -64,6 +66,28 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     toggleVendor,
     fetchingPlansFor,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
+
+  const {
+    data: groomingCenterCount = 0,
+    isLoading: groomingCenterLoading,
+    isFetching: groomingCenterFetching,
+    isError: groomingCenterError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'grooming',
+  });
+
+  const groomingCenterBadgeText = useMemo(() => {
+    const st =
+      groomingCenterLoading || groomingCenterFetching
+        ? 'loading'
+        : groomingCenterError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(groomingCenterCount, st);
+    return `${n} Centres`;
+  }, [groomingCenterLoading, groomingCenterFetching, groomingCenterError, groomingCenterCount]);
 
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
   const [groomingNeeds, setGroomingNeeds] = useState<any[]>([]);
@@ -205,16 +229,17 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     });
   }, [previousGroomer, onNavigate]);
 
-  const serviceTypes = [
-    {
-      id: 'grooming_center',
-      name: 'Grooming Centre',
-      description: 'Visit our salons',
-      icon: Building2,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
-      badge: '50+ Centres'
-    },
+  const serviceTypes = useMemo(
+    () => [
+      {
+        id: 'grooming_center',
+        name: 'Grooming Centre',
+        description: 'Visit our salons',
+        icon: Building2,
+        color: 'text-orange-600',
+        bg: 'bg-orange-50',
+        badge: groomingCenterBadgeText,
+      },
     {
       id: 'grooming_home',
       name: 'At Home Grooming',
@@ -224,18 +249,32 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       bg: 'bg-green-50',
       badge: 'Track Live'
     }
-  ];
+  ],
+    [groomingCenterBadgeText]
+  );
 
   const dashboardStats = useMemo(() => {
     const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '-';
-    const sessions = n > 0 ? `${Math.max(n * 25, 100)}+` : '0';
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
+    const centreSt =
+      groomingCenterLoading || groomingCenterFetching
+        ? 'loading'
+        : groomingCenterError
+          ? 'error'
+          : 'success';
+    const centresStat = formatDiscoveryCountStat(groomingCenterCount, centreSt);
     return [
-      { value: `${n}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
-      { value: sessions, label: 'Sessions' },
+      { value: centresStat, label: 'Centres', icon: <Building2 className="w-4 h-4" /> },
+      { value: String(n), label: 'Featured' },
       { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ];
-  }, [vendors]);
+  }, [
+    vendors,
+    groomingCenterCount,
+    groomingCenterLoading,
+    groomingCenterFetching,
+    groomingCenterError,
+  ]);
 
   if (vendorsLoading) {
     return (

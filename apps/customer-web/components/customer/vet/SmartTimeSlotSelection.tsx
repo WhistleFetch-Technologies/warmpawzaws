@@ -129,8 +129,9 @@ export function SmartTimeSlotSelection({
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-lg font-bold">Select Time Slot</h1>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
           <p className="text-sm text-gray-500">{vendorName}</p>
         </div>
       </div>
@@ -209,10 +210,11 @@ export function SmartTimeSlotSelection({
         {/* Time Slot Selection */}
         {selectedDate && (
           <div>
-            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
               <Clock className="w-5 h-5" />
               Select Time
             </h2>
+            <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>

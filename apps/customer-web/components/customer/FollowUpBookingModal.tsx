@@ -201,10 +201,13 @@ export function FollowUpBookingModal({
           {/* Time Selection */}
           {selectedDate && (
             <div className="space-y-3">
-              <label className="block font-semibold text-gray-800 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-[#FF8C42]" />
-                Select Time Slot
-              </label>
+              <div>
+                <label className="block font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-[#FF8C42]" />
+                  Select Time Slot
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {timeSlots.map((slot) => (
                   <button

@@ -153,7 +153,10 @@ export function TimeSlotSelector({
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-bold">Select Time Slot</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold">Select Time Slot</h1>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
+        </div>
       </div>
 
       {/* Content */}
@@ -212,7 +215,8 @@ export function TimeSlotSelector({
 
         {/* Time Slots */}
         <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-4">Available Time Slots</h3>
+          <h3 className="font-bold text-gray-900 mb-1">Available Time Slots</h3>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
           
           {vendorOffline ? (
             <div className="text-center py-8">

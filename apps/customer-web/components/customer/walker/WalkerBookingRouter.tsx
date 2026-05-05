@@ -16,6 +16,8 @@ import {
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -152,6 +154,29 @@ export function WalkerBookingRouter({
   
   // Payment integration state
   const [showPaymentPage, setShowPaymentPage] = useState(false);
+
+  const walkerDiscoveryStyle =
+    bookingServiceStyle === 'at_center' ? 'at_center' : 'at_home';
+  const walkerBookingDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: walkerDiscoveryStyle,
+    category: 'walker',
+  });
+
+  const walkerStatValue = useMemo(() => {
+    const st =
+      walkerBookingDiscovery.isLoading || walkerBookingDiscovery.isFetching
+        ? 'loading'
+        : walkerBookingDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(walkerBookingDiscovery.data, st);
+  }, [
+    walkerBookingDiscovery.data,
+    walkerBookingDiscovery.isLoading,
+    walkerBookingDiscovery.isFetching,
+    walkerBookingDiscovery.isError,
+  ]);
 
   // Default walk service options (used when no specific services loaded)
   const defaultServiceTypeOptions: WalkerServiceOption[] = useMemo(
@@ -537,11 +562,14 @@ export function WalkerBookingRouter({
   const selectedServiceOption = serviceOptions.find((s) => s.id === selectedVendorServiceId);
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '30+', label: 'Walkers' },
-    { value: '2K+', label: 'Walks' },
-    { value: '*4.8', label: 'Rating' }
-  ];
+  const dashboardStats = useMemo(
+    () => [
+      { value: walkerStatValue, label: 'Walkers' },
+      { value: '2K+', label: 'Walks' },
+      { value: '*4.8', label: 'Rating' },
+    ],
+    [walkerStatValue]
+  );
 
   const getServiceTitle = () => {
     if (walker?.name) return `Book with ${walker.name}`;
@@ -780,7 +808,8 @@ export function WalkerBookingRouter({
 
             {selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">

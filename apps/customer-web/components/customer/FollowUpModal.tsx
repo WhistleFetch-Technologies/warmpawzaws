@@ -643,7 +643,8 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
               {/* Time Slot Selection */}
               {selectedDate && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Time</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Time</label>
+                  <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                   {availableSlots.length === 0 ? (
                     <div className="text-center py-6 bg-gray-50 rounded-lg">
                       <AlertCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />

@@ -144,10 +144,11 @@ export function RescheduleBookingModal({
           {/* Time Slots */}
           {selectedDate && (
             <div>
-              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 Select Time Slot
               </label>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               
               {loadingSlots ? (
                 <div className="py-8">

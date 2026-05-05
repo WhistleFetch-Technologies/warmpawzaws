@@ -13,6 +13,8 @@ import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -55,6 +57,28 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     toggleVendor,
     fetchingPlansFor,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
+  const {
+    data: trainingCenterCount = 0,
+    isLoading: trainingCenterLoading,
+    isFetching: trainingCenterFetching,
+    isError: trainingCenterError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'training',
+  });
+
+  const trainingCenterBadgeText = useMemo(() => {
+    const st =
+      trainingCenterLoading || trainingCenterFetching
+        ? 'loading'
+        : trainingCenterError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(trainingCenterCount, st);
+    return `${n} Centres`;
+  }, [trainingCenterLoading, trainingCenterFetching, trainingCenterError, trainingCenterCount]);
+
   const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
   const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
   const [previousTrainer, setPreviousTrainer] = useState<any>(null);
@@ -134,16 +158,17 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [onNavigate]
   );
 
-  const serviceTypes = [
-    {
-      id: 'training_center',
-      name: 'Training Centre',
-      description: 'Visit our facilities',
-      icon: Building2,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
-      badge: '30+ Centres'
-    },
+  const serviceTypes = useMemo(
+    () => [
+      {
+        id: 'training_center',
+        name: 'Training Centre',
+        description: 'Visit our facilities',
+        icon: Building2,
+        color: 'text-orange-600',
+        bg: 'bg-orange-50',
+        badge: trainingCenterBadgeText,
+      },
     {
       id: 'training_home',
       name: 'At Home Training',
@@ -153,18 +178,32 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       bg: 'bg-slate-50',
       badge: 'Personalized'
     }
-  ];
+  ],
+    [trainingCenterBadgeText]
+  );
 
   const dashboardStats = useMemo(() => {
     const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '-';
-    const sessions = n > 0 ? `${Math.max(n * 40, 100)}+` : '0';
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
+    const centreSt =
+      trainingCenterLoading || trainingCenterFetching
+        ? 'loading'
+        : trainingCenterError
+          ? 'error'
+          : 'success';
+    const centresStat = formatDiscoveryCountStat(trainingCenterCount, centreSt);
     return [
-      { value: `${n}+`, label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
-      { value: sessions, label: 'Sessions' },
+      { value: centresStat, label: 'Centres', icon: <Building2 className="w-4 h-4" /> },
+      { value: String(n), label: 'Featured' },
       { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
     ];
-  }, [vendors]);
+  }, [
+    vendors,
+    trainingCenterCount,
+    trainingCenterLoading,
+    trainingCenterFetching,
+    trainingCenterError,
+  ]);
 
   if (vendorsLoading) {
     return (

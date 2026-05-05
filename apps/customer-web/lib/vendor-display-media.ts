@@ -17,6 +17,99 @@ function pushNestedStrings(target: unknown[], obj: unknown, keys: string[]) {
   }
 }
 
+/** Single gallery item → display URL (string or { url, key, … }). */
+function photoUrlFromGalleryItem(item: unknown): string | undefined {
+  const direct = pickNonEmptyString(item);
+  if (direct) return direct;
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const o = item as Record<string, unknown>;
+    return (
+      pickNonEmptyString(o.url) ||
+      pickNonEmptyString(o.photoUrl) ||
+      pickNonEmptyString(o.photo_url) ||
+      pickNonEmptyString(o.src) ||
+      pickNonEmptyString(o.imageUrl) ||
+      pickNonEmptyString(o.image) ||
+      pickNonEmptyString(o.photo) ||
+      pickNonEmptyString(o.key)
+    );
+  }
+  return undefined;
+}
+
+function coalesceUrlArrayFromUnknown(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const x of value) {
+    const u = photoUrlFromGalleryItem(x);
+    if (u) out.push(u);
+  }
+  return out;
+}
+
+/**
+ * Canonical key for the same S3 object across:
+ * bare key `vendors/...`, virtual-hosted URL, path-style URL, presigned variants (query stripped).
+ * Aligns with backend gallery shapes so one upload is not repeated as multiple slides.
+ */
+function mediaUrlDedupeKey(url: string): string {
+  const t = url.trim();
+  if (!t) return '';
+
+  const stripQueryHash = (s: string) => s.split('?')[0].split('#')[0];
+  const normalizeSlashes = (s: string) =>
+    s.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+
+  const lower = t.toLowerCase();
+  const vendorsIdx = lower.indexOf('vendors/');
+  if (vendorsIdx >= 0) {
+    let rest = normalizeSlashes(stripQueryHash(t.slice(vendorsIdx)));
+    try {
+      return decodeURIComponent(rest).toLowerCase();
+    } catch {
+      return rest.toLowerCase();
+    }
+  }
+
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    try {
+      const u = new URL(t);
+      let path = normalizeSlashes(stripQueryHash(u.pathname).replace(/^\/+/, ''));
+      if (path) {
+        try {
+          return decodeURIComponent(path).toLowerCase();
+        } catch {
+          return path.toLowerCase();
+        }
+      }
+      return u.host.toLowerCase();
+    } catch {
+      /* continue */
+    }
+  }
+
+  return normalizeSlashes(stripQueryHash(t)).toLowerCase();
+}
+
+function dedupeUrlsPreserveOrder(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of urls) {
+    const display = typeof u === 'string' ? u.trim() : '';
+    if (!display) continue;
+    const key = mediaUrlDedupeKey(display);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(display);
+  }
+  return out;
+}
+
+/** Final pass for hero UI: non-empty strings only, same logical image once (any caller). */
+export function dedupeHeroPhotoUrls(urls: string[]): string[] {
+  return dedupeUrlsPreserveOrder(urls);
+}
+
 /** Avatar / logo — prefer dedicated profile fields over cover/banner. */
 export function resolveVendorProfilePhotoUrl(raw: Record<string, unknown> | null | undefined): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -53,41 +146,22 @@ export function resolveVendorProfilePhotoUrl(raw: Record<string, unknown> | null
 
   if (Array.isArray(raw.photos)) {
     for (const item of raw.photos) {
-      const s = pickNonEmptyString(item);
+      const s = photoUrlFromGalleryItem(item);
       if (s) return s;
     }
   }
   if (Array.isArray(raw.gallery)) {
     for (const item of raw.gallery) {
-      const s = pickNonEmptyString(item);
+      const s = photoUrlFromGalleryItem(item);
       if (s) return s;
     }
   }
   return undefined;
 }
 
-function nonEmptyUrlArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((x) => (typeof x === 'string' ? x.trim() : ''))
-    .filter((s) => s.length > 0);
-}
-
-function dedupeUrlsPreserveOrder(urls: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const u of urls) {
-    if (!seen.has(u)) {
-      seen.add(u);
-      out.push(u);
-    }
-  }
-  return out;
-}
-
 /**
  * Gallery URLs for provider profile hero — merges facility, vendor, and discovery
- * provider fields so every uploaded photo can appear (deduped, stable order).
+ * provider fields so every uploaded photo can appear (deduped by logical asset, stable order).
  */
 export function getVendorHeroPhotoUrls(args: {
   /** Facility row from /customer/facility/:id (e.g. facility.photos) */
@@ -101,30 +175,112 @@ export function getVendorHeroPhotoUrls(args: {
   const ordered: string[] = [];
 
   const f = facility && typeof facility === 'object' ? (facility as Record<string, unknown>) : null;
-  ordered.push(...nonEmptyUrlArray(f?.photos));
+  ordered.push(...coalesceUrlArrayFromUnknown(f?.photos));
 
   if (vendor && typeof vendor === 'object') {
     const v = vendor as Record<string, unknown>;
-    ordered.push(...nonEmptyUrlArray(v.facilityPhotos ?? v.facility_photos));
-    ordered.push(...nonEmptyUrlArray(v.photos));
-    ordered.push(...nonEmptyUrlArray(v.gallery));
+    ordered.push(...coalesceUrlArrayFromUnknown(v.facilityPhotos ?? v.facility_photos));
+    ordered.push(...coalesceUrlArrayFromUnknown(v.photos));
+    ordered.push(...coalesceUrlArrayFromUnknown(v.gallery));
     const vOne =
       pickNonEmptyString(v.photoUrl) ||
       pickNonEmptyString(v.photo_url) ||
+      pickNonEmptyString(v.profile_photo_url) ||
+      pickNonEmptyString(v.profilePhotoUrl) ||
+      pickNonEmptyString(v.profile_image) ||
       pickNonEmptyString(v.photo);
     if (vOne) ordered.push(vOne);
   }
 
   if (profileProvider && typeof profileProvider === 'object') {
     const p = profileProvider as Record<string, unknown>;
-    ordered.push(...nonEmptyUrlArray(p.photos));
-    ordered.push(...nonEmptyUrlArray(p.gallery));
+    ordered.push(...coalesceUrlArrayFromUnknown(p.photos));
+    ordered.push(...coalesceUrlArrayFromUnknown(p.gallery));
     const pOne =
       pickNonEmptyString(p.photo) || pickNonEmptyString(p.photoUrl) || pickNonEmptyString(p.photo_url);
     if (pOne) ordered.push(pOne);
   }
 
   return dedupeUrlsPreserveOrder(ordered);
+}
+
+/**
+ * Fill in photo-related fields from GET /customer/vendor (or discovery) when facility merge
+ * omits profile headshots (common for solo walkers — photo is profile_photo_url, not facility gallery).
+ */
+export function mergeVendorPhotoFieldsForHero(
+  base: Record<string, unknown>,
+  enrichment: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+  if (!enrichment || typeof enrichment !== 'object') return base;
+  const out: Record<string, unknown> = { ...base };
+  const fill = (key: string) => {
+    const cur = out[key];
+    const has =
+      (typeof cur === 'string' && cur.trim().length > 0) ||
+      (Array.isArray(cur) && cur.length > 0);
+    if (has) return;
+    const v = enrichment[key];
+    if (v !== undefined && v !== null && !(typeof v === 'string' && !v.trim())) {
+      out[key] = v;
+    }
+  };
+  fill('photoUrl');
+  fill('profile_photo_url');
+  fill('profilePhotoUrl');
+  fill('profile_image');
+  fill('logo_url');
+  fill('logoUrl');
+  fill('facilityPhotos');
+  fill('facility_photos');
+  const bPhotos = out.photos;
+  const basePhotosEmpty = !Array.isArray(bPhotos) || bPhotos.length === 0;
+  if (basePhotosEmpty && Array.isArray(enrichment.photos) && enrichment.photos.length > 0) {
+    out.photos = enrichment.photos;
+  }
+  return out;
+}
+
+/**
+ * Single entry for **all** service profile heroes (vet, grooming, training, boarding, home services):
+ * folds discovery/list `profileProvider` photo fields into the vendor row when the API omitted them,
+ * then builds the gallery (deduped). Carousel still runs {@link dedupeHeroPhotoUrls} for defense in depth.
+ */
+export function resolveVendorProfileHeroGallery(args: {
+  facility?: object | null;
+  vendor?: object | null;
+  profileProvider?: object | null;
+}): string[] {
+  const v =
+    args.vendor && typeof args.vendor === 'object'
+      ? ({ ...(args.vendor as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const p =
+    args.profileProvider && typeof args.profileProvider === 'object'
+      ? (args.profileProvider as Record<string, unknown>)
+      : null;
+
+  const fromDiscovery: Record<string, unknown> = {};
+  if (p) {
+    for (const k of ['photoUrl', 'photo', 'profile_photo_url', 'profilePhotoUrl', 'photos', 'gallery'] as const) {
+      const val = p[k];
+      if (val !== undefined && val !== null && !(typeof val === 'string' && !String(val).trim())) {
+        fromDiscovery[k] = val;
+      }
+    }
+  }
+
+  const enrichedVendor = mergeVendorPhotoFieldsForHero(
+    v,
+    Object.keys(fromDiscovery).length > 0 ? fromDiscovery : null
+  );
+
+  const combined = getVendorHeroPhotoUrls({
+    facility: args.facility,
+    vendor: Object.keys(enrichedVendor).length > 0 ? enrichedVendor : null,
+    profileProvider: args.profileProvider,
+  });
+  return dedupeHeroPhotoUrls(combined);
 }
 
 /** Hero / cover — never fall back to profile avatar (callers decide placeholders). */

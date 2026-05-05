@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -27,6 +27,8 @@ import {
   isVendorServicePackageRow,
   buildWalkerServiceDataForVendorPackagePurchase,
 } from '@/lib/vendor-package-purchase-nav';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 export interface WalkerPendingWalkSession {
   serviceId: string;
@@ -173,6 +175,12 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     { kind: 'vendor_service' | 'service_package'; raw: any; dedupeKey: string }[]
   >([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
+
+  const walkerDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'walker',
+  });
 
   useEffect(() => {
     loadActiveWalks();
@@ -612,16 +620,28 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.walkers}+`, label: 'Walkers' },
-    { value: stats.walks, label: 'Walks' },
-    { value: `*${stats.rating}`, label: 'Rating' }
-  ] : [
-    { value: '30+', label: 'Walkers' },
-    { value: '2K+', label: 'Walks' },
-    { value: '*4.8', label: 'Rating' }
-  ];
+  const dashboardStats = useMemo(() => {
+    if (stats) {
+      const w = formatExactCentreCount(Number(stats.walkers) || 0);
+      return [
+        { value: w, label: 'Walkers' },
+        { value: stats.walks, label: 'Walks' },
+        { value: `*${stats.rating}`, label: 'Rating' },
+      ];
+    }
+    const st =
+      walkerDiscovery.isLoading || walkerDiscovery.isFetching
+        ? 'loading'
+        : walkerDiscovery.isError
+          ? 'error'
+          : 'success';
+    const wv = formatDiscoveryCountStat(walkerDiscovery.data, st);
+    return [
+      { value: wv, label: 'Walkers' },
+      { value: '2K+', label: 'Walks' },
+      { value: '*4.8', label: 'Rating' },
+    ];
+  }, [stats, walkerDiscovery.data, walkerDiscovery.isLoading, walkerDiscovery.isFetching, walkerDiscovery.isError]);
 
   return (
     <div className="min-h-screen bg-gray-50">

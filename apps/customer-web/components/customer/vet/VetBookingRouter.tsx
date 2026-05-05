@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -18,6 +18,8 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -196,6 +198,29 @@ export function VetBookingRouter({
   const [usePackageSession, setUsePackageSession] = useState(false);
   const [showPackageOffer, setShowPackageOffer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+
+  const vetStyleForDiscovery =
+    selectedServiceType === 'clinic' ? 'at_center' : selectedServiceType;
+  const vetProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: vetStyleForDiscovery,
+    category: 'vet',
+  });
+
+  const vetProviderStatValue = useMemo(() => {
+    const st =
+      vetProvidersDiscovery.isLoading || vetProvidersDiscovery.isFetching
+        ? 'loading'
+        : vetProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(vetProvidersDiscovery.data, st);
+  }, [
+    vetProvidersDiscovery.data,
+    vetProvidersDiscovery.isLoading,
+    vetProvidersDiscovery.isFetching,
+    vetProvidersDiscovery.isError,
+  ]);
   
   // ✅ ANALYTICS: Track booking steps
   const analytics = useBookingAnalytics('vet', selectedServiceType as any);
@@ -921,11 +946,14 @@ export function VetBookingRouter({
     return 'Book your veterinary service';
   };
 
-  const dashboardStats = [
-    { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = useMemo(
+    () => [
+      { value: vetProviderStatValue, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
+      { value: '1K+', label: 'Bookings' },
+      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [vetProviderStatValue]
+  );
 
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {

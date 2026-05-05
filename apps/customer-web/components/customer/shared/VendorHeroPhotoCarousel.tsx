@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { dedupeHeroPhotoUrls } from '@/lib/vendor-display-media';
 
 type VendorHeroPhotoCarouselProps = {
   photos: string[];
@@ -17,15 +18,16 @@ type VendorHeroPhotoCarouselProps = {
 export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: VendorHeroPhotoCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const photosKey = photos.join('|');
+  const uniquePhotos = useMemo(() => dedupeHeroPhotoUrls(photos), [photos]);
+  const photosKey = uniquePhotos.join('|');
 
   const updateIndexFromScroll = useCallback(() => {
     const el = scrollerRef.current;
-    if (!el || photos.length <= 1) return;
+    if (!el || uniquePhotos.length <= 1) return;
     const w = el.clientWidth || 1;
     const i = Math.round(el.scrollLeft / w);
-    setActiveIndex(Math.min(photos.length - 1, Math.max(0, i)));
-  }, [photos.length]);
+    setActiveIndex(Math.min(uniquePhotos.length - 1, Math.max(0, i)));
+  }, [uniquePhotos.length]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -35,11 +37,11 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
 
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || photos.length <= 1) return;
+    if (!el || uniquePhotos.length <= 1) return;
     const onScrollEnd = () => updateIndexFromScroll();
     el.addEventListener('scrollend', onScrollEnd);
     return () => el.removeEventListener('scrollend', onScrollEnd);
-  }, [photosKey, photos.length, updateIndexFromScroll]);
+  }, [photosKey, uniquePhotos.length, updateIndexFromScroll]);
 
   const goTo = (i: number) => {
     const el = scrollerRef.current;
@@ -49,12 +51,12 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
     setActiveIndex(i);
   };
 
-  if (photos.length === 0) return null;
+  if (uniquePhotos.length === 0) return null;
 
-  if (photos.length === 1) {
+  if (uniquePhotos.length === 1) {
     return (
       <div className={frameClassName}>
-        <img src={photos[0]} alt={name} className="h-full w-full object-cover" />
+        <img src={uniquePhotos[0]} alt={name} className="h-full w-full object-cover" />
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/40 via-transparent to-transparent" />
       </div>
     );
@@ -68,7 +70,7 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
         className="scrollbar-hide flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
-        {photos.map((src, i) => (
+        {uniquePhotos.map((src, i) => (
           <div key={`${i}-${src}`} className="h-full w-full min-w-full flex-shrink-0 snap-center snap-always">
             <img src={src} alt={`${name} — photo ${i + 1}`} className="h-full w-full object-cover" draggable={false} />
           </div>
@@ -81,13 +83,13 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
         role="tablist"
         aria-label="Photo gallery pages"
       >
-        {photos.map((_, i) => (
+        {uniquePhotos.map((_, i) => (
           <button
             key={i}
             type="button"
             role="tab"
             aria-selected={i === activeIndex}
-            aria-label={`Photo ${i + 1} of ${photos.length}`}
+            aria-label={`Photo ${i + 1} of ${uniquePhotos.length}`}
             onClick={() => goTo(i)}
             className={
               i === activeIndex

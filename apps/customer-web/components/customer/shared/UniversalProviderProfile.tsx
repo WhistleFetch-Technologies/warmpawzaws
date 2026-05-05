@@ -666,7 +666,8 @@ export function UniversalProviderProfile({
           {/* Time Selection */}
           {selectedDate && (
             <div className="mb-4">
-              <h3 className="font-medium text-sm mb-2">Select Time</h3>
+              <h3 className="font-medium text-sm mb-1">Select Time</h3>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               {loadingSlots ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500 mx-auto" />
