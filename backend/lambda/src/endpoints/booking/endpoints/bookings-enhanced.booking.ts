@@ -91,6 +91,30 @@ interface ApiGatewayEventLike {
   isBase64Encoded: boolean;
 }
 
+function toJsonResponsePayload(result: unknown): { body: unknown; statusCode: number } {
+  if (typeof result === 'string') {
+    try {
+      return { body: JSON.parse(result), statusCode: 200 };
+    } catch {
+      return { body: result, statusCode: 200 };
+    }
+  }
+
+  const responseObj = (result || {}) as { body?: unknown; statusCode?: number };
+  const statusCode = responseObj.statusCode ?? 200;
+  const rawBody = responseObj.body;
+
+  if (typeof rawBody === 'string') {
+    try {
+      return { body: JSON.parse(rawBody), statusCode };
+    } catch {
+      return { body: rawBody, statusCode };
+    }
+  }
+
+  return { body: rawBody ?? {}, statusCode };
+}
+
 // ============================================================================
 // VALIDATION UTILITIES
 // ============================================================================
@@ -1731,21 +1755,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
-      // Publish event
-      try {
-        const { publishBookingCreated } = await import('../../../utils/sns-client');
-        await publishBookingCreated({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking created event:', error);
+      // Publish booking-created only after customer-visible confirmation.
+      if (booking.status !== 'pending_payment') {
+        try {
+          const { publishBookingCreated } = await import('../../../utils/sns-client');
+          await publishBookingCreated({
+            bookingId: booking.id,
+            customerId: booking.customer_id,
+            vendorId: booking.vendor_id,
+            serviceType: booking.service_type,
+            status: booking.status,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking created event:', error);
+        }
       }
 
       if (booking.status === 'confirmed') {
@@ -2889,11 +2915,11 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
             try {
               const { publishNotification } = await import('../../../utils/sns-client');
               await publishNotification({
-                userId: currentBooking.customer_id,
-                userType: 'customer',
+                recipientId: currentBooking.customer_id,
+                recipientType: 'customer',
                 type: 'booking_tracking_started',
                 title: 'Service Provider is on the way!',
-                message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                body: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
                 data: {
                   bookingId,
                   trackingSessionId: newSessions[0].id,
@@ -3091,6 +3117,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       // Unpaid checkout abandoned: remove the draft booking so it never appears as "cancelled" in My bookings.
       const reasonStr = String(reason ?? '').trim();
       const isPaymentAbandonReason = /^payment abandoned$/i.test(reasonStr);
+      let suppressVendorFacingCancelSignals = false;
 
       if (isPaymentAbandonReason) {
         const queryParams = context.event.queryStringParameters || {};
@@ -3171,6 +3198,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 requestId
               );
             } catch (hardDelErr: unknown) {
+              suppressVendorFacingCancelSignals = true;
               console.error(
                 '[CancelBooking] Abandon hard-delete failed; falling back to soft cancel:',
                 hardDelErr
@@ -3386,24 +3414,26 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Publish event
-      try {
-        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
-        await publishBookingStatusUpdated({
-          bookingId,
-          customerId: currentBooking.customer_id,
-          vendorId: currentBooking.vendor_id,
-          oldStatus,
-          newStatus: 'cancelled',
-          reason,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking cancelled event:', error);
+      // Suppress vendor-facing cancel signals for unpaid abandoned checkout fallbacks.
+      if (!suppressVendorFacingCancelSignals) {
+        try {
+          const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
+          await publishBookingStatusUpdated({
+            bookingId,
+            customerId: currentBooking.customer_id,
+            vendorId: currentBooking.vendor_id,
+            oldStatus,
+            newStatus: 'cancelled',
+            reason,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking cancelled event:', error);
+        }
       }
 
       // ✅ Send in-app notification to vendor about cancellation
-      if (currentBooking.vendor_id) {
+      if (currentBooking.vendor_id && !suppressVendorFacingCancelSignals) {
         try {
           // Resolve customer name for the notification
           let customerName = 'Customer';
@@ -3783,8 +3813,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       
       const context = createLambdaContext();
-      const result: any = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in bookings/create:', error);
@@ -3827,8 +3858,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in booking/create:', error);
@@ -3870,8 +3902,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/booking/create:', error);
@@ -3914,8 +3947,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/bookings/create:', error);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -82,7 +82,7 @@ function pickIconForPublishedPlan(name: string, serviceStyle?: string): LucideIc
 }
 
 export function BoardingVendorProfileView({
-  phone: _customerPhone,
+  phone: customerPhone,
   vendorId,
   serviceSlug: serviceSlugProp,
   onBack,
@@ -90,7 +90,6 @@ export function BoardingVendorProfileView({
   footerActiveTab = 'home',
 }: BoardingVendorProfileViewProps) {
   const router = useRouter();
-  const servicesAnchorRef = useRef<HTMLDivElement>(null);
   const contextSlug = normalizeBoardingServiceSlug(serviceSlugProp ?? null);
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
@@ -99,11 +98,27 @@ export function BoardingVendorProfileView({
   const [facilityForHero, setFacilityForHero] = useState<Record<string, unknown> | null>(null);
   const [publishedPlans, setPublishedPlans] = useState<MappedBoardingService[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<MappedBoardingService | null>(null);
-  /** After user taps "Select Services to Book", show plan list (vet-style: booking is explicit). */
-  const [plansPickerActive, setPlansPickerActive] = useState(false);
+
+  const mapBoardingPlans = useCallback((rows: any[]): MappedBoardingService[] => {
+    const seen = new Set<string>();
+    const mapped: MappedBoardingService[] = [];
+    for (const s of rows || []) {
+      const rowId = String(s?.id ?? s?.vendorServiceId ?? s?.serviceId ?? s?.service_id ?? '');
+      if (!rowId || seen.has(rowId)) continue;
+      seen.add(rowId);
+      mapped.push({
+        rowId,
+        serviceId: s?.serviceId || s?.service_id,
+        name: s?.serviceName || s?.name || s?.service_name || 'Boarding',
+        price: parseFloat(String(s?.price || '0')) || 0,
+        duration: s?.duration || s?.duration_minutes,
+        serviceStyle: s?.serviceStyle || s?.service_style,
+      });
+    }
+    return mapped;
+  }, []);
 
   useEffect(() => {
-    setPlansPickerActive(false);
     loadVendor();
   }, [vendorId]);
 
@@ -136,22 +151,30 @@ export function BoardingVendorProfileView({
         services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_center) {
         services = servicesData.services.at_center?.services || [];
+      } else if (servicesData?.services && typeof servicesData.services === 'object') {
+        services = Object.values(servicesData.services).flatMap((bucket: any) =>
+          Array.isArray(bucket?.services) ? bucket.services : []
+        );
       }
 
-      const seen = new Set<string>();
-      const mapped: MappedBoardingService[] = [];
-      for (const s of services) {
-        const rowId = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? '');
-        if (!rowId || seen.has(rowId)) continue;
-        seen.add(rowId);
-        mapped.push({
-          rowId,
-          serviceId: s.serviceId || s.service_id,
-          name: s.serviceName || s.name || s.service_name || 'Boarding',
-          price: parseFloat(String(s.price || '0')) || 0,
-          duration: s.duration || s.duration_minutes,
-          serviceStyle: s.serviceStyle || s.service_style,
+      let mapped = mapBoardingPlans(services);
+
+      /**
+       * Fallback: align with discovery/listing data source in case vendor-services
+       * endpoint shape differs for some vendors.
+       */
+      if (mapped.length === 0) {
+        const phoneParam = customerPhone ? `&customerPhone=${encodeURIComponent(customerPhone)}` : '';
+        const styleRes = (await apiClient.get(
+          `/customer/services/by-style?style=at_center&category=boarding${phoneParam}`
+        ).catch(() => null)) as any;
+        const providers = styleRes?.providers || styleRes?.vendors || [];
+        const thisProvider = providers.find((p: any) => {
+          const pid = String(p?.providerId || p?.vendorId || p?.id || '').trim();
+          const vid = String(p?.vendorId || p?.id || '').trim();
+          return pid === String(vendorId) || vid === String(vendorId);
         });
+        mapped = mapBoardingPlans(thisProvider?.services || []);
       }
 
       setPublishedPlans(mapped);
@@ -194,7 +217,6 @@ export function BoardingVendorProfileView({
     }
     if (planMatchingUrlHint) {
       setSelectedOffer(planMatchingUrlHint);
-      setPlansPickerActive(true);
       return;
     }
     setSelectedOffer(null);
@@ -219,13 +241,6 @@ export function BoardingVendorProfileView({
     if (first) return first.length > 36 ? `${first.slice(0, 34)}…` : first;
     return 'Boarding & daycare';
   }, [contextSlug, publishedPlans]);
-
-  const revealPlansAndScroll = useCallback(() => {
-    setPlansPickerActive(true);
-    requestAnimationFrame(() => {
-      servicesAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
 
   const handleShare = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -440,70 +455,56 @@ export function BoardingVendorProfileView({
             </div>
           </div>
 
-          {plansPickerActive ? (
-            <div
-              id="boarding-services"
-              ref={servicesAnchorRef}
-              className="scroll-mt-28 rounded-xl border border-gray-100 bg-white p-4 shadow-sm"
-            >
-              <h2 className="font-bold text-gray-900">{'Services & prices'}</h2>
-              <p className="mt-1 text-xs text-gray-500">
-                Tap a plan to select it, then use <span className="font-medium text-gray-700">Continue to book</span>{' '}
-                below.
+          <div id="boarding-services" className="scroll-mt-28 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+            <h2 className="font-bold text-gray-900">{'Services & prices'}</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Tap a plan to select it, then use <span className="font-medium text-gray-700">Continue to book</span>{' '}
+              below.
+            </p>
+            {publishedPlans.length === 0 ? (
+              <p className="py-6 text-center text-sm text-gray-600">
+                No published boarding plans yet. Check back later or contact the center.
               </p>
-              {publishedPlans.length === 0 ? (
-                <p className="py-6 text-center text-sm text-gray-600">
-                  No published boarding plans yet. Check back later or contact the center.
-                </p>
-              ) : (
-                <div className="mt-3 max-h-[min(55vh,24rem)] space-y-2 overflow-y-auto pr-1 -mr-1">
-                  {publishedPlans.map((plan) => {
-                    const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
-                    const isSel = selectedOffer?.rowId === plan.rowId;
-                    return (
-                      <button
-                        key={plan.rowId}
-                        type="button"
-                        onClick={() => setSelectedOffer(plan)}
-                        className={`flex w-full items-center justify-between gap-3 rounded-lg border-2 px-3 py-3 text-left transition-all ${
-                          isSel
-                            ? 'border-orange-600 bg-orange-50 shadow-[0_0_0_1px_rgba(234,88,12,0.15)]'
-                            : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
-                        }`}
+            ) : (
+              <div className="mt-3 space-y-2">
+                {publishedPlans.map((plan) => {
+                  const Icon = pickIconForPublishedPlan(plan.name, plan.serviceStyle);
+                  const isSel = selectedOffer?.rowId === plan.rowId;
+                  return (
+                    <button
+                      key={plan.rowId}
+                      type="button"
+                      onClick={() => setSelectedOffer(plan)}
+                      className={`flex w-full items-center justify-between gap-3 rounded-lg border-2 px-3 py-3 text-left transition-all ${
+                        isSel
+                          ? 'border-orange-600 bg-orange-50 shadow-[0_0_0_1px_rgba(234,88,12,0.15)]'
+                          : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                      }`}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <Icon className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                        <span className={`truncate font-medium ${isSel ? 'text-orange-900' : 'text-gray-800'}`}>
+                          {plan.name}
+                        </span>
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" aria-label="Available" />
+                      </span>
+                      <span
+                        className={`shrink-0 font-semibold tabular-nums ${isSel ? 'text-orange-900' : 'text-[#FF8C42]'}`}
                       >
-                        <span className="flex min-w-0 flex-1 items-center gap-2">
-                          <Icon className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
-                          <span className={`truncate font-medium ${isSel ? 'text-orange-900' : 'text-gray-800'}`}>
-                            {plan.name}
-                          </span>
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" aria-label="Available" />
-                        </span>
-                        <span
-                          className={`shrink-0 font-semibold tabular-nums ${isSel ? 'text-orange-900' : 'text-[#FF8C42]'}`}
-                        >
-                          ₹{plan.price}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ) : null}
+                        ₹{plan.price}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t bg-white px-5 py-3 sm:px-6">
         <div className="mx-auto w-full max-w-xs sm:max-w-sm">
-          {!plansPickerActive ? (
-            <Button
-              type="button"
-              onClick={revealPlansAndScroll}
-              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-md hover:bg-orange-600"
-            >
-              Select Services to Book
-            </Button>
-          ) : publishedPlans.length === 0 ? (
+          {publishedPlans.length === 0 ? (
             <Button
               type="button"
               disabled

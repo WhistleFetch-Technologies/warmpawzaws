@@ -135,7 +135,7 @@ class GetAnalyticsOverviewHandler extends BaseHandler {
         FROM vendors`),
         query(`SELECT COUNT(*) as total_customers FROM customers`),
         query(`SELECT 
-          COUNT(*) as total_bookings,
+          COUNT(*) FILTER (WHERE status <> 'pending_payment') as total_bookings,
           COUNT(*) FILTER (WHERE status = 'completed') as completed_bookings,
           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) as total_revenue,
           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed' AND booking_date >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
@@ -927,7 +927,7 @@ class GetVendorDetailsHandler extends BaseHandler {
             'isActive', st.is_active
           )), '[]'::json) FROM staff st WHERE st.vendor_id = v.id AND st.is_active = true) as staff_list,
           -- Stats
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id) as total_bookings,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status <> 'pending_payment') as total_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'cancelled') as cancelled_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status IN ('pending', 'confirmed')) as pending_bookings,
@@ -948,7 +948,13 @@ class GetVendorDetailsHandler extends BaseHandler {
             'date', b.booking_date,
             'createdAt', b.created_at
           ) ORDER BY b.created_at DESC), '[]'::json)
-          FROM (SELECT * FROM bookings WHERE vendor_id = v.id ORDER BY created_at DESC LIMIT 10) b
+          FROM (
+            SELECT *
+            FROM bookings
+            WHERE vendor_id = v.id AND status <> 'pending_payment'
+            ORDER BY created_at DESC
+            LIMIT 10
+          ) b
           LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
@@ -1061,6 +1067,7 @@ class GetVendorDetailsHandler extends BaseHandler {
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1
+            AND b.status <> 'pending_payment'
           ORDER BY b.created_at DESC
           LIMIT 20
         `, [vendorId]);
@@ -1647,6 +1654,7 @@ class GetVendorActivityHistoryHandler extends BaseHandler {
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1
+            AND b.status <> 'pending_payment'
           ORDER BY b.created_at DESC
           LIMIT $2 OFFSET $3
         `, [vendorId, limit, offset]);
