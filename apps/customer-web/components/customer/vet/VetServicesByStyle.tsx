@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
@@ -784,6 +785,7 @@ export function VetServicesByStyle({
                                 vendorDiscount={service.vendorDiscount}
                                 className="mb-1"
                               />
+                              <p className="text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                               {isSelected && (
                                 <div className="mt-1 flex justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -1150,6 +1152,7 @@ export function VetServicesByStyle({
                               vendorDiscount={service.vendorDiscount}
                               className="mb-2"
                             />
+                            <p className="text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                             <Button
                               size="sm"
                               className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
@@ -1183,6 +1186,9 @@ export function VetServicesByStyle({
                             return finalPrice;
                           }))
                         )}</span>
+                      )}
+                      {provider.services[0] && (
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                       )}
                     </div>
                     <Button

@@ -946,11 +946,20 @@ export function VetBookingRouter({
     return 'Book your veterinary service';
   };
 
-  const dashboardStats = [
-    { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const vetProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Clinics' : 'Vets';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: vetProviderStatValue,
+        label: vetProviderStatLabel,
+        icon: <Stethoscope className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [vetProviderStatValue, vetProviderStatLabel]
+  );
 
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {

@@ -38,6 +38,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { sanitizeDisplayImageUrl, pickVendorPhotoFromRow } from '@/lib/resolve-display-image-url';
 import { BookingFlow } from './BookingFlow';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -75,6 +76,20 @@ function isGroomingProblem(problem: ProblemGridItem | null): boolean {
     .filter(Boolean)
     .map((v) => String(v).toLowerCase());
   return roleHints.some((v) => v.includes('groom'));
+}
+
+function isVetProblem(problem: ProblemGridItem | null): boolean {
+  if (!problem) return false;
+  const roleHints = [
+    problem.roleId,
+    ...(Array.isArray(problem.linkedServiceRoles) ? problem.linkedServiceRoles : []),
+    problem.category,
+    problem.id,
+    problem.name,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase());
+  return roleHints.some((v) => v.includes('vet') || v.includes('veterinar'));
 }
 
 function normalizeVendorType(row: ByProblemServiceRow): string {
@@ -668,6 +683,9 @@ export function ProblemGridFlowRouter({
                   <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
                     {formatPriceWithSymbol(price)}
                   </div>
+                  {isVetProblem(selectedProblem) && (
+                    <p className="mb-2 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -844,6 +862,9 @@ export function ProblemGridFlowRouter({
                         ₹{vendor.minPrice.toLocaleString('en-IN')}
                       </p>
                       <p className="text-xs text-gray-500">onwards</p>
+                      {isVetProblem(selectedProblem) && (
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -873,6 +894,9 @@ export function ProblemGridFlowRouter({
                         {' '}
                         from ₹{vendor.minPrice.toLocaleString('en-IN')}
                       </span>
+                      {isVetProblem(selectedProblem) && (
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      )}
                     </div>
                     <Button
                       type="button"

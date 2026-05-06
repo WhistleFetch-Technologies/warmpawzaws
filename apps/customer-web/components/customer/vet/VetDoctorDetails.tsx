@@ -5,6 +5,7 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2, Calendar
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -382,7 +383,10 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:flex-col sm:items-end sm:justify-center">
-                    <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                    <div className="text-right">
+                      <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                    </div>
                     <Button
                       size="sm"
                       onClick={() => handleBookService(service.id, service.service_style)}

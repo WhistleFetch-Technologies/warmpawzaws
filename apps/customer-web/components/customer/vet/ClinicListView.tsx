@@ -24,6 +24,7 @@ import {
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
 
@@ -745,6 +746,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                                     <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
                                     </div>
+                                    <p className="mb-2 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                                     <Button
                                       type="button"
                                       size="sm"
@@ -784,6 +786,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                           <span className="text-gray-500">Tap to load services & prices</span>
                         ) : (
                           <span className="text-gray-500">No services available</span>
+                        )}
+                        {minP != null && (
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">

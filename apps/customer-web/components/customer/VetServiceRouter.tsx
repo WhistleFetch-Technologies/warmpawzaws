@@ -708,6 +708,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     v={v}
                     serviceSlug={HUB_SLUG}
                     planBadgeLabel="Vet"
+                    showPriceDisclaimer={true}
                     expanded={expanded}
                     fetchingPlansFor={fetchingPlansFor}
                     minPrice={minP}

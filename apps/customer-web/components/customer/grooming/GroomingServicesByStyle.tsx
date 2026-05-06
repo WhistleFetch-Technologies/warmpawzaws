@@ -639,8 +639,8 @@ export function GroomingServicesByStyle({
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const dashboardStats = [
-      { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
+    const profileDashboardStats = [
+      { value: groomingSalonStatValue, label: groomingSalonStatLabel, icon: <Scissors className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
       { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
     ];
@@ -666,7 +666,7 @@ export function GroomingServicesByStyle({
           serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Scissors}
           iconColor="text-white"
-          stats={dashboardStats}
+          stats={profileDashboardStats}
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"

@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { StarRating } from './StarRating';
@@ -870,6 +871,7 @@ export function UniversalProviderProfile({
                               <p className="font-bold tabular-nums text-[#FF8C42]">
                                 {formatPriceWithSymbol(service.price)}
                               </p>
+                              <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 
