@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -44,6 +45,7 @@ export interface BoardingVendorExpandableCardProps {
   onDetails: (e: MouseEvent, vendorId: string) => void;
   onBookPlan: (v: BoardingListVendor, plan: BoardingPlanRow) => void;
   onOpenCenterDetails: (e: MouseEvent, vendorId: string) => void;
+  showPriceDisclaimer?: boolean;
 }
 
 export function BoardingVendorExpandableCard({
@@ -60,6 +62,7 @@ export function BoardingVendorExpandableCard({
   onDetails,
   onBookPlan,
   onOpenCenterDetails,
+  showPriceDisclaimer = false,
 }: BoardingVendorExpandableCardProps) {
   const centerProfileVendorId =
     pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
@@ -149,9 +152,14 @@ export function BoardingVendorExpandableCard({
               {minP != null && v.planRows.length > 0 && (
                 <>
                   <span className="text-gray-300">•</span>
-                  <span className="text-sm font-semibold text-[#FF8C42]">
-                    from {formatPriceWithSymbol(minP)}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-sm font-semibold text-[#FF8C42]">
+                      from {formatPriceWithSymbol(minP)}
+                    </span>
+                    {showPriceDisclaimer && (
+                      <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                    )}
+                  </div>
                 </>
               )}
               {v.planRows.length === 0 && (
@@ -254,6 +262,9 @@ export function BoardingVendorExpandableCard({
                         <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
                           {formatPriceWithSymbol(plan.price)}
                         </div>
+                        {showPriceDisclaimer && (
+                          <p className="mb-2 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -282,10 +293,10 @@ export function BoardingVendorExpandableCard({
               <>
                 {v.planRows.length} service{v.planRows.length !== 1 ? 's' : ''} available
                 {minP != null && (
-                  <span className="text-gray-900 font-medium">
-                    {' '}
-                    from {formatPriceWithSymbol(minP)}
-                  </span>
+                  <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(minP)}</span>
+                )}
+                {showPriceDisclaimer && minP != null && (
+                  <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                 )}
               </>
             ) : v.needsServiceFetch ? (

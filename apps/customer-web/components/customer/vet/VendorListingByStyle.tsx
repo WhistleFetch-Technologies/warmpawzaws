@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { StarRating } from '../shared/StarRating';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -601,7 +602,8 @@ export function VendorListingByStyle({
 
                     {vendor.price && (
                       <div className="text-sm font-bold text-[#FF8C42] mt-1">
-                        From ₹{vendor.price}
+                        <p>From ₹{vendor.price}</p>
+                        <p className="mt-0.5 text-xs font-normal text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                       </div>
                     )}
                   </div>

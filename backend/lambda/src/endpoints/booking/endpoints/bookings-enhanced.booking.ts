@@ -728,6 +728,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const availabilityResult = await validateServiceAvailability(
         lookupServiceId,
         roleId,
+        vendorId,
         customerId
       );
 

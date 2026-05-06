@@ -859,11 +859,20 @@ export function GroomingBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const groomingProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Salons' : 'Groomers';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: groomingProviderStatValue,
+        label: groomingProviderStatLabel,
+        icon: <Scissors className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [groomingProviderStatValue, groomingProviderStatLabel]
+  );
 
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {

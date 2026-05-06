@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { StarRating } from './StarRating';
 
 // ============================================================================
@@ -287,11 +288,12 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
 interface ProviderCardProps {
   provider: Provider;
   serviceStyle: string;
+  showPriceDisclaimer?: boolean;
   isPreviousProvider?: boolean;
   onClick: () => void;
 }
 
-function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: ProviderCardProps) {
+function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isPreviousProvider, onClick }: ProviderCardProps) {
   const getServiceStyleIcon = () => {
     switch (serviceStyle) {
       case 'tele': return <Video className="w-4 h-4" />;
@@ -325,6 +327,7 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
     const lowestPrice = prices.length > 0 ? Math.min(...prices) : (Number((provider as any).price ?? (provider as any).consultationFee) || 0);
     return lowestPrice > 0 ? `Starts at ${formatPriceWithSymbol(lowestPrice)}` : null;
   };
+  const priceDisplay = getPriceDisplay();
 
   return (
     <Card
@@ -456,9 +459,12 @@ function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: P
               {getServiceStyleIcon()}
               <span>{getServiceStyleLabel()}</span>
             </div>
-            {getPriceDisplay() && (
+            {priceDisplay && (
               <div className="text-right">
-                <span className="font-bold text-orange-600">{getPriceDisplay()}</span>
+                <span className="font-bold text-orange-600">{priceDisplay}</span>
+                {showPriceDisclaimer && (
+                  <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                )}
               </div>
             )}
           </div>
@@ -1017,6 +1023,7 @@ export function UniversalServiceProviderList({
                   key={provider.providerId}
                   provider={provider}
                   serviceStyle={serviceStyle}
+                  showPriceDisclaimer={category === 'vet'}
                   isPreviousProvider={previousProviderIds.some(id => id === (provider.vendorId || provider.providerId))}
                   onClick={() => onSelectProvider(provider)}
                 />

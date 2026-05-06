@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
 
@@ -371,7 +372,10 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                           </span>
                         </div>
                       </div>
-                      <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      </div>
                     </div>
                   </div>
                 ))
