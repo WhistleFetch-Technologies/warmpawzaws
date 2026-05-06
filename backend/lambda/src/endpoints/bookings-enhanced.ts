@@ -1258,21 +1258,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
-      // Publish event
-      try {
-        const { publishBookingCreated } = await import('../utils/sns-client');
-        await publishBookingCreated({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking created event:', error);
+      // Publish booking-created only once booking is visible post-payment.
+      if (booking.status !== 'pending_payment') {
+        try {
+          const { publishBookingCreated } = await import('../utils/sns-client');
+          await publishBookingCreated({
+            bookingId: booking.id,
+            customerId: booking.customer_id,
+            vendorId: booking.vendor_id,
+            serviceType: booking.service_type,
+            status: booking.status,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking created event:', error);
+        }
       }
 
       // Rule 4: Defer vendor in-app alert until paid when status is pending_payment.

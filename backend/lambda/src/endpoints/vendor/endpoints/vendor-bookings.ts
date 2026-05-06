@@ -114,14 +114,29 @@ export function registerVendorBookingsEndpoints(app: Hono) {
            WHERE (
              (${vendorIdConditions})
              OR (v.center_id = $${paramIndex} AND v.center_id IS NOT NULL)
-           ) AND b.status != 'pending_payment'`;
+           )
+           AND b.status != 'pending_payment'
+           AND (
+             COALESCE(b.total_amount, 0) <= 0
+             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+           )`;
         params.push(centerId);
         paramIndex++;
       } else {
         // No center_id, just match vendor IDs
         queryText = vendorIds.length === 1
-          ? 'SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != \'pending_payment\''
-          : 'SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != \'pending_payment\'';
+          ? `SELECT b.* FROM bookings b WHERE b.vendor_id = $1
+             AND b.status != 'pending_payment'
+             AND (
+               COALESCE(b.total_amount, 0) <= 0
+               OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             )`
+          : `SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+             AND b.status != 'pending_payment'
+             AND (
+               COALESCE(b.total_amount, 0) <= 0
+               OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             )`;
       }
 
       // Filter by date
@@ -1258,8 +1273,18 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
       let queryText = vendorIds.length === 1
-        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
-        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+        ? `SELECT * FROM bookings WHERE vendor_id = $1
+           AND status != 'pending_payment'
+           AND (
+             COALESCE(total_amount, 0) <= 0
+             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+           )`
+        : `SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2)
+           AND status != 'pending_payment'
+           AND (
+             COALESCE(total_amount, 0) <= 0
+             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+           )`;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
@@ -1366,13 +1391,21 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       const result = vendorIds.length === 1
         ? await query(
             `SELECT * FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 
+             WHERE vendor_id = $1 AND booking_date = $2 AND status != 'pending_payment'
+               AND (
+                 COALESCE(total_amount, 0) <= 0
+                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+               )
              ORDER BY booking_time ASC`,
             [vendorId, today]
           ).catch(() => ({ rows: [] }))
         : await query(
             `SELECT * FROM bookings 
-             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 
+             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 AND status != 'pending_payment'
+               AND (
+                 COALESCE(total_amount, 0) <= 0
+                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+               )
              ORDER BY booking_time ASC`,
             [vendorIds[0], vendorIds[1], today]
           ).catch(() => ({ rows: [] }));

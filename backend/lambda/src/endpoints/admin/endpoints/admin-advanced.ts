@@ -9609,6 +9609,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM bookings b
         INNER JOIN vendors v ON v.id = b.vendor_id
         WHERE b.created_at >= NOW() - INTERVAL '7 days'
+          AND b.status <> 'pending_payment'
+          AND (
+            COALESCE(b.total_amount, 0) <= 0
+            OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+          )
       `;
 
       if (filter !== 'all') {
