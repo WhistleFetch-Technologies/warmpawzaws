@@ -4,12 +4,16 @@ import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/components/ui/utils';
 
 export interface SupportTicketReplyComposerProps {
   value: string;
   onChange: (value: string) => void;
   sending: boolean;
   onSend: () => void;
+  /** Tighter textarea in bounded layouts (e.g. full-screen sheet). */
+  compact?: boolean;
+  className?: string;
 }
 
 export function SupportTicketReplyComposer({
@@ -17,15 +21,17 @@ export function SupportTicketReplyComposer({
   onChange,
   sending,
   onSend,
+  compact = false,
+  className,
 }: SupportTicketReplyComposerProps) {
   return (
-    <Card className="p-4 space-y-3">
+    <Card className={cn('shrink-0 space-y-3 p-4', className)}>
       <label className="text-sm font-medium text-gray-700" htmlFor="ticket-reply">
         Your reply
       </label>
       <Textarea
         id="ticket-reply"
-        rows={4}
+        rows={compact ? 3 : 4}
         placeholder="Type your message to support…"
         value={value}
         onChange={(e) => onChange(e.target.value)}

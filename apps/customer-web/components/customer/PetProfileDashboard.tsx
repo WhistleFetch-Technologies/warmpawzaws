@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ApiError } from '@/lib/error-handling';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -56,20 +57,92 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
     filterBookings();
   }, [bookings, selectedFilter, searchQuery]);
 
+  const normalizeStatus = (status: unknown): Booking['status'] => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'completed' || s === 'partially_completed') return 'completed';
+    if (s === 'cancelled' || s === 'no_show') return 'cancelled';
+    if (s === 'confirmed' || s === 'scheduled' || s === 'in_progress' || s === 'active') return 'active';
+    return 'active';
+  };
+
+  const toTitle = (value: string): string =>
+    value
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ');
+
+  const deriveServiceLabel = (raw: any): string => {
+    const explicitName = String(raw?.serviceName ?? raw?.service_name ?? '').trim();
+    if (explicitName) return explicitName;
+
+    const type = String(raw?.serviceType ?? raw?.service_type ?? '').trim();
+    if (!type) return 'Service';
+    const normalized = toTitle(type);
+    return /\bservice\b/i.test(normalized) ? normalized : `${normalized} Service`;
+  };
+
+  const mapBooking = (raw: any): Booking => {
+    const schedule = raw?.scheduledDate ?? raw?.scheduled_date ?? raw?.bookingDate ?? raw?.booking_date ?? raw?.createdAt ?? raw?.created_at ?? '';
+    const priceRaw = raw?.price ?? raw?.total_amount ?? raw?.totalAmount ?? raw?.base_price ?? 0;
+    const price = typeof priceRaw === 'number' ? priceRaw : parseFloat(String(priceRaw)) || 0;
+
+    return {
+      id: String(raw?.id ?? ''),
+      serviceType: String(raw?.serviceType ?? raw?.service_type ?? raw?.serviceStyle ?? raw?.service_style ?? 'service'),
+      serviceName: deriveServiceLabel(raw),
+      petId: String(raw?.petId ?? raw?.pet_id ?? ''),
+      petName: String(raw?.petName ?? raw?.pet_name ?? petData.name ?? ''),
+      vendorName: String(raw?.vendorName ?? raw?.vendor_name ?? ''),
+      startDate: String(schedule || ''),
+      endDate: raw?.endDate ?? raw?.end_date,
+      totalSessions: Number(raw?.totalSessions ?? raw?.total_sessions ?? 1),
+      completedSessions: Number(raw?.completedSessions ?? raw?.completed_sessions ?? 0),
+      status: normalizeStatus(raw?.status),
+      price,
+      requiresOTP: raw?.requiresOTP ?? raw?.requires_otp,
+      completionOTP: raw?.completionOTP ?? raw?.completion_otp ?? raw?.otp_code,
+      createdAt: String((raw?.createdAt ?? raw?.created_at ?? schedule) || ''),
+    };
+  };
+
+  const extractRows = (payload: any): any[] => {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.bookings)) return payload.bookings;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  };
+
   const loadPetBookings = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get(`/customer/${phone}/pets/${petData.id}/bookings`) as any;
+      let rows: any[] = [];
 
-      // Filter bookings for this specific pet
-      const petBookings = (data?.bookings || []).filter((b: Booking) => b.petId === petData.id);
-      // Sort by date (most recent first)
-      const sortedBookings = petBookings.sort((a: Booking, b: Booking) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      try {
+        const data = (await apiClient.get(`/customer/${phone}/pets/${petData.id}/bookings`)) as any;
+        rows = extractRows(data);
+      } catch (primaryError) {
+        console.warn('Pet-profile primary bookings route failed, trying fallback:', primaryError);
+        const fallback = (await apiClient.get(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petData.id)}`
+        )) as any;
+        rows = extractRows(fallback);
+      }
+
+      const mapped = rows.map(mapBooking);
+      const targetPetId = String(petData.id);
+      const petBookings = mapped.filter((b) => !b.petId || b.petId === targetPetId);
+      const source = petBookings.length > 0 ? petBookings : mapped;
+      const sortedBookings = [...source].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setBookings(sortedBookings);
     } catch (error) {
       console.error('Error loading pet bookings:', error);
+      if (!(error instanceof ApiError && error.statusCode === 404)) {
+        setBookings([]);
+      }
     } finally {
       setLoading(false);
     }

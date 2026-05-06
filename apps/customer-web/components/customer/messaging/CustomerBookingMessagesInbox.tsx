@@ -566,22 +566,25 @@ export function CustomerBookingMessagesInbox({
       <div
         className={`fixed inset-0 ${supportZ} flex items-end justify-center bg-black/50 sm:items-center sm:p-4`}
       >
-        <div className="flex h-[min(92vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
-          <SupportTicketDetailView
-            loadingInitial={loadingSupportDetail && !supportTicketDetail}
-            detail={supportTicketDetail}
-            replyText={supportReplyText}
-            onReplyTextChange={setSupportReplyText}
-            sendingReply={sendingSupportReply}
-            onSendReply={() => void handleSupportSendReply()}
-            onMessagesRefresh={() => void loadSupportDetail(active.ticketId)}
-            onBack={() => {
-              setActive(null);
-              setSupportTicketDetail(null);
-              setSupportReplyText('');
-              void refreshInbox();
-            }}
-          />
+        <div className="flex h-[min(92dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+            <SupportTicketDetailView
+              embeddedInModal
+              loadingInitial={loadingSupportDetail && !supportTicketDetail}
+              detail={supportTicketDetail}
+              replyText={supportReplyText}
+              onReplyTextChange={setSupportReplyText}
+              sendingReply={sendingSupportReply}
+              onSendReply={() => void handleSupportSendReply()}
+              onMessagesRefresh={() => void loadSupportDetail(active.ticketId)}
+              onBack={() => {
+                setActive(null);
+                setSupportTicketDetail(null);
+                setSupportReplyText('');
+                void refreshInbox();
+              }}
+            />
+          </div>
         </div>
       </div>
     ) : null;

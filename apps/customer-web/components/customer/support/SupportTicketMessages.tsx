@@ -3,6 +3,7 @@
 import { RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 import { SupportTicketMessageBubble } from './SupportTicketMessageBubble';
 import type { SupportTicketResponseRow } from './types';
 
@@ -12,6 +13,11 @@ export interface SupportTicketMessagesProps {
   responses: SupportTicketResponseRow[];
   /** Re-fetch ticket thread from parent (e.g. `getTicket`) when the user taps Refresh. */
   onRefresh?: () => void | Promise<void>;
+  /**
+   * When true, the thread list grows to fill remaining space in a flex parent (e.g. messages modal)
+   * and scrolls internally. When false, uses a capped height so long threads scroll inside the card on normal pages.
+   */
+  fillAvailable?: boolean;
 }
 
 export function SupportTicketMessages({
@@ -19,13 +25,19 @@ export function SupportTicketMessages({
   initialCreatedAt,
   responses,
   onRefresh,
+  fillAvailable = false,
 }: SupportTicketMessagesProps) {
   const hasInitial =
     initialMessage != null && String(initialMessage).trim().length > 0;
 
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <Card
+      className={cn(
+        'p-4',
+        fillAvailable && 'flex min-h-0 flex-1 flex-col'
+      )}
+    >
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
         <h4 className="text-sm font-medium text-gray-700">Messages</h4>
         {onRefresh ? (
           <Button
@@ -40,7 +52,14 @@ export function SupportTicketMessages({
           </Button>
         ) : null}
       </div>
-      <div className="space-y-3 max-h-[min(50vh,420px)] overflow-y-auto pr-1">
+      <div
+        className={cn(
+          'space-y-3 overflow-y-auto pr-1',
+          fillAvailable
+            ? 'min-h-0 flex-1 overscroll-contain'
+            : 'max-h-[min(50vh,420px)]'
+        )}
+      >
         {hasInitial ? (
           <SupportTicketMessageBubble
             side="customer"
