@@ -33,6 +33,10 @@ import {
 } from '../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
 import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../lib/utils/vendor-customer-distance';
+import {
+  acceptableAvailabilityStylesForSlot,
+  normalizeAvailabilityServiceStyle,
+} from '../../../utils/availability-service-styles';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -2520,7 +2524,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const date = c.req.query('date');
       // Vendor VA2 rows use canonical styles (tele, at_home); listings/catalog often send video_consultation / home_visit.
       const serviceStyleRaw = String(c.req.query('serviceStyle') || 'at_home').trim();
-      const serviceStyle = normalizeServiceStyle(serviceStyleRaw) || serviceStyleRaw;
+      const serviceStyle = normalizeAvailabilityServiceStyle(serviceStyleRaw) || normalizeServiceStyle(serviceStyleRaw) || serviceStyleRaw;
       const staffId = c.req.query('staffId');
       const serviceId = c.req.query('serviceId');
       const totalDuration = Math.max(15, parseInt(c.req.query('totalDuration') || '30', 10) || 30);
@@ -3023,17 +3027,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ---------- 2) Slot-based advance availability only: vendor_availability_v2 (no fallback) ----------
       // Only vendors who have set advance availability in the dashboard get slots. No weekly fallback.
-      const normalizedServiceStyle = (serviceStyle === 'at_vendor' || serviceStyle === 'at_center') ? 'at_center' : serviceStyle;
-      // Training (and some grooming) vendors store vendor_availability_v2.service_styles as
-      // `training` / `trainer` rather than `at_center`; without these, center training bookings got zero slots.
-      const acceptableStylesForSlot: string[] =
-        normalizedServiceStyle === 'at_center'
-          ? ['at_center', 'at_vendor', 'at_clinic', 'training', 'trainer', 'pet_training']
-          : normalizedServiceStyle === 'at_home'
-            ? ['at_home', 'training', 'trainer', 'pet_training']
-            : normalizedServiceStyle === 'tele'
-              ? ['tele', 'online', 'video_consultation']
-              : [normalizedServiceStyle];
+      const normalizedServiceStyle = normalizeAvailabilityServiceStyle(serviceStyle);
+      // Keep style matching centralized so aliases (e.g. home_visit -> at_home) stay in sync.
+      const acceptableStylesForSlot: string[] = acceptableAvailabilityStylesForSlot(normalizedServiceStyle);
       const dayOfWeekValues = dayOfWeek === 0 ? [0, 7] : [dayOfWeek];
       let va2Slots: any[] = [];
 
