@@ -41,6 +41,25 @@ interface Package {
   features: string[];
 }
 
+function normalizePackageRow(raw: any): Package | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const sessionCount = Number(raw.session_count ?? raw.totalSessions ?? raw.total_sessions ?? raw.sessions);
+  const price = Number(raw.price ?? raw.packagePrice ?? 0);
+  const duration = Number(raw.duration_minutes ?? raw.duration ?? 60);
+  const totalSessions = Number.isFinite(sessionCount) && sessionCount > 0 ? Math.floor(sessionCount) : 1;
+  return {
+    id: String(raw.id ?? '').trim(),
+    name: String(raw.name ?? raw.package_name ?? 'Package'),
+    description: String(raw.description ?? ''),
+    sessions: totalSessions,
+    frequency: 'weekly',
+    price: Number.isFinite(price) ? price : 0,
+    originalPrice: undefined,
+    duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 60,
+    features: Array.isArray(raw.features) ? raw.features.map((f: any) => String(f)) : [],
+  };
+}
+
 interface Pet {
   id: string;
   name: string;
@@ -72,9 +91,58 @@ export function PackageBookingScreen({
     try {
       // ✅ FIX: Use actual API call instead of mock data
       if (vendorId) {
-        const response = await CustomerApi.getVendorPackages(vendorId, serviceType);
-        const packagesData = (response as any).packages || (response as any).data?.packages || [];
-        setPackages(Array.isArray(packagesData) ? packagesData : []);
+        const [pkgRes, vendorServicesRes] = await Promise.all([
+          CustomerApi.getVendorPackages(vendorId, serviceType).catch(() => null),
+          CustomerApi.getVendorServices(vendorId).catch(() => null),
+        ]);
+        const packageMap = new Map<string, Package>();
+        const packageRows = Array.isArray((pkgRes as any)?.packages)
+          ? (pkgRes as any).packages
+          : Array.isArray((pkgRes as any)?.data?.packages)
+            ? (pkgRes as any).data.packages
+            : [];
+        for (const row of packageRows) {
+          const normalized = normalizePackageRow(row);
+          if (normalized?.id) packageMap.set(normalized.id, normalized);
+        }
+
+        const serviceRows = Array.isArray(vendorServicesRes) ? vendorServicesRes : [];
+        for (const row of serviceRows) {
+          const metadata =
+            row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+              ? row.metadata
+              : {};
+          const packageDetails =
+            (row?.packageDetails && typeof row.packageDetails === 'object' && !Array.isArray(row.packageDetails)
+              ? row.packageDetails
+              : null) ||
+            (metadata?.packageDetails && typeof metadata.packageDetails === 'object'
+              ? metadata.packageDetails
+              : null);
+          const isPackage = Boolean(row?.isPackage ?? metadata?.isPackage ?? packageDetails);
+          if (!isPackage) continue;
+          const id = String(row?.id ?? '').trim();
+          if (!id) continue;
+          if (packageMap.has(id)) continue;
+          const sessions = Number(packageDetails?.totalSessions ?? packageDetails?.total_sessions ?? 1);
+          const totalSessions = Number.isFinite(sessions) && sessions > 0 ? Math.floor(sessions) : 1;
+          const price = Number(
+            packageDetails?.packagePrice ?? packageDetails?.price ?? row?.price ?? row?.customPrice ?? 0
+          );
+          const duration = Number(row?.duration ?? row?.duration_minutes ?? 60);
+          packageMap.set(id, {
+            id,
+            name: String(row?.name ?? row?.serviceName ?? 'Package'),
+            description: String(row?.description ?? ''),
+            sessions: totalSessions,
+            frequency: 'weekly',
+            price: Number.isFinite(price) ? price : 0,
+            originalPrice: undefined,
+            duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 60,
+            features: [],
+          });
+        }
+        setPackages(Array.from(packageMap.values()));
       }
     } catch (error) {
       console.error('Error loading packages:', error);

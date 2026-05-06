@@ -75,48 +75,6 @@ export default function SellerPage() {
     router.push('/dashboard');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (vendorData && !isSellerStrict(vendorData)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Opening your dashboard…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!vendorData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center max-w-md p-8 bg-white rounded-2xl shadow-lg">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">⚠️</span>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Session Expired</h2>
-          <p className="text-gray-600 mb-6">Please log in again to access the Seller Hub.</p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const activeNav = SELLER_HUB_NAVIGATION.find((n) => n.id === activeTab);
 
   const headerActions = useMemo(() => {
@@ -170,6 +128,48 @@ export default function SellerPage() {
     );
     return actions;
   }, [activeTab, notifications]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (vendorData && !isSellerStrict(vendorData)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Opening your dashboard…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!vendorData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="text-center max-w-md p-8 bg-white rounded-2xl shadow-lg">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">⚠️</span>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Session Expired</h2>
+          <p className="text-gray-600 mb-6">Please log in again to access the Seller Hub.</p>
+          <button
+            onClick={() => router.push('/')}
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[100dvh] min-h-0 bg-gradient-to-br from-slate-50 to-orange-50/30">
