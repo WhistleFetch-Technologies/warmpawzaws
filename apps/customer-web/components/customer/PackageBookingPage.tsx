@@ -40,7 +40,14 @@ function parseServiceMetadata(m: unknown): Record<string, unknown> {
 }
 
 function isPublishedVendorService(pub: string): boolean {
-  return pub === 'published' || pub === 'auto_published';
+  // Backward compatibility: many older vendor_services rows are usable with null/empty status.
+  return (
+    pub === 'published' ||
+    pub === 'auto_published' ||
+    pub === 'active' ||
+    pub === 'enabled' ||
+    pub === ''
+  );
 }
 
 export type VendorPackageIntent = {
@@ -352,8 +359,15 @@ export function PackageBookingPage({
   const loadPackages = async () => {
     try {
       setLoading(true);
-
-      const items: PackageItem[] = [];
+      const itemMap = new Map<string, PackageItem>();
+      const upsertItem = (item: PackageItem) => {
+        const key = item.vendorServiceId
+          ? `vs:${item.vendorServiceId}`
+          : item.id.startsWith('vs-')
+            ? item.id
+            : `pkg:${item.id}`;
+        if (!itemMap.has(key)) itemMap.set(key, item);
+      };
 
       if (vendorPackageIntent?.vendorId) {
         try {
@@ -403,7 +417,7 @@ export function PackageBookingPage({
                 ) || 7
               )
             );
-            items.push({
+            upsertItem({
               id: String(p.id),
               vendorId: String(p.vendor_id ?? vendorPackageIntent.vendorId),
               name: String(p.name ?? p.package_name ?? 'Package'),
@@ -430,7 +444,11 @@ export function PackageBookingPage({
           const vsRes = (await apiClient.get(
             `/vendor/services/${encodeURIComponent(vendorPackageIntent.vendorId)}`
           )) as any;
-          const all: unknown[] = Array.isArray(vsRes?.allServices) ? vsRes.allServices : [];
+          const all: unknown[] = [
+            ...(Array.isArray(vsRes?.allServices) ? vsRes.allServices : []),
+            ...(Array.isArray(vsRes?.services) ? vsRes.services : []),
+            ...(Array.isArray(vsRes?.disallowedLegacy) ? vsRes.disallowedLegacy : []),
+          ];
           for (const raw of all) {
             const s = raw as Record<string, unknown>;
             const pub = String(s.publishStatus ?? s.publish_status ?? '').toLowerCase();
@@ -449,14 +467,6 @@ export function PackageBookingPage({
             if (
               vendorPackageIntent.vendorServiceId &&
               vsid === String(vendorPackageIntent.vendorServiceId)
-            ) {
-              continue;
-            }
-            if (
-              items.some(
-                (it) =>
-                  it.vendorServiceId === vsid || it.id === vsid || it.id === `vs-${vsid}`
-              )
             ) {
               continue;
             }
@@ -494,7 +504,7 @@ export function PackageBookingPage({
             const duration =
               Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 60) || 60;
             const category = String(s.category ?? s.categoryName ?? s.subCategory ?? 'walking');
-            items.push({
+            upsertItem({
               id: `vs-${vsid}`,
               vendorServiceId: vsid,
               vendorId: String(vendorPackageIntent.vendorId),
@@ -522,7 +532,7 @@ export function PackageBookingPage({
         const price = Number(p.price ?? 0);
         const spd = Math.max(1, Math.min(24, Number(p.sessionsPerDay) || 1));
         const intv = Math.max(1, Math.min(366, Number(p.sessionIntervalDays) || 7));
-        items.unshift({
+        upsertItem({
           id: `vs-${p.vendorServiceId}`,
           vendorServiceId: p.vendorServiceId,
           vendorId: p.vendorId,
@@ -539,7 +549,11 @@ export function PackageBookingPage({
           sessionIntervalDays: intv,
         });
       }
-
+      const items = Array.from(itemMap.values());
+      items.sort((a, b) => {
+        if (a.popular !== b.popular) return a.popular ? -1 : 1;
+        return a.totalPrice - b.totalPrice;
+      });
       setPackages(items);
     } catch (err) {
       console.error('Error loading packages:', err);

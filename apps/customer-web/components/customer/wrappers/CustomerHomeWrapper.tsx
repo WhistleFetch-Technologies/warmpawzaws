@@ -1239,12 +1239,26 @@ export function CustomerHomeWrapper({
 
   /** Full bookings list (`CustomerBookingsPage`): return to caller (e.g. profile), else same as handleBack. */
   const handleBackFromBookings = () => {
+    navigateBackToPreviousOr(handleBack);
+  };
+
+  /**
+   * Shared helper for flows that should return to their launcher screen.
+   * Falls back to standard back behavior when no origin is recorded.
+   */
+  const navigateBackToPreviousOr = (fallback: () => void) => {
     if (previousScreen != null) {
       setCurrentScreen(previousScreen);
       setPreviousScreen(null);
       return;
     }
-    handleBack();
+    fallback();
+  };
+
+  /** Package flows: prefer returning to caller screen, else default back behavior. */
+  const handleBackFromPackageBooking = () => {
+    setWalkerServiceData(null);
+    navigateBackToPreviousOr(handleBack);
   };
 
   /** From profile / profile-tab: remember origin when opening full bookings list. */
@@ -3731,7 +3745,7 @@ export function CustomerHomeWrapper({
         customerPhone={phone}
         customerId={phone}
         petId={selectedPetId || undefined}
-        onBack={handleBack}
+        onBack={handleBackFromPackageBooking}
         vendorPackageIntent={vendorPackageIntentFromWalker}
         walkSessionIntent={walkSessionForPackage}
         onContinueToChooseWalker={
@@ -3765,9 +3779,7 @@ export function CustomerHomeWrapper({
             : undefined
         }
         onBack={() => {
-          setWalkerServiceData(null);
-          setCurrentScreen(previousScreen || 'home');
-          setPreviousScreen(null);
+          handleBackFromPackageBooking();
         }}
       />
     );
