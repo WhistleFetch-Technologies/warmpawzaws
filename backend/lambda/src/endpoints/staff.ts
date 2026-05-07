@@ -29,6 +29,8 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { resolveVendorById } from './vendor/endpoints/vendorProfile.vendor';
+import { ensureVendorEarningsForCompletedBooking } from '../utils/vendor-earnings-on-completion';
+import { completePackageSessionForBooking, type SqlClient } from '../utils/package-session-sync';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -3536,6 +3538,16 @@ export function registerStaffEndpoints(app: Hono) {
         status: 'completed',
         completed_at: new Date(),
       });
+
+      // Same as POST /vendor/bookings/:id/complete: dashboard reads vendor_earnings
+      await ensureVendorEarningsForCompletedBooking(booking, bookingId, '[STAFF-COMPLETE]');
+
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await completePackageSessionForBooking(db, bookingId);
+      } catch (pssErr: unknown) {
+        console.warn('[STAFF-COMPLETE] package session sync:', (pssErr as Error)?.message);
+      }
 
       // Disable GPS tracking if it was enabled
       if (booking.service_style === 'at_home') {

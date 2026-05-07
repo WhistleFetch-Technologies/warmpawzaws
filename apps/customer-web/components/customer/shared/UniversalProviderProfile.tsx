@@ -839,8 +839,8 @@ export function UniversalProviderProfile({
                         }`}
                         onClick={() => toggleService(service.id)}
                       >
-                        <div className="flex w-full min-w-0 items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1 pr-1">
+                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <h4 className="font-medium text-gray-900 break-words">{service.name}</h4>
                               {service.popular && (
@@ -866,13 +866,10 @@ export function UniversalProviderProfile({
                               )}
                             </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                            <div className="min-w-0 text-right">
-                              <p className="font-bold tabular-nums text-[#FF8C42]">
-                                {formatPriceWithSymbol(service.price)}
-                              </p>
-                              <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                            </div>
+                          <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
+                            <p className="font-bold tabular-nums text-[#FF8C42] whitespace-nowrap">
+                              {formatPriceWithSymbol(service.price)}
+                            </p>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 
                                 ? 'bg-orange-500 border-orange-500' 
@@ -882,6 +879,7 @@ export function UniversalProviderProfile({
                             </div>
                           </div>
                         </div>
+                        <p className="mt-2 text-right text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                       </Card>
                     );
                   })

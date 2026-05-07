@@ -206,11 +206,14 @@ export function WalletScreen({
             </View>
           )}
           <TouchableOpacity
-            style={styles.addMoneyButton}
+            style={[styles.addMoneyButton, styles.addMoneyButtonDisabled]}
             onPress={() => setShowTopUpModal(true)}
+            disabled
           >
-            <Text style={styles.addMoneyIcon}>➕</Text>
-            <Text style={styles.addMoneyText}>Add Money</Text>
+            <Text style={[styles.addMoneyIcon, styles.addMoneyIconDisabled]}>➕</Text>
+            <Text style={[styles.addMoneyText, styles.addMoneyTextDisabled]}>
+              Add Money
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -594,14 +597,23 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     marginTop: spacing.sm,
   },
+  addMoneyButtonDisabled: {
+    opacity: 0.55,
+  },
   addMoneyIcon: {
     fontSize: 20,
     marginRight: spacing.xs,
+  },
+  addMoneyIconDisabled: {
+    opacity: 0.7,
   },
   addMoneyText: {
     fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
     color: colors.primary,
+  },
+  addMoneyTextDisabled: {
+    color: colors.textSecondary,
   },
   quickActions: {
     flexDirection: 'row',

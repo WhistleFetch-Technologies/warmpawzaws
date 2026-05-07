@@ -1252,7 +1252,13 @@ export default function App() {
                         vendorId={props.route?.params?.vendorId || ''}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ServiceDiscovery')}
+                        onBack={() => {
+                          if (props.navigation.canGoBack()) {
+                            props.navigation.goBack();
+                          } else {
+                            handleNavigate('ServiceDiscovery');
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}

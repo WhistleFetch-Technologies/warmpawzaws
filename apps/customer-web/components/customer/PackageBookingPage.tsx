@@ -39,6 +39,28 @@ function parseServiceMetadata(m: unknown): Record<string, unknown> {
   return {};
 }
 
+/** GET /vendor/services/:vendorId returns `allServices` plus `services` grouped by style — flatten for browse. */
+function flattenVendorServicesPayload(res: Record<string, unknown> | null | undefined): unknown[] {
+  if (!res || typeof res !== 'object') return [];
+  const out: unknown[] = [];
+  const pushArr = (v: unknown) => {
+    if (Array.isArray(v)) out.push(...v);
+  };
+  pushArr(res.allServices);
+  pushArr(res.services);
+  const nested = res.services;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    for (const key of Object.keys(nested)) {
+      const bucket = (nested as Record<string, unknown>)[key];
+      if (bucket && typeof bucket === 'object' && !Array.isArray(bucket)) {
+        pushArr((bucket as Record<string, unknown>).services);
+      }
+    }
+  }
+  pushArr(res.disallowedLegacy);
+  return out;
+}
+
 function isPublishedVendorService(pub: string): boolean {
   // Backward compatibility: many older vendor_services rows are usable with null/empty status.
   return (
@@ -444,11 +466,7 @@ export function PackageBookingPage({
           const vsRes = (await apiClient.get(
             `/vendor/services/${encodeURIComponent(vendorPackageIntent.vendorId)}`
           )) as any;
-          const all: unknown[] = [
-            ...(Array.isArray(vsRes?.allServices) ? vsRes.allServices : []),
-            ...(Array.isArray(vsRes?.services) ? vsRes.services : []),
-            ...(Array.isArray(vsRes?.disallowedLegacy) ? vsRes.disallowedLegacy : []),
-          ];
+          const all: unknown[] = flattenVendorServicesPayload(vsRes as Record<string, unknown>);
           for (const raw of all) {
             const s = raw as Record<string, unknown>;
             const pub = String(s.publishStatus ?? s.publish_status ?? '').toLowerCase();
