@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import type { SellerSettingsHandle } from '@/components/vendor/seller/SellerSettings';
 import type { InventoryManagementHandle } from '@/components/vendor/seller/InventoryManagement';
 import { apiClient } from '@/lib/api-client';
-import { isSellerStrict } from '@/components/vendor/landingPage/constants/helpers';
 import { Bell, HelpCircle, RefreshCcw } from 'lucide-react';
 
 export default function SellerPage() {
@@ -32,9 +31,8 @@ export default function SellerPage() {
 
   useEffect(() => {
     if (loading || !vendorData) return;
-    if (!isSellerStrict(vendorData)) {
-      router.replace('/dashboard');
-    }
+    // Ecommerce is intentionally exposed from the vendor side so any active
+    // vendor can review the seller UI when the feature is enabled.
   }, [loading, vendorData, router]);
 
   const loadVendorData = async () => {
@@ -135,17 +133,6 @@ export default function SellerPage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (vendorData && !isSellerStrict(vendorData)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Opening your dashboard…</p>
         </div>
       </div>
     );

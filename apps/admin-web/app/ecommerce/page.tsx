@@ -53,6 +53,9 @@ export default function ECommerceManagement() {
 				localStorage.setItem('adminEmail', 'admin@warmpawz.com');
 				console.log('🔧 [UAT Mode] Auto-logged in for ecommerce page');
 			}
+			if (!localStorage.getItem('adminPermissions')) {
+				localStorage.setItem('adminPermissions', JSON.stringify(['admin.full_access']));
+			}
 		}
 	}, []);
 

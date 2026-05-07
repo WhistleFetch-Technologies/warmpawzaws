@@ -2,7 +2,7 @@
 
 import { X, ShoppingBag } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { apiClient } from '@/lib/api-client';
 
 interface Product {
   id: string;
@@ -45,7 +45,6 @@ export function EditProductModal({
     hsn_code: '',
     gst_rate: '',
     sku: '',
-    is_active: true,
   });
 
   useEffect(() => {
@@ -60,7 +59,6 @@ export function EditProductModal({
         hsn_code: product.hsn_code || '',
         gst_rate: product.gst_rate?.toString() || '',
         sku: product.sku || '',
-        is_active: product.is_active !== false,
       });
     }
   }, [product, isOpen]);
@@ -96,7 +94,6 @@ export function EditProductModal({
         hsn_code: formData.hsn_code || null,
         gst_rate: formData.gst_rate ? parseFloat(formData.gst_rate) : null,
         sku: formData.sku || null,
-        is_active: formData.is_active,
       };
 
       await apiClient.put(`/vendor/${vendorId}/products/${product.id}`, productData);
@@ -245,16 +242,8 @@ export function EditProductModal({
             </div>
           </div>
 
-          <div>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.is_active}
-                onChange={(e) => handleChange('is_active', e.target.checked)}
-                className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
-              />
-              <span className="text-sm text-gray-700">Product is active (visible to customers)</span>
-            </label>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Product activation is controlled by admin approval.
           </div>
         </div>
 

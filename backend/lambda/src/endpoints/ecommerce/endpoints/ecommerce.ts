@@ -32,7 +32,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
          FROM products p
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1`,
+         WHERE p.id = $1
+           AND p.is_active = true
+           AND COALESCE(p.status, 'pending') = 'active'`,
         [productId]
       );
 
@@ -73,6 +75,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
         WHERE p.is_active = true
+          AND COALESCE(p.status, 'pending') = 'active'
       `;
 
       const params: any[] = [];
@@ -97,7 +100,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       if (category) {
-        productQuery += ` AND p.category = $${paramIndex}`;
+        productQuery += ` AND (p.category_id::text = $${paramIndex} OR p.category = $${paramIndex})`;
         params.push(category);
         paramIndex++;
       }
@@ -161,6 +164,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
         WHERE p.is_active = true
+          AND COALESCE(p.status, 'pending') = 'active'
       `;
 
       const params: any[] = [];
@@ -1093,6 +1097,13 @@ export function registerEcommerceEndpoints(app: Hono) {
       const status = c.req.query('status');
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
+      const statusColumnCheck = await query(
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'status'
+         ) AS has_status`
+      );
+      const hasStatusColumn = !!statusColumnCheck.rows?.[0]?.has_status;
 
       let productsQuery = `
         SELECT 
@@ -1108,11 +1119,26 @@ export function registerEcommerceEndpoints(app: Hono) {
       let paramIndex = 1;
 
       if (status === 'pending_approval') {
-        productsQuery += ` AND p.status = 'pending' OR p.status IS NULL`;
+        if (hasStatusColumn) {
+          // Treat NULL as pending for older rows and keep expression grouped.
+          productsQuery += ` AND COALESCE(p.status, 'pending') = 'pending'`;
+        } else {
+          // Legacy schema fallback: products awaiting approval are inactive by default.
+          productsQuery += ` AND COALESCE(p.is_active, false) = false`;
+        }
       } else if (status) {
-        productsQuery += ` AND p.status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
+        if (hasStatusColumn) {
+          productsQuery += ` AND p.status = $${paramIndex}`;
+          params.push(status);
+          paramIndex++;
+        } else if (status === 'active') {
+          productsQuery += ` AND COALESCE(p.is_active, false) = true`;
+        } else if (status === 'rejected') {
+          // Without status column we cannot distinguish rejected from other inactive items.
+          productsQuery += ` AND 1 = 0`;
+        } else if (status === 'pending') {
+          productsQuery += ` AND COALESCE(p.is_active, false) = false`;
+        }
       }
 
       productsQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
@@ -1145,7 +1171,14 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'status is required' }, 400);
       }
 
-      const updated = await update('products', { id: productId }, { status, is_active: status === 'active' });
+      const incomingStatus = String(status).trim().toLowerCase();
+      const normalizedStatus =
+        incomingStatus === 'pending_approval' ||
+        incomingStatus === 'submit_for_approval' ||
+        incomingStatus === 'submitted'
+          ? 'pending'
+          : incomingStatus;
+      const updated = await update('products', { id: productId }, { status: normalizedStatus, is_active: normalizedStatus === 'active' });
 
       return c.json({
         success: true,

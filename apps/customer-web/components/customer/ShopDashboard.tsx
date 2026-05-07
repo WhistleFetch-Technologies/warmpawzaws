@@ -148,7 +148,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         rating: productRating,
         reviews: rc,
         image: prod.image || prod.image_url || prod.primary_image || '',
-        category: prod.category || prod.category_name || 'general',
+        category: prod.category_id || prod.category || prod.category_name || 'general',
         vendor: {
           name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
           rating: vendorRating,
@@ -156,7 +156,11 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
           deliveryTime: prod.delivery_time || '2-3 days',
         },
         vendorId: prod.vendor_id || prod.vendor?.id,
-        stock: prod.in_stock !== false && prod.stock_quantity > 0 ? 'In Stock' : 'Out of Stock',
+        stock:
+          prod.in_stock !== false &&
+          Number(prod.stock ?? prod.stock_quantity ?? 0) > 0
+            ? 'In Stock'
+            : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount_percentage ? `${prod.discount_percentage}%` : undefined,
       };
@@ -187,9 +191,13 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
     let filtered = [...products];
 
     if (selectedCategory !== 'all') {
+      const selectedApiCategory = apiCategories.find((cat: any) => String(cat.id) === selectedCategory);
+      const selectedApiCategoryName = String(selectedApiCategory?.name || '').toLowerCase();
       filtered = filtered.filter(p => {
         const categoryMatch = p.category === selectedCategory ||
-                             p.category?.toLowerCase() === selectedCategory.toLowerCase();
+                             p.category?.toLowerCase() === selectedCategory.toLowerCase() ||
+                             (selectedApiCategoryName.length > 0 &&
+                              p.category?.toLowerCase() === selectedApiCategoryName);
         return categoryMatch;
       });
     }
@@ -236,7 +244,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const hasAdvancedFilters =
     sortOption !== 'default' || pricePreset !== 'any' || inStockOnly;
 
-  const categories = [
+  const defaultCategories = [
     { id: 'all', label: 'All', icon: <Store className="w-5 h-5 text-gray-600" />, color: 'bg-gray-100 text-gray-700' },
     { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-600" />, color: 'bg-orange-100 text-orange-700' },
     { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-600" />, color: 'bg-blue-100 text-blue-700' },
@@ -247,6 +255,18 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
     { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-600" />, color: 'bg-indigo-100 text-indigo-700' },
     { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-600" />, color: 'bg-green-100 text-green-700' }
   ];
+  const categories =
+    apiCategories.length > 0
+      ? [
+          { id: 'all', label: 'All', icon: <Store className="w-5 h-5 text-gray-600" />, color: 'bg-gray-100 text-gray-700' },
+          ...apiCategories.map((cat: any) => ({
+            id: String(cat.id),
+            label: String(cat.name || 'Category'),
+            icon: <Package className="w-5 h-5 text-gray-600" />,
+            color: 'bg-gray-100 text-gray-700',
+          })),
+        ]
+      : defaultCategories;
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto relative">

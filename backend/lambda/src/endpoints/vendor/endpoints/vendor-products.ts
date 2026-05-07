@@ -106,6 +106,17 @@ function normalizeDeliveryRegions(raw: unknown): unknown {
   return [String(raw)];
 }
 
+function normalizeApprovalStatus(raw: unknown): 'pending' | 'active' | 'rejected' | 'draft' {
+  const status = String(raw || '').trim().toLowerCase();
+  if (status === 'active') return 'active';
+  if (status === 'rejected') return 'rejected';
+  if (status === 'draft') return 'draft';
+  if (status === 'pending_approval' || status === 'submit_for_approval' || status === 'submitted') {
+    return 'pending';
+  }
+  return 'pending';
+}
+
 const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
 
 async function uploadProductImageBufferToS3(
@@ -437,6 +448,14 @@ class CreateVendorProductHandler extends BaseHandler {
 
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
+      if (cols.has('status')) {
+        // Enforce approval workflow on creation regardless of client payload.
+        productData.status = normalizeApprovalStatus(body.status);
+      }
+      // Keep pending/unapproved products hidden from customer storefront.
+      if (productData.status !== 'active') {
+        productData.is_active = false;
+      }
 
       const deliveryNorm =
         body.delivery_regions !== undefined && body.delivery_regions !== null
@@ -622,6 +641,15 @@ class UpdateVendorProductHandler extends BaseHandler {
         updateData.stock = parseInt(body.stock_quantity, 10); // ✅ FIX: Map stock_quantity to stock
       }
       if (body.sku !== undefined) updateData.sku = body.sku;
+      if (body.status !== undefined && cols.has('status')) {
+        updateData.status = normalizeApprovalStatus(body.status);
+        // Keep status and visibility aligned with approval workflow.
+        if (updateData.status === 'active') {
+          updateData.is_active = true;
+        } else if (updateData.status === 'pending' || updateData.status === 'rejected' || updateData.status === 'draft') {
+          updateData.is_active = false;
+        }
+      }
       if (body.hsn_code !== undefined) updateData.hsn_code = body.hsn_code;
       if (body.gst_rate !== undefined) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
       let normalizedImages: unknown | undefined;
@@ -636,7 +664,14 @@ class UpdateVendorProductHandler extends BaseHandler {
         }
         updateData.images = normalizedImages;
       }
-      if (body.is_active !== undefined) updateData.is_active = body.is_active;
+      // Prevent vendor clients from force-publishing products directly.
+      if (body.is_active !== undefined) {
+        if (updateData.status === 'active') {
+          updateData.is_active = true;
+        } else if (updateData.status !== undefined) {
+          updateData.is_active = false;
+        }
+      }
 
       let normalizedDelivery: unknown | undefined;
       if (body.delivery_regions !== undefined) {
