@@ -1091,10 +1091,8 @@ export function VendorDashboard({
               </button>
             )}
 
-            {/* Inventory/Store - For product-oriented roles EXCEPT pharmacy (pharmacy has no inventory management) */}
+            {/* Inventory/Store - Exposed for ecommerce review except pharmacy (pharmacy has its own inventory flow) */}
             {onNavigateToBusinessHub && !isPharmacy && (
-              (hasVendorRole(vendorData, ['pet_products_store', 'seller', 'retailer', 'pet_seller']) ||
-                capabilities.inventory) && (
                 <button
                   onClick={onNavigateToBusinessHub}
                   className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
@@ -1102,7 +1100,6 @@ export function VendorDashboard({
                   <Package className="w-6 h-6 mb-2" />
                   <span className="font-semibold text-sm">Inventory & Store</span>
                 </button>
-              )
             )}
           </div>
         </div>

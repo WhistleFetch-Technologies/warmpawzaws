@@ -499,6 +499,8 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     try {
       const payload = {
         ...formData,
+        // Explicitly keep vendor-submitted products hidden until admin approval.
+        is_active: formData.status === 'active',
         price: parseFloat(formData.price),
         original_price: formData.original_price ? parseFloat(formData.original_price) : null,
         stock: parseInt(formData.stock),
@@ -663,9 +665,11 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
               onChange={(e) => setFormData({ ...formData, status: e.target.value })}
               className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
             >
+              {product?.status === 'active' && (
+                <option value="active">Active (Approved)</option>
+              )}
               <option value="draft">Draft</option>
               <option value="pending">Submit for Approval</option>
-              <option value="active">Active (if auto-approved)</option>
             </select>
           </div>
 
