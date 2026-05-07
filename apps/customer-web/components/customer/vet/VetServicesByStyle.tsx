@@ -243,12 +243,15 @@ export function VetServicesByStyle({
 
     // For staff/individual providers, include staffId in booking data
     const bookingData: any = {
-      serviceId: service.id,
+      serviceId: service.id || service.serviceId,
       serviceName: service.name,
       serviceStyle,
       price: service.price,
       duration: service.duration,
       providerName: provider.name,
+      /** Full vendor_services row — VetBookingRouter package redirect + booking need metadata / packageDetails */
+      service,
+      vendorName: provider.vendorName || provider.name,
     };
 
     const vendorIdForPkg =
@@ -351,7 +354,7 @@ export function VetServicesByStyle({
       const firstService = selectedServicesData[0];
       const bookingData: any = {
         vendorId: profileProvider!.providerId || profileProvider!.vendorId,
-        vendorName: profileProvider!.name,
+        vendorName: profileProvider!.vendorName || profileProvider!.name,
         serviceStyle,
         selectedServices: selectedServicesData, // ✅ Pass array of selected services
         // Also include first service for backward compatibility
@@ -359,6 +362,7 @@ export function VetServicesByStyle({
         serviceName: firstService?.name,
         price: totalPrice, // Total price of all selected services
         duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
+        service: firstService,
       };
 
       if (profileProvider!.providerType === 'vendor') {
@@ -751,7 +755,7 @@ export function VetServicesByStyle({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base break-words">{service.name}</h4>
-                                {(service as any).isPackage && (
+                                {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                 )}
                                 {isSelected && (
@@ -1122,7 +1126,7 @@ export function VetServicesByStyle({
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
-                              {(service as any).isPackage && (
+                              {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
                                 <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                               )}
                             </div>

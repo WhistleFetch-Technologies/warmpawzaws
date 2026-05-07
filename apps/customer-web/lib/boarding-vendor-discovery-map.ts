@@ -20,6 +20,10 @@ export interface BoardingPlanRow {
   description?: string;
   /** Per-service category for badges (e.g. Boarding, Dog walking). Falls back to hub `planBadgeLabel` when absent. */
   categoryLabel?: string;
+  /** Vendor multi-session bundle — pass through from discovery APIs for Package badge + booking routing */
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
 }
 
 /** Map stored category slugs / short names to customer-facing badge text. */
@@ -200,6 +204,9 @@ export function planRowsFromDiscoveryServices(services: unknown[] | undefined): 
       serviceStyle: (s.serviceStyle || s.service_style) as string | undefined,
       description: desc || undefined,
       categoryLabel: categoryLabelFromServiceRow(s),
+      isPackage: !!(s.isPackage ?? (s.metadata as Record<string, unknown> | undefined)?.isPackage),
+      packageDetails: s.packageDetails,
+      metadata: s.metadata,
     });
   }
   return out;
@@ -242,6 +249,9 @@ export function mapServicesApiResponseToPlanRows(servicesResponse: any): Boardin
       serviceStyle: s.serviceStyle || s.service_style,
       description: desc || undefined,
       categoryLabel: categoryLabelFromServiceRow(s as Record<string, unknown>),
+      isPackage: !!(s.isPackage ?? (s.metadata as Record<string, unknown> | undefined)?.isPackage),
+      packageDetails: s.packageDetails,
+      metadata: s.metadata,
     });
   }
   return mapped;

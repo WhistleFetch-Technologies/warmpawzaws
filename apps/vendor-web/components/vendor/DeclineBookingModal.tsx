@@ -56,7 +56,14 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
       })) as any;
 
       if (data && data.success) {
-        toast.success('Booking declined. Customer will be notified.');
+        const n = Array.isArray(data.cancelledPackageSessionIds) ? data.cancelledPackageSessionIds.length : 0;
+        if (n > 0) {
+          toast.success(
+            `Package declined. ${n} session booking(s) cancelled and customer refund processed per policy.`
+          );
+        } else {
+          toast.success('Booking declined. Customer will be notified.');
+        }
         onSuccess();
       } else {
         toast.error(data?.error || 'Failed to decline booking');

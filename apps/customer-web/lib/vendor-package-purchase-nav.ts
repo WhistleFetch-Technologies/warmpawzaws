@@ -5,13 +5,43 @@
 
 export type VendorServiceLike = Record<string, unknown>;
 
+function parseMetadataIfString(meta: unknown): Record<string, unknown> | undefined {
+  if (meta == null) return undefined;
+  if (typeof meta === 'object' && !Array.isArray(meta)) return meta as Record<string, unknown>;
+  if (typeof meta === 'string') {
+    try {
+      const p = JSON.parse(meta) as unknown;
+      if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, unknown>;
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined;
+}
+
+/** Merge JSON-string metadata + top-level fields so package detection matches PackageBookingPage. */
+export function normalizeVendorServiceRowForPackage(row: VendorServiceLike | null | undefined): VendorServiceLike {
+  if (!row || typeof row !== 'object') return {};
+  const m = parseMetadataIfString(row.metadata);
+  if (!m) return { ...row };
+  return {
+    ...row,
+    metadata: m,
+    isPackage: row.isPackage ?? m.isPackage,
+    packageDetails: row.packageDetails ?? m.packageDetails,
+    packageType: row.packageType ?? m.packageType,
+  };
+}
+
 export function isVendorServicePackageRow(row: VendorServiceLike | null | undefined): boolean {
-  if (!row || typeof row !== 'object') return false;
-  if (Boolean(row.isPackage)) return true;
-  const meta = row.metadata;
+  const r = normalizeVendorServiceRowForPackage(row);
+  if (!r || typeof r !== 'object') return false;
+  if (Boolean(r.isPackage)) return true;
+  const meta = r.metadata;
   if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
     const m = meta as Record<string, unknown>;
     if (Boolean(m.isPackage)) return true;
+    if (String(m.type ?? '').toLowerCase() === 'package') return true;
     const pt = m.packageType;
     if (pt !== undefined && pt !== null && String(pt).trim() !== '') return true;
     const mpd = m.packageDetails;
@@ -21,7 +51,7 @@ export function isVendorServicePackageRow(row: VendorServiceLike | null | undefi
       if (Number(mp.packagePrice ?? mp.price ?? 0) > 0) return true;
     }
   }
-  const pd = row.packageDetails;
+  const pd = r.packageDetails;
   if (pd && typeof pd === 'object' && !Array.isArray(pd)) {
     const p = pd as Record<string, unknown>;
     const ts = Number(p.totalSessions ?? p.total_sessions);
@@ -47,16 +77,18 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
   const vid = String(vendorId || '').trim();
   if (!vid) return null;
 
+  const normalized = normalizeVendorServiceRowForPackage(serviceRow);
+
   const meta =
-    serviceRow.metadata && typeof serviceRow.metadata === 'object' && !Array.isArray(serviceRow.metadata)
-      ? (serviceRow.metadata as Record<string, unknown>)
+    normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+      ? (normalized.metadata as Record<string, unknown>)
       : undefined;
   const pkg =
-    (serviceRow.packageDetails as Record<string, unknown> | undefined) ||
+    (normalized.packageDetails as Record<string, unknown> | undefined) ||
     (meta?.packageDetails as Record<string, unknown> | undefined);
 
   const totalSessions =
-    Number(pkg?.totalSessions ?? pkg?.total_sessions ?? serviceRow.totalSessions ?? 1) || 1;
+    Number(pkg?.totalSessions ?? pkg?.total_sessions ?? normalized.totalSessions ?? 1) || 1;
   const sessionsPerDay = Math.max(
     1,
     Math.min(
@@ -80,21 +112,34 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     ) || 7
   );
   const price =
-    Number(pkg?.price ?? pkg?.packagePrice ?? serviceRow.price ?? serviceRow.custom_price ?? 0) || 0;
+    Number(pkg?.price ?? pkg?.packagePrice ?? normalized.price ?? normalized.custom_price ?? 0) || 0;
   const duration =
-    Number(serviceRow.duration ?? serviceRow.duration_minutes ?? serviceRow.durationMinutes ?? 60) || 60;
+    Number(
+      normalized.duration ??
+        normalized.duration_minutes ??
+        normalized.durationMinutes ??
+        60
+    ) || 60;
   const name = String(
-    serviceRow.serviceName ?? serviceRow.name ?? serviceRow.service_name ?? 'Package'
+    normalized.serviceName ?? normalized.name ?? normalized.service_name ?? 'Package'
   ).trim();
 
   /** vendor_services row id (API `id`); clinic UI may set only `vendorServiceId` when `id` is catalog `serviceId`. */
+  const idRaw = (normalized as Record<string, unknown>).id;
+  const idStr = idRaw != null ? String(idRaw).trim() : '';
+  const idLooksUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      idStr
+    );
   const vsid = String(
-    (serviceRow as Record<string, unknown>).vendorServiceId ?? serviceRow.id ?? ''
+    (normalized as Record<string, unknown>).vendorServiceId ??
+      (normalized as Record<string, unknown>).vendor_service_id ??
+      (idLooksUuid ? idStr : '')
   ).trim();
   if (!vsid) return null;
 
   const serviceStyle = String(
-    styleOpt ?? serviceRow.serviceStyle ?? serviceRow.service_style ?? 'at_home'
+    styleOpt ?? normalized.serviceStyle ?? normalized.service_style ?? 'at_home'
   ).trim() || 'at_home';
 
   const out: Record<string, unknown> = {
@@ -108,7 +153,7 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     duration,
     serviceType: serviceTypeCategory,
     serviceStyle,
-    description: String(serviceRow.description ?? ''),
+    description: String(normalized.description ?? ''),
   };
   if (vendorName) out.walker = { name: vendorName };
   return out;

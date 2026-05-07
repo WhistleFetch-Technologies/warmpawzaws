@@ -21,6 +21,7 @@ import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-
 import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { StarRating } from '../shared/StarRating';
+import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -231,7 +232,15 @@ export function BoardingVendorExpandableCard({
                   >
                     <div className="flex w-full min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0 flex-1 pr-1">
-                        <h5 className="font-medium text-gray-900 break-words">{plan.name}</h5>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h5 className="font-medium text-gray-900 break-words">{plan.name}</h5>
+                          {(plan.isPackage ||
+                            isVendorServicePackageRow(plan as Record<string, unknown>)) && (
+                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                              Package
+                            </span>
+                          )}
+                        </div>
                         {descTrim ? (
                           <div onClick={(e) => e.stopPropagation()}>
                             <ServiceDescriptionInline

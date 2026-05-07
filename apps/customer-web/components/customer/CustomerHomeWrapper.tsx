@@ -605,6 +605,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     doctorId={vetServiceData?.doctorId} 
     doctor={vetServiceData?.doctor} 
     selectedService={vetServiceData?.service} 
+    selectedServices={vetServiceData?.selectedServices}
     serviceType={vetServiceData?.serviceType || 'at_center'}
     serviceStyle={vetServiceData?.serviceStyle || vetServiceData?.serviceType || 'at_center'}
     serviceId={vetServiceData?.serviceId}
@@ -613,6 +614,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     duration={vetServiceData?.duration}
     vendorId={vetServiceData?.vendorId || vetServiceData?.clinicId}
     clinicId={vetServiceData?.clinicId}
+    vendorName={vetServiceData?.vendorName}
     onBack={handleBack} 
     onNavigate={handleVetNavigate} 
     onViewBooking={handleViewBooking} 
