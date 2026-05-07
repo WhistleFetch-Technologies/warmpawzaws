@@ -876,6 +876,21 @@ export function CustomerHomeWrapper({
       });
       return handleVetNavigate(nextScreen, nextData);
     }
+    // Clinic Visit (at_center) should always use the dedicated clinic list with filters.
+    // Keep vet-services-by-style only for vendor/profile mode.
+    if (
+      screen === 'vet-services-by-style' &&
+      data?.serviceStyle === 'at_center' &&
+      !data?.vendorId
+    ) {
+      setVetServiceData((prev: any) => ({
+        ...(prev || {}),
+        ...(data || {}),
+        returnScreen: data?.returnScreen || 'vet-clinic-list',
+      }));
+      setCurrentScreen('vet-clinic-list');
+      return;
+    }
     // Merge listing context when opening profiles or drilling into the same style browser (chevron / View All).
     if (screen === 'vet-clinic-profile' || screen === 'vet-doctor-details' || screen === 'vet-services-by-style') {
       setVetServiceData((prev: any) => ({ ...(prev || {}), ...(data || {}) }));
@@ -1821,7 +1836,10 @@ export function CustomerHomeWrapper({
     );
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => {
     if (screen === 'vet-services-by-style') {
-      setVetServiceData(data);
+      setVetServiceData({
+        ...(data || {}),
+        returnScreen: data?.returnScreen || 'vet-clinic-list',
+      });
       setCurrentScreen('vet-services-by-style');
     } else if (screen === 'clinic-profile' || screen === 'clinic-details') {
       setVetServiceData({
@@ -1989,12 +2007,31 @@ export function CustomerHomeWrapper({
         serviceTypeName={vetServiceData?.serviceTypeName}
         category={vetServiceData?.category || 'vet'}
         onBack={() => {
+          if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet-clinic-list') {
+            setVetServiceData((p: any) => {
+              if (!p || typeof p !== 'object') return null;
+              const { vendorId: _v, ...rest } = p;
+              return Object.keys(rest).length ? rest : null;
+            });
+            setCurrentScreen('vet-clinic-list');
+            return;
+          }
           if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet') {
             setVetServiceData(null);
             setCurrentScreen('vet');
             return;
           }
           if (vetServiceData?.vendorId) {
+            // Default vendor profile back for clinic-visit style should go to filtered clinic list.
+            if (vetServiceData?.serviceStyle === 'at_center') {
+              setVetServiceData((p: any) => {
+                if (!p || typeof p !== 'object') return null;
+                const { vendorId: _v, ...rest } = p;
+                return Object.keys(rest).length ? rest : null;
+              });
+              setCurrentScreen('vet-clinic-list');
+              return;
+            }
             setVetServiceData((p: any) => {
               if (!p || typeof p !== 'object') return p;
               const { vendorId: _v, ...rest } = p;

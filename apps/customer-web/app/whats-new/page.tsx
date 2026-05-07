@@ -18,6 +18,10 @@ const WhatsNewAnnouncementList = dynamic(
     ),
   { ssr: false }
 );
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
 import { ArrowLeft, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 export default function WhatsNewHubPage() {
@@ -25,6 +29,8 @@ export default function WhatsNewHubPage() {
   const [items, setItems] = useState<WhatsNewAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [phone, setPhone] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +53,11 @@ export default function WhatsNewHubPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const storedPhone = localStorage.getItem('customerPhone');
+    setPhone(storedPhone ?? undefined);
   }, []);
 
   return (
@@ -89,7 +100,15 @@ export default function WhatsNewHubPage() {
           <WhatsNewAnnouncementList
             announcements={items}
             interactionMode="hub"
-            onRowPress={(a) => navigateWhatsNewFromFullPage(router, a, 'row')}
+            onRowPress={(a) => {
+              if (a.announcementType === 'emergency') return;
+              // Match Home behavior: AI Pet Assistant opens AI assistant widget.
+              if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                setShowAIChat(true);
+                return;
+              }
+              navigateWhatsNewFromFullPage(router, a, 'row');
+            }}
             onSosPress={(a) => {
               if (a.comingSoon && a.announcementType === 'emergency') return;
               navigateWhatsNewFromFullPage(router, a, 'sos');
@@ -97,6 +116,18 @@ export default function WhatsNewHubPage() {
           />
         )}
       </main>
+      {showAIChat && (
+        <AIChatbotWidget
+          customerPhone={phone}
+          onClose={() => setShowAIChat(false)}
+          onNavigate={(dest) => {
+            if (typeof dest === 'string' && dest.startsWith('/')) {
+              setShowAIChat(false);
+              router.push(dest);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
