@@ -21,6 +21,7 @@ import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
+import { backfillMissingVendorEarningsForVendorIds } from '../../../utils/vendor-earnings-on-completion';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 function buildDailyBreakdownLast7Days(
@@ -353,6 +354,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       if (hasVendorEarnings) {
         let veIds = await expandVendorIdsForEarningsContext(paramVendorId);
         if (veIds.length === 0) veIds = [resolvedVendorId];
+        await backfillMissingVendorEarningsForVendorIds(veIds, '[DASHBOARD-EARNINGS-BACKFILL]');
         const veRes = await query(
           `SELECT 
              COALESCE(SUM(amount), 0) as earnings,
@@ -668,6 +670,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForEarnings.length}), period: ${period}`
       );
 
+      await backfillMissingVendorEarningsForVendorIds(vendorIdsForEarnings, '[EARNINGS-BACKFILL]');
+
       // Calculate date range
       const now = new Date();
       let startDate = new Date();
@@ -848,6 +852,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       console.log(
         `💳 [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForTx.length}), period: ${period}, limit: ${limit}`
       );
+
+      await backfillMissingVendorEarningsForVendorIds(vendorIdsForTx, '[TRANSACTIONS-EARNINGS-BACKFILL]');
 
       // Calculate date range
       const now = new Date();
