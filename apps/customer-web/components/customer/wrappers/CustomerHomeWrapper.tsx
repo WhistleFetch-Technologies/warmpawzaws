@@ -799,12 +799,20 @@ export function CustomerHomeWrapper({
     else if (service === 'purchase-package') {
       setPreviousScreen(currentScreen);
       const vid = String((data as any)?.vendorId ?? '').trim();
-      const vsid = String((data as any)?.vendorServiceId ?? '').trim();
+      const vsid = String(
+        (data as any)?.vendorServiceId ?? (data as any)?.vendor_service_id ?? ''
+      ).trim();
+      const payload =
+        typeof data === 'object' && data != null && !Array.isArray(data)
+          ? { ...(data as Record<string, unknown>) }
+          : {};
+      if (vid) (payload as any).vendorId = vid;
+      if (vsid) (payload as any).vendorServiceId = vsid;
       if (vsid && vid) {
-        setWalkerServiceData(data ?? null);
+        setWalkerServiceData(Object.keys(payload).length ? payload : null);
         setCurrentScreen('purchase-package');
       } else if (vid) {
-        setWalkerServiceData(data ?? { vendorId: vid, vendorName: (data as any)?.vendorName });
+        setWalkerServiceData(Object.keys(payload).length ? payload : { vendorId: vid, vendorName: (data as any)?.vendorName });
         setCurrentScreen('package-booking');
       } else {
         setCurrentScreen('package-booking');
@@ -952,12 +960,18 @@ export function CustomerHomeWrapper({
     else if (screen === 'purchase-package') {
       setPreviousScreen(currentScreen);
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
-      const vsid = String(data?.vendorServiceId ?? '').trim();
+      const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
+      const payload =
+        typeof data === 'object' && data != null && !Array.isArray(data)
+          ? { ...(data as Record<string, unknown>) }
+          : {};
+      if (vid) (payload as any).vendorId = vid;
+      if (vsid) (payload as any).vendorServiceId = vsid;
       if (vsid && vid) {
-        setWalkerServiceData(data ?? null);
+        setWalkerServiceData(Object.keys(payload).length ? payload : null);
         setCurrentScreen('purchase-package');
       } else if (vid) {
-        setWalkerServiceData(data ?? { vendorId: vid, vendorName: data?.vendorName });
+        setWalkerServiceData(Object.keys(payload).length ? payload : { vendorId: vid, vendorName: data?.vendorName });
         setVetServiceData((prev: any) => ({ ...prev, ...data }));
         setCurrentScreen('package-booking');
       } else {
@@ -1440,7 +1454,7 @@ export function CustomerHomeWrapper({
                 setSelectedOrder({ id: orderId });
                 setCurrentScreen('order_tracking');
               } else {
-                handleNavigateToService(screen);
+                handleNavigateToService(screen, data);
               }
               return;
             }
@@ -2287,12 +2301,14 @@ export function CustomerHomeWrapper({
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
           const vid = String(data?.vendorId ?? '').trim();
-          const vsid = String(data?.vendorServiceId ?? '').trim();
-          if (vsid && vid) {
-            setWalkerServiceData(data ?? null);
-          } else {
-            setVetServiceData((prev: any) => ({ ...prev, ...data }));
-          }
+          const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
+          const payload =
+            typeof data === 'object' && data != null && !Array.isArray(data)
+              ? { ...(data as Record<string, unknown>) }
+              : {};
+          if (vid) (payload as any).vendorId = vid;
+          if (vsid) (payload as any).vendorServiceId = vsid;
+          setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
           setCurrentScreen('purchase-package');
         } else if (screen === 'grooming-vendor-profile' && data?.vendorId) {
           const style = String(data.serviceStyle || 'at_center').toLowerCase();
@@ -2350,12 +2366,14 @@ export function CustomerHomeWrapper({
         } else if (screen === 'purchase-package') {
           setPreviousScreen(currentScreen);
           const vid = String(data?.vendorId ?? '').trim();
-          const vsid = String(data?.vendorServiceId ?? '').trim();
-          if (vsid && vid) {
-            setWalkerServiceData(data ?? null);
-          } else {
-            setVetServiceData((prev: any) => ({ ...prev, ...data }));
-          }
+          const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
+          const payload =
+            typeof data === 'object' && data != null && !Array.isArray(data)
+              ? { ...(data as Record<string, unknown>) }
+              : {};
+          if (vid) (payload as any).vendorId = vid;
+          if (vsid) (payload as any).vendorServiceId = vsid;
+          setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
           setCurrentScreen('purchase-package');
         } else {
           console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
@@ -2756,7 +2774,7 @@ export function CustomerHomeWrapper({
               setPreviousScreen('nutritionist-tele');
               setCurrentScreen('nutritionist-booking');
             } else {
-              handleNavigateToService(screen);
+              handleNavigateToService(screen, data);
             }
           }}
         />
@@ -2782,7 +2800,7 @@ export function CustomerHomeWrapper({
           if (screen === 'booking-details' || screen === 'booking-confirmation') {
             handleViewBooking(data?.bookingId);
           } else {
-            handleNavigateToService(screen);
+            handleNavigateToService(screen, data);
           }
         }}
         onViewBooking={handleViewBooking}
@@ -3072,7 +3090,7 @@ export function CustomerHomeWrapper({
               handleBack();
             }
           }}
-          onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }}
+          onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen, data); }}
         />
       </CustomerScreenWrapper>
     );
@@ -3328,7 +3346,7 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(data?.vendorId);
       setCurrentScreen('create-booking');
     } else {
-      handleNavigateToService(screen);
+      handleNavigateToService(screen, data);
     }
   }} />;
   
@@ -3355,7 +3373,7 @@ export function CustomerHomeWrapper({
       });
       setCurrentScreen('grooming-booking');
     } else {
-      handleNavigateToService(screen);
+      handleNavigateToService(screen, data);
     }
   };
   const groomingHomeNavigate = (screen: string, data?: any) => {
@@ -3380,7 +3398,7 @@ export function CustomerHomeWrapper({
       });
       setCurrentScreen('grooming-booking');
     } else {
-      handleNavigateToService(screen);
+      handleNavigateToService(screen, data);
     }
   };
   if (currentScreen === 'grooming_center') {
@@ -3463,7 +3481,7 @@ export function CustomerHomeWrapper({
       });
       setCurrentScreen('training-booking');
     } else {
-      handleNavigateToService(screen);
+      handleNavigateToService(screen, data);
     }
   };
   const trainingHomeNavigate = (screen: string, data?: any) => {
@@ -3488,7 +3506,7 @@ export function CustomerHomeWrapper({
       });
       setCurrentScreen('training-booking');
     } else {
-      handleNavigateToService(screen);
+      handleNavigateToService(screen, data);
     }
   };
   if (currentScreen === 'training_center') {
@@ -3580,7 +3598,7 @@ export function CustomerHomeWrapper({
       if (screen === 'booking-details' || screen === 'booking-confirmation') {
         handleViewBooking(data?.bookingId);
       } else {
-        handleNavigateToService(screen);
+        handleNavigateToService(screen, data);
       }
     }}
     onViewBooking={handleViewBooking}
@@ -3603,7 +3621,7 @@ export function CustomerHomeWrapper({
       if (screen === 'booking-details' || screen === 'booking-confirmation') {
         handleViewBooking(data?.bookingId);
       } else {
-        handleNavigateToService(screen);
+        handleNavigateToService(screen, data);
       }
     }}
     onViewBooking={handleViewBooking}
@@ -3638,7 +3656,7 @@ export function CustomerHomeWrapper({
               if (screen === 'booking-details' || screen === 'booking-confirmation') {
                 handleViewBooking(data?.bookingId);
               } else {
-                handleNavigateToService(screen);
+                handleNavigateToService(screen, data);
               }
             }}
             onViewBooking={handleViewBooking}

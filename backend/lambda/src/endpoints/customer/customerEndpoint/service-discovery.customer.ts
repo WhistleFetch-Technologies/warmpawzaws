@@ -1019,6 +1019,18 @@ function deduplicateServices(services: any[]): any[] {
     if (key && !seen.has(key)) {
       seen.set(key, service);
     } else if (key && seen.has(key)) {
+      const prev = seen.get(key)!;
+      const pkgScore = (s: any) =>
+        (s?.isPackage ? 2 : 0) +
+        (s?.metadata &&
+        typeof s.metadata === 'object' &&
+        (s.metadata.isPackage || s.metadata.packageDetails || s.metadata.type === 'package')
+          ? 1
+          : 0);
+      if (pkgScore(service) > pkgScore(prev)) {
+        seen.set(key, service);
+        continue;
+      }
       // Duplicate found - log warning but keep first occurrence
       console.warn(`[Deduplication] Duplicate service detected: ${key} (ID: ${service.id || service.serviceId || 'unknown'}). Keeping first occurrence.`);
     } else if (!key) {

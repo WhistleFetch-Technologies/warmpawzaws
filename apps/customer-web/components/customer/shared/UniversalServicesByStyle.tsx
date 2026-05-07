@@ -655,16 +655,16 @@ export function UniversalServicesByStyle({
       price: service.price || 0,
       duration: service.duration || 30,
       providerName: provider.name,
-      // ✅ FIX: Include all service details
+      vendorName: provider.vendorName || provider.name,
+      /** Full row so vet-booking / package redirect sees metadata, isPackage, packageDetails */
       service: {
-        id: service.id || service.serviceId,
-        serviceId: service.id || service.serviceId,
+        ...service,
+        id: service.id ?? service.serviceId,
+        serviceId: service.serviceId ?? service.service_id ?? service.id,
         name: service.name || service.serviceName,
-        price: service.price || 0,
-        duration: service.duration || 30,
-        description: service.description,
-        category: service.category
-      }
+        price: service.price ?? 0,
+        duration: service.duration ?? 30,
+      },
     };
 
     const vendorIdForPkg =
@@ -1183,7 +1183,7 @@ export function UniversalServicesByStyle({
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  {(service as any).isPackage && (
+                                  {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
                                     <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                   )}
                                   {(service as any).inActivePackage && (
@@ -1589,7 +1589,7 @@ export function UniversalServicesByStyle({
                             <div className="flex items-center gap-2 flex-wrap">
                               <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                {(service as any).isPackage && (
+                                {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">Package</span>
                                 )}
                                 {(service as any).inActivePackage && (
