@@ -349,22 +349,20 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                       : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <span className={`font-medium block ${isSel ? 'text-orange-900' : 'text-gray-700'}`}>
+                  <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className={`font-medium block break-words ${isSel ? 'text-orange-900' : 'text-gray-700'}`}>
                         {service.name}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="text-right">
-                        <span className={`block font-semibold tabular-nums ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
-                          ₹{service.price}
-                        </span>
-                        <p className="mt-0.5 text-xs font-normal text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                      </div>
+                    <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
+                      <span className={`block font-semibold tabular-nums whitespace-nowrap ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
+                        ₹{service.price}
+                      </span>
                       {isSel && <CheckCircle2 className="w-5 h-5 text-orange-600" aria-hidden />}
                     </div>
                   </div>
+                  <p className="mt-1 text-right text-[11px] leading-4 font-normal text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                 </button>
               );
             })}

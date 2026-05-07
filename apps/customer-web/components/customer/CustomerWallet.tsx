@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import {
   rememberHelpBackFromCurrentUrl,
-  rememberPromotionsBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
 import {
   fetchCustomerUuidByPhone,
@@ -472,17 +471,10 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => {
-                if (onNavigate) {
-                  onNavigate('promotions');
-                  return;
-                }
-                if (typeof window !== 'undefined') {
-                  rememberPromotionsBackFromCurrentUrl();
-                  window.location.href = '/promotions';
-                }
-              }}
-              className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
+              disabled
+              aria-disabled="true"
+              aria-label="Offers (unavailable)"
+              className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
             >
               <span className="text-2xl">🎁</span>
               <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Offers</span>

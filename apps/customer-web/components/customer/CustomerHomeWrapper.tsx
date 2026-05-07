@@ -416,6 +416,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       navigateToScreen('package-booking');
       return;
     }
+    // Clinic Visit must always use the dedicated clinic list (with filters).
+    // Keep vet-services-by-style only for vendor-specific/profile mode.
+    if (
+      screen === 'vet-services-by-style' &&
+      data?.serviceStyle === 'at_center' &&
+      !data?.vendorId
+    ) {
+      setVetServiceData({
+        ...(data || {}),
+        returnScreen: data?.returnScreen || 'vet-clinic-list',
+      });
+      navigateToScreen('vet-clinic-list');
+      return;
+    }
     setVetServiceData(data);
     if (screen === 'vet-booking') navigateToScreen('vet-booking');
     else if (screen === 'vet-doctor-details') navigateToScreen('vet-doctor-details');
@@ -606,7 +620,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={handleBack} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
     if (screen === 'vet-services-by-style') {
-      setVetServiceData(data);
+      setVetServiceData({
+        ...(data || {}),
+        returnScreen: data?.returnScreen || 'vet-clinic-list',
+      });
       navigateToScreen('vet-services-by-style');
     } else if (screen === 'clinic-details' || screen === 'clinic-profile') {
       setVetServiceData({
@@ -663,7 +680,27 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
         serviceTypeName={vetServiceData?.serviceTypeName}
         category={vetServiceData?.category || 'vet'}
-        onBack={handleBack}
+        onBack={() => {
+          if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet-clinic-list') {
+            setVetServiceData((prev: any) => {
+              if (!prev || typeof prev !== 'object') return null;
+              const { vendorId: _vendorId, ...rest } = prev;
+              return Object.keys(rest).length ? rest : null;
+            });
+            navigateToScreen('vet-clinic-list');
+            return;
+          }
+          if (vetServiceData?.returnScreen === 'vet-clinic-list') {
+            navigateToScreen('vet-clinic-list');
+            return;
+          }
+          if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet') {
+            setVetServiceData(null);
+            navigateToScreen('vet');
+            return;
+          }
+          handleBack();
+        }}
         onNavigate={handleVetNavigate}
       />
     );
