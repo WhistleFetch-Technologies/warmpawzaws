@@ -20,7 +20,17 @@ public class CustomerMapper {
         response.setId(customer.getId());
         response.setPhone(customer.getPhone());
         response.setName(customer.getFullName());
+        response.setFullName(customer.getFullName());
+        String[] splitName = splitName(customer.getFullName());
+        response.setFirstName(splitName[0]);
+        response.setLastName(splitName[1]);
         response.setEmail(customer.getEmail());
+        response.setPhoto(customer.getProfilePhotoUrl());
+        response.setProfilePhotoUrl(customer.getProfilePhotoUrl());
+        response.setAddress(customer.getAddress());
+        response.setCity(customer.getCity());
+        response.setState(customer.getState());
+        response.setPincode(customer.getPincode());
         response.setStatus(customer.getStatus());
         response.setOnboardingStatus(customer.getOnboardingStatus());
         response.setProfileCompleted(customer.isProfileCompleted());
@@ -160,16 +170,28 @@ public class CustomerMapper {
         Pet pet = new Pet();
 
         pet.setName(request.getName());
-        pet.setSpecies(request.getSpecies());
+        pet.setSpecies(resolveSpecies(request));
         pet.setBreed(request.getBreed());
 
-        pet.setAgeYears(request.getAgeYears());
-        pet.setAgeMonths(request.getAgeMonths());
+        if (request.getAgeYears() != null || request.getAgeMonths() != null) {
+            pet.setAgeYears(request.getAgeYears());
+            pet.setAgeMonths(request.getAgeMonths());
+        } else if (request.getAge() != null) {
+            if ("months".equalsIgnoreCase(request.getAgeUnit())) {
+                pet.setAgeMonths(request.getAge());
+            } else {
+                pet.setAgeYears(request.getAge());
+            }
+        }
 
         pet.setGender(request.getGender());
-        pet.setWeightKg(request.getWeightKg());
+        pet.setWeightKg(request.getWeightKg() != null ? request.getWeightKg() : request.getWeight());
 
         pet.setProfilePhotoUrl(request.getPhoto());
+        if ((pet.getProfilePhotoUrl() == null || pet.getProfilePhotoUrl().isBlank())
+                && request.getPhotos() != null && !request.getPhotos().isEmpty()) {
+            pet.setProfilePhotoUrl(request.getPhotos().get(0));
+        }
         pet.setMedicalHistory(request.getMedicalHistory());
 
         return pet;
@@ -193,11 +215,20 @@ public class CustomerMapper {
 
         response.setAgeYears(pet.getAgeYears());
         response.setAgeMonths(pet.getAgeMonths());
+        if (pet.getAgeYears() != null) {
+            response.setAge(pet.getAgeYears());
+            response.setAgeUnit("years");
+        } else if (pet.getAgeMonths() != null) {
+            response.setAge(pet.getAgeMonths());
+            response.setAgeUnit("months");
+        }
 
         response.setGender(pet.getGender());
         response.setWeightKg(pet.getWeightKg());
+        response.setWeight(pet.getWeightKg());
 
         response.setPhoto(pet.getProfilePhotoUrl());
+        response.setPhotos(pet.getProfilePhotoUrl() == null ? java.util.List.of() : java.util.List.of(pet.getProfilePhotoUrl()));
         response.setMedicalHistory(pet.getMedicalHistory());
 
         response.setCreatedAt(toString(pet.getCreatedAt()));
@@ -267,6 +298,12 @@ public class CustomerMapper {
         response.setIsDefault(address.isDefault());
 
         response.setCoordinates(address.getCoordinates());
+        if (address.getCoordinates() != null) {
+            response.setPlaceId(asString(address.getCoordinates().get("placeId")));
+            response.setFormattedAddress(asString(address.getCoordinates().get("formattedAddress")));
+            response.setLatitude(asDouble(address.getCoordinates().get("lat")));
+            response.setLongitude(asDouble(address.getCoordinates().get("lng")));
+        }
 
         response.setFlatNo(address.getFlatNo());
         response.setHouseNo(address.getHouseNo());
@@ -304,5 +341,35 @@ public class CustomerMapper {
     // =========================
     private static String toString(Instant instant) {
         return instant != null ? instant.toString() : null;
+    }
+
+    private static String resolveSpecies(AddPetRequest request) {
+        if (request.getSpecies() != null && !request.getSpecies().isBlank()) return request.getSpecies();
+        if (request.getPetType() != null && !request.getPetType().isBlank()) return request.getPetType();
+        return request.getType();
+    }
+
+    private static String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static Double asDouble(Object value) {
+        if (value instanceof Number number) return number.doubleValue();
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Double.valueOf(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String[] splitName(String fullName) {
+        if (fullName == null || fullName.isBlank()) return new String[]{"", ""};
+        String trimmed = fullName.trim();
+        int space = trimmed.indexOf(' ');
+        if (space < 0) return new String[]{trimmed, ""};
+        return new String[]{trimmed.substring(0, space), trimmed.substring(space + 1).trim()};
     }
 }

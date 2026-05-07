@@ -10,7 +10,16 @@ public class CustomerResponse {
     private UUID id;
     private String phone;
     private String name;
+    private String fullName;
+    private String firstName;
+    private String lastName;
     private String email;
+    private String photo;
+    private String profilePhotoUrl;
+    private String address;
+    private String city;
+    private String state;
+    private String pincode;
 
     private String status;
     private String onboardingStatus;

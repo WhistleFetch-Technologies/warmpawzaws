@@ -10,9 +10,19 @@ public interface CustomerAddressService {
 
     AddressResponse createAddress(UUID customerId, AddressRequest request);
 
+    AddressResponse createAddressByPhone(String phone, AddressRequest request);
+
     List<AddressResponse> getAddresses(UUID customerId);
 
-    AddressResponse updateAddress(UUID addressId, AddressRequest request);
+    List<AddressResponse> getAddressesByPhone(String phone);
 
-    void deleteAddress(UUID addressId);
+    AddressResponse getAddress(UUID addressId);
+
+    AddressResponse updateAddress(UUID customerId, UUID addressId, AddressRequest request);
+
+    AddressResponse updateAddressByPhone(String phone, UUID addressId, AddressRequest request);
+
+    void deleteAddress(UUID customerId, UUID addressId);
+
+    void deleteAddressByPhone(String phone, UUID addressId);
 }

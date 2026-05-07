@@ -4,7 +4,9 @@ import com.warmpawz.customer.dto.common.CommonResponse;
 import com.warmpawz.customer.dto.request.CustomerPreferencesRequest;
 import com.warmpawz.customer.service.CustomerPreferenceService;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -21,26 +23,26 @@ public class CustomerPreferenceController {
     // SAVE / UPDATE PREFERENCES
     // =========================
     @PostMapping("/{customerId}/preferences")
-    public CommonResponse<CustomerPreferencesRequest> savePreferences(
+    public ResponseEntity<CommonResponse<CustomerPreferencesRequest>> savePreferences(
             @PathVariable UUID customerId,
-            @RequestBody CustomerPreferencesRequest request
+            @Valid @RequestBody CustomerPreferencesRequest request
     ) {
         CustomerPreferencesRequest response =
                 preferenceService.savePreferences(customerId, request);
 
-        return CommonResponse.success(response, "Preferences saved successfully");
+        return ResponseEntity.ok(CommonResponse.success(response, "Preferences saved successfully"));
     }
 
     // =========================
     // GET PREFERENCES
     // =========================
     @GetMapping("/{customerId}/preferences")
-    public CommonResponse<CustomerPreferencesRequest> getPreferences(
+    public ResponseEntity<CommonResponse<CustomerPreferencesRequest>> getPreferences(
             @PathVariable UUID customerId
     ) {
         CustomerPreferencesRequest response =
                 preferenceService.getPreferences(customerId);
 
-        return CommonResponse.success(response, "Preferences fetched successfully");
+        return ResponseEntity.ok(CommonResponse.success(response, "Preferences fetched successfully"));
     }
 }

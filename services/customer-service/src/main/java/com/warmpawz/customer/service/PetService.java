@@ -10,7 +10,15 @@ public interface PetService {
 
     PetResponse addPet(UUID customerId, AddPetRequest request);
 
+    PetResponse addPet(AddPetRequest request);
+
+    List<PetResponse> replacePetsByPhone(String phone, List<AddPetRequest> requests);
+
     List<PetResponse> getPets(UUID customerId);
+
+    List<PetResponse> getPetsByPhone(String phone);
+
+    PetResponse getPet(UUID petId);
 
     PetResponse updatePet(UUID petId, AddPetRequest request);
 

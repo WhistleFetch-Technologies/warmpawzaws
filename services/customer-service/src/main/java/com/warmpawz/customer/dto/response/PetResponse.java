@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
 
 @Data
 public class PetResponse {
@@ -18,12 +19,16 @@ public class PetResponse {
 
     private Integer ageYears;
     private Integer ageMonths;
+    private Integer age;
+    private String ageUnit;
 
     private String gender;
 
     private Double weightKg;
+    private Double weight;
 
     private String photo;
+    private List<String> photos;
 
     private Map<String, Object> medicalHistory;
 
