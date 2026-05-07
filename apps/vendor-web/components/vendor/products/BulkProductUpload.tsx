@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface BulkProductUploadProps {

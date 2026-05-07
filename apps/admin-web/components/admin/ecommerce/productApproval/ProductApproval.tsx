@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, CheckCircle, XCircle, RefreshCcw } from 'lucide-react';
+import { Package, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -73,17 +73,6 @@ export function ProductApproval() {
         <p className="text-gray-500 text-sm mt-1">
           Review and approve pending products
         </p>
-      </div>
-
-      <div className="flex justify-end">
-        <button
-          onClick={loadPendingProducts}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-        >
-          <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">

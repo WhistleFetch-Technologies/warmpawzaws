@@ -2168,7 +2168,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Shop Categories - Horizontal Slider */}
+        {/* Shop Categories - Horizontal Slider (shop catalog coming soon) */}
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2188,18 +2188,19 @@ export function CustomerHomeComplete({
               { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
               { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
             ].map((category) => (
-              <button
-                type="button"
+              <div
                 key={category.id}
-                onClick={() => handleNavigation('shop', { category: category.id })}
-                className="flex-shrink-0 flex flex-col items-center gap-1 rounded-2xl px-1 py-0.5 transition-transform active:scale-95"
-                aria-label={`Open ${category.label} in shop`}
+                className="flex-shrink-0 flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
+                aria-label={`${category.label} — coming soon`}
               >
-                <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
+                <div className="relative w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
                   {category.icon}
+                  <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
+                    Soon
+                  </span>
                 </div>
-                <span className="text-[10px] text-gray-700 text-center font-medium leading-tight">{category.label}</span>
-              </button>
+                <span className="text-[10px] text-gray-500 text-center font-medium leading-tight">{category.label}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -2718,40 +2719,34 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Premium Pet Food */}
-        <div className="mb-6" aria-label="Premium Pet Food">
+        {/* Premium Pet Food — full section coming soon (shop wiring deferred) */}
+        <div className="mb-6" aria-label="Premium Pet Food — coming soon">
           <div className="px-6 mb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Wheat className="w-5 h-5 text-yellow-600 shrink-0" />
                 <h2 className="text-black font-semibold">Premium Pet Food</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => handleNavigation('shop', { category: 'food' })}
-                className="text-[10px] font-bold uppercase tracking-wide bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full shrink-0 active:bg-yellow-200"
-              >
-                Shop food
-              </button>
+              <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full shrink-0">
+                Soon
+              </span>
             </div>
             <p className="text-xs text-gray-600">
-              Trusted food picks and vendor deals for your pet.
+              Coming soon — trusted brands and vendor deals when we launch. Browse the shop for food then.
             </p>
           </div>
-          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
+          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6 pointer-events-none select-none">
             {petFoodSpotlightBrands().map((vendor, index) => (
-              <button
-                type="button"
+              <div
                 key={index}
-                onClick={() => handleNavigation('shop', { category: 'food' })}
-                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center active:scale-95 transition-transform"
+                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center opacity-[0.92] grayscale-[0.08]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
                   <vendor.Icon className="w-6 h-6 text-yellow-600" />
                 </div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-1">{vendor.name}</h3>
-                <span className="text-xs font-semibold text-amber-600 inline-block">Browse</span>
-              </button>
+                <span className="text-xs font-semibold text-amber-600 inline-block">Coming soon</span>
+              </div>
             ))}
           </div>
         </div>

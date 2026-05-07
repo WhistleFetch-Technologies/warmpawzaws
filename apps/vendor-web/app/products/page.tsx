@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { AddProductModal } from '@/components/vendor/products/AddProductModal';
 import { EditProductModal } from '@/components/vendor/products/EditProductModal';
 import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
@@ -64,6 +64,10 @@ export default function ProductsPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
 
   useEffect(() => {
+    // Set mock vendorId if not exists (for local testing)
+    if (typeof window !== 'undefined' && !localStorage.getItem('vendorId')) {
+      localStorage.setItem('vendorId', 'mock-vendor-id');
+    }
     const vendorId = localStorage.getItem('vendorId');
     if (!vendorId) {
       router.push('/onboarding');
@@ -120,6 +124,22 @@ export default function ProductsPage() {
     } catch (err: any) {
       console.error('Error deleting product:', err);
       alert(err.message || 'Failed to delete product');
+    }
+  };
+
+  const handleToggleStatus = async (product: Product) => {
+    try {
+      const vendorId = localStorage.getItem('vendorId');
+      if (!vendorId) return;
+
+      await apiClient.put(`/vendor/${vendorId}/products/${product.id}`, {
+        is_active: !product.is_active,
+      });
+      
+      loadData();
+    } catch (err: any) {
+      console.error('Error updating product status:', err);
+      alert(err.message || 'Failed to update product status');
     }
   };
 
@@ -313,6 +333,16 @@ export default function ProductsPage() {
                       title="Manage Variations"
                     >
                       Variants
+                    </button>
+                    <button
+                      onClick={() => handleToggleStatus(product)}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                        product.is_active
+                          ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                      }`}
+                    >
+                      {product.is_active ? 'Deactivate' : 'Activate'}
                     </button>
                     <button
                       onClick={() => handleDeleteProduct(product.id)}

@@ -2,7 +2,7 @@
 
 import { X, ShoppingBag, Plus, Trash2, Upload, Image as ImageIcon, MapPin } from 'lucide-react';
 import { useState } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -47,6 +47,7 @@ export function AddProductModal({
     hsn_code: '',
     gst_rate: '',
     sku: '',
+    is_active: true,
   });
 
   const handleChange = (field: string, value: any) => {
@@ -170,8 +171,7 @@ export function AddProductModal({
         hsn_code: formData.hsn_code || null,
         gst_rate: formData.gst_rate ? parseFloat(formData.gst_rate) : null,
         sku: formData.sku || null,
-        status: 'pending',
-        is_active: false,
+        is_active: formData.is_active,
         images:
           images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
         variants: variants.length > 0 ? variants.map(v => ({
@@ -198,6 +198,7 @@ export function AddProductModal({
         hsn_code: '',
         gst_rate: '',
         sku: '',
+        is_active: true,
       });
       setVariants([]);
       setImages([]);
@@ -345,8 +346,16 @@ export function AddProductModal({
             </div>
           </div>
 
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            New products are submitted for admin approval before going live.
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => handleChange('is_active', e.target.checked)}
+                className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+              />
+              <span className="text-sm text-gray-700">Product is active (visible to customers)</span>
+            </label>
           </div>
 
           {/* PHASE 1.3 ENHANCEMENT: Image Upload */}

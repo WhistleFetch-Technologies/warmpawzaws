@@ -48,7 +48,7 @@ export function ECommerceDashboard({
       setRecentOrders((ordersData as any)?.orders || []);
       
       // Load pending approvals
-      const approvalsData = await apiClient.get<any>('/admin/ecommerce/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
+      const approvalsData = await apiClient.get<any>('/admin/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
       setPendingApprovals((approvalsData as any)?.products || []);
       
       // Load top sellers - use e-commerce specific endpoint

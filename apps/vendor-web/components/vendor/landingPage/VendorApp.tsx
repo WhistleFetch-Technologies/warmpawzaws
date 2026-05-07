@@ -69,11 +69,16 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         vendorData.onboardingStatus === 'APPROVED' ||
         vendorData.onboardingStatus === 'ACTIVATED';
       if (!isActive) return;
+      const target = determineVendorUIRoute(vendorData);
       const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-      // Strictly redirect true sellers to /seller; non-sellers may still open it when ecommerce is enabled.
+      // Strictly redirect only true sellers to /seller; non-sellers must not land on /seller
       if (isSellerStrict(vendorData)) {
         if (currentPath !== '/seller') {
           window.location.replace('/seller');
+        }
+      } else {
+        if (currentPath === '/seller') {
+          window.location.replace('/dashboard');
         }
       }
     } catch {
