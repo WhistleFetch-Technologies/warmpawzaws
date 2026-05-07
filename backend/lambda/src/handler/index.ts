@@ -174,6 +174,7 @@ import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor/endpoints
 import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/customerEndpoint/customer-enhanced';
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
+import { registerCustomerDeliveryFeePolicyEndpoints } from '../endpoints/customer-delivery-fee-policy-endpoints';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
@@ -592,6 +593,7 @@ registerNotificationEndpoints(app); // /customer/notifications - before /custome
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
+registerCustomerDeliveryFeePolicyEndpoints(app); // /customer/delivery-fee-policy, /customer/delivery-fee/calculate, /admin/delivery-fee-policy
 // ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
