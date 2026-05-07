@@ -71,10 +71,29 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
 
       setParticipantId(qpCustomerId || qpPhone || storedId);
 
-      // Strip sensitive query params from the address bar (keep path-only /video/{id})
+      // Strip sensitive query params only — keep bookingId, meetingId, etc.
       if (qpCustomerId || qpPhone || urlParams.get('meetingId')) {
-        const pathOnly = window.location.pathname;
-        window.history.replaceState({}, '', pathOnly);
+        const customerKeys = [
+          'customerId',
+          'customer_id',
+          'participantId',
+          'customerPhone',
+          'customer_phone',
+          'phone',
+          'meetingId',
+        ];
+        const u = new URL(window.location.href);
+        let changed = false;
+        for (const k of customerKeys) {
+          if (u.searchParams.has(k)) {
+            u.searchParams.delete(k);
+            changed = true;
+          }
+        }
+        if (changed) {
+          const qs = u.searchParams.toString();
+          window.history.replaceState({}, '', u.pathname + (qs ? `?${qs}` : '') + u.hash);
+        }
       }
     }
     void loadBookingData();

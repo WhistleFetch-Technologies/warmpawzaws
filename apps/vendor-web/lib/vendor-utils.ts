@@ -417,6 +417,20 @@ function rawStyleIdsFromVendorData(vendorData: any): string[] {
 }
 
 /**
+ * Vendor-web product rule (no backend change): behaviorist_center & behaviorist_solo do not use
+ * the tele service bucket ("Online Behavior Consultation") in UI — hide tele tabs, filters, and service mgmt cards.
+ */
+export function filterTeleForBehavioristCenterSoloVendorWeb<T extends string>(
+  vendorData: any,
+  styles: readonly T[]
+): T[] {
+  if (!hasVendorRole(vendorData, ['behaviorist_center', 'behaviorist_solo'])) {
+    return [...styles];
+  }
+  return styles.filter((s) => String(s).toLowerCase() !== 'tele');
+}
+
+/**
  * Allowed service styles from Admin role / vendor profile (canonical at_center | at_home | tele).
  * Solo vendors cannot have at_center. Returns [] when the API omitted style lists (strict callers use []).
  */
@@ -436,7 +450,7 @@ export function getVendorAllowedServiceStyles(vendorData: any): ('at_center' | '
   if (isSoloVendor(vendorData)) {
     arr = arr.filter((style) => style !== 'at_center');
   }
-  return arr;
+  return filterTeleForBehavioristCenterSoloVendorWeb(vendorData, arr);
 }
 
 /**

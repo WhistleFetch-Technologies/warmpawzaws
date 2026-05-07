@@ -11,6 +11,9 @@ interface VideoPageClientProps {
 
 const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
 
+/** Survives refresh after URL cleanup (must clear on call end / leave video). */
+const ACTIVE_VIDEO_BOOKING_SESSION_KEY = 'warmpawz_vendor_active_video_booking_id';
+
 export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientProps) {
 
   //---------------------------hooks and state management------------------------------//
@@ -39,13 +42,34 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
     setHasMounted(true);
     const fromPath = typeof window !== 'undefined' ? window.location.pathname.match(/\/video\/([^/?]+)/)?.[1] : null;
     const fromQuery = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('bookingId') : null;
-    const id =
+    let id =
       normalizeBookingId(bookingIdProp) ||
       normalizeBookingId(params?.bookingId as string) ||
       normalizeBookingId(fromPath) ||
       normalizeBookingId(fromQuery) ||
       '';
+    // Refresh fallback: previous code stripped ?bookingId when removing vendorId from URL — recover same-tab session
+    if (!id && typeof window !== 'undefined') {
+      id = normalizeBookingId(sessionStorage.getItem(ACTIVE_VIDEO_BOOKING_SESSION_KEY));
+    }
     setResolvedBookingId(id);
+    if (id && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(ACTIVE_VIDEO_BOOKING_SESSION_KEY, id);
+      } catch {
+        /* ignore quota / private mode */
+      }
+      // If user landed on bare `/video` (e.g. after buggy URL strip), put bookingId back in the URL for refresh/share
+      try {
+        const u = new URL(window.location.href);
+        if (u.pathname === '/video' && !u.searchParams.get('bookingId')) {
+          u.searchParams.set('bookingId', id);
+          window.history.replaceState({}, '', `${u.pathname}?${u.searchParams.toString()}`);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
 
     // ✅ Detect waitingForPayment flag from URL
     if (typeof window !== 'undefined') {
@@ -111,10 +135,14 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         return '';
       }
 
+      // Remove only sensitive id params from the URL — never drop bookingId / waitingForPayment / etc.
       const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('vendorId') || urlParams.get('customerId')) {
-        const pathOnly = window.location.pathname;
-        window.history.replaceState({}, '', pathOnly);
+      if (urlParams.has('vendorId') || urlParams.has('customerId')) {
+        urlParams.delete('vendorId');
+        urlParams.delete('customerId');
+        const qs = urlParams.toString();
+        const cleanUrl = window.location.pathname + (qs ? `?${qs}` : '');
+        window.history.replaceState({}, '', cleanUrl);
       }
 
       // 1. localStorage/sessionStorage (never put vendorId in the URL — leaks in screenshots/referrers)
@@ -282,7 +310,14 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           <h2 className="text-xl font-bold text-white mb-2">Invalid link</h2>
           <p className="text-gray-400 mb-4">No booking ID in the URL.</p>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => {
+              try {
+                sessionStorage.removeItem(ACTIVE_VIDEO_BOOKING_SESSION_KEY);
+              } catch {
+                /* ignore */
+              }
+              router.push('/dashboard');
+            }}
             className="px-6 py-2 bg-[#FF8C42] text-white rounded-full hover:bg-[#FF7A2E] transition"
           >
             Back to dashboard
@@ -451,6 +486,11 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         serviceName={bookingData?.service_name || bookingData?.serviceName || 'Tele Consultation'}
         onEndCall={async (duration) => {
           console.log('[VideoPageClient] Call ended, marking notifications as read');
+          try {
+            sessionStorage.removeItem(ACTIVE_VIDEO_BOOKING_SESSION_KEY);
+          } catch {
+            /* ignore */
+          }
 
           // Mark all call notifications for this booking as read when call ends
           if (bookingId) {

@@ -9,7 +9,7 @@ import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationScreen';
 import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
-import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorRoleId, hasVendorRole, filterTeleForBehavioristCenterSoloVendorWeb } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -79,6 +79,10 @@ export function VendorServiceManagementComplete({
     const teleOnly = styles.filter((s) => s === 'tele');
     return teleOnly.length > 0 ? teleOnly : ['tele'];
   };
+
+  /** Behaviorist center/solo: drop tele in vendor-web only (backend unchanged). */
+  const finalizeAllowedStyles = (styles: ServiceStyle[]): ServiceStyle[] =>
+    restrictPetInsuranceToTeleOnly(filterTeleForBehavioristCenterSoloVendorWeb(vendorData, styles));
   
   // ✅ NEW: Check if trainer/walker/sitter who can create session packages even as solo (NOT groomer/vet)
   const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
@@ -160,6 +164,8 @@ export function VendorServiceManagementComplete({
             'nutritionist': ['at_center', 'tele', 'at_home'],
             'pet_nutritionist': ['at_center', 'tele', 'at_home'],
             'pet_behaviorist': ['at_home', 'at_center', 'tele'],
+            'behaviorist_solo': ['at_home'],
+            'behaviorist_center': ['at_home', 'at_center'],
             'diagnostics': ['at_home', 'at_center'],
             'diagnostic_center': ['at_home', 'at_center'],
             'diagnostics_center': ['at_home', 'at_center'],
@@ -249,7 +255,7 @@ export function VendorServiceManagementComplete({
           const normalizedStyles = allowedStyles.map((s: string) => (s === 'online' ? 'tele' : s)).filter((s: string) => ['at_center', 'at_home', 'tele'].includes(s));
           if (normalizedStyles.length > 0) allowedStyles = normalizedStyles;
           console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
-          setAllowedServiceStyles(restrictPetInsuranceToTeleOnly(allowedStyles));
+          setAllowedServiceStyles(finalizeAllowedStyles(allowedStyles));
           setRoleConfig(roleConfig);
           
           // ✅ DYNAMIC SERVICE STYLES: Backend now handles filtering correctly
@@ -265,14 +271,14 @@ export function VendorServiceManagementComplete({
           if (vendorConfig === 'solo' && isSoloOnlyRole && !isCenterCapableSolo && allowedStyles.includes('at_center')) {
             console.log('⚠️ [ROLE-CONFIG] Solo-only role detected - filtering at_center');
             const filteredStyles = allowedStyles.filter(style => style !== 'at_center');
-            setAllowedServiceStyles(restrictPetInsuranceToTeleOnly(filteredStyles));
+            setAllowedServiceStyles(finalizeAllowedStyles(filteredStyles));
           } else if (vendorConfig === 'solo' && isCenterCapableSolo) {
             console.log('✅ [ROLE-CONFIG] Center-capable solo role - keeping all styles including at_center');
             // Keep all styles - center-capable solo vendors (trainers, groomers, vets) CAN have center services
           }
         } else {
           console.error('❌ [ROLE-CONFIG] Invalid response format - allowedServiceStyles is not an array:', data);
-          setAllowedServiceStyles(restrictPetInsuranceToTeleOnly(['at_home', 'at_center', 'tele'])); // Default fallback
+          setAllowedServiceStyles(finalizeAllowedStyles(['at_home', 'at_center', 'tele'])); // Default fallback
           setRoleConfig({});
         }
       } else {
@@ -291,10 +297,12 @@ export function VendorServiceManagementComplete({
           diagnostics: ['at_home', 'at_center'], diagnostic_center: ['at_home', 'at_center'], diagnostics_center: ['at_home', 'at_center'],
           pet_walker: ['at_home'], walker: ['at_home'], pet_sitter: ['at_home'], sitter: ['at_home'],
           pet_insurance: ['tele'], insurance: ['tele'],
+          behaviorist_solo: ['at_home'],
+          behaviorist_center: ['at_home', 'at_center'],
         };
         const derived = FALLBACK_ROLE_STYLES[fallbackRoleName] || ['at_home'];
         setAllowedServiceStyles(
-          restrictPetInsuranceToTeleOnly(
+          finalizeAllowedStyles(
             derived.map(s => (s === 'online' ? 'tele' : s)).filter(s => ['at_center', 'at_home', 'tele'].includes(s)) as ServiceStyle[]
           )
         );
@@ -329,7 +337,7 @@ export function VendorServiceManagementComplete({
       
       // Only set empty styles if we're not retrying
       if (retryCount >= 3 || (!error?.isRateLimit && error?.statusCode !== 429)) {
-        setAllowedServiceStyles(restrictPetInsuranceToTeleOnly([]));
+        setAllowedServiceStyles(finalizeAllowedStyles([]));
       }
     } finally {
       loadingRef.current = false;
