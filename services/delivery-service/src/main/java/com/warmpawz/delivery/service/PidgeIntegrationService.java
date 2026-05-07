@@ -118,9 +118,11 @@ public class PidgeIntegrationService {
 
 	public JsonNode createOrder(JsonNode requestBody) {
 		PidgeOrderPayloadBuilder.BrandDefaults defaults = credentialResolver.brandDefaults();
-		JsonNode pidgePayload = PidgeOrderPayloadBuilder.isNativeCreateOrderBody(requestBody)
-				? requestBody
-				: payloadBuilder.buildFromSimplified(requestBody, defaults);
+		boolean omitBrand = payloadBuilder.shouldOmitBrandForCreateOrder(requestBody);
+		JsonNode normalized = payloadBuilder.applyOmitBrandIfNeeded(requestBody);
+		JsonNode pidgePayload = PidgeOrderPayloadBuilder.isNativeCreateOrderBody(normalized)
+				? normalized
+				: payloadBuilder.buildFromSimplified(normalized, defaults, omitBrand);
 		String base = credentialResolver.resolveRequired().baseUrl();
 		return exchangeWithRetry("POST", base + CREATE_ORDER_PATH, pidgePayload);
 	}

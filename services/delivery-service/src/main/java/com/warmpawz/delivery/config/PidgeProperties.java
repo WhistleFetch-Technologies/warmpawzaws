@@ -23,6 +23,12 @@ public class PidgeProperties {
 	private String defaultCountry = "India";
 
 	/**
+	 * When true, create-order requests omit the {@code brand} object. Pidge allows {@code brand} only for
+	 * aggregator accounts; store/vendor logins must not send it (error {@code argument.payload.brand.invalid}).
+	 */
+	private boolean omitBrandInCreateOrder = false;
+
+	/**
 	 * Shown on GET /webhooks/pidge as the URL to register in Pidge.
 	 */
 	private String publicApiBaseUrl = "https://YOUR_API_GATEWAY_OR_DOMAIN";

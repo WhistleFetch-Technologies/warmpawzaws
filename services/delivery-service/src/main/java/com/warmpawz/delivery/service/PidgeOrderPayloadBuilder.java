@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.warmpawz.delivery.config.PidgeProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -16,8 +17,16 @@ import org.springframework.stereotype.Component;
 public class PidgeOrderPayloadBuilder {
 
 	private final ObjectMapper objectMapper;
+	private final PidgeProperties pidgeProperties;
 
 	public ObjectNode buildFromSimplified(JsonNode input, BrandDefaults defaults) {
+		return buildFromSimplified(input, defaults, shouldOmitBrand(input));
+	}
+
+	/**
+	 * @param omitBrand when true, the outgoing payload has no {@code brand} key (store/vendor Pidge accounts).
+	 */
+	public ObjectNode buildFromSimplified(JsonNode input, BrandDefaults defaults, boolean omitBrand) {
 		String sourceOrderId = text(input, "sourceOrderId", "source_order_id", "orderId");
 		sourceOrderId = sourceOrderId == null ? "" : sourceOrderId.trim();
 		if (sourceOrderId.isEmpty()) {
@@ -85,24 +94,28 @@ public class PidgeOrderPayloadBuilder {
 							: input.get("deliverySlot").asText()));
 		}
 
-		ObjectNode brand;
-		if (input.has("brand") && input.get("brand").isObject()) {
-			JsonNode b = input.get("brand");
-			brand = objectMapper.createObjectNode();
-			brand.put("code", textOr(b, "code", defaults.brandCode()));
-			brand.put("location_code", textOr(b, "location_code", defaults.brandLocationCode()));
-			brand.put("name", textOr(b, "name", defaults.brandName()));
-		} else {
-			brand = objectMapper.createObjectNode();
-			brand.put("code", defaults.brandCode());
-			brand.put("location_code", defaults.brandLocationCode());
-			brand.put("name", defaults.brandName());
+		ObjectNode brand = null;
+		if (!omitBrand) {
+			if (input.has("brand") && input.get("brand").isObject()) {
+				JsonNode b = input.get("brand");
+				brand = objectMapper.createObjectNode();
+				brand.put("code", textOr(b, "code", defaults.brandCode()));
+				brand.put("location_code", textOr(b, "location_code", defaults.brandLocationCode()));
+				brand.put("name", textOr(b, "name", defaults.brandName()));
+			} else {
+				brand = objectMapper.createObjectNode();
+				brand.put("code", defaults.brandCode());
+				brand.put("location_code", defaults.brandLocationCode());
+				brand.put("name", defaults.brandName());
+			}
 		}
 
 		String channel = input.hasNonNull("channel") ? input.get("channel").asText() : defaults.channel();
 
 		ObjectNode root = objectMapper.createObjectNode();
-		root.set("brand", brand);
+		if (brand != null) {
+			root.set("brand", brand);
+		}
 		root.put("channel", channel);
 		root.set("sender_detail", senderDetail);
 		root.set("poc_detail", pocDetail);
@@ -112,11 +125,59 @@ public class PidgeOrderPayloadBuilder {
 		return root;
 	}
 
+	/**
+	 * Removes {@code brand} when required for store/vendor accounts, strips internal flags {@code omitBrand} /
+	 * {@code omit_brand} so they are not sent to Pidge.
+	 */
+	public JsonNode applyOmitBrandIfNeeded(JsonNode body) {
+		if (!(body instanceof ObjectNode obj)) {
+			return body;
+		}
+		boolean mustStripFlags = obj.has("omitBrand") || obj.has("omit_brand");
+		boolean mustDropBrand = shouldOmitBrand(obj) && obj.has("brand");
+		if (!mustStripFlags && !mustDropBrand) {
+			return body;
+		}
+		ObjectNode copy = obj.deepCopy();
+		if (shouldOmitBrand(copy)) {
+			copy.remove("brand");
+		}
+		copy.remove("omitBrand");
+		copy.remove("omit_brand");
+		return copy;
+	}
+
+	private boolean shouldOmitBrand(JsonNode input) {
+		if (input == null) {
+			return pidgeProperties.isOmitBrandInCreateOrder();
+		}
+		if (input.path("omitBrand").asBoolean(false) || input.path("omit_brand").asBoolean(false)) {
+			return true;
+		}
+		return pidgeProperties.isOmitBrandInCreateOrder();
+	}
+
+	/** Whether create-order should omit {@code brand} (caller reads before stripping {@code omitBrand} flags). */
+	public boolean shouldOmitBrandForCreateOrder(JsonNode requestBody) {
+		return shouldOmitBrand(requestBody);
+	}
+
+	/**
+	 * True when the body is already in Pidge create-order shape and should be forwarded without building from
+	 * simplified fields.
+	 * <ul>
+	 *   <li>Aggregator-style: {@code brand} object + non-empty {@code trips}</li>
+	 *   <li>Store/vendor-style: {@code sender_detail} + non-empty {@code trips} (no {@code brand}; token fixes brand context)</li>
+	 * </ul>
+	 */
 	public static boolean isNativeCreateOrderBody(JsonNode body) {
-		return body != null
-				&& body.has("brand") && body.get("brand").isObject()
-				&& body.has("trips") && body.get("trips").isArray()
-				&& body.get("trips").size() > 0;
+		if (body == null || !body.has("trips") || !body.get("trips").isArray() || body.get("trips").size() == 0) {
+			return false;
+		}
+		if (body.has("brand") && body.get("brand").isObject()) {
+			return true;
+		}
+		return body.has("sender_detail") && body.get("sender_detail").isObject();
 	}
 
 	private JsonNode firstObject(JsonNode input, String... keys) {
