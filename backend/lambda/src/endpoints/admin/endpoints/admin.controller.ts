@@ -1613,6 +1613,11 @@ export function registerAdminEndpoints(app: Hono) {
         LEFT JOIN vendors v ON b.vendor_id = v.id
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
+        WHERE b.status <> 'pending_payment'
+          AND (
+            COALESCE(b.total_amount, 0) <= 0
+            OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+          )
         ORDER BY b.created_at DESC
         LIMIT 100
       `);

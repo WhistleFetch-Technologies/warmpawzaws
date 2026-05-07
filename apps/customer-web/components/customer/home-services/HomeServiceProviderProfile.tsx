@@ -41,10 +41,11 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import {
-  getVendorHeroPhotoUrls,
   mergeCustomerFacilityPayload,
+  mergeVendorPhotoFieldsForHero,
   ratingFromFacilityRoot,
   resolveVendorCoverImageUrl,
+  resolveVendorProfileHeroGallery,
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
@@ -196,22 +197,32 @@ export function HomeServiceProviderProfile({
       setLoading(true);
       console.log(`📍 [HOME-SERVICE-PROFILE] Loading vendor details for: ${vendorId}`);
 
+      const [facilityResponse, customerVendorResponse] = await Promise.all([
+        apiClient.get(`/customer/facility/${vendorId}`).catch(() => null),
+        apiClient.get(`/customer/vendor/${vendorId}`).catch(() => null),
+      ]);
+
       let facilityRoot: Record<string, unknown> | null = null;
-      try {
-        facilityRoot = (await apiClient.get(`/customer/facility/${vendorId}`)) as Record<string, unknown>;
-      } catch (e) {
-        facilityRoot = null;
-        console.log('📦 [HOME-SERVICE-PROFILE] Facility request failed, will try /vendor/:id');
+      if (facilityResponse && typeof facilityResponse === 'object') {
+        const fr = facilityResponse as Record<string, unknown>;
+        if (fr.success !== false && (fr.vendor || fr.facility)) {
+          facilityRoot = fr;
+        }
+      }
+
+      let customerVendorRow: Record<string, unknown> | null = null;
+      if (customerVendorResponse && typeof customerVendorResponse === 'object') {
+        const cv = customerVendorResponse as { vendor?: unknown };
+        const v = cv.vendor ?? customerVendorResponse;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          customerVendorRow = v as Record<string, unknown>;
+        }
       }
 
       let merged: Record<string, unknown>;
       let ratingMeta: { average?: number; count?: number } = {};
 
-      if (
-        facilityRoot &&
-        (facilityRoot as { success?: boolean }).success !== false &&
-        (facilityRoot.vendor || facilityRoot.facility)
-      ) {
+      if (facilityRoot) {
         merged = mergeCustomerFacilityPayload(facilityRoot);
         ratingMeta = ratingFromFacilityRoot(facilityRoot);
         console.log('📦 [HOME-SERVICE-PROFILE] Facility merged vendor row:', merged);
@@ -227,6 +238,8 @@ export function HomeServiceProviderProfile({
         }
       }
 
+      merged = mergeVendorPhotoFieldsForHero(merged, customerVendorRow);
+
       const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
       const coverUrl = resolveVendorCoverImageUrl(merged);
 
@@ -236,7 +249,7 @@ export function HomeServiceProviderProfile({
         facilityRoot.facility !== null
           ? (facilityRoot.facility as Record<string, unknown>)
           : null;
-      const gallery = getVendorHeroPhotoUrls({
+      const gallery = resolveVendorProfileHeroGallery({
         facility: facilityForHero,
         vendor: merged,
         profileProvider: {

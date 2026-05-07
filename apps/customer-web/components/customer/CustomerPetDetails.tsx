@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
   Camera, Edit2, X, Calendar, Clock, 
@@ -131,6 +131,14 @@ function mapPetBookingFromApi(raw: any): Booking {
   };
 }
 
+function extractBookingsList(payload: any): any[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.bookings)) return payload.bookings;
+  if (Array.isArray(payload.data)) return payload.data;
+  return [];
+}
+
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
   const [pet, setPet] = useState<Pet | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -142,6 +150,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewBookings = useMemo(() => bookings.slice(0, 2), [bookings]);
 
   useEffect(() => {
     if (!petId) {
@@ -193,16 +202,43 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   };
 
   const loadPetBookings = async () => {
+    const normalizeAndSet = (rows: any[]) => {
+      setBookings((rows || []).map(mapPetBookingFromApi));
+      setBookingsLoadError(null);
+    };
+
     try {
       setLoadingBookings(true);
       setBookingsLoadError(null);
-      const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
-      const rows = data?.bookings || [];
-      setBookings(rows.map(mapPetBookingFromApi));
-    } catch (error) {
-      console.error('Error loading bookings:', error);
-      setBookings([]);
-      setBookingsLoadError('Could not load bookings. Please try again in a moment.');
+
+      // Primary endpoint: pet-scoped history route.
+      try {
+        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
+        const rows = extractBookingsList(data);
+        normalizeAndSet(rows);
+        return;
+      } catch (primaryError) {
+        console.warn('Primary pet-bookings endpoint failed, trying fallback route:', primaryError);
+      }
+
+      // Fallback endpoint: customer bookings with petId filter (used in other pet views).
+      try {
+        const fallbackData = (await apiClient.get(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+        )) as any;
+        const fallbackRows = extractBookingsList(fallbackData);
+        normalizeAndSet(fallbackRows);
+        return;
+      } catch (fallbackError) {
+        console.error('Error loading bookings (primary + fallback):', fallbackError);
+        setBookings([]);
+        if (fallbackError instanceof ApiError && fallbackError.statusCode === 404) {
+          // Missing route should behave like "no bookings", not a hard error card.
+          setBookingsLoadError(null);
+        } else {
+          setBookingsLoadError('Could not load bookings. Please try again in a moment.');
+        }
+      }
     } finally {
       setLoadingBookings(false);
     }
@@ -760,7 +796,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
               </div>
             ) : (
               <div className="space-y-3">
-                {bookings.map((booking) => (
+                {previewBookings.map((booking) => (
                   <button
                     key={booking.id}
                     onClick={() => onViewBooking && onViewBooking(booking.id, petId)}
@@ -841,6 +877,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     )}
                   </button>
                 ))}
+                {bookings.length > previewBookings.length && (
+                  <p className="text-center text-xs text-gray-500">
+                    Showing latest {previewBookings.length} of {bookings.length} bookings
+                  </p>
+                )}
               </div>
             )}
           </section>

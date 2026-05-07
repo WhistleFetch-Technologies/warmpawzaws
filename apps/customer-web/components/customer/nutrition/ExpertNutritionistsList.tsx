@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { StarRating } from '@/components/customer/shared/StarRating';
 import { apiClient } from '@/lib/api-client';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface ExpertNutritionistsListProps {

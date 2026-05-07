@@ -71,8 +71,15 @@ export function PetProfile({
     try {
       setLoading(true);
       console.log(`🐾 [PET-PROFILE] Loading booking history for pet: ${petId} (${petName})`);
-
-      const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
+      let data: any;
+      try {
+        data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
+      } catch (primaryError) {
+        console.warn('🐾 [PET-PROFILE] Primary pet-bookings endpoint failed, trying fallback:', primaryError);
+        data = (await apiClient.get(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+        )) as any;
+      }
 
       console.log('✅ [PET-PROFILE] Loaded bookings:', data);
 

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { aggregateAverageRatingStat, formatRatingNumberOrDash } from '@/lib/rating-display';
 
 interface ResortServicesLandingProps {
   phone: string;

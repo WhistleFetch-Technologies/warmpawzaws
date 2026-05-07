@@ -51,12 +51,25 @@ function isHandsOnVetProcedureSpecialization(specializationId: string | null | u
   return false;
 }
 
-/** Destructive-habits sessions are in-person only (no video consult). Problem-grid id: `destructive`. */
-function stripTeleForDestructiveBehaviorProblem(
+/**
+ * Behavioral category problem-grid tiles (separation anxiety, barking, fear, etc.):
+ * product decision — in-person / at-home / center only; no video call option.
+ * IDs align with BEHAVIORAL_ISSUES in ProblemGridSection and specialization_master.
+ */
+const BEHAVIORAL_PROBLEM_GRID_IDS_NO_TE = new Set([
+  'separation_anxiety',
+  'barking',
+  'fear_phobia',
+  'destructive',
+  'resource_guarding',
+]);
+
+function stripTeleForBehavioralProblemTiles(
   specializationId: string | null | undefined,
   styles: CustomerDeliveryStyle[]
 ): CustomerDeliveryStyle[] {
-  if ((specializationId || '').toLowerCase() !== 'destructive') return styles;
+  const id = (specializationId || '').toLowerCase();
+  if (!BEHAVIORAL_PROBLEM_GRID_IDS_NO_TE.has(id)) return styles;
   const out = styles.filter((s) => s !== 'tele');
   return out.length > 0 ? out : ['at_home', 'at_center'];
 }
@@ -140,10 +153,10 @@ export function sanitizeCustomerAllowedServiceStyles(
   }
 
   if (styles.length === 0) {
-    return stripTeleForDestructiveBehaviorProblem(
+    return stripTeleForBehavioralProblemTiles(
       specId,
       normalizeRaw(defaultAllowedServiceStylesForRole(roleId)) as CustomerDeliveryStyle[]
     );
   }
-  return stripTeleForDestructiveBehaviorProblem(specId, styles);
+  return stripTeleForBehavioralProblemTiles(specId, styles);
 }

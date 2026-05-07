@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { StarRating } from './StarRating';
@@ -670,7 +671,8 @@ export function UniversalProviderProfile({
           {/* Time Selection */}
           {selectedDate && (
             <div className="mb-4">
-              <h3 className="font-medium text-sm mb-2">Select Time</h3>
+              <h3 className="font-medium text-sm mb-1">Select Time</h3>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               {loadingSlots ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500 mx-auto" />
@@ -869,6 +871,7 @@ export function UniversalProviderProfile({
                               <p className="font-bold tabular-nums text-[#FF8C42]">
                                 {formatPriceWithSymbol(service.price)}
                               </p>
+                              <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 

@@ -807,10 +807,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
         `SELECT s.*, 
                 v.business_name as vendor_name,
                 v.id as vendor_id,
-                COALESCE(
-                  (SELECT AVG(rating) FROM reviews WHERE staff_id = s.id AND rating IS NOT NULL), 
-                  4.0
-                ) as avg_rating,
+                (SELECT AVG(rating) FROM reviews WHERE staff_id = s.id AND rating IS NOT NULL) as avg_rating,
+                (SELECT COUNT(*)::int FROM reviews WHERE staff_id = s.id) as review_count,
                 (SELECT COUNT(*) FROM bookings 
                  WHERE staff_id = s.id 
                  AND status = 'in_progress' 
@@ -832,7 +830,7 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
          )
          ORDER BY 
            CASE WHEN s.last_active_at > NOW() - INTERVAL '5 minutes' THEN 0 ELSE 1 END,
-           avg_rating DESC
+           avg_rating DESC NULLS LAST
          LIMIT 10`,
         [`%${serviceType}%`]
       );
@@ -917,7 +915,14 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
           vendorId: selectedProvider.vendor_id,
           vendorName: selectedProvider.vendor_name,
           specialization: selectedProvider.specialization,
-          rating: parseFloat(selectedProvider.avg_rating || '4.0'),
+          rating: (() => {
+            const rc = parseInt(String(selectedProvider.review_count ?? '0'), 10);
+            const a =
+              selectedProvider.avg_rating != null && selectedProvider.avg_rating !== ''
+                ? parseFloat(String(selectedProvider.avg_rating))
+                : NaN;
+            return rc > 0 && Number.isFinite(a) ? a : null;
+          })(),
         },
         message: 'Provider assigned. They will join the call shortly.',
       });
@@ -944,14 +949,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
                 v.business_name as vendor_name,
                 v.id as vendor_id,
                 s.last_active_at,
-                COALESCE(
-                  (SELECT AVG(rating) FROM reviews WHERE staff_id = s.id AND rating IS NOT NULL), 
-                  4.0
-                ) as avg_rating,
-                COALESCE(
-                  (SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 
-                  0
-                ) as review_count
+                (SELECT AVG(rating) FROM reviews WHERE staff_id = s.id AND rating IS NOT NULL) as avg_rating,
+                (SELECT COUNT(*)::int FROM reviews WHERE staff_id = s.id) as review_count
          FROM staff s
          JOIN vendors v ON s.vendor_id = v.id
          JOIN roles r ON v.role_id = r.id
@@ -970,13 +969,18 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
          AND s.last_active_at > NOW() - INTERVAL '10 minutes'
          ORDER BY 
            CASE WHEN s.last_active_at > NOW() - INTERVAL '2 minutes' THEN 0 ELSE 1 END,
-           avg_rating DESC,
+           avg_rating DESC NULLS LAST,
            experience_years DESC
          LIMIT $2`,
         [`%${serviceType}%`, limit]
       );
 
-      const available = ((providers as any).rows || []).map((p: any) => ({
+      const available = ((providers as any).rows || []).map((p: any) => {
+        const rc = parseInt(String(p.review_count ?? '0'), 10);
+        const a =
+          p.avg_rating != null && p.avg_rating !== '' ? parseFloat(String(p.avg_rating)) : NaN;
+        const rating = rc > 0 && Number.isFinite(a) ? a : null;
+        return {
         id: p.id,
         name: p.name,
         vendorId: p.vendor_id,
@@ -985,11 +989,12 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
         experienceYears: p.experience_years,
         photoUrl: p.photo_url,
         consultationFee: p.consultation_fee || 300,
-        rating: parseFloat(p.avg_rating || '4.0'),
-        reviewCount: parseInt(p.review_count || '0'),
+        rating,
+        reviewCount: rc,
         isOnline: new Date(p.last_active_at) > new Date(Date.now() - 2 * 60 * 1000),
         lastActiveAt: p.last_active_at,
-      }));
+      };
+      });
 
       return c.json({
         success: true,

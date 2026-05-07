@@ -171,7 +171,11 @@ export function SoloProviderDashboard({
 
   const allowedServiceStyles = useMemo(() => {
     const list = getVendorAllowedServiceStyles(vendorData);
-    return list.length > 0 ? list : (['at_home', 'tele'] as const);
+    if (list.length > 0) return list;
+    if (hasVendorRole(vendorData, ['behaviorist_center', 'behaviorist_solo'])) {
+      return ['at_home'] as ('at_center' | 'at_home' | 'tele')[];
+    }
+    return ['at_home', 'tele'] as const;
   }, [vendorData]);
 
   // Copy-only role hints (allowedServiceStyles comes from admin launch config — do not override here)

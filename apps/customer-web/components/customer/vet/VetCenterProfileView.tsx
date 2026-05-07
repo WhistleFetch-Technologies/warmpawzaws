@@ -3,9 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp, Sparkles } from 'lucide-react';
 import { AmenitiesSection } from '../shared/AmenitiesSection';
-import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
 
@@ -44,7 +46,6 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   const [services, setServices] = useState<ServiceData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [rating, setRating] = useState<any>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'services' | 'reviews'>('overview');
 
@@ -135,22 +136,25 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
     );
   }
 
-  const centerName = center.businessName || center.fullName;
-  const photos = facility.photos || [];
-  const hasPhotos = photos.length > 0;
+  const centerName = center.businessName || center.business_name || center.fullName;
+  const heroPhotos = resolveVendorProfileHeroGallery({
+    facility,
+    vendor: center,
+    profileProvider: null,
+  });
+  const hasPhotos = heroPhotos.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-customer mx-auto bg-white min-h-screen pb-20">
-        {/* Photo Gallery */}
+        {/* Photo Gallery — same hero pipeline as other services (deduped, single image = no swipe) */}
         <div className="relative">
           {hasPhotos ? (
-            <div className="relative h-64 bg-gray-200">
-              <img src={photos[selectedPhotoIndex]} alt={centerName} className="w-full h-full object-cover" />
-              <div className="absolute bottom-0 right-3 bg-black/70 backdrop-blur-sm text-white px-0 py-0 rounded-full text-sm">
-                {selectedPhotoIndex + 1} / {photos.length}
-              </div>
-            </div>
+            <VendorHeroPhotoCarousel
+              photos={heroPhotos}
+              name={String(centerName)}
+              frameClassName="relative h-64 w-full overflow-hidden bg-gray-200"
+            />
           ) : (
             <div className="h-64 bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
               <Stethoscope className="w-20 h-20 text-white/30" />
@@ -368,7 +372,10 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                           </span>
                         </div>
                       </div>
-                      <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      </div>
                     </div>
                   </div>
                 ))

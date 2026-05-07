@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from '../PrescriptionDocument';
 

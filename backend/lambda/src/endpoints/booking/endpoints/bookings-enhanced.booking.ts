@@ -55,6 +55,11 @@ import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
+import {
+  boardingBilled24hUnits,
+  computeBoardingStayPriceRupeesPublic,
+  computeStayBilledMinutes,
+} from '../../../lib/booking-stay-wall-time';
 
 // ============================================================================
 // CONFIGURATION
@@ -84,6 +89,30 @@ interface ApiGatewayEventLike {
   rawPath?: string;
   rawQueryString?: string;
   isBase64Encoded: boolean;
+}
+
+function toJsonResponsePayload(result: unknown): { body: unknown; statusCode: number } {
+  if (typeof result === 'string') {
+    try {
+      return { body: JSON.parse(result), statusCode: 200 };
+    } catch {
+      return { body: result, statusCode: 200 };
+    }
+  }
+
+  const responseObj = (result || {}) as { body?: unknown; statusCode?: number };
+  const statusCode = responseObj.statusCode ?? 200;
+  const rawBody = responseObj.body;
+
+  if (typeof rawBody === 'string') {
+    try {
+      return { body: JSON.parse(rawBody), statusCode };
+    } catch {
+      return { body: rawBody, statusCode };
+    }
+  }
+
+  return { body: rawBody ?? {}, statusCode };
 }
 
 // ============================================================================
@@ -156,29 +185,6 @@ function validateMultiDayStayCheckInDates(
 /** Pet sitting: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
 
-function normalizeBookingTimeForParse(t: string): string {
-  const s = String(t || '0:0').trim();
-  if (/^\d{1,2}:\d{2}$/.test(s)) return `${s}:00`;
-  return s;
-}
-
-function computePetSittingBilledMinutes(
-  bookingDate: string,
-  bookingTime: string,
-  checkOutDate: string,
-  checkOutTime: string
-): number {
-  const bt = normalizeBookingTimeForParse(bookingTime);
-  const ct = normalizeBookingTimeForParse(checkOutTime);
-  const start = new Date(`${bookingDate}T${bt}`).getTime();
-  let end = new Date(`${checkOutDate}T${ct}`).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
-  if (end <= start) {
-    end += 24 * 60 * 60 * 1000;
-  }
-  return Math.round((end - start) / 60000);
-}
-
 function computePetSittingPriceRupees(
   unitPrice: number,
   baseMinutes: number,
@@ -196,17 +202,7 @@ function computePetSittingPriceRupees(
   return Math.max(proportional, floor);
 }
 
-const BOARDING_NIGHT_MINUTES = 24 * 60;
-
-/** List price = per 24h (night) for boarding packages; bill ceil(stay/24h) units. */
-function computeBoardingStayPriceRupees(unitPricePerNight: number, billedMinutes: number): number {
-  const up = Number.isFinite(unitPricePerNight) ? Math.max(0, unitPricePerNight) : 0;
-  const mins = Math.max(0, billedMinutes);
-  if (mins < 1) return 0;
-  const units = Math.max(1, Math.ceil(mins / BOARDING_NIGHT_MINUTES));
-  return Math.round(units * up);
-}
-
+/** Boarding list price uses computeBoardingStayPriceRupeesPublic (ceil stay / 24h in Asia/Kolkata wall time). */
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -640,7 +636,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       reqCheckOutTime &&
       (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit)
     ) {
-      const billed = computePetSittingBilledMinutes(
+      const billed = computeStayBilledMinutes(
         bookingDate,
         bookingTime,
         reqCheckOutDate,
@@ -674,7 +670,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       reqCheckOutDate &&
       reqCheckOutTime
     ) {
-      const billed = computePetSittingBilledMinutes(
+      /**
+       * Stay-based boarding list price: only when `selectedServices` is empty.
+       * Multi-service payloads use `totalSelectedServicesAmount` instead (additive SKUs, not night count).
+       */
+      const billed = computeStayBilledMinutes(
         bookingDate,
         bookingTime,
         reqCheckOutDate,
@@ -695,9 +695,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           : service.price ?? 0
       );
       boardingServerBilledMinutes = billed;
-      boardingServerTotalRupee = computeBoardingStayPriceRupees(unitPrice, billed);
+      boardingServerTotalRupee = computeBoardingStayPriceRupeesPublic(unitPrice, billed);
+      const units24 = boardingBilled24hUnits(billed);
       console.log(
-        `[BOOKING] Boarding priced on server: ${billed} min → ₹${boardingServerTotalRupee} (list ₹${unitPrice} per 24h)`
+        `[BOOKING] Boarding priced on server (Asia/Kolkata wall time): ${billed} min, ${units24}×24h → ₹${boardingServerTotalRupee} (list ₹${unitPrice} / 24h)`
       );
     }
 
@@ -751,6 +752,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const availabilityResult = await validateServiceAvailability(
         lookupServiceId,
         roleId,
+        vendorId,
         customerId
       );
 
@@ -1753,21 +1755,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
-      // Publish event
-      try {
-        const { publishBookingCreated } = await import('../../../utils/sns-client');
-        await publishBookingCreated({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking created event:', error);
+      // Publish booking-created only after customer-visible confirmation.
+      if (booking.status !== 'pending_payment') {
+        try {
+          const { publishBookingCreated } = await import('../../../utils/sns-client');
+          await publishBookingCreated({
+            bookingId: booking.id,
+            customerId: booking.customer_id,
+            vendorId: booking.vendor_id,
+            serviceType: booking.service_type,
+            status: booking.status,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking created event:', error);
+        }
       }
 
       if (booking.status === 'confirmed') {
@@ -2911,11 +2915,11 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
             try {
               const { publishNotification } = await import('../../../utils/sns-client');
               await publishNotification({
-                userId: currentBooking.customer_id,
-                userType: 'customer',
+                recipientId: currentBooking.customer_id,
+                recipientType: 'customer',
                 type: 'booking_tracking_started',
                 title: 'Service Provider is on the way!',
-                message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                body: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
                 data: {
                   bookingId,
                   trackingSessionId: newSessions[0].id,
@@ -3113,6 +3117,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       // Unpaid checkout abandoned: remove the draft booking so it never appears as "cancelled" in My bookings.
       const reasonStr = String(reason ?? '').trim();
       const isPaymentAbandonReason = /^payment abandoned$/i.test(reasonStr);
+      let suppressVendorFacingCancelSignals = false;
 
       if (isPaymentAbandonReason) {
         const queryParams = context.event.queryStringParameters || {};
@@ -3193,6 +3198,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 requestId
               );
             } catch (hardDelErr: unknown) {
+              suppressVendorFacingCancelSignals = true;
               console.error(
                 '[CancelBooking] Abandon hard-delete failed; falling back to soft cancel:',
                 hardDelErr
@@ -3408,24 +3414,26 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Publish event
-      try {
-        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
-        await publishBookingStatusUpdated({
-          bookingId,
-          customerId: currentBooking.customer_id,
-          vendorId: currentBooking.vendor_id,
-          oldStatus,
-          newStatus: 'cancelled',
-          reason,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking cancelled event:', error);
+      // Suppress vendor-facing cancel signals for unpaid abandoned checkout fallbacks.
+      if (!suppressVendorFacingCancelSignals) {
+        try {
+          const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
+          await publishBookingStatusUpdated({
+            bookingId,
+            customerId: currentBooking.customer_id,
+            vendorId: currentBooking.vendor_id,
+            oldStatus,
+            newStatus: 'cancelled',
+            reason,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking cancelled event:', error);
+        }
       }
 
       // ✅ Send in-app notification to vendor about cancellation
-      if (currentBooking.vendor_id) {
+      if (currentBooking.vendor_id && !suppressVendorFacingCancelSignals) {
         try {
           // Resolve customer name for the notification
           let customerName = 'Customer';
@@ -3805,8 +3813,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       
       const context = createLambdaContext();
-      const result: any = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in bookings/create:', error);
@@ -3849,8 +3858,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in booking/create:', error);
@@ -3892,8 +3902,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/booking/create:', error);
@@ -3936,8 +3947,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/bookings/create:', error);

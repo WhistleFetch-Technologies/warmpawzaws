@@ -21,7 +21,7 @@ export const SelectedServiceSchema = z.object({
   quantity: z.coerce.number().int().positive().optional().default(1),
 });
 
-export const CreateBookingRequestSchema = z.object({
+const CreateBookingRequestSchemaBase = z.object({
   customerId: z.string().uuid('Invalid customer ID format'),
   vendorId: z.string().uuid('Invalid vendor ID format'),
   serviceId: z.union([
@@ -63,14 +63,43 @@ export const CreateBookingRequestSchema = z.object({
   /** Client-computed stay length; server recomputes for pet sitting when checkout times are sent. */
   totalDurationMinutes: z.coerce.number().int().positive().optional(),
   numberOfNights: z.coerce.number().int().min(0).optional(),
-  /** Customer app: drives timed pet-sitting pricing when vendor role lookup is ambiguous. */
+  /** Customer app: drives timed pet-sitting / boarding pricing on the API. */
   flowVariant: z.enum(['pet_sitting', 'boarding']).optional(),
+  /** Snake_case alias for `flowVariant` (merged during parse). */
+  flow_variant: z.enum(['pet_sitting', 'boarding']).optional(),
   /** When true, server debits `customer_wallets` at booking create (wallet-only or split with Razorpay). */
   useWallet: z.boolean().optional(),
   /** Max INR to take from wallet; server clamps to balance and list price. */
   walletAmount: z.coerce.number().min(0).optional(),
   /** Diagnostics (pay-first): Razorpay order id after successful checkout + /razorpay/verify-payment. */
   razorpayOrderId: z.string().min(1).max(96).optional(),
+});
+
+export const CreateBookingRequestSchema = CreateBookingRequestSchemaBase.transform((d) => {
+  const { flow_variant, ...rest } = d;
+  return {
+    ...rest,
+    flowVariant: d.flowVariant ?? flow_variant,
+  };
+}).superRefine((data, ctx) => {
+  if (data.flowVariant === 'boarding') {
+    const cod = data.checkOutDate;
+    const cot = data.checkOutTime;
+    if (cod == null || String(cod).trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'checkOutDate is required when flowVariant is boarding',
+        path: ['checkOutDate'],
+      });
+    }
+    if (cot == null || String(cot).trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'checkOutTime is required when flowVariant is boarding',
+        path: ['checkOutTime'],
+      });
+    }
+  }
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({

@@ -170,9 +170,14 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const boardingStats = useMemo(() => {
-    const n = vendors.length;
+    const rated = vendors.filter(
+      (v) => typeof v.rating === 'number' && Number.isFinite(v.rating) && v.rating > 0
+    );
     const rating =
-      n > 0 ? (vendors.reduce((acc, v) => acc + v.rating, 0) / n).toFixed(1) : '4.6';
+      rated.length > 0
+        ? (rated.reduce((acc, v) => acc + v.rating, 0) / rated.length).toFixed(1)
+        : '—';
+    const n = vendors.length;
     return [
       { value: `${n > 0 ? n : 35}+`, label: 'Facilities' },
       { value: '5K+', label: 'Happy Pets' },

@@ -5,6 +5,8 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { formatAverageForDisplay } from '@/lib/rating-display';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -354,9 +356,12 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`font-semibold tabular-nums ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
-                        ₹{service.price}
-                      </span>
+                      <div className="text-right">
+                        <span className={`block font-semibold tabular-nums ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
+                          ₹{service.price}
+                        </span>
+                        <p className="mt-0.5 text-xs font-normal text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      </div>
                       {isSel && <CheckCircle2 className="w-5 h-5 text-orange-600" aria-hidden />}
                     </div>
                   </div>

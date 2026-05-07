@@ -19,6 +19,7 @@ import { ArrowLeft, MapPin, Phone, User, Building2, ChevronRight, Home, Video } 
 import { StarRating } from '@/components/customer/shared/StarRating';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface EnhancedVendorDiscoveryByProblemProps {

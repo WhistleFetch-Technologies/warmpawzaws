@@ -362,7 +362,7 @@ export function InsuranceServicesScreen({
       <ScrollView style={styles.providerDetailContainer}>
         <View style={styles.ratingContainer}>
           <Text style={styles.ratingText}>
-            ⭐ {selectedProvider?.rating.toFixed(1)} Rating
+            ⭐ {formatRatingOrDash(selectedProvider?.rating)} Rating
           </Text>
           <Text style={styles.policiesText}>
             {selectedProvider?.completedPolicies} policies issued

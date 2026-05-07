@@ -24,6 +24,7 @@ import { publishBookingStatusUpdated } from '../../../utils/sns-client';
 import { validateScheduleSlot } from '../../../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { normalizeAvailabilityServiceStyles } from '../../../utils/availability-service-styles';
 
 /**
  * Generate time slots from a time window
@@ -1690,7 +1691,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const insertErrors: string[] = [];
 
       for (const slot of slots) {
-        const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
+        const rawServiceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
+        const normalizedServiceStyles = normalizeAvailabilityServiceStyles(rawServiceStyles);
+        const serviceStyles = normalizedServiceStyles.length > 0 ? normalizedServiceStyles : ['at_center'];
         const rawLoc = slot.locationData || slot.location_data || null;
         const locationData = mergeSlotLocationForInsert(
           rawLoc,

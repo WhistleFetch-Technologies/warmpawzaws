@@ -404,7 +404,8 @@ export function PetCafeListingZomatoStyle(props: PetCafeListingZomatoStyleProps)
 
             {/* Time Selection */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Select Time</label>
+              <label className="block text-sm font-semibold text-gray-900 mb-1">Select Time</label>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               <div className="grid grid-cols-4 gap-2">
                 {timeSlots.map((time) => (
                   <button

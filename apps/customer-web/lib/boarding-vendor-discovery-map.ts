@@ -309,7 +309,7 @@ export function buildBoardingVendorListFromRows(
         id: vendorId || groupKey,
         name: venueName,
         address: resolveVendorAddress(service),
-        rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.6'),
+        rating: parseFloat(String(service.vendorRating ?? service.rating ?? service.avgRating ?? '')) || 0,
         review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
         distance: distanceStr,
         distanceKm: distKm != null && Number.isFinite(distKm) ? distKm : null,

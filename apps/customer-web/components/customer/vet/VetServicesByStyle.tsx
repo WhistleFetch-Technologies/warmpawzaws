@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import {
@@ -411,7 +412,7 @@ export function VetServicesByStyle({
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
-    const photos = getVendorHeroPhotoUrls({ facility, vendor, profileProvider });
+    const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
     const amenities = facility?.amenities || vendor?.amenities || [];
     const address = vendor?.address || facility?.address || profileProvider.address || '';
@@ -746,10 +747,10 @@ export function VetServicesByStyle({
                               : 'border-gray-200 hover:border-[#FF8C42]/50 bg-white'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-4">
+                          <div className="flex w-full min-w-0 items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <h4 className="font-bold text-gray-900 text-base">{service.name}</h4>
+                                <h4 className="font-bold text-gray-900 text-base break-words">{service.name}</h4>
                                 {(service as any).isPackage && (
                                   <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                                 )}
@@ -767,7 +768,7 @@ export function VetServicesByStyle({
                                   className="m-0 text-sm leading-5 text-gray-600 mb-3"
                                 />
                               )}
-                              <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                                 <span className="flex items-center gap-1.5 bg-gray-100 px-2.5 py-1 rounded-lg">
                                   <Clock className="w-3.5 h-3.5 text-gray-600" />
                                   {service.duration} mins
@@ -777,15 +778,16 @@ export function VetServicesByStyle({
                                 )}
                               </div>
                             </div>
-                            <div className="text-right flex-shrink-0">
+                            <div className="ml-2 flex w-[7.25rem] shrink-0 flex-col items-end text-right">
                               {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
                                 vendorDiscount={service.vendorDiscount}
                                 className="mb-1"
                               />
+                              <p className="mt-0.5 w-full text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                               {isSelected && (
-                                <div className="mt-1 flex justify-end">
+                                <div className="mt-1 flex w-full justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
                                     <Check className="w-4 h-4 text-white" />
                                   </div>
@@ -1116,10 +1118,10 @@ export function VetServicesByStyle({
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
+                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-medium text-gray-900">{service.name}</h5>
+                              <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
                               {(service as any).isPackage && (
                                 <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
                               )}
@@ -1131,7 +1133,7 @@ export function VetServicesByStyle({
                                 className="m-0 mt-1 text-sm leading-5 text-gray-500"
                               />
                             )}
-                            <div className="flex items-center gap-3 mt-2">
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
                               <Badge variant="outline" className="text-xs">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {service.duration} mins
@@ -1143,16 +1145,17 @@ export function VetServicesByStyle({
                               )}
                             </div>
                           </div>
-                          <div className="text-right ml-4">
+                          <div className="ml-2 flex w-[7.5rem] shrink-0 flex-col items-end text-right">
                             {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
-                              className="mb-2"
+                              className="mb-1"
                             />
+                            <p className="mt-0.5 w-full text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                             <Button
                               size="sm"
-                              className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                              className="mt-2 h-9 w-full bg-[#FF8C42] px-2 text-white hover:bg-[#E67A35]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);
@@ -1183,6 +1186,9 @@ export function VetServicesByStyle({
                             return finalPrice;
                           }))
                         )}</span>
+                      )}
+                      {provider.services[0] && (
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                       )}
                     </div>
                     <Button

@@ -3,6 +3,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/components/ui/utils';
 import { SupportTicketMessages } from './SupportTicketMessages';
 import { SupportTicketReplyComposer } from './SupportTicketReplyComposer';
 import { SupportTicketSummaryHeader } from './SupportTicketSummaryHeader';
@@ -18,6 +19,11 @@ export interface SupportTicketDetailViewProps {
   onBack: () => void;
   /** Passed to message list: user taps Refresh to reload `GET /support/tickets/:id`. */
   onMessagesRefresh?: () => void | Promise<void>;
+  /**
+   * Set when the view sits in a fixed-height shell (e.g. messages inbox sheet with `overflow-hidden`).
+   * Uses flex + internal scrolling so the reply composer stays visible like vendor chat.
+   */
+  embeddedInModal?: boolean;
 }
 
 export function SupportTicketDetailView({
@@ -29,14 +35,20 @@ export function SupportTicketDetailView({
   onSendReply,
   onBack,
   onMessagesRefresh,
+  embeddedInModal = false,
 }: SupportTicketDetailViewProps) {
   return (
-    <div className="space-y-4">
+    <div
+      className={cn(
+        'flex flex-col gap-4',
+        embeddedInModal && 'h-full min-h-0 overflow-hidden'
+      )}
+    >
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="gap-2 -ml-2 text-gray-700"
+        className="shrink-0 gap-2 -ml-2 text-gray-700"
         onClick={onBack}
       >
         <ArrowLeft className="w-4 h-4" />
@@ -52,15 +64,17 @@ export function SupportTicketDetailView({
 
       {detail ? (
         <>
-          <SupportTicketSummaryHeader
-            status={String(detail.ticket.status || 'open')}
-            ticketNumber={
-              detail.ticket.ticket_number != null
-                ? String(detail.ticket.ticket_number)
-                : null
-            }
-            subject={String(detail.ticket.subject || 'Support')}
-          />
+          <div className="shrink-0">
+            <SupportTicketSummaryHeader
+              status={String(detail.ticket.status || 'open')}
+              ticketNumber={
+                detail.ticket.ticket_number != null
+                  ? String(detail.ticket.ticket_number)
+                  : null
+              }
+              subject={String(detail.ticket.subject || 'Support')}
+            />
+          </div>
           <SupportTicketMessages
             initialMessage={
               detail.ticket.message != null ? String(detail.ticket.message) : null
@@ -70,12 +84,14 @@ export function SupportTicketDetailView({
             }
             responses={detail.responses}
             onRefresh={onMessagesRefresh}
+            fillAvailable={embeddedInModal}
           />
           <SupportTicketReplyComposer
             value={replyText}
             onChange={onReplyTextChange}
             sending={sendingReply}
             onSend={onSendReply}
+            compact={embeddedInModal}
           />
         </>
       ) : null}

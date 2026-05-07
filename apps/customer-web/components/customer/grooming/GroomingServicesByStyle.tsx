@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { getVendorHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
@@ -17,6 +17,8 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { StarRating } from '@/components/customer/shared/StarRating';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -101,6 +103,63 @@ export function GroomingServicesByStyle({
     specialisation?: string;
     amenities?: string[];
   }>({});
+
+  const salonCenterDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'grooming',
+    enabled: serviceStyle === 'at_center',
+  });
+  const salonHomeDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'grooming',
+    enabled: serviceStyle === 'at_home',
+  });
+
+  const groomingSalonStatValue = useMemo(() => {
+    const q = serviceStyle === 'at_center' ? salonCenterDiscovery : salonHomeDiscovery;
+    const st =
+      q.isLoading || q.isFetching ? 'loading' : q.isError ? 'error' : 'success';
+    return formatDiscoveryCountStat(q.data, st);
+  }, [
+    serviceStyle,
+    salonCenterDiscovery.data,
+    salonCenterDiscovery.isLoading,
+    salonCenterDiscovery.isFetching,
+    salonCenterDiscovery.isError,
+    salonHomeDiscovery.data,
+    salonHomeDiscovery.isLoading,
+    salonHomeDiscovery.isFetching,
+    salonHomeDiscovery.isError,
+  ]);
+
+  const groomingSalonStatLabel = serviceStyle === 'at_center' ? 'Salons' : 'Pros';
+
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: groomingSalonStatValue,
+        label: groomingSalonStatLabel,
+        icon: <Scissors className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [groomingSalonStatValue, groomingSalonStatLabel]
+  );
+
+  const getServiceTitle = () => {
+    if (serviceStyle === 'at_center') return 'Grooming Center';
+    if (serviceStyle === 'at_home') return 'At Home Grooming';
+    return 'Grooming Services';
+  };
+
+  const getServiceSubtitle = () => {
+    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
+    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
+    return 'Premium pet grooming services';
+  };
 
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
@@ -572,7 +631,7 @@ export function GroomingServicesByStyle({
   // Profile View Mode - Zomato-style for grooming salon
   if (isProfileView && profileProvider) {
     const salonName = vendor?.business_name || vendor?.name || profileProvider.name;
-    const photos = getVendorHeroPhotoUrls({ facility, vendor, profileProvider });
+    const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
     const amenities = facility?.amenities || vendor?.amenities || [];
     const address = vendor?.address || facility?.address || profileProvider.address || '';
@@ -580,8 +639,8 @@ export function GroomingServicesByStyle({
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const dashboardStats = [
-      { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
+    const profileDashboardStats = [
+      { value: groomingSalonStatValue, label: groomingSalonStatLabel, icon: <Scissors className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
       { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
     ];
@@ -607,7 +666,7 @@ export function GroomingServicesByStyle({
           serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Scissors}
           iconColor="text-white"
-          stats={dashboardStats}
+          stats={profileDashboardStats}
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
@@ -1046,26 +1105,7 @@ export function GroomingServicesByStyle({
         </div>
       </div>
   );
-}
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
-  
-  const getServiceTitle = () => {
-    if (serviceStyle === 'at_center') return 'Grooming Center';
-    if (serviceStyle === 'at_home') return 'At Home Grooming';
-    return 'Grooming Services';
-  };
-  
-  const getServiceSubtitle = () => {
-    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
-    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
-    return 'Premium pet grooming services';
-  };
+  }
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (

@@ -1095,7 +1095,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             {/* Time Selection */}
             {selectedDate && (
               <div className="mt-6">
-                <h3 className="font-medium text-gray-700 mb-3">Select Time</h3>
+                <h3 className="font-medium text-gray-700 mb-1">Select Time</h3>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 overflow-hidden">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (

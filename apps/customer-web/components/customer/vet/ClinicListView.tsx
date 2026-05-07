@@ -24,6 +24,7 @@ import {
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
 
@@ -510,7 +511,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   };
 
   const dashboardStats = [
-    { value: `${filteredClinics.length}+`, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+    { value: String(filteredClinics.length), label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
     { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
   ];
@@ -714,15 +715,15 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                                 className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                               >
                                 {/* Price + CTA on the right only; left = name, desc, duration/category (avoids flex overflow on narrow viewports) */}
-                                <div className="flex w-full min-w-0 items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1 pr-1">
-                                    <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
+                                <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
+                                  <div className="min-w-0 pr-1">
+                                    <h5 className="font-medium text-gray-900 leading-5 line-clamp-2">{service.name}</h5>
                                     {descTrim ? (
                                       <div onClick={(e) => e.stopPropagation()}>
                                         <ServiceDescriptionInline
                                           description={descTrim}
                                           title={service.name}
-                                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                                          className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
                                           dialogHint="Full description from the clinic (vendor-provided)"
                                         />
                                       </div>
@@ -741,14 +742,15 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                                       </Badge>
                                     </div>
                                   </div>
-                                  <div className="shrink-0 text-right ml-2 min-w-[6.5rem]">
-                                    <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
+                                  <div className="text-right">
+                                    <div className="text-lg font-bold text-[#FF8C42] mb-1 tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
                                     </div>
+                                    <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                                     <Button
                                       type="button"
                                       size="sm"
-                                      className="bg-[#FF8C42] hover:bg-[#E67A35] text-white w-full sm:w-auto"
+                                      className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35]"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleBookService(clinic, service);
@@ -784,6 +786,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                           <span className="text-gray-500">Tap to load services & prices</span>
                         ) : (
                           <span className="text-gray-500">No services available</span>
+                        )}
+                        {minP != null && (
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">

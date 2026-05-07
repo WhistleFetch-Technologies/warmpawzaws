@@ -646,19 +646,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   // This handles cases where service_type is "at_center" but the service itself is a tele consultation
   const serviceName = (booking?.serviceName || booking?.service?.name || '').toString().toLowerCase();
   const serviceStyleFromService = (booking?.service?.service_style || booking?.service?.serviceStyle || '').toString().toLowerCase();
-  
-  // Check if it's a tele service based on:
-  // 1. serviceType/serviceStyle (primary check)
-  // 2. Service name contains "tele" or "video" (for center-based tele consultations)
-  // 3. Service object's service_style field
-  const isTeleStyle = 
-    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
-    (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video'))) ||
-    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
-    (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
-    (serviceName && (serviceName.includes('tele') || serviceName.includes('video') || serviceName.includes('consultation')));
-  
-  const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
+
+  // Home visit first: API style OR unmistakable name (e.g. "Home Visit Consultation" must NOT unlock Video Call)
+  const isHomeStyle =
+    ['at_home', 'home', 'home_visit'].includes(rawStyle) ||
+    /\bhome\s*visit\b|\bat[\s-]?home\b/i.test(serviceName);
+
+  // Tele / video: explicit styles or name hints — never treat plain "consultation" as tele (matches in-person vet consults)
+  const isTeleStyle =
+    !isHomeStyle &&
+    (['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
+      (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video'))) ||
+      ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
+      (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
+      (serviceName && (serviceName.includes('tele') || serviceName.includes('video'))));
 
   /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
   const isPackageCanonicalParentRow = Boolean(

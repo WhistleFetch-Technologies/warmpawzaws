@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -19,6 +19,8 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -177,6 +179,27 @@ export function GroomingBookingRouter({
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
     new Set(selectedServices?.map(s => s.id || s.serviceId) || (serviceId ? [serviceId] : []))
   );
+
+  const groomingProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
+    category: 'grooming',
+  });
+
+  const groomingProviderStatValue = useMemo(() => {
+    const st =
+      groomingProvidersDiscovery.isLoading || groomingProvidersDiscovery.isFetching
+        ? 'loading'
+        : groomingProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(groomingProvidersDiscovery.data, st);
+  }, [
+    groomingProvidersDiscovery.data,
+    groomingProvidersDiscovery.isLoading,
+    groomingProvidersDiscovery.isFetching,
+    groomingProvidersDiscovery.isError,
+  ]);
 
   /** Deep link / profile context: vendor package rows must go to purchase-package, not one-off booking. */
   useEffect(() => {
@@ -836,11 +859,20 @@ export function GroomingBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const groomingProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Salons' : 'Groomers';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: groomingProviderStatValue,
+        label: groomingProviderStatLabel,
+        icon: <Scissors className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [groomingProviderStatValue, groomingProviderStatLabel]
+  );
 
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {
@@ -1168,7 +1200,8 @@ export function GroomingBookingRouter({
 
             {selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">

@@ -7,6 +7,7 @@ import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import {
   ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,

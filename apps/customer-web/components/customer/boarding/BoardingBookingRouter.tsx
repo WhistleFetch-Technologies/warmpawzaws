@@ -438,7 +438,10 @@ function getBookingSteps(isPetSitting: boolean): BookingStep[] {
 
 /** Matches server pet-sitting pricing (bookings-enhanced). */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+/** One “night” / 24h billing unit for boarding (matches server). */
 const BOARDING_NIGHT_MINUTES = 24 * 60;
+/** Matches server `booking-stay-wall-time` / Lambda boarding pricing (Asia/Kolkata wall clock). */
+const CANONICAL_APP_TIMEZONE_OFFSET = '+05:30';
 
 interface TimeSlot {
   time: string;
@@ -1022,8 +1025,13 @@ export function BoardingBookingRouter({
 
   const parseLocalDateTime = (dateStr: string, timeStr: string) => {
     const [y, m, d] = dateStr.split('-').map(Number);
-    const [hh, mm] = (timeStr || '0:0').split(':').map(Number);
-    return new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0).getTime();
+    const parts = String(timeStr || '0:0').split(':');
+    const hh = Number(parts[0]) || 0;
+    const mm = Number(parts[1]) || 0;
+    const ss = parts.length >= 3 ? Number(parts[2]) || 0 : 0;
+    const pad = (n: number) => String(Math.trunc(n)).padStart(2, '0');
+    const timeNorm = `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+    return new Date(`${y}-${pad(m)}-${pad(d)}T${timeNorm}${CANONICAL_APP_TIMEZONE_OFFSET}`).getTime();
   };
 
   /** Minutes between check-in and check-out (handles next-day end when checkout time is after midnight). */

@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
@@ -396,6 +397,7 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
                   </div>
                   <div className="text-right flex-shrink-0 ml-4">
                     <p className="font-bold text-lg text-[#FF8C42]">₹{service.price}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                     <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                   </div>
                 </div>
@@ -722,7 +724,10 @@ function CallingVendorScreen({
                   <p className="font-medium text-gray-900">{serviceName}</p>
                   <p className="text-sm text-gray-500">Video Consultation</p>
                 </div>
-                <p className="font-bold text-lg text-[#FF8C42]">₹{servicePrice}</p>
+                <div className="text-right">
+                  <p className="font-bold text-lg text-[#FF8C42]">₹{servicePrice}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                </div>
               </div>
             </Card>
 

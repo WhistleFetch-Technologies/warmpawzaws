@@ -12,6 +12,7 @@ import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPay
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 
 // ============================================================================
 // TYPES
