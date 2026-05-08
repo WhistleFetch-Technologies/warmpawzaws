@@ -6,6 +6,10 @@ type Policy = {
   version: number;
   maxServiceRadiusKm: number;
   zoneABoundaryKm: number;
+  runtimeSignals?: {
+    festivalActive?: boolean;
+    rainActive?: boolean;
+  };
   zones: {
     zoneA: { minOrderInr: number; maxOrderInr: number | null; deliveryFeeInr: number }[];
     zoneB: { minOrderInr: number; maxOrderInr: number | null; deliveryFeeInr: number }[];
@@ -89,6 +93,22 @@ export default function DeliveryFeesHelpPage() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900">Delivery fee & coverage</h1>
         <p className="mt-2 text-gray-600">{policy.content.coverageSummary}</p>
+        {(policy.runtimeSignals?.festivalActive || policy.runtimeSignals?.rainActive) && (
+          <div
+            className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-medium">Surge pricing is on right now</p>
+            <ul className="mt-1 list-disc pl-5">
+              {policy.runtimeSignals?.festivalActive && (
+                <li>Festival surcharge may apply to delivery (see amounts below).</li>
+              )}
+              {policy.runtimeSignals?.rainActive && (
+                <li>Rain surcharge may apply to delivery (see amounts below).</li>
+              )}
+            </ul>
+          </div>
+        )}
       </header>
 
       <section>

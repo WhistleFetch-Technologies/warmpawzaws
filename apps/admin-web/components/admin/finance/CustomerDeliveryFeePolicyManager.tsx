@@ -493,52 +493,44 @@ export function CustomerDeliveryFeePolicyManager() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {renderSlabEditor('zoneA', 'Zone A slabs')}
-        {renderSlabEditor('zoneB', 'Zone B slabs')}
+      <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+        <div>
+          <h5 className="font-semibold text-gray-900">Delivery fee slabs (not duplicate)</h5>
+          <p className="text-xs text-gray-600 mt-1">
+            Two columns are required: <strong>Zone A</strong> applies when distance ≤ Zone A boundary KM;
+            <strong> Zone B</strong> applies from just beyond that up to max service radius. Each zone has its own
+            order-value slabs and fees.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {renderSlabEditor(
+            'zoneA',
+            `Zone A slabs (≤ ${policy.zoneABoundaryKm} KM)`
+          )}
+          {renderSlabEditor(
+            'zoneB',
+            `Zone B slabs (beyond ${policy.zoneABoundaryKm} KM, up to ${policy.maxServiceRadiusKm} KM)`
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {(['zoneA', 'zoneB'] as const).map((zone) => (
-          <div key={zone} className="border border-gray-200 rounded-lg p-4 space-y-2">
-            <h5 className="font-semibold text-gray-900">
-              {zone === 'zoneA' ? 'Zone A surge toggles' : 'Zone B surge toggles'}
-            </h5>
-            <p className="text-xs text-gray-500">
-              Choose which surge types are allowed for this zone.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              {(['weekend', 'festival', 'rain'] as const).map((flag) => (
-                <label key={`${zone}-${flag}`} className="text-xs text-gray-700 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={
-                      policy.zoneSurgeConfig?.[zone]?.[flag] ??
-                      EMPTY_POLICY.zoneSurgeConfig![zone][flag]
-                    }
-                    onChange={(e) => updateZoneSurgeFlag(zone, flag, e.target.checked)}
-                  />
-                  {flag === 'weekend' ? 'Weekend' : flag === 'festival' ? 'Festival' : 'Rain'}
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="border border-gray-200 rounded-lg p-4 space-y-2">
-        <h5 className="font-semibold text-gray-900">Auto surge signals (global)</h5>
-        <p className="text-xs text-gray-500">
-          Used when request does not explicitly pass festival/rain flags.
-        </p>
-        <div className="flex flex-wrap gap-4">
+      <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+        <div>
+          <h5 className="font-semibold text-gray-900">Surge pricing</h5>
+          <p className="text-xs text-gray-600 mt-1">
+            <strong>Weekend</strong> is automatic (Sat/Sun IST) when enabled per zone below.
+            <strong> Festival / Rain active</strong> turns on those surges platform-wide (checkout uses them when the API does not override).
+            Zone toggles for festival/rain are optional extras; global active alone is enough for those two.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-6 pb-2 border-b border-gray-100">
           <label className="text-xs text-gray-700 flex items-center gap-2">
             <input
               type="checkbox"
               checked={policy.runtimeSignals?.festivalActive ?? false}
               onChange={(e) => updateRuntimeSignal('festivalActive', e.target.checked)}
             />
-            Festival active
+            Festival active (global)
           </label>
           <label className="text-xs text-gray-700 flex items-center gap-2">
             <input
@@ -546,8 +538,35 @@ export function CustomerDeliveryFeePolicyManager() {
               checked={policy.runtimeSignals?.rainActive ?? false}
               onChange={(e) => updateRuntimeSignal('rainActive', e.target.checked)}
             />
-            Rain active
+            Rain active (global)
           </label>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {(['zoneA', 'zoneB'] as const).map((zone) => (
+            <div key={zone} className="rounded-md border border-gray-100 p-3 space-y-2 bg-gray-50/50">
+              <h6 className="text-sm font-medium text-gray-900">
+                {zone === 'zoneA' ? 'Zone A — apply weekend surge?' : 'Zone B — apply weekend surge?'}
+              </h6>
+              <p className="text-xs text-gray-500">
+                Festival/rain still follow global switches above. Use these to disable weekend surcharge in this zone only.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                {(['weekend', 'festival', 'rain'] as const).map((flag) => (
+                  <label key={`${zone}-${flag}`} className="text-xs text-gray-700 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={
+                        policy.zoneSurgeConfig?.[zone]?.[flag] ??
+                        EMPTY_POLICY.zoneSurgeConfig![zone][flag]
+                      }
+                      onChange={(e) => updateZoneSurgeFlag(zone, flag, e.target.checked)}
+                    />
+                    {flag === 'weekend' ? 'Weekend' : flag === 'festival' ? 'Festival (extra)' : 'Rain (extra)'}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

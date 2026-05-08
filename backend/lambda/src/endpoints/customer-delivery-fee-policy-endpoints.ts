@@ -47,13 +47,31 @@ export function registerCustomerDeliveryFeePolicyEndpoints(app: Hono) {
         );
       }
       const policy = await fetchCustomerDeliveryFeePolicy();
+      const weekend =
+        typeof body.weekend === 'boolean'
+          ? body.weekend
+          : (() => {
+              const weekday = new Intl.DateTimeFormat('en-US', {
+                weekday: 'short',
+                timeZone: 'Asia/Kolkata',
+              }).format(new Date());
+              return weekday === 'Sat' || weekday === 'Sun';
+            })();
+      const festival =
+        typeof body.festival === 'boolean'
+          ? body.festival
+          : !!policy.runtimeSignals?.festivalActive;
+      const rain =
+        typeof body.rain === 'boolean'
+          ? body.rain
+          : !!policy.runtimeSignals?.rainActive;
       const result = calculateCustomerDeliveryFee({
         policy,
         orderSubtotalInr,
         distanceKm,
-        weekend: !!body.weekend,
-        festival: !!body.festival,
-        rain: !!body.rain,
+        weekend,
+        festival,
+        rain,
       });
       return c.json({
         success: true,

@@ -402,10 +402,14 @@ export function calculateCustomerDeliveryFee(
   if (input.weekend && zoneSurgeFlags.weekend) {
     surgeW = policy.surges.weekendInr;
   }
-  if (input.festival && zoneSurgeFlags.festival) {
+  const rs = policy.runtimeSignals;
+  const festivalAllowed =
+    zoneSurgeFlags.festival || !!rs?.festivalActive;
+  const rainAllowed = zoneSurgeFlags.rain || !!rs?.rainActive;
+  if (input.festival && festivalAllowed) {
     surgeF = policy.surges.festivalMaxInr;
   }
-  if (input.rain && zoneSurgeFlags.rain) {
+  if (input.rain && rainAllowed) {
     surgeR = policy.surges.rainMaxInr;
   }
 

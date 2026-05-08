@@ -28,6 +28,7 @@ import {
   deriveDistanceKmFromLocations,
 } from '../utils/customer-delivery-fee-quote';
 import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
+import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
 
 function parseOptionalBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -694,8 +695,18 @@ export function registerMealPlanEndpoints(app: Hono) {
         }
       }
 
-      // Calculate totals
-      const subtotal = parseFloat(plan.price_per_meal) * (quantity || 1);
+      // Calculate totals (meal_plans may only have legacy `price` if `price_per_meal` was never set)
+      const qty = quantity || 1;
+      const subtotal = resolveMealLineSubtotalInr({ subtotal: 0, quantity: qty }, plan as Record<string, unknown>);
+      if (subtotal <= 0) {
+        return c.json(
+          {
+            error: 'Meal plan has no valid unit price. The vendor must set a meal price.',
+            code: 'MEAL_PLAN_PRICE_MISSING',
+          },
+          400,
+        );
+      }
       const policyForSignals = await fetchCustomerDeliveryFeePolicy();
       
       // ✅ FIX GAP 6.1 & 6.2: Get configurable delivery, platform and convenience fees
@@ -1080,7 +1091,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       // Calculate pricing
       const mealsPerDay = frequency === 'twice_daily' ? 2 : 1;
       const daysPerWeek = (deliveryDays || plan.available_days).length;
-      const pricePerDelivery = parseFloat(plan.price_per_meal) * mealsPerDay;
+      const pricePerDelivery = mealPlanUnitPriceInr(plan as Record<string, unknown>) * mealsPerDay;
       const deliveryFeePerDelivery = 30; // Can be calculated from rules
 
       const result = await insert('meal_subscriptions', {

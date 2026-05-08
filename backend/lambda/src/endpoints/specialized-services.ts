@@ -35,6 +35,43 @@ import {
   presignMealPlanRowDisplayFields,
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
+import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+
+/** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
+function safeMoney(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Vendor-facing meal list: meal line total only (quantity × listed price). Strip checkout fees & platform economics. */
+const VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS = new Set([
+  'total_amount',
+  'delivery_fee',
+  'platform_fee',
+  'logistics_cost',
+  'commission_amount',
+  'logistics_deduction',
+  'vendor_payout',
+  'tax_amount',
+  'gst_amount',
+  'cgst_amount',
+  'sgst_amount',
+  'igst_amount',
+  'convenience_fee',
+  'service_fee',
+]);
+
+function sanitizeVendorMealOrderRow(row: Record<string, unknown>): Record<string, unknown> {
+  const mealOnly = safeMoney(row.subtotal);
+  const next: Record<string, unknown> = { ...row };
+  for (const k of VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS) {
+    delete next[k];
+  }
+  delete next.subtotal;
+  next.vendor_meal_total = mealOnly;
+  return next;
+}
 
 /** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
 async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
@@ -1268,6 +1305,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         description: mealPlanData.description || null,
         duration_days: durationDays,
         price_per_meal: price,
+        price,
         meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
         dietary_requirements: JSON.stringify({
           pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
@@ -1317,7 +1355,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
       if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
       if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
-      if (price != null) { updates.push(`price_per_meal = $${idx}`); params.push(price); idx++; }
+      if (price != null) {
+        updates.push(`price_per_meal = $${idx}`, `price = $${idx + 1}`);
+        params.push(price, price);
+        idx += 2;
+      }
       if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
       if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
       if (petTypes != null) {
@@ -1817,6 +1859,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         plan_name: data.name,
         description: data.description,
         price_per_meal: data.price,
+        price: data.price,
         duration_days: data.durationDays || 7,
         meals_per_day: data.mealsPerDay || 2,
         dietary_requirements: JSON.stringify(dietaryPayload),
@@ -2750,22 +2793,27 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           }
         }
         
-        // Fetch meal plan name if not already included
+        // Meal plan display name + pricing row (subtotal may be 0 in DB if only legacy `price` was set)
         let mealName = o.meal_name;
-        if (!mealName && o.meal_plan_id) {
+        let mealPlanRow: Record<string, unknown> | null = null;
+        if (o.meal_plan_id) {
           try {
             const mealPlanData = await query(
-              `SELECT name, plan_name FROM meal_plans WHERE id = $1 LIMIT 1`,
+              `SELECT name, plan_name, price_per_meal, price FROM meal_plans WHERE id = $1 LIMIT 1`,
               [o.meal_plan_id]
             ).catch(() => ({ rows: [] }));
             if (mealPlanData.rows.length > 0) {
-              mealName = mealPlanData.rows[0].name || mealPlanData.rows[0].plan_name;
+              const row = mealPlanData.rows[0];
+              mealName = mealName || row.name || row.plan_name;
+              mealPlanRow = row as Record<string, unknown>;
             }
           } catch (err) {
             console.warn(`[meal-orders] Error fetching meal plan data:`, err);
           }
         }
-        
+
+        const lineSubtotal = resolveMealLineSubtotalInr(o, mealPlanRow);
+
         allOrders.push({
           ...o,
           source: 'meal_orders',
@@ -2775,6 +2823,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           meal_name: mealName,
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
+          subtotal: lineSubtotal,
         });
       }
 
@@ -2787,7 +2836,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           // ✅ FIX: Query using ALL vendor IDs, not just the one from URL
           let ordQuery = `
             SELECT o.id, o.customer_id, o.vendor_id, o.order_number, o.order_status as status,
-                   o.total_amount, o.shipping_address as delivery_address, o.created_at,
+                   o.subtotal, o.shipping_address as delivery_address, o.created_at,
                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot,
                    c.full_name as customer_name, c.phone as customer_phone,
                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_name
@@ -2805,6 +2854,30 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           const ordResult = await query(ordQuery, ordParams).catch(() => ({ rows: [] }));
           for (const o of ordResult.rows) {
             const parsedAddr = typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address;
+            let lineQty = 1;
+            let mpForLine: Record<string, unknown> | null = null;
+            try {
+              const mpRow = await query(
+                `SELECT mpo.quantity AS q, mp.price_per_meal, mp.price
+                 FROM meal_plan_orders mpo
+                 JOIN meal_plans mp ON mp.id = mpo.meal_plan_id
+                 WHERE mpo.order_id = $1
+                 LIMIT 1`,
+                [o.id]
+              ).catch(() => ({ rows: [] }));
+              const r = mpRow.rows?.[0];
+              if (r) {
+                const q = Number(r.q);
+                if (Number.isFinite(q) && q >= 1) lineQty = Math.floor(q);
+                mpForLine = { price_per_meal: r.price_per_meal, price: r.price };
+              }
+            } catch {
+              /* ignore */
+            }
+            const lineSubtotal = resolveMealLineSubtotalInr(
+              { subtotal: o.subtotal, quantity: lineQty },
+              mpForLine,
+            );
             allOrders.push({
               id: o.id,
               customer_id: o.customer_id,
@@ -2812,12 +2885,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               meal_plan_id: null,
               pet_id: null,
               order_type: 'meal_plan_delivery',
-              quantity: 1,
+              quantity: lineQty,
               special_instructions: null,
-              subtotal: o.total_amount,
-              delivery_fee: 0,
-              platform_fee: 0,
-              total_amount: o.total_amount,
+              subtotal: lineSubtotal,
               status: o.status,
               payment_status: 'pending',
               scheduled_delivery_date: o.scheduled_delivery_date,
@@ -2844,7 +2914,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 100);
 
-      return c.json({ success: true, orders: deduped, total: deduped.length });
+      const forVendor = deduped.map((row) => sanitizeVendorMealOrderRow(row as Record<string, unknown>));
+      return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
       return c.json({ success: true, orders: [], total: 0 });

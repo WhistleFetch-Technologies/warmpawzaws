@@ -122,7 +122,8 @@ interface MealOrder {
   customer_name: string;
   customer_phone: string;
   status: string;
-  total_amount: number;
+  /** Meal line total only (listed price × qty), from API `vendor_meal_total`. */
+  vendor_meal_total?: number;
   created_at: string;
   confirmed_at?: string; // Timestamp when payment was confirmed
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
@@ -133,6 +134,33 @@ interface MealOrder {
 interface NutritionistDashboardProps {
   vendorId: string;
   vendorName?: string;
+}
+
+function safeRupee(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Meal line total from API (snake_case or camelCase); ignores customer checkout totals. */
+function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
+  const candidates = [
+    raw.vendor_meal_total,
+    raw.vendorMealTotal,
+    raw.subtotal,
+    raw.meal_line_total,
+    raw.mealLineTotal,
+  ];
+  for (const c of candidates) {
+    const n = safeRupee(c);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+/** Vendor-facing meal listing amount only (never customer grand total / fees). */
+function vendorMealListingRupee(o: MealOrder): number {
+  return coerceVendorMealListingAmount(o as Record<string, unknown>);
 }
 
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
@@ -211,7 +239,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-orders`);
       if (response && (response as any).success) {
-        const fetchedOrders = (response as any).orders || [];
+        const rawList = (response as any).orders || [];
+        const fetchedOrders = rawList.map((raw: Record<string, unknown>) => ({
+          ...raw,
+          vendor_meal_total: coerceVendorMealListingAmount(raw),
+        })) as MealOrder[];
         setOrders(fetchedOrders);
         
         // ✅ Initialize acceptedOrderIds: Merge stored accepted IDs with orders that have progressed
@@ -705,7 +737,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
                         <span className="flex items-center gap-1">{Icons.clock} {new Date(order.created_at).toLocaleDateString()}</span>
                       </div>
-                      <span className="text-lg font-semibold text-slate-800">₹{order.total_amount || 0}</span>
+                      <div className="text-right">
+                        <span className="text-lg font-semibold text-slate-800">₹{vendorMealListingRupee(order)}</span>
+                        <p className="text-xs text-slate-500">Meal total (your listing)</p>
+                      </div>
                     </div>
 
                     {/* Order Actions – Phase 3: accept, ETA, notify logistics */}
@@ -907,10 +942,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600">
                   {Icons.dollarSign}
                 </div>
-                <span className="text-slate-600">Revenue</span>
+                <span className="text-slate-600">Meal listing total</span>
               </div>
               <p className="text-3xl font-bold text-slate-800">
-                ₹{orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)}
+                ₹{orders.reduce((sum, o) => sum + vendorMealListingRupee(o), 0)}
               </p>
             </div>
           </div>
