@@ -1,6 +1,7 @@
 'use client';
 
 import type { RefObject } from 'react';
+import Image from 'next/image';
 import {
   LayoutDashboard,
   Package,
@@ -13,7 +14,6 @@ import {
   IndianRupee,
   Menu,
   X,
-  Store,
   LogOut,
   User,
   Boxes,
@@ -105,8 +105,15 @@ export function SellerHubSidebar({
         {sidebarOpen ? (
           <>
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 shadow-lg shadow-orange-500/25">
-                <Store className="h-6 w-6 text-white" />
+              <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full shadow-lg shadow-orange-500/25 ring-2 ring-orange-100">
+                <Image
+                  src="/warmpawz-logo.svg"
+                  alt="Warmpawz"
+                  width={48}
+                  height={48}
+                  className="h-full w-full object-cover"
+                  priority
+                />
               </div>
               <div>
                 <span className="bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-xl font-bold text-transparent">

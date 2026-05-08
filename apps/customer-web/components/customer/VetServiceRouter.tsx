@@ -301,7 +301,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
 
     const serviceObj: Record<string, unknown> = {
-      id: plan.rowId,
+      /** Prefer vendor_services UUID over composite row keys so package purchase resolves strict intent in prod. */
+      id: plan.vendorServiceId ?? plan.rowId,
+      vendorServiceId: plan.vendorServiceId,
       serviceId: plan.serviceId,
       serviceName: plan.name,
       name: plan.name,
