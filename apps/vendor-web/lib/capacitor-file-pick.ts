@@ -15,6 +15,10 @@ function base64ToFile(base64: string, name: string, mime: string): File {
 
 type PickedFromPlugin = Awaited<ReturnType<typeof FilePicker.pickFiles>>['files'][number];
 
+function pluginFileHasReadablePayload(f: PickedFromPlugin): boolean {
+  return Boolean((f.blob && f.blob.size > 0) || (f.data && f.data.length > 0) || f.path);
+}
+
 /**
  * Coerce a Capawesome-picked file into a `File` for `FormData` / the rest of the app.
  * Uses `path` + `Capacitor.convertFileSrc` + `fetch` when `blob` is not present (Android/iOS native).
@@ -100,7 +104,8 @@ async function pickOnce(
 export async function pickFilesWithCapawesome(
   options: CapawesomePickOptions
 ): Promise<CapawesomePickResult> {
-  if (Capacitor.getPlatform() === 'android') {
+  const isAndroid = Capacitor.getPlatform() === 'android';
+  if (isAndroid) {
     try {
       const status = await FilePicker.checkPermissions();
       const needRead =
@@ -123,10 +128,10 @@ export async function pickFilesWithCapawesome(
   try {
     result = await pickOnce(wantMultiple, false);
   } catch (firstErr) {
-    // Some devices return no `path` until readData; single-file retry avoids empty reads.
-    if (!wantMultiple) {
+    // Some devices return no readable handles until readData=true.
+    if (isAndroid || !wantMultiple) {
       try {
-        result = await pickOnce(false, true);
+        result = await pickOnce(wantMultiple, true);
       } catch {
         throw firstErr;
       }
@@ -137,6 +142,25 @@ export async function pickFilesWithCapawesome(
 
   if (!result.files || result.files.length === 0) {
     return { files: [], rejectedByAccept: false };
+  }
+
+  // Android multi-pick may return entries with no blob/data/path when readData=false.
+  // Retry once with readData=true before failing conversion so upload can proceed.
+  if (isAndroid && wantMultiple) {
+    const unreadableCount = result.files.filter((f) => !pluginFileHasReadablePayload(f)).length;
+    console.log(
+      `[CapawesomePick] Android multi result: count=${result.files.length}, unreadable=${unreadableCount}, readData=false`
+    );
+    if (unreadableCount > 0) {
+      const retry = await pickOnce(true, true);
+      if (retry.files?.length) {
+        const retryUnreadable = retry.files.filter((f) => !pluginFileHasReadablePayload(f)).length;
+        console.log(
+          `[CapawesomePick] Android multi retry: count=${retry.files.length}, unreadable=${retryUnreadable}, readData=true`
+        );
+        result = retry;
+      }
+    }
   }
 
   const out: File[] = [];

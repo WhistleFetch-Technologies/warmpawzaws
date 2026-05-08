@@ -314,6 +314,21 @@ function customerBoardingProfileVendorIdFromNavigateData(data: unknown): string 
   return firstNonEmptyString(d.vendorId, d.vendor_id);
 }
 
+/**
+ * Coerce walkerServiceData from purchase-package navigations — prod APIs sometimes use snake_case
+ * (`vendor_service_id`), and walkers previously stored payloads raw without normalization.
+ */
+function normalizeWalkerServiceDataForPackagePurchase(data: unknown): Record<string, unknown> | null {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) return null;
+  const src = data as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...src };
+  const vid = firstNonEmptyString(src.vendorId, src.vendor_id, src.doctorId);
+  const vsid = firstNonEmptyString(src.vendorServiceId, src.vendor_service_id);
+  if (vid) out.vendorId = vid;
+  if (vsid) out.vendorServiceId = vsid;
+  return out;
+}
+
 /** Legacy shell screen `package-tracking` → full URL package progress or My Bookings hub. */
 function PackageTrackingShellRedirect() {
   const r = useRouter();
@@ -797,7 +812,7 @@ export function CustomerHomeWrapper({
     else if (service === 'wallet') setCurrentScreen('wallet');
     else if (service === 'booking-messages') openMessages();
     else if (service === 'purchase-package') {
-      setPreviousScreen(currentScreen);
+      setPreviousScreen(screenToReturnAfterLeavingPackagePurchase());
       const vid = String((data as any)?.vendorId ?? '').trim();
       const vsid = String(
         (data as any)?.vendorServiceId ?? (data as any)?.vendor_service_id ?? ''
@@ -958,7 +973,7 @@ export function CustomerHomeWrapper({
       setCurrentScreen('customer-profile');
     }
     else if (screen === 'purchase-package') {
-      setPreviousScreen(currentScreen);
+      setPreviousScreen(screenToReturnAfterLeavingPackagePurchase());
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
       const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
       const payload =
@@ -1132,6 +1147,12 @@ export function CustomerHomeWrapper({
   };
 
   const handleWalkerNavigate = (screen: string, data?: any) => {
+    if (screen === 'purchase-package') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData(normalizeWalkerServiceDataForPackagePurchase(data ?? null));
+      setCurrentScreen('purchase-package');
+      return;
+    }
     setWalkerServiceData(data);
     if (screen === 'walker-booking') {
       setCurrentScreen('walker-booking');
@@ -1149,10 +1170,6 @@ export function CustomerHomeWrapper({
       setPreviousScreen(currentScreen);
       setWalkerServiceData({ packageId: data?.packageId });
       setCurrentScreen('schedule-walk');
-    } else if (screen === 'purchase-package') {
-      setPreviousScreen(currentScreen);
-      setWalkerServiceData(data ?? null);
-      setCurrentScreen('purchase-package');
     } else if (screen === 'walker-provider-profile') {
       setCurrentScreen('walker-provider-profile');
     }
@@ -1269,6 +1286,67 @@ export function CustomerHomeWrapper({
   /** Full bookings list (`CustomerBookingsPage`): return to caller (e.g. profile), else same as handleBack. */
   const handleBackFromBookings = () => {
     navigateBackToPreviousOr(handleBack);
+  };
+
+  /**
+   * Grooming/Training/Vet booking routers auto-forward package rows to `purchase-package`. Storing
+   * `grooming-booking` / `training-booking` / `vet-booking` as previousScreen makes Back remount those
+   * routers; their effect immediately navigates to purchase-package again. Record a real browse surface instead.
+   */
+  const screenToReturnAfterLeavingPackagePurchase = (): ScreenType => {
+    if (currentScreen === 'vet-booking') {
+      const ps = previousScreen;
+      const vetPackageBackScreens = new Set<ScreenType>([
+        'vet',
+        'vet-services-by-style',
+        'vet-clinic-list',
+        'vet-tele-consultation',
+        'vet-home-visit',
+        'problem_grid_flow',
+        'vet-doctor-details',
+        'vet-clinic-profile',
+      ]);
+      if (ps != null && vetPackageBackScreens.has(ps)) {
+        return ps;
+      }
+      const rs = String(vetServiceData?.returnScreen ?? '').trim();
+      if (rs === 'vet-clinic-list') return 'vet-clinic-list';
+      if (rs === 'vet') return 'vet';
+      const st = String(
+        vetServiceData?.serviceStyle ?? vetServiceData?.serviceType ?? ''
+      ).toLowerCase();
+      if (st === 'tele' || st === 'online' || st === 'video') return 'vet-tele-consultation';
+      if (st === 'at_home' || st === 'home') return 'vet-home-visit';
+      if (st === 'at_center' || st === 'center' || st === 'clinic') return 'vet-clinic-list';
+      return 'vet';
+    }
+    if (currentScreen === 'grooming-booking') {
+      const ps = previousScreen;
+      if (
+        ps === 'grooming' ||
+        ps === 'grooming_center' ||
+        ps === 'grooming_home' ||
+        ps === 'problem_grid_flow'
+      ) {
+        return ps;
+      }
+      const st = String(vetServiceData?.serviceStyle ?? '').toLowerCase();
+      return st === 'at_home' || st === 'home' ? 'grooming_home' : 'grooming_center';
+    }
+    if (currentScreen === 'training-booking') {
+      const ps = previousScreen;
+      if (
+        ps === 'training' ||
+        ps === 'training_center' ||
+        ps === 'training_home' ||
+        ps === 'problem_grid_flow'
+      ) {
+        return ps;
+      }
+      const st = String(vetServiceData?.serviceStyle ?? '').toLowerCase();
+      return st === 'at_home' || st === 'home' ? 'training_home' : 'training_center';
+    }
+    return currentScreen;
   };
 
   /**
@@ -3772,14 +3850,17 @@ export function CustomerHomeWrapper({
   // Shared intent: vendorId alone loads GET /vendor/packages + vendor_services package rows; full row pre-selects one package.
   const walkSessionForPackage = walkerServiceData?.walkSession ?? null;
   const wPkg = walkerServiceData;
+  const vendorPackageIntentCoercedVsId =
+    firstNonEmptyString(wPkg?.vendorServiceId, (wPkg as Record<string, unknown> | null | undefined)?.vendor_service_id) ?? '';
+
   const vendorPackageIntentFromWalker =
     wPkg?.vendorId
       ? {
           vendorId: String(wPkg.vendorId),
           vendorName: wPkg?.walker?.name || wPkg.vendorName,
-          ...(wPkg.vendorServiceId
+          ...(vendorPackageIntentCoercedVsId
             ? {
-                vendorServiceId: String(wPkg.vendorServiceId),
+                vendorServiceId: vendorPackageIntentCoercedVsId,
                 serviceName: String(wPkg.serviceName || 'Package'),
                 totalSessions: Number(wPkg.totalSessions) || 1,
                 sessionsPerDay: Math.max(
