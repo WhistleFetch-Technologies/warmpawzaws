@@ -339,10 +339,8 @@ async function runAllMigrations() {
   // Build connection config
   const poolConfig = {
     connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
   };
-
-    poolConfig.ssl = { rejectUnauthorized: false };
-  }
 
   const pool = new Pool(poolConfig);
 
