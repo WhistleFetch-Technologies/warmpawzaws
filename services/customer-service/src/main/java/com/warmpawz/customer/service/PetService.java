@@ -21,7 +21,13 @@ public interface PetService {
 
     PetResponse getPet(UUID petId);
 
+    PetResponse getPetByPhone(String phone, UUID petId);
+
     PetResponse updatePet(UUID petId, AddPetRequest request);
 
+    PetResponse updatePetByPhone(String phone, UUID petId, AddPetRequest request);
+
     void deletePet(UUID petId);
+
+    void deletePetByPhone(String phone, UUID petId);
 }

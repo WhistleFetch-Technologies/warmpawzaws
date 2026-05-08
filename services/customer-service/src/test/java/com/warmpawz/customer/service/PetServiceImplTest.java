@@ -7,6 +7,7 @@ import com.warmpawz.customer.config.CacheNames;
 import com.warmpawz.customer.entity.Customer;
 import com.warmpawz.customer.entity.Pet;
 import com.warmpawz.customer.exception.ConflictException;
+import com.warmpawz.customer.exception.NotFoundException;
 import com.warmpawz.customer.repository.CustomerRepository;
 import com.warmpawz.customer.repository.PetRepository;
 import com.warmpawz.customer.service.serviceimpl.PetServiceImpl;
@@ -117,6 +118,38 @@ class PetServiceImplTest {
         petService.updatePet(petId, request);
 
         verify(cache, times(2)).clear();
+    }
+
+    @Test
+    void phoneScopedPetLookupEnforcesOwnership() {
+        UUID customerId = UUID.randomUUID();
+        UUID petId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        Pet pet = new Pet();
+        pet.setId(petId);
+        pet.setName("Milo");
+        pet.setCustomer(customer);
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(petRepository.findByIdAndCustomer_Id(petId, customerId)).thenReturn(Optional.of(pet));
+
+        PetResponse response = petService.getPetByPhone("9999999999", petId);
+
+        assertEquals(petId, response.getId());
+    }
+
+    @Test
+    void phoneScopedPetLookupReturnsNotFoundForWrongOwner() {
+        UUID customerId = UUID.randomUUID();
+        UUID petId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(petRepository.findByIdAndCustomer_Id(petId, customerId)).thenReturn(Optional.empty());
+
+        assertThrows(NotFoundException.class, () -> petService.getPetByPhone("9999999999", petId));
     }
 
     @Test

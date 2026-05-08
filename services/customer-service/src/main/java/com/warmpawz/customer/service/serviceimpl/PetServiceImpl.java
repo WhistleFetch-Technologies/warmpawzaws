@@ -155,6 +155,12 @@ public class PetServiceImpl implements PetService {
         return CustomerMapper.toPetResponse(pet);
     }
 
+    @Override
+    public PetResponse getPetByPhone(String phone, UUID petId) {
+        Pet pet = findOwnedPet(phone, petId);
+        return CustomerMapper.toPetResponse(pet);
+    }
+
     // =========================
     // UPDATE PET
     // =========================
@@ -165,9 +171,48 @@ public class PetServiceImpl implements PetService {
         Pet pet = petRepository.findById(petId)
                 .orElseThrow(() -> new NotFoundException("Pet not found"));
 
+        return updatePetEntity(pet, request);
+    }
+
+    @Override
+    @Transactional
+    public PetResponse updatePetByPhone(String phone, UUID petId, AddPetRequest request) {
+        Pet pet = findOwnedPet(phone, petId);
+        return updatePetEntity(pet, request);
+    }
+
+    // =========================
+    // DELETE PET
+    // =========================
+    @Override
+    @Transactional
+    public void deletePet(UUID petId) {
+
+        Pet pet = petRepository.findById(petId)
+                .orElseThrow(() -> new NotFoundException("Pet not found"));
+
+        deletePetEntity(pet);
+    }
+
+    @Override
+    @Transactional
+    public void deletePetByPhone(String phone, UUID petId) {
+        Pet pet = findOwnedPet(phone, petId);
+        deletePetEntity(pet);
+    }
+
+    private Pet findOwnedPet(String phone, UUID petId) {
+        Customer customer = customerRepository.findByPhone(phone)
+                .orElseThrow(() -> new NotFoundException("Customer not found"));
+        return petRepository.findByIdAndCustomer_Id(petId, customer.getId())
+                .orElseThrow(() -> new NotFoundException("Pet not found"));
+    }
+
+    private PetResponse updatePetEntity(Pet pet, AddPetRequest request) {
         // Dirty checking updates
         if (request.getName() != null) pet.setName(request.getName());
-        if (request.getSpecies() != null) pet.setSpecies(request.getSpecies());
+        String species = normalizedSpecies(request);
+        if (species != null) pet.setSpecies(species);
         if (request.getBreed() != null) pet.setBreed(request.getBreed());
         if (request.getAgeYears() != null || request.getAgeMonths() != null) {
             pet.setAgeYears(request.getAgeYears());
@@ -200,16 +245,7 @@ public class PetServiceImpl implements PetService {
         return CustomerMapper.toPetResponse(pet);
     }
 
-    // =========================
-    // DELETE PET
-    // =========================
-    @Override
-    @Transactional
-    public void deletePet(UUID petId) {
-
-        Pet pet = petRepository.findById(petId)
-                .orElseThrow(() -> new NotFoundException("Pet not found"));
-
+    private void deletePetEntity(Pet pet) {
         UUID customerId = pet.getCustomer().getId();
         String phone = pet.getCustomer().getPhone();
         petRepository.delete(pet);

@@ -56,11 +56,7 @@ public class CustomerController {
 
     @GetMapping("/profile")
     public ResponseEntity<CommonResponse<CustomerResponse>> getProfile(@RequestParam String phone) {
-        CustomerResponse response = customerService.getCustomerByPhone(requireValidPhone(phone));
-        CommonResponse<CustomerResponse> body = CommonResponse.success(response, "Profile fetched successfully");
-        body.setProfile(response);
-        body.setCustomer(response);
-        return ResponseEntity.ok(body);
+        return profileResponse(requireValidPhone(phone));
     }
 
     @GetMapping("/profile/unified/{phone}")
@@ -71,6 +67,11 @@ public class CustomerController {
         body.setProfile(response);
         body.setCustomer(response);
         return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/profile/{identifier}")
+    public ResponseEntity<CommonResponse<CustomerResponse>> getProfileByIdentifier(@PathVariable String identifier) {
+        return profileResponse(requireValidPhone(identifier));
     }
 
     @PostMapping("/profile")
@@ -85,14 +86,16 @@ public class CustomerController {
         if (phone == null || phone.isBlank()) {
             throw new BadRequestException("phone is required");
         }
-        CustomerResponse customer = customerService.getCustomerByPhone(requireValidPhone(phone));
-        UpdateCustomerRequest update = toUpdateRequest(request.get("profile"));
-        customerService.updateCustomer(customer.getId(), update);
-        CustomerResponse response = customerService.getCustomerById(customer.getId());
-        CommonResponse<CustomerResponse> body = CommonResponse.success(response, "Profile updated successfully");
-        body.setProfile(response);
-        body.setCustomer(response);
-        return ResponseEntity.ok(body);
+        return updateProfileResponse(requireValidPhone(phone), request.get("profile"));
+    }
+
+    @PutMapping("/profile/{identifier}")
+    public ResponseEntity<CommonResponse<CustomerResponse>> updateProfileByIdentifier(
+            @PathVariable String identifier,
+            @RequestBody Map<String, Object> request
+    ) {
+        Object profile = request.get("profile") != null ? request.get("profile") : request;
+        return updateProfileResponse(requireValidPhone(identifier), profile);
     }
 
     // ================================
@@ -159,6 +162,25 @@ public class CustomerController {
         update.setPhoto(stringValue(profile.get("photo")));
         update.setProfilePhotoUrl(stringValue(profile.get("profilePhotoUrl")));
         return update;
+    }
+
+    private ResponseEntity<CommonResponse<CustomerResponse>> profileResponse(String phone) {
+        CustomerResponse response = customerService.getCustomerByPhone(phone);
+        CommonResponse<CustomerResponse> body = CommonResponse.success(response, "Profile fetched successfully");
+        body.setProfile(response);
+        body.setCustomer(response);
+        return ResponseEntity.ok(body);
+    }
+
+    private ResponseEntity<CommonResponse<CustomerResponse>> updateProfileResponse(String phone, Object rawProfile) {
+        CustomerResponse customer = customerService.getCustomerByPhone(phone);
+        UpdateCustomerRequest update = toUpdateRequest(rawProfile);
+        customerService.updateCustomer(customer.getId(), update);
+        CustomerResponse response = customerService.getCustomerById(customer.getId());
+        CommonResponse<CustomerResponse> body = CommonResponse.success(response, "Profile updated successfully");
+        body.setProfile(response);
+        body.setCustomer(response);
+        return ResponseEntity.ok(body);
     }
 
     private String stringValue(Object value) {

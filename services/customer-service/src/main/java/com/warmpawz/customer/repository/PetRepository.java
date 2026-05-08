@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PetRepository extends JpaRepository<Pet, UUID> {
@@ -15,6 +16,8 @@ public interface PetRepository extends JpaRepository<Pet, UUID> {
     List<Pet> findByCustomer_Id(UUID customerId);
 
     Page<Pet> findByCustomer_Id(UUID customerId, Pageable pageable);
+
+    Optional<Pet> findByIdAndCustomer_Id(UUID id, UUID customerId);
 
     @Query("""
             select count(p) > 0 from Pet p

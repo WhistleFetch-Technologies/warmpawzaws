@@ -6,6 +6,7 @@ import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.common.PaginationMetadata;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.request.AddressRequest;
+import com.warmpawz.customer.dto.request.CustomerPreferencesRequest;
 import com.warmpawz.customer.dto.request.UpdateCustomerRequest;
 import com.warmpawz.customer.dto.response.AddressResponse;
 import com.warmpawz.customer.dto.response.CustomerResponse;
@@ -13,6 +14,7 @@ import com.warmpawz.customer.dto.response.PetResponse;
 import com.warmpawz.customer.exception.ApiExceptionHandler;
 import com.warmpawz.customer.exception.NotFoundException;
 import com.warmpawz.customer.service.CustomerAddressService;
+import com.warmpawz.customer.service.CustomerPreferenceService;
 import com.warmpawz.customer.service.IdempotencyService;
 import com.warmpawz.customer.service.CustomerService;
 import com.warmpawz.customer.service.PetService;
@@ -47,7 +49,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = {CustomerController.class, CustomerAddressController.class, CustomerPetController.class})
+@WebMvcTest(controllers = {CustomerController.class, CustomerAddressController.class, CustomerPetController.class, CustomerPreferenceController.class})
 @AutoConfigureMockMvc(addFilters = false)
 @Import(ApiExceptionHandler.class)
 @org.springframework.test.context.TestPropertySource(properties = {
@@ -66,6 +68,9 @@ class CustomerApiCompatibilityControllerTest {
 
     @MockitoBean
     private CustomerAddressService customerAddressService;
+
+    @MockitoBean
+    private CustomerPreferenceService customerPreferenceService;
 
     @MockitoBean
     private PetService petService;
@@ -107,6 +112,10 @@ class CustomerApiCompatibilityControllerTest {
                 .andExpect(jsonPath("$.customer.id").value(customerId.toString()));
 
         mockMvc.perform(get("/customer/profile").param("phone", "9999999999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile.id").value(customerId.toString()));
+
+        mockMvc.perform(get("/customer/profile/{identifier}", "9999999999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.profile.id").value(customerId.toString()));
 
@@ -298,6 +307,8 @@ class CustomerApiCompatibilityControllerTest {
         when(petService.getPets(eq(customerId), anyInt(), anyInt(), anyString())).thenReturn(pagedPetResult);
         when(petService.getPetsByPhone(eq("9999999999"), anyInt(), anyInt(), anyString())).thenReturn(pagedPetResult);
         when(petService.replacePetsByPhone(eq("9999999999"), any())).thenReturn(List.of(response));
+        when(petService.getPetByPhone(eq("9999999999"), eq(petId))).thenReturn(response);
+        when(petService.updatePetByPhone(eq("9999999999"), eq(petId), any(AddPetRequest.class))).thenReturn(response);
 
         AddPetRequest createRequest = new AddPetRequest();
         createRequest.setCustomerId(customerId);
@@ -310,6 +321,12 @@ class CustomerApiCompatibilityControllerTest {
 
         mockMvc.perform(get("/pets/{petId}", petId))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/customer/pets/{petId}", petId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pet.id").value(petId.toString()));
+        mockMvc.perform(get("/customer/{phone}/pets/{petId}", "9999999999", petId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pet.id").value(petId.toString()));
         mockMvc.perform(get("/pets/customer/{customerId}", customerId))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/customer/pets/{phone}", "9999999999"))
@@ -323,6 +340,18 @@ class CustomerApiCompatibilityControllerTest {
                         .content("{\"phone\":\"9999999999\",\"pets\":[{\"name\":\"Milo\",\"petType\":\"dog\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pets[0].id").value(petId.toString()));
+        mockMvc.perform(put("/customer/{phone}/pets/{petId}", "9999999999", petId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Milo\",\"petType\":\"dog\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pet.id").value(petId.toString()));
+        mockMvc.perform(delete("/customer/{phone}/pets/{petId}", "9999999999", petId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Pet deleted successfully"));
+        mockMvc.perform(get("/customer/{phone}/pets/{petId}/bookings", "9999999999", petId))
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Pet bookings are managed outside customer-service"));
 
         mockMvc.perform(post("/pets")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -369,6 +398,69 @@ class CustomerApiCompatibilityControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.customer.id").value(customerId.toString()))
                 .andExpect(jsonPath("$.profile.id").value(customerId.toString()));
+    }
+
+    @Test
+    void updateProfileByIdentifierUsesExistingProfileUpdateFlow() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        CustomerResponse customer = new CustomerResponse();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        when(customerService.getCustomerByPhone("9999999999")).thenReturn(customer);
+        when(customerService.getCustomerById(customerId)).thenReturn(customer);
+
+        mockMvc.perform(put("/customer/profile/{identifier}", "9999999999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"firstName\":\"Jane\",\"lastName\":\"Doe\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.profile.id").value(customerId.toString()));
+
+        verify(customerService).updateCustomer(eq(customerId), any(UpdateCustomerRequest.class));
+    }
+
+    @Test
+    void phonePreferenceRoutesResolveCustomerAndReusePreferenceService() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        CustomerResponse customer = new CustomerResponse();
+        customer.setId(customerId);
+        CustomerPreferencesRequest preferences = new CustomerPreferencesRequest();
+        preferences.setJourneyType("have-pet");
+        when(customerService.getCustomerByPhone("9999999999")).thenReturn(customer);
+        when(customerPreferenceService.savePreferences(eq(customerId), any(CustomerPreferencesRequest.class))).thenReturn(preferences);
+        when(customerPreferenceService.getPreferences(customerId)).thenReturn(preferences);
+
+        mockMvc.perform(post("/customer/{phone}/preferences", "9999999999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"journeyType\":\"have-pet\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.journeyType").value("have-pet"));
+
+        mockMvc.perform(get("/customer/{phone}/preferences", "9999999999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.journeyType").value("have-pet"));
+
+        verify(customerPreferenceService).savePreferences(eq(customerId), any(CustomerPreferencesRequest.class));
+        verify(customerPreferenceService).getPreferences(customerId);
+    }
+
+    @Test
+    void phoneRoutesRejectInvalidPhoneAndWrongPetOwner() throws Exception {
+        UUID petId = UUID.randomUUID();
+        when(petService.getPetByPhone(eq("8888888888"), eq(petId)))
+                .thenThrow(new NotFoundException("Pet not found"));
+
+        mockMvc.perform(get("/customer/{phone}/preferences", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("phone must be 10-15 digits"));
+
+        mockMvc.perform(get("/customer/{phone}/pets/{petId}", "abc", petId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("phone must be 10-15 digits"));
+
+        mockMvc.perform(get("/customer/{phone}/pets/{petId}", "8888888888", petId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Pet not found"));
     }
 
     @Test

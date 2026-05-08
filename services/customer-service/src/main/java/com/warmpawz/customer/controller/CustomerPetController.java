@@ -5,15 +5,18 @@ import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.request.LegacyPetsRequest;
 import com.warmpawz.customer.dto.response.PetResponse;
+import com.warmpawz.customer.exception.BadRequestException;
 import com.warmpawz.customer.service.IdempotencyService;
 import com.warmpawz.customer.service.PetService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -21,6 +24,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Customer Pet", description = "Pet APIs")
 public class CustomerPetController {
+
+    private static final String UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
     private final PetService petService;
     private final IdempotencyService idempotencyService;
@@ -128,7 +133,7 @@ public class CustomerPetController {
         return ResponseEntity.ok(body);
     }
 
-    @GetMapping({"/customer/pets/{phone}", "/customer/pets"})
+    @GetMapping({"/customer/pets/{phone:\\d{10,15}}", "/customer/pets"})
     public ResponseEntity<CommonResponse<List<PetResponse>>> getPetsByPhone(
             @PathVariable(required = false) String phone,
             @RequestParam(required = false, name = "phone") String phoneParam,
@@ -137,7 +142,7 @@ public class CustomerPetController {
             @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
         String resolvedPhone = phone != null ? phone : phoneParam;
-        PaginatedResult<PetResponse> result = petService.getPetsByPhone(resolvedPhone, page, size, sort);
+        PaginatedResult<PetResponse> result = petService.getPetsByPhone(requireValidPhone(resolvedPhone), page, size, sort);
         List<PetResponse> response = result.getItems();
         CommonResponse<List<PetResponse>> body = CommonResponse.success(response, "Pets fetched successfully");
         body.setPets(response);
@@ -145,14 +150,26 @@ public class CustomerPetController {
         return ResponseEntity.ok(body);
     }
 
+    @GetMapping("/customer/pets/{petId:" + UUID_PATTERN + "}")
+    public ResponseEntity<CommonResponse<PetResponse>> getCustomerPetById(
+            @PathVariable UUID petId
+    ) {
+        return petResponse(petService.getPet(petId));
+    }
+
     @GetMapping("/pets/{petId}")
     public ResponseEntity<CommonResponse<PetResponse>> getPetById(
             @PathVariable UUID petId
     ) {
-        PetResponse response = petService.getPet(petId);
-        CommonResponse<PetResponse> body = CommonResponse.success(response, "Pet fetched successfully");
-        body.setPet(response);
-        return ResponseEntity.ok(body);
+        return petResponse(petService.getPet(petId));
+    }
+
+    @GetMapping("/customer/{phone}/pets/{petId}")
+    public ResponseEntity<CommonResponse<PetResponse>> getPetByPhone(
+            @PathVariable String phone,
+            @PathVariable UUID petId
+    ) {
+        return petResponse(petService.getPetByPhone(requireValidPhone(phone), petId));
     }
 
     // =========================
@@ -163,10 +180,16 @@ public class CustomerPetController {
             @PathVariable UUID petId,
             @RequestBody AddPetRequest request
     ) {
-        PetResponse response = petService.updatePet(petId, request);
-        CommonResponse<PetResponse> body = CommonResponse.success(response, "Pet updated successfully");
-        body.setPet(response);
-        return ResponseEntity.ok(body);
+        return updatedPetResponse(petService.updatePet(petId, request));
+    }
+
+    @PutMapping("/customer/{phone}/pets/{petId}")
+    public ResponseEntity<CommonResponse<PetResponse>> updatePetByPhone(
+            @PathVariable String phone,
+            @PathVariable UUID petId,
+            @RequestBody AddPetRequest request
+    ) {
+        return updatedPetResponse(petService.updatePetByPhone(requireValidPhone(phone), petId, request));
     }
 
     // =========================
@@ -178,5 +201,50 @@ public class CustomerPetController {
     ) {
         petService.deletePet(petId);
         return ResponseEntity.ok(CommonResponse.message("Pet deleted successfully"));
+    }
+
+    @DeleteMapping("/customer/{phone}/pets/{petId}")
+    public ResponseEntity<CommonResponse<Void>> deletePetByPhone(
+            @PathVariable String phone,
+            @PathVariable UUID petId
+    ) {
+        petService.deletePetByPhone(requireValidPhone(phone), petId);
+        return ResponseEntity.ok(CommonResponse.message("Pet deleted successfully"));
+    }
+
+    @GetMapping("/customer/{phone}/pets/{petId}/bookings")
+    public ResponseEntity<CommonResponse<Map<String, Object>>> getPetBookingsByPhone(
+            @PathVariable String phone,
+            @PathVariable UUID petId
+    ) {
+        petService.getPetByPhone(requireValidPhone(phone), petId);
+        CommonResponse<Map<String, Object>> body = new CommonResponse<>();
+        body.setSuccess(false);
+        body.setMessage("Pet bookings are managed outside customer-service");
+        body.setData(Map.of("bookings", List.of(), "stats", Map.of()));
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(body);
+    }
+
+    private ResponseEntity<CommonResponse<PetResponse>> petResponse(PetResponse response) {
+        CommonResponse<PetResponse> body = CommonResponse.success(response, "Pet fetched successfully");
+        body.setPet(response);
+        return ResponseEntity.ok(body);
+    }
+
+    private ResponseEntity<CommonResponse<PetResponse>> updatedPetResponse(PetResponse response) {
+        CommonResponse<PetResponse> body = CommonResponse.success(response, "Pet updated successfully");
+        body.setPet(response);
+        return ResponseEntity.ok(body);
+    }
+
+    private String requireValidPhone(String rawPhone) {
+        if (rawPhone == null || rawPhone.isBlank()) {
+            throw new BadRequestException("phone is required");
+        }
+        String normalized = rawPhone.replaceAll("\\D", "");
+        if (normalized.length() < 10 || normalized.length() > 15) {
+            throw new BadRequestException("phone must be 10-15 digits");
+        }
+        return normalized;
     }
 }
