@@ -17,6 +17,12 @@ import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByCustomerId,
+  urlCustomerPetsByPhonePath,
+  urlCustomerPetsByPhoneQuery,
+} from '@/lib/customer-service-list-urls';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
@@ -606,7 +612,7 @@ export function UniversalPaymentPage({
         let list: { id: string; name: string }[] = [];
         if (customerId) {
           try {
-            const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
+            const res = await apiClient.get<unknown>(urlCustomerPetsByCustomerId(customerId));
             list = petsListForPaymentPicker(res);
           } catch {
             list = [];
@@ -615,7 +621,7 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byQuery = await apiClient.get<unknown>(
-              `/customer/pets?phone=${encodeURIComponent(customerPhone)}`
+              urlCustomerPetsByPhoneQuery(customerPhone)
             );
             list = petsListForPaymentPicker(byQuery);
           } catch {
@@ -625,7 +631,7 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byPath = await apiClient.get<unknown>(
-              `/customer/pets/${encodeURIComponent(customerPhone)}`
+              urlCustomerPetsByPhonePath(customerPhone)
             );
             list = petsListForPaymentPicker(byPath);
           } catch {
@@ -944,7 +950,7 @@ export function UniversalPaymentPage({
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+      const data = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
       const addressList = data.addresses || [];
       setAddresses(addressList);
 

@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -896,7 +897,7 @@ export function BoardingBookingRouter({
 
   const loadCustomerData = async () => {
     try {
-      const petsResponse = (await apiClient.get(`/customer/pets/${phone}`)) as {
+      const petsResponse = (await apiClient.get(urlCustomerPetsByPhonePath(phone))) as {
         pets?: Record<string, unknown>[];
       };
       if (petsResponse.pets && petsResponse.pets.length > 0) {
@@ -972,7 +973,7 @@ export function BoardingBookingRouter({
   
   const refreshPets = async () => {
     try {
-      const petsResponse = (await apiClient.get(`/customer/pets/${phone}`)) as {
+      const petsResponse = (await apiClient.get(urlCustomerPetsByPhonePath(phone))) as {
         pets?: Record<string, unknown>[];
       };
       if (petsResponse.pets && petsResponse.pets.length > 0) {
@@ -2545,7 +2546,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     
     setLoading(true);
     try {
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData.pets)) {
         existingPets = getPetsData.pets;

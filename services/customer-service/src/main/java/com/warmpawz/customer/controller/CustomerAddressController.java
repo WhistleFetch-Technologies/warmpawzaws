@@ -1,6 +1,7 @@
 package com.warmpawz.customer.controller;
 
 import com.warmpawz.customer.dto.common.CommonResponse;
+import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddressRequest;
 import com.warmpawz.customer.dto.response.AddressResponse;
 import com.warmpawz.customer.exception.BadRequestException;
@@ -88,22 +89,32 @@ public class CustomerAddressController {
     // =========================
     @GetMapping("/{customerId}/addresses")
     public ResponseEntity<CommonResponse<List<AddressResponse>>> getAddresses(
-            @PathVariable UUID customerId
+            @PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
-        List<AddressResponse> response = addressService.getAddresses(customerId);
+        PaginatedResult<AddressResponse> result = addressService.getAddresses(customerId, page, size, sort);
+        List<AddressResponse> response = result.getItems();
 
         CommonResponse<List<AddressResponse>> body = CommonResponse.success(response, "Addresses fetched successfully");
         body.setAddresses(response);
+        body.setPagination(result.getPagination());
         return ResponseEntity.ok(body);
     }
 
     @GetMapping("/addresses")
     public ResponseEntity<CommonResponse<List<AddressResponse>>> getAddressesByPhone(
-            @RequestParam String phone
+            @RequestParam String phone,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
-        List<AddressResponse> response = addressService.getAddressesByPhone(phone);
+        PaginatedResult<AddressResponse> result = addressService.getAddressesByPhone(phone, page, size, sort);
+        List<AddressResponse> response = result.getItems();
         CommonResponse<List<AddressResponse>> body = CommonResponse.success(response, "Addresses fetched successfully");
         body.setAddresses(response);
+        body.setPagination(result.getPagination());
         return ResponseEntity.ok(body);
     }
 

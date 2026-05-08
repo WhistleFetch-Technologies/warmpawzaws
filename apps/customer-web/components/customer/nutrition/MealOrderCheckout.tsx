@@ -10,6 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
 import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
+import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
 } from '@/lib/razorpay/build-standard-checkout-options';
@@ -60,8 +64,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       const [planRes, profileRes, petsRes, addrRes] = await Promise.all([
         apiClient.get(`/meal-plans/${mealPlanId}`).catch(() => null),
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)),
-        apiClient.get(`/customer/pets/${phone}`).catch(() => ({ pets: [] })),
-        apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`).catch(() => ({ addresses: [] })),
+        apiClient.get(urlCustomerPetsByPhonePath(phone)).catch(() => ({ pets: [] })),
+        apiClient.get(urlCustomerAddressesByPhone(phone)).catch(() => ({ addresses: [] })),
       ]);
       const planData = (planRes as any)?.mealPlan || planRes;
       if (planData) setMealPlan(planData);

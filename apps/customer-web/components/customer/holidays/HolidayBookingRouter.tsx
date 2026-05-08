@@ -5,6 +5,7 @@ import { LucideIcon, Palmtree, Calendar, Clock, MapPin, User, CheckCircle2, Plus
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
@@ -88,7 +89,7 @@ export function HolidayBookingRouter({
 
   const loadCustomerData = async () => {
     try {
-      const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+      const petsResponse = await apiClient.get<any>(urlCustomerPetsByPhonePath(phone));
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -169,7 +170,7 @@ export function HolidayBookingRouter({
 
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+      const petsResponse = await apiClient.get<any>(urlCustomerPetsByPhonePath(phone));
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p: any) => ({
           id: p.id,

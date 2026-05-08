@@ -15,6 +15,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerPetsByCustomerId,
+  urlCustomerPetsByPhonePath,
+  urlCustomerPetsByPhoneQuery,
+} from '@/lib/customer-service-list-urls';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
@@ -240,14 +245,14 @@ export function PackageBookingPage({
       try {
         let res: unknown = null;
         try {
-          res = await apiClient.get(`/customer/pets/${encodeURIComponent(customerPhone)}`);
+          res = await apiClient.get(urlCustomerPetsByPhonePath(customerPhone));
         } catch {
           try {
-            res = await apiClient.get(`/customer/pets?phone=${encodeURIComponent(customerPhone)}`);
+            res = await apiClient.get(urlCustomerPetsByPhoneQuery(customerPhone));
           } catch {
             if (customerId && customerId !== customerPhone) {
               try {
-                res = await apiClient.get(`/customer/${encodeURIComponent(customerId)}/pets`);
+                res = await apiClient.get(urlCustomerPetsByCustomerId(customerId));
               } catch {
                 res = null;
               }

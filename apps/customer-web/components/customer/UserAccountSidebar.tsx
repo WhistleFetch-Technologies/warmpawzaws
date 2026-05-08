@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
+import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
@@ -837,7 +838,7 @@ export function UserAccountSidebar({
     try {
       setLoadingAddresses(true);
       const result = await apiClient.get<{ addresses?: Address[] }>(
-        `/customer/addresses?phone=${encodeURIComponent(phone)}`
+        urlCustomerAddressesByPhone(phone)
       );
       setAddresses(result.addresses || []);
     } catch (error) {

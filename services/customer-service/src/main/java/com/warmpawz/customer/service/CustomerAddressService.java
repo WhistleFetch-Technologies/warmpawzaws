@@ -1,5 +1,6 @@
 package com.warmpawz.customer.service;
 
+import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddressRequest;
 import com.warmpawz.customer.dto.response.AddressResponse;
 
@@ -12,9 +13,9 @@ public interface CustomerAddressService {
 
     AddressResponse createAddressByPhone(String phone, AddressRequest request);
 
-    List<AddressResponse> getAddresses(UUID customerId);
+    PaginatedResult<AddressResponse> getAddresses(UUID customerId, int page, int size, String sort);
 
-    List<AddressResponse> getAddressesByPhone(String phone);
+    PaginatedResult<AddressResponse> getAddressesByPhone(String phone, int page, int size, String sort);
 
     AddressResponse getAddress(UUID addressId);
 

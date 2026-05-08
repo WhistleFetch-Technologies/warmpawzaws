@@ -1,6 +1,7 @@
 package com.warmpawz.customer.service;
 
 import com.warmpawz.customer.entity.Customer;
+import com.warmpawz.customer.config.CacheNames;
 import com.warmpawz.customer.repository.CustomerRepository;
 import com.warmpawz.customer.service.serviceimpl.CustomerServiceImpl;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class CustomerServiceImplTest {
@@ -76,5 +78,21 @@ class CustomerServiceImplTest {
         customerService.getCustomerById(customerId);
 
         verify(customerRepository).findById(customerId);
+    }
+
+    @Test
+    void deactivateCustomerEvictsCustomerCaches() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(cacheManager.getCache(CacheNames.CUSTOMER_BY_ID)).thenReturn(cache);
+        when(cacheManager.getCache(CacheNames.CUSTOMER_BY_PHONE)).thenReturn(cache);
+
+        customerService.deactivateCustomer(customerId, "test");
+
+        verify(cache, times(1)).evict(customerId.toString());
+        verify(cache, times(1)).evict("9999999999");
     }
 }

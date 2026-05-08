@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { toast } from 'sonner';
@@ -837,7 +838,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   const loadPets = async () => {
     try {
       setLoadingPets(true);
-      const response = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const response = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (response?.pets) {
         setPets(response.pets);
       }

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
@@ -62,7 +63,7 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
       let response: any;
       try {
         // Try /customer/addresses?phone= first
-        const apiPromise = apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+        const apiPromise = apiClient.get<any>(urlCustomerAddressesByPhone(phone));
         response = await Promise.race([apiPromise, timeoutPromise]) as any;
       } catch (firstError: any) {
         // If 404, try alternative endpoint format
@@ -254,7 +255,7 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                     // Reload addresses - try both endpoint formats
                     let response: any;
                     try {
-                      response = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+                      response = await apiClient.get<any>(urlCustomerAddressesByPhone(phone));
                     } catch (error: any) {
                       if (error.status === 404) {
                         response = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/addresses`);

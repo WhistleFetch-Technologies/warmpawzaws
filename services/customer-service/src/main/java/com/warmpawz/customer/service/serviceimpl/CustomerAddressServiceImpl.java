@@ -1,5 +1,7 @@
 package com.warmpawz.customer.service.serviceimpl;
 
+import com.warmpawz.customer.dto.common.PaginatedResult;
+import com.warmpawz.customer.dto.common.PaginationMetadata;
 import com.warmpawz.customer.dto.request.AddressRequest;
 import com.warmpawz.customer.dto.response.AddressResponse;
 import com.warmpawz.customer.dto.response.GoogleAddressResult;
@@ -21,6 +23,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -108,32 +115,34 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
     }
 
     @Override
-    public List<AddressResponse> getAddresses(UUID customerId) {
-        List<AddressResponse> cached = getCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, customerId.toString());
+    public PaginatedResult<AddressResponse> getAddresses(UUID customerId, int page, int size, String sort) {
+        Pageable pageable = buildPageable(page, size, sort);
+        String cacheKey = paginatedCacheKey(customerId.toString(), pageable);
+        PaginatedResult<AddressResponse> cached = getCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, cacheKey);
         if (cached != null) return cached;
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
-        List<AddressResponse> resolved = getAddressesForCustomer(customer);
-        putCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, customerId.toString(), resolved);
+        PaginatedResult<AddressResponse> resolved = getAddressesForCustomer(customer, pageable);
+        putCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, cacheKey, resolved);
         if (customer.getPhone() != null) {
-            putCached(CacheNames.ADDRESSES_BY_PHONE, customer.getPhone(), resolved);
+            putCached(CacheNames.ADDRESSES_BY_PHONE, paginatedCacheKey(customer.getPhone(), pageable), resolved);
         }
         return resolved;
     }
 
-    private List<AddressResponse> getAddressesForCustomer(Customer customer) {
+    private PaginatedResult<AddressResponse> getAddressesForCustomer(Customer customer, Pageable pageable) {
         UUID customerId = customer.getId();
-        List<CustomerAddress> addresses =
-                addressRepository.findByCustomer_Id(customerId);
+        Page<CustomerAddress> addresses = addressRepository.findByCustomer_Id(customerId, pageable);
 
         if (!addresses.isEmpty()) {
-            return addresses.stream()
+            List<AddressResponse> items = addresses.stream()
                     .map(CustomerMapper::toAddressResponse)
                     .toList();
+            return new PaginatedResult<>(items, toPaginationMetadata(addresses));
         }
 
         if (customer.getAddress() == null && customer.getPincode() == null) {
-            return List.of();
+            return new PaginatedResult<>(List.of(), toPaginationMetadata(addresses));
         }
 
         AddressResponse fallback = new AddressResponse();
@@ -155,17 +164,21 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
         fallback.setCreatedAt(null);
         fallback.setUpdatedAt(null);
 
-        return List.of(fallback);
+        List<AddressResponse> fallbackList = List.of(fallback);
+        Page<AddressResponse> fallbackPage = new PageImpl<>(fallbackList, pageable, fallbackList.size());
+        return new PaginatedResult<>(fallbackList, toPaginationMetadata(fallbackPage));
     }
 
     @Override
-    public List<AddressResponse> getAddressesByPhone(String phone) {
-        List<AddressResponse> cached = getCached(CacheNames.ADDRESSES_BY_PHONE, phone);
+    public PaginatedResult<AddressResponse> getAddressesByPhone(String phone, int page, int size, String sort) {
+        Pageable pageable = buildPageable(page, size, sort);
+        String cacheKey = paginatedCacheKey(phone, pageable);
+        PaginatedResult<AddressResponse> cached = getCached(CacheNames.ADDRESSES_BY_PHONE, cacheKey);
         if (cached != null) return cached;
         Customer customer = findCustomerByPhone(phone);
-        List<AddressResponse> resolved = getAddressesForCustomer(customer);
-        putCached(CacheNames.ADDRESSES_BY_PHONE, phone, resolved);
-        putCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, customer.getId().toString(), resolved);
+        PaginatedResult<AddressResponse> resolved = getAddressesForCustomer(customer, pageable);
+        putCached(CacheNames.ADDRESSES_BY_PHONE, cacheKey, resolved);
+        putCached(CacheNames.ADDRESSES_BY_CUSTOMER_ID, paginatedCacheKey(customer.getId().toString(), pageable), resolved);
         return resolved;
     }
 
@@ -316,7 +329,7 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
     }
 
     @SuppressWarnings("unchecked")
-    private List<AddressResponse> getCached(String cacheName, String key) {
+    private PaginatedResult<AddressResponse> getCached(String cacheName, String key) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache == null) return null;
         Cache.ValueWrapper wrapper = cache.get(key);
@@ -327,22 +340,55 @@ public class CustomerAddressServiceImpl implements CustomerAddressService {
         }
         long hit = cacheHitCounter.incrementAndGet();
         log.info("event=cache_hit cache={} key={} hit_count={}", cacheName, key, hit);
-        return (List<AddressResponse>) wrapper.get();
+        return (PaginatedResult<AddressResponse>) wrapper.get();
     }
 
-    private void putCached(String cacheName, String key, List<AddressResponse> value) {
+    private void putCached(String cacheName, String key, PaginatedResult<AddressResponse> value) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache != null) cache.put(key, value);
     }
 
     private void invalidateAddressCaches(UUID customerId, String phone) {
-        evict(CacheNames.ADDRESSES_BY_CUSTOMER_ID, customerId.toString());
-        if (phone != null && !phone.isBlank()) evict(CacheNames.ADDRESSES_BY_PHONE, phone);
+        // Safe fallback: clear all paginated entries when owner writes occur.
+        clear(CacheNames.ADDRESSES_BY_CUSTOMER_ID);
+        clear(CacheNames.ADDRESSES_BY_PHONE);
     }
 
-    private void evict(String cacheName, String key) {
+    private void clear(String cacheName) {
         Cache cache = cacheManager.getCache(cacheName);
-        if (cache != null) cache.evict(key);
+        if (cache != null) cache.clear();
+    }
+
+    private Pageable buildPageable(int page, int size, String sort) {
+        int resolvedPage = Math.max(page, 0);
+        int resolvedSize = Math.min(Math.max(size, 1), 50);
+        String sortValue = (sort == null || sort.isBlank()) ? "createdAt,desc" : sort;
+        String[] sortParts = sortValue.split(",", 2);
+        String sortBy = sortParts[0].isBlank() ? "createdAt" : sortParts[0];
+        Sort.Direction direction = (sortParts.length > 1 && "asc".equalsIgnoreCase(sortParts[1]))
+                ? Sort.Direction.ASC
+                : Sort.Direction.DESC;
+        return PageRequest.of(resolvedPage, resolvedSize, Sort.by(direction, sortBy));
+    }
+
+    private PaginationMetadata toPaginationMetadata(Page<?> page) {
+        return new PaginationMetadata(
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.hasNext(),
+                page.hasPrevious()
+        );
+    }
+
+    @SuppressWarnings("java:S3457")
+    private String paginatedCacheKey(String ownerKey, Pageable pageable) {
+        String sort = pageable.getSort().stream()
+                .findFirst()
+                .map(order -> order.getProperty() + "," + order.getDirection().name().toLowerCase())
+                .orElse("createdAt,desc");
+        return ownerKey + ":p=" + pageable.getPageNumber() + ":s=" + pageable.getPageSize() + ":sort=" + sort;
     }
 
 }

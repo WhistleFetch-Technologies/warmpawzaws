@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { X, Camera, Upload } from 'lucide-react';
 // Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { PetHealthVaccinationFormBody } from '@/components/customer/PetHealthVaccinationFormBody';
 
 interface Pet {
@@ -137,7 +138,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       console.log('Pet Data:', petData);
       
       // First, get existing pets - AWS Serverless compatible
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       
       // ✅ Robust response parsing (handles { pets: [...] } and { pets: { pets: [...] } })
       let existingPets = [];

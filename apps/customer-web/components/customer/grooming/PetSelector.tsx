@@ -5,6 +5,7 @@ import { Check, ArrowLeft, Plus, Home as HomeIcon, ShoppingCart, Calendar, User 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 
 interface Pet {
   id: string;
@@ -57,7 +58,9 @@ export function PetSelector({
   const fetchPets = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<{ pets?: Pet[] } | Pet[]>(`/customer/pets/${phone}`);
+      const response = await apiClient.get<{ pets?: Pet[] } | Pet[]>(
+        urlCustomerPetsByPhonePath(phone)
+      );
       
       let petList: Pet[] = [];
       if (Array.isArray(response)) {

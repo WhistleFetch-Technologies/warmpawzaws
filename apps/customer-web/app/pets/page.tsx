@@ -6,18 +6,34 @@ import { ArrowLeft, ChevronRight, PawPrint, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { getResolvedCustomerId, reconcileCustomerIdStorageOnLoad } from '@/lib/customer-id-storage';
-import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
+import { petsAndPaginationFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
+import {
+  defaultCustomerServiceFullListParams,
+  myPetsListParams,
+  urlCustomerPetsByCustomerId,
+  urlCustomerPetsByPhoneQuery,
+} from '@/lib/customer-service-list-urls';
+import type { CustomerServicePaginationMeta } from '@warmpawz/shared-types';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { writeCheckoutPetSelectionForPayment } from '@/lib/checkout-pet-selection';
 import { breedsForSpecies } from '@/lib/pet-breeds';
 import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { toast } from 'sonner';
 
+type PetsListSource =
+  | { kind: 'customerId'; id: string }
+  | { kind: 'phone'; phone: string };
+
 function PetsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const forCheckout = searchParams.get('forCheckout') === '1';
   const [pets, setPets] = useState<PetUi[]>([]);
+  const [listSource, setListSource] = useState<PetsListSource | null>(null);
+  const [listPagination, setListPagination] = useState<
+    CustomerServicePaginationMeta | undefined
+  >();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPet, setNewPet] = useState<Partial<PetUi>>(() => ({
@@ -28,6 +44,7 @@ function PetsPageContent() {
 
   const loadPets = useCallback(async () => {
     try {
+      setLoading(true);
       reconcileCustomerIdStorageOnLoad();
       const customerId = getResolvedCustomerId();
       const phone =
@@ -44,15 +61,30 @@ function PetsPageContent() {
         console.log('[My Pets] customerPhone present:', Boolean(phone));
       }
 
-      let list: PetUi[] = [];
+      const pageOpts = forCheckout
+        ? defaultCustomerServiceFullListParams()
+        : myPetsListParams(0);
+
+      let batch: PetUi[] = [];
+      let meta: CustomerServicePaginationMeta | undefined;
+      let source: PetsListSource | null = null;
 
       if (customerId) {
         try {
-          const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
+          const url = urlCustomerPetsByCustomerId(customerId, pageOpts);
+          const res = await apiClient.get<unknown>(url);
           if (shouldLog) {
             console.log('[My Pets] GET /customer/:customerId/pets raw response:', res);
           }
-          list = petsFromApiResponse(res);
+          const parsed = petsAndPaginationFromApiResponse(res);
+          batch = parsed.pets;
+          meta = parsed.pagination;
+          const hasAny =
+            batch.length > 0 ||
+            (meta != null && meta.totalElements > 0);
+          if (hasAny) {
+            source = { kind: 'customerId', id: customerId };
+          }
         } catch (e) {
           if (shouldLog) {
             console.warn('[My Pets] GET by customerId failed, will try phone if available:', e);
@@ -60,15 +92,17 @@ function PetsPageContent() {
         }
       }
 
-      if (list.length === 0 && phone) {
+      if (!source && phone) {
         try {
-          const res = await apiClient.get<unknown>(
-            `/customer/pets?phone=${encodeURIComponent(phone)}`
-          );
+          const url = urlCustomerPetsByPhoneQuery(phone, pageOpts);
+          const res = await apiClient.get<unknown>(url);
           if (shouldLog) {
             console.log('[My Pets] GET /customer/pets?phone= raw response:', res);
           }
-          list = petsFromApiResponse(res);
+          const parsed = petsAndPaginationFromApiResponse(res);
+          batch = parsed.pets;
+          meta = parsed.pagination;
+          source = { kind: 'phone', phone };
         } catch (e) {
           if (shouldLog) {
             console.warn('[My Pets] GET by phone failed:', e);
@@ -76,14 +110,51 @@ function PetsPageContent() {
         }
       }
 
-      setPets(list);
+      setListSource(forCheckout ? null : source);
+      setListPagination(forCheckout ? undefined : meta);
+      setPets(batch);
     } catch (err) {
       console.error('Error loading pets:', err);
       setPets([]);
+      setListSource(null);
+      setListPagination(undefined);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [forCheckout]);
+
+  const loadMorePets = useCallback(async () => {
+    if (forCheckout || !listSource || !listPagination?.hasNext || loadingMore) return;
+    const nextPage = listPagination.page + 1;
+    setLoadingMore(true);
+    try {
+      const params = myPetsListParams(nextPage);
+      const url =
+        listSource.kind === 'customerId'
+          ? urlCustomerPetsByCustomerId(listSource.id, params)
+          : urlCustomerPetsByPhoneQuery(listSource.phone, params);
+      const res = await apiClient.get<unknown>(url);
+      const { pets: nextBatch, pagination: nextMeta } =
+        petsAndPaginationFromApiResponse(res);
+      setListPagination(nextMeta);
+      setPets((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const merged = [...prev];
+        for (const p of nextBatch) {
+          if (!seen.has(p.id)) {
+            seen.add(p.id);
+            merged.push(p);
+          }
+        }
+        return merged;
+      });
+    } catch (e) {
+      console.error('[My Pets] load more failed:', e);
+      toast.error('Could not load more pets');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [forCheckout, listSource, listPagination, loadingMore]);
 
   useEffect(() => {
     const phone = localStorage.getItem('customerPhone');
@@ -293,6 +364,19 @@ function PetsPageContent() {
               ))}
             </ul>
           )}
+          {!forCheckout && listPagination?.hasNext ? (
+            <div className="mt-4 flex justify-center pb-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-w-[10rem]"
+                onClick={() => void loadMorePets()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading…' : 'Load more pets'}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
       {!loading ? addFab : null}

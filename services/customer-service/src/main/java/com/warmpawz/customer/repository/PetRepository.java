@@ -1,6 +1,8 @@
 package com.warmpawz.customer.repository;
 
 import com.warmpawz.customer.entity.Pet;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +13,8 @@ import java.util.UUID;
 public interface PetRepository extends JpaRepository<Pet, UUID> {
 
     List<Pet> findByCustomer_Id(UUID customerId);
+
+    Page<Pet> findByCustomer_Id(UUID customerId, Pageable pageable);
 
     @Query("""
             select count(p) > 0 from Pet p

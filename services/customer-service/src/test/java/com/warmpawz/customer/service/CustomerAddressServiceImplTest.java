@@ -2,6 +2,8 @@ package com.warmpawz.customer.service;
 
 import com.warmpawz.customer.dto.request.AddressRequest;
 import com.warmpawz.customer.dto.response.AddressResponse;
+import com.warmpawz.customer.dto.common.PaginatedResult;
+import com.warmpawz.customer.config.CacheNames;
 import com.warmpawz.customer.entity.Customer;
 import com.warmpawz.customer.entity.CustomerAddress;
 import com.warmpawz.customer.exception.ConflictException;
@@ -16,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.domain.PageImpl;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,9 +26,13 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class CustomerAddressServiceImplTest {
@@ -159,6 +166,71 @@ class CustomerAddressServiceImplTest {
 
         assertThrows(ConflictException.class, () -> addressService.createAddress(customerId, request));
         verify(addressRepository, org.mockito.Mockito.never()).saveAndFlush(any(CustomerAddress.class));
+    }
+
+    @Test
+    void getAddressesByPhoneUsesCacheOnRepeatedReads() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = customer(customerId);
+        CustomerAddress persisted = address(customer, true);
+
+        when(cacheManager.getCache(anyString())).thenReturn(cache);
+        when(cache.get("9999999999:p=0:s=10:sort=createdAt,desc")).thenReturn(null, new Cache.ValueWrapper() {
+            @Override
+            public Object get() {
+                AddressResponse addressResponse = new AddressResponse();
+                addressResponse.setPhone("9999999999");
+                return new PaginatedResult<>(List.of(addressResponse), null);
+            }
+        });
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(addressRepository.findByCustomer_Id(org.mockito.ArgumentMatchers.eq(customerId), any())).thenReturn(new PageImpl<>(List.of(persisted)));
+
+        addressService.getAddressesByPhone("9999999999", 0, 10, "createdAt,desc");
+        addressService.getAddressesByPhone("9999999999", 0, 10, "createdAt,desc");
+
+        verify(customerRepository, times(1)).findByPhone("9999999999");
+    }
+
+    @Test
+    void updateAddressEvictsAddressCaches() {
+        UUID customerId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        Customer customer = customer(customerId);
+        CustomerAddress address = address(customer, false);
+        address.setId(addressId);
+        AddressRequest request = new AddressRequest();
+        request.setAddressLine1("Updated line");
+
+        when(addressRepository.findById(addressId)).thenReturn(Optional.of(address));
+        when(cacheManager.getCache(CacheNames.ADDRESSES_BY_CUSTOMER_ID)).thenReturn(cache);
+        when(cacheManager.getCache(CacheNames.ADDRESSES_BY_PHONE)).thenReturn(cache);
+        when(googleMapsService.normalize(any(AddressRequest.class))).thenReturn(Optional.empty());
+
+        addressService.updateAddress(customerId, addressId, request);
+
+        verify(cache, times(2)).clear();
+    }
+
+    @Test
+    void getAddressesUsesPaginationMetadataAndKeys() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = customer(customerId);
+        CustomerAddress persisted = address(customer, true);
+        when(cacheManager.getCache(anyString())).thenReturn(cache);
+        when(cache.get(contains(":p=1:s=2:sort=createdAt,asc"))).thenReturn(null);
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(addressRepository.findByCustomer_Id(org.mockito.ArgumentMatchers.eq(customerId), any()))
+                .thenReturn(new PageImpl<>(List.of(persisted), org.springframework.data.domain.PageRequest.of(1, 2), 5));
+
+        PaginatedResult<AddressResponse> result = addressService.getAddresses(customerId, 1, 2, "createdAt,asc");
+
+        assertEquals(1, result.getPagination().getPage());
+        assertEquals(2, result.getPagination().getSize());
+        assertEquals(5, result.getPagination().getTotalElements());
+        assertEquals(3, result.getPagination().getTotalPages());
+        assertTrue(result.getPagination().isHasNext());
+        verify(cache, times(2)).put(contains(":p=1:s=2:sort=createdAt,asc"), any());
     }
 
     private Customer customer(UUID customerId) {

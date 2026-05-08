@@ -1,5 +1,7 @@
 package com.warmpawz.customer.service.serviceimpl;
 
+import com.warmpawz.customer.dto.common.PaginatedResult;
+import com.warmpawz.customer.dto.common.PaginationMetadata;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.response.PetResponse;
 import com.warmpawz.customer.config.CacheNames;
@@ -19,6 +21,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -105,31 +111,41 @@ public class PetServiceImpl implements PetService {
     // GET PETS
     // =========================
     @Override
-    public List<PetResponse> getPets(UUID customerId) {
-        List<PetResponse> cached = getCached(CacheNames.PETS_BY_CUSTOMER_ID, customerId.toString());
+    public PaginatedResult<PetResponse> getPets(UUID customerId, int page, int size, String sort) {
+        Pageable pageable = buildPageable(page, size, sort);
+        String cacheKey = paginatedCacheKey(customerId.toString(), pageable);
+        PaginatedResult<PetResponse> cached = getCached(CacheNames.PETS_BY_CUSTOMER_ID, cacheKey);
         if (cached != null) return cached;
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
-        List<PetResponse> response = petRepository.findByCustomer_Id(customerId).stream()
+        Page<Pet> petPage = petRepository.findByCustomer_Id(customerId, pageable);
+        List<PetResponse> response = petPage.stream()
                 .map(CustomerMapper::toPetResponse)
                 .toList();
-        putCached(CacheNames.PETS_BY_CUSTOMER_ID, customerId.toString(), response);
-        if (customer.getPhone() != null) putCached(CacheNames.PETS_BY_PHONE, customer.getPhone(), response);
-        return response;
+        PaginatedResult<PetResponse> result = new PaginatedResult<>(response, toPaginationMetadata(petPage));
+        putCached(CacheNames.PETS_BY_CUSTOMER_ID, cacheKey, result);
+        if (customer.getPhone() != null) {
+            putCached(CacheNames.PETS_BY_PHONE, paginatedCacheKey(customer.getPhone(), pageable), result);
+        }
+        return result;
     }
 
     @Override
-    public List<PetResponse> getPetsByPhone(String phone) {
-        List<PetResponse> cached = getCached(CacheNames.PETS_BY_PHONE, phone);
+    public PaginatedResult<PetResponse> getPetsByPhone(String phone, int page, int size, String sort) {
+        Pageable pageable = buildPageable(page, size, sort);
+        String cacheKey = paginatedCacheKey(phone, pageable);
+        PaginatedResult<PetResponse> cached = getCached(CacheNames.PETS_BY_PHONE, cacheKey);
         if (cached != null) return cached;
         Customer customer = customerRepository.findByPhone(phone)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
-        List<PetResponse> response = petRepository.findByCustomer_Id(customer.getId()).stream()
+        Page<Pet> petPage = petRepository.findByCustomer_Id(customer.getId(), pageable);
+        List<PetResponse> response = petPage.stream()
                 .map(CustomerMapper::toPetResponse)
                 .toList();
-        putCached(CacheNames.PETS_BY_PHONE, phone, response);
-        putCached(CacheNames.PETS_BY_CUSTOMER_ID, customer.getId().toString(), response);
-        return response;
+        PaginatedResult<PetResponse> result = new PaginatedResult<>(response, toPaginationMetadata(petPage));
+        putCached(CacheNames.PETS_BY_PHONE, cacheKey, result);
+        putCached(CacheNames.PETS_BY_CUSTOMER_ID, paginatedCacheKey(customer.getId().toString(), pageable), result);
+        return result;
     }
 
     @Override
@@ -207,7 +223,7 @@ public class PetServiceImpl implements PetService {
     }
 
     @SuppressWarnings("unchecked")
-    private List<PetResponse> getCached(String cacheName, String key) {
+    private PaginatedResult<PetResponse> getCached(String cacheName, String key) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache == null) return null;
         Cache.ValueWrapper wrapper = cache.get(key);
@@ -218,21 +234,53 @@ public class PetServiceImpl implements PetService {
         }
         long hit = cacheHitCounter.incrementAndGet();
         log.info("event=cache_hit cache={} key={} hit_count={}", cacheName, key, hit);
-        return (List<PetResponse>) wrapper.get();
+        return (PaginatedResult<PetResponse>) wrapper.get();
     }
 
-    private void putCached(String cacheName, String key, List<PetResponse> value) {
+    private void putCached(String cacheName, String key, PaginatedResult<PetResponse> value) {
         Cache cache = cacheManager.getCache(cacheName);
         if (cache != null) cache.put(key, value);
     }
 
     private void invalidatePetCaches(UUID customerId, String phone) {
-        evict(CacheNames.PETS_BY_CUSTOMER_ID, customerId.toString());
-        if (phone != null && !phone.isBlank()) evict(CacheNames.PETS_BY_PHONE, phone);
+        // Safe fallback: clear all paginated entries when owner writes occur.
+        clear(CacheNames.PETS_BY_CUSTOMER_ID);
+        clear(CacheNames.PETS_BY_PHONE);
     }
 
-    private void evict(String cacheName, String key) {
+    private void clear(String cacheName) {
         Cache cache = cacheManager.getCache(cacheName);
-        if (cache != null) cache.evict(key);
+        if (cache != null) cache.clear();
+    }
+
+    private Pageable buildPageable(int page, int size, String sort) {
+        int resolvedPage = Math.max(page, 0);
+        int resolvedSize = Math.min(Math.max(size, 1), 50);
+        String sortValue = (sort == null || sort.isBlank()) ? "createdAt,desc" : sort;
+        String[] sortParts = sortValue.split(",", 2);
+        String sortBy = sortParts[0].isBlank() ? "createdAt" : sortParts[0];
+        Sort.Direction direction = (sortParts.length > 1 && "asc".equalsIgnoreCase(sortParts[1]))
+                ? Sort.Direction.ASC
+                : Sort.Direction.DESC;
+        return PageRequest.of(resolvedPage, resolvedSize, Sort.by(direction, sortBy));
+    }
+
+    private PaginationMetadata toPaginationMetadata(Page<?> page) {
+        return new PaginationMetadata(
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.hasNext(),
+                page.hasPrevious()
+        );
+    }
+
+    private String paginatedCacheKey(String ownerKey, Pageable pageable) {
+        String sort = pageable.getSort().stream()
+                .findFirst()
+                .map(order -> order.getProperty() + "," + order.getDirection().name().toLowerCase())
+                .orElse("createdAt,desc");
+        return ownerKey + ":p=" + pageable.getPageNumber() + ":s=" + pageable.getPageSize() + ":sort=" + sort;
     }
 }

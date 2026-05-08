@@ -4,6 +4,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+  urlCustomerPetsByPhoneQuery,
+} from '@/lib/customer-service-list-urls';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { requestLocationPermission } from '@/lib/runtime-permissions';
 import {
@@ -64,6 +69,18 @@ interface Address {
   phone?: string;
   landmark?: string;
 }
+
+const getAddressKey = (addr: Address): string => {
+  if (addr?.id) return String(addr.id);
+  return [
+    addr?.label || '',
+    addr?.addressLine1 || addr?.address || '',
+    addr?.addressLine2 || '',
+    addr?.city || '',
+    addr?.state || '',
+    addr?.pincode || '',
+  ].join('|');
+};
 
 interface BookingFlowProps {
   serviceId: string;
@@ -363,8 +380,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   const loadCustomerData = async () => {
     try {
       const [petsRes, addressRes, walletRes] = await Promise.all([
-        apiClient.get<any>(`/customer/pets?phone=${encodeURIComponent(customerPhone)}`),
-        apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`),
+        apiClient.get<any>(urlCustomerPetsByPhoneQuery(customerPhone)),
+        apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone)),
         apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`),
       ]);
       
@@ -383,10 +400,10 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         // Auto-select default address if available
         const defaultAddr = addressRes.addresses.find((a: Address) => a.isDefault);
         if (defaultAddr) {
-          setSelectedAddress(defaultAddr.id);
+          setSelectedAddress(getAddressKey(defaultAddr));
         } else if (addressRes.addresses.length === 1) {
           // Auto-select if only one address
-          setSelectedAddress(addressRes.addresses[0].id);
+          setSelectedAddress(getAddressKey(addressRes.addresses[0]));
         }
       }
       
@@ -410,7 +427,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
-      const petsRes = await apiClient.get<any>(`/customer/pets?phone=${encodeURIComponent(customerPhone)}`);
+      const petsRes = await apiClient.get<any>(urlCustomerPetsByPhoneQuery(customerPhone));
       if (petsRes.pets) {
         setPets(petsRes.pets);
         // Auto-select newly added pet (last one)
@@ -426,15 +443,15 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   // Refresh addresses after adding new one
   const refreshAddresses = async () => {
     try {
-      const addressRes = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+      const addressRes = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
       if (addressRes.addresses) {
         setAddresses(addressRes.addresses);
         // Auto-select newly added address (last one) or default
         const defaultAddr = addressRes.addresses.find((a: Address) => a.isDefault);
         if (defaultAddr) {
-          setSelectedAddress(defaultAddr.id);
+          setSelectedAddress(getAddressKey(defaultAddr));
         } else if (addressRes.addresses.length > 0) {
-          setSelectedAddress(addressRes.addresses[addressRes.addresses.length - 1].id);
+          setSelectedAddress(getAddressKey(addressRes.addresses[addressRes.addresses.length - 1]));
         }
       }
     } catch (err) {
@@ -564,7 +581,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       }
 
       // Get selected address details for the booking
-      const selectedAddressData = selectedAddress ? addresses.find(a => a.id === selectedAddress) : undefined;
+      const selectedAddressData = selectedAddress
+        ? addresses.find((a) => getAddressKey(a) === selectedAddress)
+        : undefined;
 
       /** Full list price on the booking row — never the net-after-wallet amount (server debits wallet against gross). */
       const listPriceRupee = Math.round((Number(service?.price) || 0) * 100) / 100;
@@ -1302,10 +1321,10 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
               {addresses.length > 0 ? (
                 addresses.map((addr) => (
                   <button
-                    key={addr.id}
-                    onClick={() => setSelectedAddress(addr.id)}
+                    key={getAddressKey(addr)}
+                    onClick={() => setSelectedAddress(getAddressKey(addr))}
                     className={`w-full text-left p-4 rounded-xl border-2 transition ${
-                      selectedAddress === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
+                      selectedAddress === getAddressKey(addr) ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2 min-w-0">
@@ -1327,7 +1346,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                         <p className="text-sm text-gray-500 line-clamp-1 break-words">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
                         {addr.landmark && <p className="text-xs text-gray-400 truncate">Near: {addr.landmark}</p>}
                       </div>
-                      {selectedAddress === addr.id && (
+                      {selectedAddress === getAddressKey(addr) && (
                         <span className="text-orange-500 text-xl ml-2">✓</span>
                       )}
                     </div>
@@ -1352,7 +1371,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             {selectedAddress && addresses.length > 0 && (
               <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800 font-medium">
-                  ✓ Service will be delivered to: {addresses.find(a => a.id === selectedAddress)?.label || 'Selected Address'}
+                  ✓ Service will be delivered to: {addresses.find((a) => getAddressKey(a) === selectedAddress)?.label || 'Selected Address'}
                 </p>
               </div>
             )}
@@ -1624,7 +1643,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     setLoading(true);
     try {
       // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData)) {
         existingPets = getPetsData;
@@ -1906,7 +1925,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     setLoading(true);
     try {
       // Get existing addresses
-      const getAddressData = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const getAddressData = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       let existingAddresses = [];
       if (Array.isArray(getAddressData)) {
         existingAddresses = getAddressData;

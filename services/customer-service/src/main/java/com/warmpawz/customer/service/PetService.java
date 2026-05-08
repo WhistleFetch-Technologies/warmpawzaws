@@ -1,5 +1,6 @@
 package com.warmpawz.customer.service;
 
+import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.response.PetResponse;
 
@@ -14,9 +15,9 @@ public interface PetService {
 
     List<PetResponse> replacePetsByPhone(String phone, List<AddPetRequest> requests);
 
-    List<PetResponse> getPets(UUID customerId);
+    PaginatedResult<PetResponse> getPets(UUID customerId, int page, int size, String sort);
 
-    List<PetResponse> getPetsByPhone(String phone);
+    PaginatedResult<PetResponse> getPetsByPhone(String phone, int page, int size, String sort);
 
     PetResponse getPet(UUID petId);
 

@@ -1,6 +1,8 @@
 package com.warmpawz.customer.repository;
 
 import com.warmpawz.customer.entity.CustomerAddress;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +13,8 @@ import java.util.UUID;
 public interface CustomerAddressRepository extends JpaRepository<CustomerAddress, UUID> {
 
     List<CustomerAddress> findByCustomer_Id(UUID customerId);
+
+    Page<CustomerAddress> findByCustomer_Id(UUID customerId, Pageable pageable);
 
     List<CustomerAddress> findByCustomer_IdAndIsDefaultTrue(UUID customerId);
 

@@ -2,6 +2,8 @@ package com.warmpawz.customer.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.warmpawz.customer.dto.common.CommonResponse;
+import com.warmpawz.customer.dto.common.PaginatedResult;
+import com.warmpawz.customer.dto.common.PaginationMetadata;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.request.AddressRequest;
 import com.warmpawz.customer.dto.request.UpdateCustomerRequest;
@@ -29,12 +31,14 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -145,8 +149,10 @@ class CustomerApiCompatibilityControllerTest {
         response.setId(addressId);
         when(customerAddressService.createAddress(eq(customerId), any(AddressRequest.class))).thenReturn(response);
         when(customerAddressService.createAddressByPhone(eq("9999999999"), any(AddressRequest.class))).thenReturn(response);
-        when(customerAddressService.getAddresses(customerId)).thenReturn(List.of(response));
-        when(customerAddressService.getAddressesByPhone("9999999999")).thenReturn(List.of(response));
+        PaginatedResult<AddressResponse> pagedAddressResult =
+                new PaginatedResult<>(List.of(response), new PaginationMetadata(0, 10, 1, 1, false, false));
+        when(customerAddressService.getAddresses(eq(customerId), anyInt(), anyInt(), anyString())).thenReturn(pagedAddressResult);
+        when(customerAddressService.getAddressesByPhone(eq("9999999999"), anyInt(), anyInt(), anyString())).thenReturn(pagedAddressResult);
         when(customerAddressService.getAddress(addressId)).thenReturn(response);
         when(customerAddressService.updateAddress(eq(customerId), eq(addressId), any(AddressRequest.class))).thenReturn(response);
         when(customerAddressService.updateAddress(eq(null), eq(addressId), any(AddressRequest.class))).thenReturn(response);
@@ -171,7 +177,8 @@ class CustomerApiCompatibilityControllerTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/customer/addresses").param("phone", "9999999999"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.addresses[0].id").value(addressId.toString()));
+                .andExpect(jsonPath("$.addresses[0].id").value(addressId.toString()))
+                .andExpect(jsonPath("$.pagination.page").value(0));
         mockMvc.perform(get("/customer/addresses/{addressId}", addressId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.address.id").value(addressId.toString()));
@@ -186,6 +193,46 @@ class CustomerApiCompatibilityControllerTest {
         verify(customerAddressService).updateAddressByPhone(eq("9999999999"), eq(addressId), any(AddressRequest.class));
         mockMvc.perform(delete("/customer/{customerId}/addresses/{addressId}", customerId, addressId))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void listEndpointsApplyDefaultPaginationWhenParamsMissing() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        PaginatedResult<AddressResponse> pagedAddressResult =
+                new PaginatedResult<>(List.of(), new PaginationMetadata(0, 10, 0, 0, false, false));
+        PaginatedResult<PetResponse> pagedPetResult =
+                new PaginatedResult<>(List.of(), new PaginationMetadata(0, 10, 0, 0, false, false));
+        when(customerAddressService.getAddresses(eq(customerId), eq(0), eq(10), eq("createdAt,desc")))
+                .thenReturn(pagedAddressResult);
+        when(petService.getPetsByPhone(eq("9999999999"), eq(0), eq(10), eq("createdAt,desc")))
+                .thenReturn(pagedPetResult);
+
+        mockMvc.perform(get("/customer/{customerId}/addresses", customerId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pagination.size").value(10));
+        mockMvc.perform(get("/customer/pets/{phone}", "9999999999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pagination.page").value(0));
+
+        verify(customerAddressService, times(1)).getAddresses(eq(customerId), eq(0), eq(10), eq("createdAt,desc"));
+        verify(petService, times(1)).getPetsByPhone(eq("9999999999"), eq(0), eq(10), eq("createdAt,desc"));
+    }
+
+    @Test
+    void listEndpointsSupportExplicitPaginationParams() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        PaginatedResult<PetResponse> pagedPetResult =
+                new PaginatedResult<>(List.of(), new PaginationMetadata(1, 5, 9, 2, false, true));
+        when(petService.getPets(eq(customerId), eq(1), eq(5), eq("createdAt,asc")))
+                .thenReturn(pagedPetResult);
+
+        mockMvc.perform(get("/pets/customer/{customerId}", customerId)
+                        .param("page", "1")
+                        .param("size", "5")
+                        .param("sort", "createdAt,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pagination.totalPages").value(2))
+                .andExpect(jsonPath("$.pagination.hasPrevious").value(true));
     }
 
     @Test
@@ -246,8 +293,10 @@ class CustomerApiCompatibilityControllerTest {
         PetResponse response = new PetResponse();
         response.setId(petId);
         when(petService.getPet(petId)).thenReturn(response);
-        when(petService.getPets(customerId)).thenReturn(List.of(response));
-        when(petService.getPetsByPhone("9999999999")).thenReturn(List.of(response));
+        PaginatedResult<PetResponse> pagedPetResult =
+                new PaginatedResult<>(List.of(response), new PaginationMetadata(0, 10, 1, 1, false, false));
+        when(petService.getPets(eq(customerId), anyInt(), anyInt(), anyString())).thenReturn(pagedPetResult);
+        when(petService.getPetsByPhone(eq("9999999999"), anyInt(), anyInt(), anyString())).thenReturn(pagedPetResult);
         when(petService.replacePetsByPhone(eq("9999999999"), any())).thenReturn(List.of(response));
 
         AddPetRequest createRequest = new AddPetRequest();
@@ -265,7 +314,8 @@ class CustomerApiCompatibilityControllerTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/customer/pets/{phone}", "9999999999"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pets[0].id").value(petId.toString()));
+                .andExpect(jsonPath("$.pets[0].id").value(petId.toString()))
+                .andExpect(jsonPath("$.pagination.totalElements").value(1));
         mockMvc.perform(get("/customer/pets").param("phone", "9999999999"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/customer/pets")

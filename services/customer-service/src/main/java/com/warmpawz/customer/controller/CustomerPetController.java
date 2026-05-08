@@ -1,6 +1,7 @@
 package com.warmpawz.customer.controller;
 
 import com.warmpawz.customer.dto.common.CommonResponse;
+import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.request.LegacyPetsRequest;
 import com.warmpawz.customer.dto.response.PetResponse;
@@ -99,33 +100,48 @@ public class CustomerPetController {
     // =========================
     @GetMapping({"/customer/{customerId}/pets", "/customers/{customerId}/pets"})
     public ResponseEntity<CommonResponse<List<PetResponse>>> getPets(
-            @PathVariable UUID customerId
+            @PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
-        List<PetResponse> response = petService.getPets(customerId);
+        PaginatedResult<PetResponse> result = petService.getPets(customerId, page, size, sort);
+        List<PetResponse> response = result.getItems();
         CommonResponse<List<PetResponse>> body = CommonResponse.success(response, "Pets fetched successfully");
         body.setPets(response);
+        body.setPagination(result.getPagination());
         return ResponseEntity.ok(body);
     }
 
     @GetMapping("/pets/customer/{customerId}")
     public ResponseEntity<CommonResponse<List<PetResponse>>> getPetsByCustomer(
-            @PathVariable UUID customerId
+            @PathVariable UUID customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
-        List<PetResponse> response = petService.getPets(customerId);
+        PaginatedResult<PetResponse> result = petService.getPets(customerId, page, size, sort);
+        List<PetResponse> response = result.getItems();
         CommonResponse<List<PetResponse>> body = CommonResponse.success(response, "Pets fetched successfully");
         body.setPets(response);
+        body.setPagination(result.getPagination());
         return ResponseEntity.ok(body);
     }
 
     @GetMapping({"/customer/pets/{phone}", "/customer/pets"})
     public ResponseEntity<CommonResponse<List<PetResponse>>> getPetsByPhone(
             @PathVariable(required = false) String phone,
-            @RequestParam(required = false) String phoneParam
+            @RequestParam(required = false, name = "phone") String phoneParam,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort
     ) {
         String resolvedPhone = phone != null ? phone : phoneParam;
-        List<PetResponse> response = petService.getPetsByPhone(resolvedPhone);
+        PaginatedResult<PetResponse> result = petService.getPetsByPhone(resolvedPhone, page, size, sort);
+        List<PetResponse> response = result.getItems();
         CommonResponse<List<PetResponse>> body = CommonResponse.success(response, "Pets fetched successfully");
         body.setPets(response);
+        body.setPagination(result.getPagination());
         return ResponseEntity.ok(body);
     }
 
