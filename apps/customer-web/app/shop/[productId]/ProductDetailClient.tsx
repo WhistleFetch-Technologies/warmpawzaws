@@ -8,6 +8,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
   ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -374,6 +375,24 @@ export default function ProductDetailClient() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30 flex items-center justify-center px-6">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-sm">
+          <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-orange-300" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Shop coming soon</h2>
+          <p className="text-slate-500 mb-6">We&apos;re preparing the Warmpawz marketplace for customers.</p>
+          <button
+            onClick={() => goBackOrHome(router)}
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

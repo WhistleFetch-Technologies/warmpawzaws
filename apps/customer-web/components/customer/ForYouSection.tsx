@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { RefreshCw, Star, Sparkles, Gift, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface PreviousProvider {
   id: string;
@@ -35,6 +36,8 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
   const [previousProviders, setPreviousProviders] = useState<PreviousProvider[]>([]);
   const [recommendedServices, setRecommendedServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const ecommerceEnabled = isCustomerEcommerceEnabled();
+  const visibleHotDeals = ecommerceEnabled ? hotDeals : [];
 
   // Phase 4: Service recommendations (when API exists - hide on 404/fail)
   useEffect(() => {
@@ -82,7 +85,7 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
     load();
   }, [phone]);
 
-  const hasContent = previousProviders.length > 0 || hotDeals.length > 0 || banners.length > 0 || recommendedServices.length > 0;
+  const hasContent = previousProviders.length > 0 || visibleHotDeals.length > 0 || banners.length > 0 || recommendedServices.length > 0;
   if (!hasContent && !loading) return null;
 
   return (
@@ -102,9 +105,12 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
                 onClick={() => {
                   const raw = banner.link || banner.ctaLink || banner.url;
                   if (raw != null && String(raw).trim() !== '') {
-                    onNavigate?.(String(raw).trim());
+                    const target = String(raw).trim();
+                    if (!ecommerceEnabled && target.replace(/^\//, '').toLowerCase() === 'shop') return;
+                    onNavigate?.(target);
                     return;
                   }
+                  if (!ecommerceEnabled) return;
                   onNavigate?.('shop');
                 }}
                 className="flex-shrink-0 w-[160px] rounded-xl overflow-hidden border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50"
@@ -184,9 +190,9 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
         )}
 
         {/* Deals */}
-        {hotDeals.length > 0 && (
+        {visibleHotDeals.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-            {hotDeals.slice(0, 2).map((deal: any, idx: number) => (
+            {visibleHotDeals.slice(0, 2).map((deal: any, idx: number) => (
               <button
                 key={deal.id || idx}
                 onClick={() => onNavigate?.('shop')}

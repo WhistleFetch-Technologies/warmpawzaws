@@ -120,6 +120,14 @@ elif [ "$PROD" = true ] && command -v aws &>/dev/null; then
 fi
 API_BASE_URL="${API_BASE_URL%/}"
 
+# Customer marketplace on home + category-deep links (default off).
+CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
+if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
+  CEE_JS="true"
+else
+  CEE_JS="false"
+fi
+
 if [ "$PROD" = true ]; then
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME} (PRODUCTION)
@@ -127,7 +135,8 @@ if [ "$PROD" = true ]; then
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
-    environment: "production"
+    environment: "production",
+    customerEcommerceEnabled: ${CEE_JS}
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -138,7 +147,9 @@ else
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
-    uatMode: true
+    uatMode: true,
+    environment: "development",
+    customerEcommerceEnabled: ${CEE_JS}
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -149,9 +160,9 @@ echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}
 
 echo -e "${BLUE}🔧 Replacing inline runtime-config in HTML files...${NC}"
 if [ "$PROD" = true ]; then
-  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: false, environment: 'production' };"
+  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: false, environment: 'production', customerEcommerceEnabled: ${CEE_JS} };"
 else
-  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: true, environment: 'development' };"
+  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: true, environment: 'development', customerEcommerceEnabled: ${CEE_JS} };"
 fi
 find "apps/${APP_NAME}/dist" -name "*.html" -type f | while read -r htmlfile; do
   if grep -q 'runtime-config-inline' "$htmlfile" 2>/dev/null; then

@@ -225,7 +225,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             brand: product.brand?.trim() || null,
             tags: product.tags?.trim() || null,
             images: product.images || product.image_urls || null,
-            is_active: product.is_active !== false,
+            is_active: false,
+            status: 'pending',
           });
         }
 
@@ -338,7 +339,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
               bulk_uploaded: true,
               upload_date: new Date().toISOString(),
             }),
-            is_active: product.is_active !== false,
             updated_at: new Date().toISOString(),
           };
 
@@ -347,9 +347,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             await update('products', { id: existingProduct.id }, productData);
             results.updated++;
           } else {
-            // Create new product
+            // Create new product — not visible until admin approves
             await insert('products', {
               ...productData,
+              is_active: false,
+              status: 'pending',
               created_at: new Date().toISOString(),
             });
             results.created++;

@@ -21,6 +21,30 @@ import { select, insert, update, query, upsert } from '../../../database/rds-con
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
+/** Only admin-approved products appear on the public storefront (see products.status + is_active). */
+const STOREFRONT_PRODUCT_SQL = `
+  p.is_active = true
+  AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+`;
+
+function normalizeAdminProductLifecycleStatus(raw: unknown): { status: string; is_active: boolean } {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'approved' || s === 'approve') {
+    return { status: 'active', is_active: true };
+  }
+  if (s === 'rejected' || s === 'reject') {
+    return { status: 'rejected', is_active: false };
+  }
+  if (s === 'active') {
+    return { status: 'active', is_active: true };
+  }
+  if (s === 'pending' || s === 'pending_approval' || s === 'draft') {
+    return { status: s === 'draft' ? 'draft' : 'pending', is_active: false };
+  }
+  const legacy = String(raw ?? '').trim();
+  return { status: legacy || 'pending', is_active: s === 'active' };
+}
+
 export function registerEcommerceEndpoints(app: Hono) {
   /** Shared handler body for GET /products/:id and GET /ecommerce/products/:id */
   const handleGetPublicProductById = async (c: any, logLabel: string) => {
@@ -32,7 +56,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
          FROM products p
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1`,
+         WHERE p.id = $1 AND ${STOREFRONT_PRODUCT_SQL}`,
         [productId]
       );
 
@@ -72,7 +96,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE p.is_active = true
+        WHERE ${STOREFRONT_PRODUCT_SQL}
       `;
 
       const params: any[] = [];
@@ -97,7 +121,11 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       if (category) {
-        productQuery += ` AND p.category = $${paramIndex}`;
+        if (isValidUUID(category)) {
+          productQuery += ` AND p.category_id = $${paramIndex}::uuid`;
+        } else {
+          productQuery += ` AND p.category = $${paramIndex}`;
+        }
         params.push(category);
         paramIndex++;
       }
@@ -160,7 +188,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE p.is_active = true
+        WHERE ${STOREFRONT_PRODUCT_SQL}
       `;
 
       const params: any[] = [];
@@ -177,7 +205,11 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       if (category) {
-        productQuery += ` AND p.category_id = $${paramIndex}`;
+        if (isValidUUID(category)) {
+          productQuery += ` AND p.category_id = $${paramIndex}::uuid`;
+        } else {
+          productQuery += ` AND LOWER(TRIM(COALESCE(p.category, ''))) = LOWER(TRIM($${paramIndex}))`;
+        }
         params.push(category);
         paramIndex++;
       }
@@ -1108,7 +1140,10 @@ export function registerEcommerceEndpoints(app: Hono) {
       let paramIndex = 1;
 
       if (status === 'pending_approval') {
-        productsQuery += ` AND p.status = 'pending' OR p.status IS NULL`;
+        productsQuery += ` AND (
+          p.status IS NULL
+          OR LOWER(TRIM(p.status::text)) IN ('pending', 'pending_approval', 'submit_for_approval', 'submitted')
+        )`;
       } else if (status) {
         productsQuery += ` AND p.status = $${paramIndex}`;
         params.push(status);
@@ -1145,12 +1180,25 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'status is required' }, 400);
       }
 
-      const updated = await update('products', { id: productId }, { status, is_active: status === 'active' });
+      const normalized = normalizeAdminProductLifecycleStatus(status);
+      const updated = await update(
+        'products',
+        { id: productId },
+        { status: normalized.status, is_active: normalized.is_active },
+      );
 
+      if (!updated || updated.length === 0) {
+        return c.json(
+          { success: false, error: 'Product not found or could not be updated (check product id).' },
+          404,
+        );
+      }
+
+      const approved = normalized.status === 'active' && normalized.is_active;
       return c.json({
         success: true,
         product: updated[0],
-        message: `Product ${status === 'active' ? 'approved' : 'rejected'}`,
+        message: approved ? 'Product approved' : `Product ${normalized.status}`,
       });
     } catch (error: any) {
       console.error('Error updating product:', error);
@@ -1414,7 +1462,8 @@ export function registerEcommerceEndpoints(app: Hono) {
           SELECT COUNT(*)::int AS active_product_count
           FROM products p
           WHERE p.vendor_id = v.id
-            AND (COALESCE(p.status, 'pending') = 'active' OR p.is_active = true)
+            AND p.is_active = true
+            AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
         ) pc_active ON true
         WHERE (v.status = 'active' OR v.is_active = true)
           AND (v.is_deleted IS NULL OR v.is_deleted = false)
@@ -1468,7 +1517,8 @@ export function registerEcommerceEndpoints(app: Hono) {
           SELECT COUNT(*)::int AS active_product_count
           FROM products p
           WHERE p.vendor_id = v.id
-            AND (COALESCE(p.status, 'pending') = 'active' OR p.is_active = true)
+            AND p.is_active = true
+            AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
         ) pc_active ON true
         WHERE (v.status = 'active' OR v.is_active = true)
           AND (v.is_deleted IS NULL OR v.is_deleted = false)
@@ -1514,13 +1564,18 @@ export function registerEcommerceEndpoints(app: Hono) {
               v.phone,
               COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as total_revenue,
               COUNT(o.id) FILTER (WHERE o.order_status = 'delivered') as total_bookings,
-              COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'active') as product_count,
+              COUNT(DISTINCT p.id) FILTER (
+                WHERE p.is_active = true
+                  AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+              ) as product_count,
               COALESCE(AVG(rev.rating), 0) as avg_rating
             FROM vendors v
             INNER JOIN roles r ON v.role_id = r.id
             INNER JOIN orders o ON v.id = o.vendor_id AND o.order_status = 'delivered'
             LEFT JOIN reviews rev ON v.id = rev.vendor_id
-            LEFT JOIN products p ON v.id = p.vendor_id AND p.status = 'active'
+            LEFT JOIN products p ON v.id = p.vendor_id
+              AND p.is_active = true
+              AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
             WHERE (v.status = 'active' OR v.is_active = true)
               AND (v.is_deleted IS NULL OR v.is_deleted = false)
               AND (

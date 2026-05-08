@@ -13,7 +13,9 @@ param(
     [string]$AlternateDomain = "dev.customer.warmpawz.com",
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
-    [switch]$SkipInvalidation
+    [switch]$SkipInvalidation,
+    # Set to show home shop category row + open marketplace by category (still uses same API).
+    [switch]$CustomerEcommerceEnabled
 )
 
 $ErrorActionPreference = "Stop"
@@ -129,6 +131,7 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
+$customerEcommerceJs = if ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint
@@ -136,11 +139,12 @@ $runtimeConfigContent = (@'
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
     uatMode: true,
-    environment: 'development'
+    environment: 'development',
+    customerEcommerceEnabled: __CUSTOMER_ECOMMERCE_ENABLED__
   };
   console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint)
+'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint).Replace('__CUSTOMER_ECOMMERCE_ENABLED__', $customerEcommerceJs)
 
 Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
 Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
@@ -148,7 +152,7 @@ Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
 # Inject inline config into HTML files
 Write-Host "  Injecting inline config into HTML files..." -ForegroundColor Gray
 $htmlFiles = Get-ChildItem -Path $distPath -Filter "*.html" -Recurse
-$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development' };"
+$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerEcommerceEnabled: $customerEcommerceJs };"
 $htmlCount = 0
 
 foreach ($htmlFile in $htmlFiles) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search, SlidersHorizontal, ArrowLeft, TrendingUp, Star, Heart, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -40,6 +40,7 @@ interface Product {
   reviews?: number;
   image?: string;
   category?: string;
+  category_id?: string;
   vendorId?: string;
   vendor?: {
     name: string;
@@ -55,6 +56,39 @@ interface Product {
 type ShopSortOption = 'default' | 'price_asc' | 'price_desc' | 'rating_desc';
 type PricePreset = 'any' | 'lt500' | 'mid' | 'gt2000';
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const CATEGORY_ACCENTS = [
+  'bg-orange-100 text-orange-700',
+  'bg-blue-100 text-blue-700',
+  'bg-teal-100 text-teal-700',
+  'bg-pink-100 text-pink-700',
+  'bg-red-100 text-red-700',
+  'bg-purple-100 text-purple-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-green-100 text-green-700',
+];
+
+function accentClassForId(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % CATEGORY_ACCENTS.length;
+  return CATEGORY_ACCENTS[h]!;
+}
+
+function iconForCatalogName(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes('food')) return <Bone className="w-5 h-5 text-orange-600" />;
+  if (n.includes('toy')) return <Dog className="w-5 h-5 text-blue-600" />;
+  if (n.includes('cloth') || n.includes('apparel')) return <Shirt className="w-5 h-5 text-teal-600" />;
+  if (n.includes('accessor')) return <Watch className="w-5 h-5 text-pink-600" />;
+  if (n.includes('medic') || n.includes('pharma')) return <Pill className="w-5 h-5 text-red-600" />;
+  if (n.includes('groom')) return <Scissors className="w-5 h-5 text-purple-600" />;
+  if (n.includes('bed')) return <Bed className="w-5 h-5 text-indigo-600" />;
+  if (n.includes('bowl') || n.includes('feed')) return <UtensilsCrossed className="w-5 h-5 text-green-600" />;
+  return <Package className="w-5 h-5 text-gray-600" />;
+}
+
 export function ShopDashboard({ phone, product, category: initialCategory, onBack, onNavigate, onReviewsClick, onVendorClick }: ShopDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(initialCategory || 'all');
@@ -69,6 +103,40 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const [catalogExpanded, setCatalogExpanded] = useState(false);
   const shopProductsSectionRef = useRef<HTMLDivElement>(null);
 
+  /** Category filter value: 'all' or ecommerce category UUID (passed to GET /ecommerce/products?category=). */
+  const categoryPills = useMemo(() => {
+    const all = {
+      id: 'all' as const,
+      label: 'All',
+      icon: <Store className="w-5 h-5 text-gray-600" />,
+      color: 'bg-gray-100 text-gray-700',
+    };
+    if (!apiCategories.length) {
+      return [
+        all,
+        { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-600" />, color: 'bg-orange-100 text-orange-700' },
+        { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-600" />, color: 'bg-blue-100 text-blue-700' },
+        { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-600" />, color: 'bg-teal-100 text-teal-700' },
+        { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-600" />, color: 'bg-pink-100 text-pink-700' },
+        { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-600" />, color: 'bg-red-100 text-red-700' },
+        { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-600" />, color: 'bg-purple-100 text-purple-700' },
+        { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-600" />, color: 'bg-indigo-100 text-indigo-700' },
+        { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-600" />, color: 'bg-green-100 text-green-700' },
+      ];
+    }
+    const fromApi = apiCategories.map((c: { id?: string; name?: string }) => {
+      const id = String(c.id ?? '');
+      const label = String(c.name ?? 'Category');
+      return {
+        id,
+        label,
+        icon: iconForCatalogName(label),
+        color: accentClassForId(id || label),
+      };
+    });
+    return [all, ...fromApi];
+  }, [apiCategories]);
+
   const scrollToFullCatalog = useCallback(() => {
     setCatalogExpanded(true);
     requestAnimationFrame(() => {
@@ -80,6 +148,21 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   useEffect(() => {
     if (initialCategory) setSelectedCategory(initialCategory);
   }, [initialCategory]);
+
+  // Resolve legacy slug / name to UUID once API categories load
+  useEffect(() => {
+    if (!initialCategory || initialCategory === 'all') return;
+    if (UUID_RE.test(initialCategory)) {
+      setSelectedCategory(initialCategory);
+      return;
+    }
+    const low = initialCategory.toLowerCase();
+    const found = apiCategories.find((c: { id?: string; name?: string }) => {
+      const name = String(c.name ?? '').toLowerCase();
+      return String(c.id) === initialCategory || name === low || name.includes(low) || low.includes(name);
+    });
+    if (found?.id) setSelectedCategory(String(found.id));
+  }, [apiCategories, initialCategory]);
 
   // Load categories on mount
   useEffect(() => {
@@ -139,6 +222,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
           prod.vendor_rating != null ? Number(prod.vendor_rating) : NaN;
         const vendorRating =
           vrc > 0 && Number.isFinite(vr) && vr > 0 ? vr : 0;
+        const stockNum = Number(prod.stock ?? prod.stock_quantity ?? 0) || 0;
         return {
         id: canonicalProductId(prod as Record<string, unknown>) || String(prod.id || prod.product_id || ''),
         name: prod.name || prod.product_name,
@@ -149,6 +233,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         reviews: rc,
         image: prod.image || prod.image_url || prod.primary_image || '',
         category: prod.category || prod.category_name || 'general',
+        category_id: prod.category_id != null ? String(prod.category_id) : undefined,
         vendor: {
           name: prod.vendor_name || prod.vendor?.business_name || 'Warmpawz Store',
           rating: vendorRating,
@@ -156,7 +241,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
           deliveryTime: prod.delivery_time || '2-3 days',
         },
         vendorId: prod.vendor_id || prod.vendor?.id,
-        stock: prod.in_stock !== false && prod.stock_quantity > 0 ? 'In Stock' : 'Out of Stock',
+        stock: prod.in_stock !== false && stockNum > 0 ? 'In Stock' : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount_percentage ? `${prod.discount_percentage}%` : undefined,
       };
@@ -186,13 +271,7 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const filterProducts = () => {
     let filtered = [...products];
 
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(p => {
-        const categoryMatch = p.category === selectedCategory ||
-                             p.category?.toLowerCase() === selectedCategory.toLowerCase();
-        return categoryMatch;
-      });
-    }
+    // Category scoping is done server-side via GET /ecommerce/products?category=… when not "all".
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -236,18 +315,6 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
   const hasAdvancedFilters =
     sortOption !== 'default' || pricePreset !== 'any' || inStockOnly;
 
-  const categories = [
-    { id: 'all', label: 'All', icon: <Store className="w-5 h-5 text-gray-600" />, color: 'bg-gray-100 text-gray-700' },
-    { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-600" />, color: 'bg-orange-100 text-orange-700' },
-    { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-600" />, color: 'bg-blue-100 text-blue-700' },
-    { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-600" />, color: 'bg-teal-100 text-teal-700' },
-    { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-600" />, color: 'bg-pink-100 text-pink-700' },
-    { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-600" />, color: 'bg-red-100 text-red-700' },
-    { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-600" />, color: 'bg-purple-100 text-purple-700' },
-    { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-600" />, color: 'bg-indigo-100 text-indigo-700' },
-    { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-600" />, color: 'bg-green-100 text-green-700' }
-  ];
-
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto relative">
       {/* Header with Search — safe-area-top (viewportFit: cover in root layout) */}
@@ -289,9 +356,10 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
         {/* Category Pills */}
         <div className="px-4 pb-3 sm:px-5 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2">
-            {categories.map((cat) => (
+            {categoryPills.map((cat) => (
               <button
                 key={cat.id}
+                type="button"
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                   selectedCategory === cat.id
