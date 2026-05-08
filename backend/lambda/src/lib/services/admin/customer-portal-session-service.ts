@@ -10,6 +10,35 @@ import { hasMeaningfulStoredPassword } from '../../../endpoints/customer/custome
 const CODE_TTL_SECONDS = 900;
 const UAT_SYNTHETIC_ADMIN = 'uat-admin-user';
 
+/** Ensures table exists when migrations were not applied to this RDS (idempotent, once per cold start). */
+let ensurePortalCodesTablePromise: Promise<void> | null = null;
+
+async function ensureCustomerAdminPortalCodesTable(): Promise<void> {
+  if (!ensurePortalCodesTablePromise) {
+    ensurePortalCodesTablePromise = (async () => {
+      await query(`CREATE TABLE IF NOT EXISTS customer_admin_portal_codes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code TEXT NOT NULL UNIQUE,
+        customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        created_by_admin_id UUID REFERENCES admins(id) ON DELETE SET NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+      await query(
+        `CREATE INDEX IF NOT EXISTS idx_customer_admin_portal_codes_customer_id ON customer_admin_portal_codes(customer_id)`
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS idx_customer_admin_portal_codes_expires ON customer_admin_portal_codes(expires_at)`
+      );
+    })().catch((err) => {
+      ensurePortalCodesTablePromise = null;
+      throw err;
+    });
+  }
+  await ensurePortalCodesTablePromise;
+}
+
 async function adminCanOpenCustomerPortal(adminId: string | undefined): Promise<boolean> {
   if (!adminId) return false;
   if (adminId === UAT_SYNTHETIC_ADMIN) return true;
@@ -58,6 +87,8 @@ export async function createCustomerPortalCode(params: {
   if (!phone) {
     return { ok: false, error: 'Customer has no phone on file', status: 400, errorCode: 'MISSING_PHONE' };
   }
+
+  await ensureCustomerAdminPortalCodesTable();
 
   const code = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000).toISOString();
@@ -116,6 +147,8 @@ export async function consumeCustomerPortalCodeAndBuildPayload(params: {
   if (!raw) {
     return { ok: false, error: 'code is required', status: 400, errorCode: 'VALIDATION_ERROR' };
   }
+
+  await ensureCustomerAdminPortalCodesTable();
 
   const upd = await query(
     `UPDATE customer_admin_portal_codes
