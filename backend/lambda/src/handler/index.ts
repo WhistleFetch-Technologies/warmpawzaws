@@ -195,13 +195,19 @@ import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 // Create Hono app
 const app = new Hono();
 
-/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList). */
+/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList).
+ * Include 127.0.0.1 — browsers treat it as distinct from localhost for CORS. */
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:3002',
+  'http://127.0.0.1:3003',
+  'http://127.0.0.1:5173',
 ];
 
 /** Must stay aligned with API Gateway AllowHeaders (infra/modules/api-gateway/main.tf). */

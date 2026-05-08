@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { RefreshCcw } from 'lucide-react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { AddProductModal } from '@/components/vendor/products/AddProductModal';
 import { EditProductModal } from '@/components/vendor/products/EditProductModal';
@@ -48,6 +49,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // UI States
@@ -76,9 +78,13 @@ export default function ProductsPage() {
     loadData();
   }, [router]);
 
-  const loadData = async () => {
+  const loadData = async ({ showLoader = true }: { showLoader?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
       
       const vendorId = localStorage.getItem('vendorId');
@@ -96,7 +102,10 @@ export default function ProductsPage() {
       console.error('Error loading products:', err);
       setError(err.message || 'Failed to load products');
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
+      setRefreshing(false);
     }
   };
 
@@ -120,7 +129,7 @@ export default function ProductsPage() {
 
       await apiClient.delete(`/vendor/${vendorId}/products/${productId}`);
       alert('Product deleted successfully!');
-      loadData();
+      loadData({ showLoader: false });
     } catch (err: any) {
       console.error('Error deleting product:', err);
       alert(err.message || 'Failed to delete product');
@@ -136,7 +145,7 @@ export default function ProductsPage() {
         is_active: !product.is_active,
       });
       
-      loadData();
+      loadData({ showLoader: false });
     } catch (err: any) {
       console.error('Error updating product status:', err);
       alert(err.message || 'Failed to update product status');
@@ -147,7 +156,7 @@ export default function ProductsPage() {
     setShowAddModal(false);
     setShowEditModal(false);
     setEditingProduct(null);
-    loadData();
+    loadData({ showLoader: false });
   };
 
   // Filter products
@@ -196,6 +205,16 @@ export default function ProductsPage() {
               className="whitespace-nowrap rounded-lg border border-orange-500 px-3 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50 transition"
             >
               📤 Bulk Upload
+            </button>,
+            <button
+              key="refresh"
+              type="button"
+              onClick={() => loadData({ showLoader: false })}
+              disabled={loading || refreshing}
+              className="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            >
+              <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
             </button>,
             <button
               key="add"

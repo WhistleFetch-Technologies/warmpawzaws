@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, CheckCircle, XCircle } from 'lucide-react';
+import { Package, CheckCircle, XCircle, RefreshCcw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -31,11 +31,16 @@ export function ProductApproval() {
   }, [loadPendingProducts]);
 
   const handleApprove = async (productId: string) => {
+    if (!productId) {
+      toast.error('Missing product id');
+      return;
+    }
     try {
       await apiClient.put(`/admin/ecommerce/product/${productId}`, { status: 'active' });
       toast.success('Product approved');
       loadPendingProducts();
     } catch (error) {
+      console.error('Approve product failed:', error);
       toast.error('Failed to approve product');
     }
   };
@@ -75,6 +80,17 @@ export function ProductApproval() {
         </p>
       </div>
 
+      <div className="flex justify-end">
+        <button
+          onClick={loadPendingProducts}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -111,7 +127,9 @@ export function ProductApproval() {
                         <p className="text-xs text-gray-500">{product.category}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{product.sellerName || '-'}</td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {product.sellerName || product.vendor_name || '-'}
+                    </td>
                     <td className="px-6 py-4 text-gray-600">₹{product.price || 0}</td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
