@@ -22,6 +22,7 @@ import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../ut
 import { createVendorPortalCode } from '../../../lib/services/admin/vendor-portal-session-service';
 import {
 	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedBookingRows,
 	sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 
@@ -3981,6 +3982,18 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       const whereClause = whereConditions.join(' AND ');
 
+      const supBook = getTemporaryVendorSuppressionParams();
+      const limIdx = paramIdx;
+      const offIdx = paramIdx + 1;
+      let bookingSupSql = 'TRUE';
+      const vendorListParams: unknown[] = [...params, limit, offset];
+      if (supBook) {
+        const sVend = paramIdx + 2;
+        const sDate = paramIdx + 3;
+        bookingSupSql = sqlExcludeSuppressedBookingRows('b', sVend, sDate);
+        vendorListParams.push(supBook.vendorIds, supBook.cutoffDateIst);
+      }
+
       // ✅ DIRECT QUERY: Get active vendors (approved + is_active). No requirement for published services
       // so approved vendors appear even before they publish; active_services_count shows 0 when none.
       const vendorsResult = await query(`
@@ -4021,15 +4034,15 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           -- Services count (can be 0)
           (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
           -- Completed bookings count
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND (${bookingSupSql})) as completed_bookings_count,
           -- Total revenue (last 30 days)
-          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days') as revenue_30_days,
+          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days' AND (${bookingSupSql})) as revenue_30_days,
           -- Average rating
           (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
           -- Review count
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
           -- Last active
-          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
+          GREATEST(v.updated_at, (SELECT MAX(b.created_at) FROM bookings b WHERE b.vendor_id = v.id AND (${bookingSupSql}))) as last_activity,
           -- Discovery health: availability (vendor_availability_v2 only)
           (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND COALESCE(va.is_enabled, va.is_available, true) = true)
           ) as has_availability
@@ -4042,8 +4055,8 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
-        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
-      `, [...params, limit, offset]);
+        LIMIT $${limIdx} OFFSET $${offIdx}
+      `, vendorListParams);
 
       // Get total count for pagination (same WHERE, no EXISTS)
       const countResult = await query(`

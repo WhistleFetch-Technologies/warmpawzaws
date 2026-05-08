@@ -27,6 +27,7 @@ import {
   shouldHideSettlementRowFromAdminUi,
   sqlExcludeSuppressedBookingRows,
   sqlExcludeSuppressedSettlementRows,
+  sqlExcludeSuppressedVendorCreatedRows,
   sqlExcludeSuppressedVendorEarningsRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 
@@ -1325,11 +1326,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         ).catch(() => ({ rows: [{ pending: '0' }] })),
         query(
           `SELECT *
-           FROM payouts
-           WHERE vendor_id = ${vendorIdArraySql}
-           ORDER BY created_at DESC
+           FROM payouts po
+           WHERE po.vendor_id = ${vendorIdArraySql}
+           ${vendSetSup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('po', 2, 3)})` : ''}
+           ORDER BY po.created_at DESC
            LIMIT 30`,
-          [vendorIds]
+          vendSetSup ? summaryAggParams : [vendorIds]
         ).catch(() => ({ rows: [] })),
       ]);
 

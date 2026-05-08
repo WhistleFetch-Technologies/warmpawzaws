@@ -16,6 +16,7 @@ export const TEMPORARY_SUPPRESSED_VENDOR_IDS: readonly string[] = [
 	'bd489856-97bb-436f-9e1f-cb8b86460d29',
 	'c630354a-529d-49f4-a975-776e481c3aa1',
 	'216246dc-4f30-4e72-9c47-23b61197f5e6',
+	'2640db3a-ed16-4cbe-bb4d-709e7dc389ca'
 ];
 
 function getTodayDateStringIst(): string {
@@ -65,6 +66,18 @@ export function sqlExcludeSuppressedSettlementRows(
     ${alias}.vendor_id = ANY($${paramVendor}::uuid[])
     AND COALESCE(${alias}.settlement_period_end, (timezone('Asia/Kolkata', ${alias}.created_at))::date) <= $${paramDate}::date
   )`;
+}
+
+/** Payments / e‑commerce orders: include NULL vendor_id rows; exclude suppressed vendors by payment/order created_at (IST). */
+export function sqlExcludeSuppressedVendorCreatedRows(
+	alias: string,
+	paramVendor: number,
+	paramDate: number,
+): string {
+	return `(${alias}.vendor_id IS NULL OR NOT (
+    ${alias}.vendor_id = ANY($${paramVendor}::uuid[])
+    AND (timezone('Asia/Kolkata', ${alias}.created_at))::date <= $${paramDate}::date
+  ))`;
 }
 
 /** vendor_earnings: hide rows tied to suppressed vendors realized on/before IST cutoff */
