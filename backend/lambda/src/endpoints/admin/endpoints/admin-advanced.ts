@@ -32,6 +32,7 @@ import {
   upsertFeeSetting,
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
+import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
@@ -4992,6 +4993,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle') || 'all';
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
+      const distanceKm = parseFloat(c.req.query('distanceKm') || c.req.query('distance') || '0');
+      const weekend = c.req.query('weekend') === 'true';
+      const festival = c.req.query('festival') === 'true';
+      const rain = c.req.query('rain') === 'true';
 
       const settingsMap = await getFeeGlobalsMap();
 
@@ -5020,10 +5025,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Delivery fee (only for home services and orders)
       let deliveryFee = 0;
       if (serviceStyle === 'at_home' || type === 'order') {
-        const freeDeliveryThreshold = parseFloat(settingsMap['free_delivery_threshold'] || '500');
-        if (amount < freeDeliveryThreshold || freeDeliveryThreshold === 0) {
-          deliveryFee = parseFloat(settingsMap['delivery_fee_base'] || '30');
-        }
+        const quote = await computePolicyDeliveryFeeForOrder({
+          orderSubtotalInr: amount,
+          distanceKm: Number.isFinite(distanceKm) ? distanceKm : 0,
+          logisticsType: 'warmpawz',
+          weekend,
+          festival,
+          rain,
+        });
+        deliveryFee = quote.deliveryFeeInr;
       }
 
       // Packaging fee (only for orders)

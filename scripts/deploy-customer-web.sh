@@ -171,6 +171,20 @@ find "apps/${APP_NAME}/dist" -name "*.html" -type f | while read -r htmlfile; do
 done
 echo -e "${GREEN}✅ Inline runtime-config replaced in HTML files${NC}"
 
+echo -e "${BLUE}🧭 Creating extensionless HTML route aliases...${NC}"
+ALIAS_COUNT=0
+while IFS= read -r htmlfile; do
+  rel_path="${htmlfile#apps/${APP_NAME}/dist/}"
+  alias_path="apps/${APP_NAME}/dist/${rel_path%.html}"
+  # Skip root index aliasing; S3 website/index behavior handles root.
+  if [ "$rel_path" = "index.html" ]; then
+    continue
+  fi
+  cp "$htmlfile" "$alias_path"
+  ALIAS_COUNT=$((ALIAS_COUNT + 1))
+done < <(find "apps/${APP_NAME}/dist" -name "*.html" -type f)
+echo -e "${GREEN}✅ Created ${ALIAS_COUNT} extensionless route aliases${NC}"
+
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"
 
@@ -180,6 +194,16 @@ else
   echo -e "${YELLOW}❌ Error: S3 upload failed!${NC}"
   exit 1
 fi
+
+echo -e "${BLUE}🧩 Updating extensionless route content-types to text/html...${NC}"
+HTML_ALIAS_UPDATED=0
+while IFS= read -r aliasfile; do
+  rel_path="${aliasfile#apps/${APP_NAME}/dist/}"
+  aws s3 cp "$aliasfile" "s3://${S3_BUCKET}/${rel_path}" \
+    --content-type "text/html; charset=utf-8" >/dev/null
+  HTML_ALIAS_UPDATED=$((HTML_ALIAS_UPDATED + 1))
+done < <(find "apps/${APP_NAME}/dist" -type f ! -name "*.*")
+echo -e "${GREEN}✅ Updated content-type for ${HTML_ALIAS_UPDATED} extensionless routes${NC}"
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \

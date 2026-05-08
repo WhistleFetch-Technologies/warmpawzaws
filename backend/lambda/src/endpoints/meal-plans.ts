@@ -23,6 +23,34 @@ import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
+import {
+  computePolicyDeliveryFeeForOrder,
+  deriveDistanceKmFromLocations,
+} from '../utils/customer-delivery-fee-quote';
+import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return undefined;
+}
+
+function isWeekendInIndiaNow(): boolean {
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    timeZone: 'Asia/Kolkata',
+  }).format(new Date());
+  return weekday === 'Sat' || weekday === 'Sun';
+}
+
+function parseOptionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 export function registerMealPlanEndpoints(app: Hono) {
 
@@ -423,6 +451,14 @@ export function registerMealPlanEndpoints(app: Hono) {
       const { planId } = c.req.param();
       const quantity = Math.max(1, parseInt(c.req.query('quantity') || '1'));
       const logisticsType = c.req.query('logisticsType') || 'warmpawz';
+      const policy = await fetchCustomerDeliveryFeePolicy();
+      const weekend = parseOptionalBoolean(c.req.query('weekend')) ?? isWeekendInIndiaNow();
+      const festival =
+        parseOptionalBoolean(c.req.query('festival')) ??
+        (policy.runtimeSignals?.festivalActive ?? false);
+      const rain =
+        parseOptionalBoolean(c.req.query('rain')) ??
+        (policy.runtimeSignals?.rainActive ?? false);
 
       const plans = await select('meal_plans', { id: planId });
       if (plans.length === 0) {
@@ -435,14 +471,6 @@ export function registerMealPlanEndpoints(app: Hono) {
       let platformFee = 0;
       let convenienceFee = 0;
       try {
-        const logisticsRules = await query(
-          `SELECT * FROM logistics_rules WHERE is_active = true AND ('meal' = ANY(applies_to) OR 'nutritionist' = ANY(applies_to)) LIMIT 1`
-        ).catch(() => ({ rows: [] }));
-        if (logisticsRules.rows.length > 0 && logisticsType === 'warmpawz') {
-          deliveryFee = parseFloat(logisticsRules.rows[0].base_fee || '50');
-        } else if (logisticsType === 'warmpawz') {
-          deliveryFee = 50;
-        }
         const feeMap = await getFeeGlobalsMap();
         const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
         const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
@@ -451,8 +479,49 @@ export function registerMealPlanEndpoints(app: Hono) {
         convenienceFee = parseFloat(
           feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
         );
+
+        const vendors = await query(
+          `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
+          [plan.vendor_id]
+        ).catch(() => ({ rows: [] }));
+        const vendor = vendors.rows?.[0] || {};
+        const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
+        const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
+        if (customerLat == null || customerLng == null) {
+          return c.json(
+            {
+              success: true,
+              subtotal,
+              deliveryFee: null,
+              deliveryFeePendingAddress: true,
+              platformFee,
+              convenienceFee,
+              totalAmount: subtotal + platformFee + convenienceFee,
+              leadTimeHours: plan.lead_time_hours ?? 24,
+            },
+            200
+          );
+        }
+        const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
+        const distanceKm = deriveDistanceKmFromLocations({
+          pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
+          pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
+          dropLat: customerLat,
+          dropLng: customerLng,
+          fallbackKm: 0,
+        });
+        const deliveryQuote = await computePolicyDeliveryFeeForOrder({
+          orderSubtotalInr: subtotal,
+          distanceKm,
+          logisticsType,
+          weekend,
+          festival,
+          rain,
+        });
+        deliveryFee = deliveryQuote.deliveryFeeInr;
+
       } catch (_) {
-        deliveryFee = logisticsType === 'warmpawz' ? 50 : 0;
+        deliveryFee = 0;
         platformFee = Math.round(subtotal * 0.02);
       }
       const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
@@ -527,6 +596,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         scheduledDeliverySlot, // { start: '09:00', end: '12:00' }
         logisticsType, // 'own' or 'warmpawz'
         razorpayOrderId,
+        weekend,
+        festival,
+        rain,
       } = body;
 
       // Resolve customerId from customerPhone when not provided (e.g. profile shape mismatch on frontend)
@@ -565,11 +637,20 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
       const normalizedAddress = {
         address: deliveryAddress.address ?? [deliveryAddress.addressLine1, deliveryAddress.addressLine2, deliveryAddress.city, deliveryAddress.state, deliveryAddress.pincode].filter(Boolean).join(', '),
-        lat: deliveryAddress.lat ?? deliveryAddress.latitude ?? 0,
-        lng: deliveryAddress.lng ?? deliveryAddress.longitude ?? 0,
+        lat: parseOptionalNumber(deliveryAddress.lat ?? deliveryAddress.latitude),
+        lng: parseOptionalNumber(deliveryAddress.lng ?? deliveryAddress.longitude),
         landmark: deliveryAddress.landmark ?? '',
         pincode: deliveryAddress.pincode ?? '',
       };
+      if (normalizedAddress.lat == null || normalizedAddress.lng == null) {
+        return c.json(
+          {
+            error: 'deliveryAddress latitude and longitude are required',
+            code: 'DELIVERY_COORDINATES_REQUIRED',
+          },
+          400
+        );
+      }
 
       // Get meal plan
       const plans = await select('meal_plans', { id: mealPlanId });
@@ -615,6 +696,7 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       // Calculate totals
       const subtotal = parseFloat(plan.price_per_meal) * (quantity || 1);
+      const policyForSignals = await fetchCustomerDeliveryFeePolicy();
       
       // ✅ FIX GAP 6.1 & 6.2: Get configurable delivery, platform and convenience fees
       let deliveryFee = 0;
@@ -622,20 +704,32 @@ export function registerMealPlanEndpoints(app: Hono) {
       let convenienceFee = 0;
       
       try {
-        // Try to get fees from logistics_rules for meal delivery
-        const logisticsRules = await query(
-          `SELECT * FROM logistics_rules 
-           WHERE is_active = true 
-           AND ('meal' = ANY(applies_to) OR 'nutritionist' = ANY(applies_to))
-           LIMIT 1`
-        );
-        
-        if (logisticsRules.rows.length > 0 && logisticsType === 'warmpawz') {
-          const rule = logisticsRules.rows[0];
-          deliveryFee = parseFloat(rule.base_fee || '50');
-        } else if (logisticsType === 'warmpawz') {
-          deliveryFee = 50; // Default delivery fee
-        }
+        const vendors = await query(
+          `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
+          [plan.vendor_id]
+        ).catch(() => ({ rows: [] }));
+        const vendor = vendors.rows?.[0] || {};
+        const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
+        const distanceKm = deriveDistanceKmFromLocations({
+          pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
+          pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
+          dropLat: normalizedAddress.lat,
+          dropLng: normalizedAddress.lng,
+          fallbackKm: 0,
+        });
+        const deliveryQuote = await computePolicyDeliveryFeeForOrder({
+          orderSubtotalInr: subtotal,
+          distanceKm,
+          logisticsType,
+          weekend: parseOptionalBoolean(weekend) ?? isWeekendInIndiaNow(),
+          festival:
+            parseOptionalBoolean(festival) ??
+            (policyForSignals.runtimeSignals?.festivalActive ?? false),
+          rain:
+            parseOptionalBoolean(rain) ??
+            (policyForSignals.runtimeSignals?.rainActive ?? false),
+        });
+        deliveryFee = deliveryQuote.deliveryFeeInr;
         
         // Get platform and convenience fees from admin_settings or finance_rules
         const feeMap = await getFeeGlobalsMap();

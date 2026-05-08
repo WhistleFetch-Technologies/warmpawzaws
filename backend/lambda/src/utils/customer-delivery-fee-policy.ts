@@ -29,6 +29,17 @@ export interface CustomerDeliveryFeeSurges {
   priorityNote?: string;
 }
 
+export interface CustomerDeliveryFeeZoneSurgeFlags {
+  weekend: boolean;
+  festival: boolean;
+  rain: boolean;
+}
+
+export interface CustomerDeliveryFeeZoneSurgeConfig {
+  zoneA: CustomerDeliveryFeeZoneSurgeFlags;
+  zoneB: CustomerDeliveryFeeZoneSurgeFlags;
+}
+
 export interface CustomerDeliveryFeeContent {
   coverageSummary: string;
   zoneADescription?: string;
@@ -40,12 +51,19 @@ export interface CustomerDeliveryFeeContent {
   importantNotes: string[];
 }
 
+export interface CustomerDeliveryFeeRuntimeSignals {
+  festivalActive: boolean;
+  rainActive: boolean;
+}
+
 export interface CustomerDeliveryFeePolicy {
   version: number;
   maxServiceRadiusKm: number;
   zoneABoundaryKm: number;
   zones: CustomerDeliveryFeeZones;
   surges: CustomerDeliveryFeeSurges;
+  zoneSurgeConfig?: CustomerDeliveryFeeZoneSurgeConfig;
+  runtimeSignals?: CustomerDeliveryFeeRuntimeSignals;
   content: CustomerDeliveryFeeContent;
 }
 
@@ -74,6 +92,14 @@ export const DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY: CustomerDeliveryFeePolicy = {
     rainMaxInr: 15,
     priorityNote:
       'Emergency / priority delivery may incur additional charges communicated at checkout.',
+  },
+  zoneSurgeConfig: {
+    zoneA: { weekend: true, festival: true, rain: true },
+    zoneB: { weekend: true, festival: true, rain: true },
+  },
+  runtimeSignals: {
+    festivalActive: false,
+    rainActive: false,
   },
   content: {
     coverageSummary:
@@ -106,6 +132,30 @@ export const DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY: CustomerDeliveryFeePolicy = {
 
 function isNum(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x);
+}
+
+function parseZoneSurgeFlags(raw: unknown): CustomerDeliveryFeeZoneSurgeFlags | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.weekend !== 'boolean') return null;
+  if (typeof o.festival !== 'boolean') return null;
+  if (typeof o.rain !== 'boolean') return null;
+  return {
+    weekend: o.weekend,
+    festival: o.festival,
+    rain: o.rain,
+  };
+}
+
+function parseRuntimeSignals(raw: unknown): CustomerDeliveryFeeRuntimeSignals | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.festivalActive !== 'boolean') return null;
+  if (typeof o.rainActive !== 'boolean') return null;
+  return {
+    festivalActive: o.festivalActive,
+    rainActive: o.rainActive,
+  };
 }
 
 function normalizeSlabs(slabs: unknown): OrderValueSlab[] | null {
@@ -201,6 +251,22 @@ export function validateCustomerDeliveryFeePolicy(raw: unknown): {
     };
   }
 
+  const zoneSurgeRaw = p.zoneSurgeConfig as Record<string, unknown> | undefined;
+  const zoneSurgeConfig: CustomerDeliveryFeeZoneSurgeConfig =
+    zoneSurgeRaw && typeof zoneSurgeRaw === 'object'
+      ? {
+          zoneA:
+            parseZoneSurgeFlags(zoneSurgeRaw.zoneA) ||
+            DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY.zoneSurgeConfig!.zoneA,
+          zoneB:
+            parseZoneSurgeFlags(zoneSurgeRaw.zoneB) ||
+            DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY.zoneSurgeConfig!.zoneB,
+        }
+      : DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY.zoneSurgeConfig!;
+  const runtimeSignals =
+    parseRuntimeSignals((p as Record<string, unknown>).runtimeSignals) ||
+    DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY.runtimeSignals!;
+
   const policy: CustomerDeliveryFeePolicy = {
     version: p.version,
     maxServiceRadiusKm: p.maxServiceRadiusKm,
@@ -214,6 +280,8 @@ export function validateCustomerDeliveryFeePolicy(raw: unknown): {
       rainMaxInr: Math.round(surges.rainMaxInr as number),
       priorityNote: typeof surges.priorityNote === 'string' ? surges.priorityNote : undefined,
     },
+    zoneSurgeConfig,
+    runtimeSignals,
     content: {
       coverageSummary: content.coverageSummary,
       zoneADescription:
@@ -326,13 +394,18 @@ export function calculateCustomerDeliveryFee(
   let surgeW = 0;
   let surgeF = 0;
   let surgeR = 0;
-  if (input.weekend) {
+  const zoneKey = zone === 'zone_a' ? 'zoneA' : 'zoneB';
+  const zoneSurgeFlags =
+    policy.zoneSurgeConfig?.[zoneKey] ||
+    DEFAULT_CUSTOMER_DELIVERY_FEE_POLICY.zoneSurgeConfig![zoneKey];
+
+  if (input.weekend && zoneSurgeFlags.weekend) {
     surgeW = policy.surges.weekendInr;
   }
-  if (input.festival) {
+  if (input.festival && zoneSurgeFlags.festival) {
     surgeF = policy.surges.festivalMaxInr;
   }
-  if (input.rain) {
+  if (input.rain && zoneSurgeFlags.rain) {
     surgeR = policy.surges.rainMaxInr;
   }
 

@@ -30,7 +30,15 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [addresses, setAddresses] = useState<any[]>([]);
-  const [preview, setPreview] = useState<{ subtotal: number; deliveryFee: number; platformFee: number; totalAmount: number; leadTimeHours: number } | null>(null);
+  const [preview, setPreview] = useState<{
+    subtotal: number;
+    deliveryFee: number | null;
+    deliveryFeePendingAddress?: boolean;
+    platformFee: number;
+    convenienceFee?: number;
+    totalAmount: number;
+    leadTimeHours: number;
+  } | null>(null);
 
   const [petId, setPetId] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -44,15 +52,29 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   }, [phone, mealPlanId]);
 
   useEffect(() => {
-    if (mealPlanId && quantity) {
-      apiClient
-        .get(`/meal-plans/${mealPlanId}/order-preview?quantity=${quantity}&logisticsType=warmpawz`)
-        .then((res: any) => {
-          if (res.success) setPreview(res);
-        })
-        .catch(() => setPreview(null));
+    if (!mealPlanId || !quantity) return;
+
+    const selected = addresses.find((a) => a.id === addressId);
+    const addrLat = selected?.coordinates?.lat ?? selected?.latitude ?? selected?.lat;
+    const addrLng = selected?.coordinates?.lng ?? selected?.longitude ?? selected?.lng;
+    const effectiveLat = addrLat;
+    const effectiveLng = addrLng;
+
+    const q = new URLSearchParams();
+    q.set('quantity', String(quantity));
+    q.set('logisticsType', 'warmpawz');
+    if (effectiveLat != null && effectiveLng != null) {
+      q.set('customerLat', String(effectiveLat));
+      q.set('customerLng', String(effectiveLng));
     }
-  }, [mealPlanId, quantity]);
+
+    apiClient
+      .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
+      .then((res: any) => {
+        if (res.success) setPreview(res);
+      })
+      .catch(() => setPreview(null));
+  }, [mealPlanId, quantity, addressId, addresses]);
 
   const loadData = async () => {
     try {
@@ -97,6 +119,11 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   };
 
   const selectedAddress = addresses.find((a) => a.id === addressId);
+  const selectedAddressLat =
+    selectedAddress?.coordinates?.lat ?? selectedAddress?.latitude ?? selectedAddress?.lat ?? null;
+  const selectedAddressLng =
+    selectedAddress?.coordinates?.lng ?? selectedAddress?.longitude ?? selectedAddress?.lng ?? null;
+  const hasSelectedAddressCoordinates = selectedAddressLat != null && selectedAddressLng != null;
 
   const mealPlanImageUrl =
     mealPlan?.mealImageUrl ||
@@ -116,8 +143,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     const coords = selectedAddress.coordinates;
     return {
       address: parts.join(', '),
-      lat: coords?.lat ?? selectedAddress.latitude ?? 0,
-      lng: coords?.lng ?? selectedAddress.longitude ?? 0,
+      lat: coords?.lat ?? selectedAddress.latitude ?? selectedAddress.lat ?? null,
+      lng: coords?.lng ?? selectedAddress.longitude ?? selectedAddress.lng ?? null,
       landmark: selectedAddress.landmark || '',
       pincode: selectedAddress.pincode || '',
     };
@@ -136,6 +163,10 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     const deliveryAddress = buildDeliveryAddress();
     if (!deliveryAddress?.address) {
       toast.error('Please select a delivery address');
+      return;
+    }
+    if (deliveryAddress.lat == null || deliveryAddress.lng == null) {
+      toast.error('Selected address has no location coordinates. Please edit/add address with map pin.');
       return;
     }
     if (!scheduledDate || !scheduledTime) {
@@ -278,7 +309,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               <p className="text-sm text-slate-600 line-clamp-2">{mealPlan.description || ''}</p>
               {preview && (
                 <p className="text-sm font-medium text-orange-600 mt-1">
-                  ₹{preview.subtotal} × {quantity} = ₹{(preview.subtotal * quantity).toFixed(0)}
+                  Meal price: ₹{preview.subtotal}
                 </p>
               )}
             </div>
@@ -331,6 +362,11 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               </SelectContent>
             </Select>
           )}
+          {addressId && !hasSelectedAddressCoordinates && (
+            <p className="text-xs text-amber-700 mt-2">
+              This address has no latitude/longitude. Update the address with map location to get delivery fee.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -369,9 +405,17 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           <Card className="p-4 bg-white">
             <h3 className="font-semibold text-slate-900 mb-2">Order summary</h3>
             <div className="space-y-1 text-sm">
-              <div className="flex justify-between"><span>Subtotal</span><span>₹{preview.subtotal * quantity}</span></div>
-              <div className="flex justify-between"><span>Delivery</span><span>₹{preview.deliveryFee}</span></div>
+              <div className="flex justify-between"><span>Meal price</span><span>₹{preview.subtotal}</span></div>
+              <div className="flex justify-between">
+                <span>Delivery</span>
+                <span>
+                  {preview.deliveryFeePendingAddress || preview.deliveryFee == null
+                    ? 'Select address'
+                    : `₹${preview.deliveryFee}`}
+                </span>
+              </div>
               <div className="flex justify-between"><span>Platform fee</span><span>₹{preview.platformFee}</span></div>
+              <div className="flex justify-between"><span>Convenience fee</span><span>₹{preview.convenienceFee ?? 0}</span></div>
               <div className="flex justify-between font-semibold text-slate-900 pt-2 border-t">
                 <span>Total</span><span>₹{preview.totalAmount}</span>
               </div>
@@ -382,7 +426,15 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         <Button
           type="submit"
           className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
-          disabled={submitting || !addressId || !scheduledDate || !scheduledTime || (pets.length > 0 && !petId)}
+          disabled={
+            submitting ||
+            !addressId ||
+            !preview ||
+            !hasSelectedAddressCoordinates ||
+            !scheduledDate ||
+            !scheduledTime ||
+            (pets.length > 0 && !petId)
+          }
         >
           {submitting ? 'Opening payment...' : `Pay ₹${preview?.totalAmount ?? 0}`}
         </Button>

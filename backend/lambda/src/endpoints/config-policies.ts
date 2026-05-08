@@ -289,15 +289,8 @@ export function registerConfigPoliciesEndpoints(app: Hono) {
         console.warn('[CONFIG] Could not fetch logistics rules from DB');
       }
 
-      // If no rules found, return defaults
-      if (rules.length === 0) {
-        rules = [
-          { min_distance_km: 0, max_distance_km: 5, base_fee: 40, per_km_rate: 0, rule_type: 'slab' },
-          { min_distance_km: 5, max_distance_km: 10, base_fee: 60, per_km_rate: 0, rule_type: 'slab' },
-          { min_distance_km: 10, max_distance_km: 20, base_fee: 80, per_km_rate: 0, rule_type: 'slab' },
-          { min_distance_km: 20, max_distance_km: null, base_fee: 50, per_km_rate: 5, rule_type: 'per_km' },
-        ];
-      }
+      // Pricing is sourced from customer:delivery:fee_policy.
+      // logistics_rules are returned as-is for routing/ops use-cases only.
 
       return c.json({
         success: true,

@@ -358,8 +358,8 @@ function FinanceManagementContent() {
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<p className="text-sm text-gray-600 border-l-4 border-[#FF8C42] pl-3 mb-6">
 								<strong>Zone A / B slabs, surges, and customer-facing copy</strong> for checkout and help pages. This
-								is separate from <strong>Fee Configuration</strong> (platform / convenience / legacy delivery
-								globals). API: <code className="text-xs bg-gray-100 px-1 rounded">GET/PUT /admin/delivery-fee-policy</code>
+								is separate from <strong>Fee Configuration</strong> (platform / convenience globals). Delivery
+								charge is sourced from this policy only; <strong>Logistics Rules are routing-only</strong>. API: <code className="text-xs bg-gray-100 px-1 rounded">GET/PUT /admin/delivery-fee-policy</code>
 								, public: <code className="text-xs bg-gray-100 px-1 rounded">GET /customer/delivery-fee-policy</code>.
 							</p>
 							<CustomerDeliveryFeePolicyManager />
