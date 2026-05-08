@@ -79,6 +79,25 @@ export async function presignProductImagesJsonb(raw: unknown): Promise<unknown> 
 /** Presign product.images and metadata.images for API responses (private S3 bucket). */
 export async function presignProductRowForDisplay(row: Record<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
+
+  const top = out.images;
+  const topEmpty =
+    top == null ||
+    top === '' ||
+    (Array.isArray(top) && top.length === 0);
+  if (
+    topEmpty &&
+    out.metadata != null &&
+    typeof out.metadata === 'object' &&
+    !Array.isArray(out.metadata)
+  ) {
+    const m = out.metadata as Record<string, unknown>;
+    const metaImgs = m.images;
+    if (Array.isArray(metaImgs) && metaImgs.length > 0) {
+      out.images = metaImgs;
+    }
+  }
+
   if ('images' in out) {
     out.images = await presignProductImagesJsonb(out.images);
   }
