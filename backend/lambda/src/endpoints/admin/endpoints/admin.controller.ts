@@ -34,6 +34,10 @@ import {
 	SQL_PACKAGE_PURCHASE_JOIN,
 	SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
+import {
+	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedBookingRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 // ============================================================================
 // ADMIN HANDLERS
 // ============================================================================
@@ -1599,7 +1603,17 @@ export function registerAdminEndpoints(app: Hono) {
   app.get('/admin/bookings', async (c) => {
     try {
       // For now, allow without auth for testing
-      const bookings = await query(`
+      const sup = getTemporaryVendorSuppressionParams();
+      let paramIdx = 1;
+      let suppressionClause = '';
+      const filterParams: unknown[] = [];
+      if (sup) {
+        suppressionClause = ` AND ${sqlExcludeSuppressedBookingRows('b', paramIdx, paramIdx + 1)}`;
+        filterParams.push(sup.vendorIds, sup.cutoffDateIst);
+        paramIdx += 2;
+      }
+      const bookings = await query(
+        `
         SELECT 
           b.*,
           ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
@@ -1618,9 +1632,12 @@ export function registerAdminEndpoints(app: Hono) {
             COALESCE(b.total_amount, 0) <= 0
             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
           )
+          ${suppressionClause}
         ORDER BY b.created_at DESC
         LIMIT 100
-      `);
+      `,
+        filterParams.length ? filterParams : undefined,
+      );
 
       return c.json({
         success: true,

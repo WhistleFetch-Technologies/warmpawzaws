@@ -40,6 +40,10 @@ import {
   resolveSettlementCalculateCronRuleName,
   scheduleTimeAndZoneToUtcCron,
 } from '../../../utils/settlement-schedule-eventbridge';
+import {
+  getTemporaryVendorSuppressionParams,
+  sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 /** Keep Fee / payout_rules consumers aligned when admin saves minimum from Schedule Settings. */
 async function mergeMinimumPayoutIntoPlatformPayoutRules(minimumPayout: number): Promise<void> {
@@ -3422,9 +3426,16 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Finance Endpoints
   app.get('/admin/finance/settlements', async (c) => {
     try {
+      const suppression = getTemporaryVendorSuppressionParams();
+      const suppressionSql = suppression
+        ? ` AND ${sqlExcludeSuppressedSettlementRows('s', 1, 2)}`
+        : '';
+      const suppressionParams = suppression ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
+
       let result: { rows?: any[] };
       try {
-        result = await query(`
+        result = await query(
+          `
           SELECT s.*,
                  COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
                  COALESCE(v.phone, vi.phone) as vendor_phone,
@@ -3434,13 +3445,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           LEFT JOIN vendors v ON s.vendor_id = v.id
           LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
           LEFT JOIN roles r ON v.role_id = r.id
+          WHERE 1=1 ${suppressionSql}
           ORDER BY s.created_at DESC
           LIMIT 100
-        `);
+        `,
+          suppressionParams.length ? suppressionParams : undefined,
+        );
       } catch (viErr: any) {
         const msg = String(viErr?.message ?? viErr ?? '');
         if (isVendorIdentityJoinUnsupportedError(msg)) {
-          result = await query(`
+          result = await query(
+            `
             SELECT s.*,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
                    COALESCE(v.phone, '') as vendor_phone,
@@ -3449,9 +3464,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             FROM settlements s
             LEFT JOIN vendors v ON s.vendor_id = v.id
             LEFT JOIN roles r ON v.role_id = r.id
+            WHERE 1=1 ${suppressionSql}
             ORDER BY s.created_at DESC
             LIMIT 100
-          `);
+          `,
+            suppressionParams.length ? suppressionParams : undefined,
+          );
         } else {
           throw viErr;
         }

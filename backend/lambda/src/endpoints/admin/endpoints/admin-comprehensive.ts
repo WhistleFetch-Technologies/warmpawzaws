@@ -20,6 +20,10 @@ import { isValidUUID } from '../../../types/entities';
 import * as crypto from 'crypto';
 import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../utils/admin-rbac-permissions';
 import { createVendorPortalCode } from '../../../lib/services/admin/vendor-portal-session-service';
+import {
+	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -3183,8 +3187,15 @@ class GetSettlementStatsHandler extends BaseHandler {
     try {
       // First check if table and columns exist
       let stats;
+      const suppression = getTemporaryVendorSuppressionParams();
+      const suppressionWhere = suppression
+        ? ` WHERE ${sqlExcludeSuppressedSettlementRows('settlements', 1, 2)}`
+        : '';
+      const suppressionParams =
+        suppression && suppression.vendorIds?.length ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
       try {
-        stats = await query(`
+        stats = await query(
+          `
           SELECT 
             COUNT(*) as total_settlements,
             COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')) as pending_settlements,
@@ -3192,11 +3203,15 @@ class GetSettlementStatsHandler extends BaseHandler {
             COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')), 0) as total_paid,
             COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')), 0) as pending_amount
           FROM settlements
-        `);
+          ${suppressionWhere}
+        `,
+          suppressionParams.length ? suppressionParams : undefined,
+        );
       } catch {
         // Try without status filter (schema may differ)
         try {
-          stats = await query(`
+          stats = await query(
+            `
             SELECT 
               COUNT(*) as total_settlements,
               0 as pending_settlements,
@@ -3204,7 +3219,10 @@ class GetSettlementStatsHandler extends BaseHandler {
               COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)), 0) as total_paid,
               0 as pending_amount
             FROM settlements
-          `);
+            ${suppressionWhere}
+          `,
+            suppressionParams.length ? suppressionParams : undefined,
+          );
         } catch {
           // Table doesn't exist - return defaults
           stats = { rows: [{
@@ -4468,11 +4486,34 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      const suppression = getTemporaryVendorSuppressionParams();
+      if (suppression) {
+        queryText += ` AND ${sqlExcludeSuppressedSettlementRows('settlements', paramIndex, paramIndex + 1)}`;
+        queryParams.push(suppression.vendorIds, suppression.cutoffDateIst);
+        paramIndex += 2;
+      }
+
       queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       queryParams.push(limit, offset);
 
       const settlements = await query(queryText, queryParams);
-      const total = await query('SELECT COUNT(*) as count FROM settlements' + (status && status !== 'all' ? ` WHERE settlement_status = '${status}'` : '')).catch(() => ({ rows: [{ count: '0' }] }));
+
+      let countSql = 'SELECT COUNT(*) as count FROM settlements WHERE 1=1';
+      const countParams: any[] = [];
+      let ci = 1;
+      if (status && status !== 'all') {
+        countSql += ` AND settlement_status = $${ci}`;
+        countParams.push(status);
+        ci++;
+      }
+      if (suppression) {
+        countSql += ` AND ${sqlExcludeSuppressedSettlementRows('settlements', ci, ci + 1)}`;
+        countParams.push(suppression.vendorIds, suppression.cutoffDateIst);
+        ci += 2;
+      }
+      const total = await query(countSql, countParams.length ? countParams : undefined).catch(() => ({
+        rows: [{ count: '0' }],
+      }));
 
       return c.json({
         success: true,
