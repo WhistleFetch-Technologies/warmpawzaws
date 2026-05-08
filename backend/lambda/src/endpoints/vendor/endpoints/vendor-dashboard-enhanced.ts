@@ -22,6 +22,14 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
 import { backfillMissingVendorEarningsForVendorIds } from '../../../utils/vendor-earnings-on-completion';
+import {
+  getTemporaryVendorSuppressionParams,
+  shouldHideSettlementRowFromAdminUi,
+  sqlExcludeSuppressedBookingRows,
+  sqlExcludeSuppressedSettlementRows,
+  sqlExcludeSuppressedVendorCreatedRows,
+  sqlExcludeSuppressedVendorEarningsRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 function buildDailyBreakdownLast7Days(
@@ -151,6 +159,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const startDateStr = startDate.toISOString().split('T')[0];
+      const tb = getTemporaryVendorSuppressionParams();
+      const bookSupp1 = tb ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
+      const bookSupp2 = tb ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}` : '';
+      const bookSuppTail = tb ? [tb.vendorIds, tb.cutoffDateIst] : [];
       const bookings = vendorIds.length === 1
         ? await query(
             `SELECT b.*,
@@ -167,8 +179,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
                AND b.booking_date >= $2
                AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
+               ${bookSupp1}
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
-            [resolvedVendorId, startDateStr]
+            [resolvedVendorId, startDateStr, ...bookSuppTail]
           ).catch(() => ({ rows: [] }))
         : await query(
             `SELECT b.*,
@@ -185,8 +198,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
                AND b.booking_date >= $3
                AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
+               ${bookSupp2}
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
-            [vendorIds[0], vendorIds[1], startDateStr]
+            [vendorIds[0], vendorIds[1], startDateStr, ...bookSuppTail]
           ).catch(() => ({ rows: [] }));
 
       // Calculate stats (bookings)
@@ -326,23 +340,36 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Get today's date
       const today = new Date().toISOString().split('T')[0];
+      const temporarySuppressionMain = getTemporaryVendorSuppressionParams();
+      const supMainTail = temporarySuppressionMain
+        ? [temporarySuppressionMain.vendorIds, temporarySuppressionMain.cutoffDateIst]
+        : [];
+      const mainStatFrag1 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}`
+        : '';
+      const mainStatFrag2 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}`
+        : '';
 
       // Get bookings stats (include both identity and vendor id so center/clinic bookings count)
       const [statsParam1, statsParam2] = vendorIds.length >= 2 ? [vendorIds[0], vendorIds[1]] : [vendorIds[0], vendorIds[0]];
       const bookingsStatsQuery = vendorIds.length === 1
         ? `SELECT 
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
-          COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
-        FROM bookings 
-        WHERE vendor_id = $2`
+          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status IN ('pending', 'confirmed')) as today_bookings,
+          COUNT(*) FILTER (WHERE b.status IN ('pending', 'confirmed')) as pending_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status = 'completed') as completed_today
+        FROM bookings b
+        WHERE b.vendor_id = $2${mainStatFrag1}`
         : `SELECT 
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
-          COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
-        FROM bookings 
-        WHERE (vendor_id = $2 OR vendor_id = $3)`;
-      const bookingsStatsParams = vendorIds.length === 1 ? [today, statsParam1] : [today, statsParam1, statsParam2];
+          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status IN ('pending', 'confirmed')) as today_bookings,
+          COUNT(*) FILTER (WHERE b.status IN ('pending', 'confirmed')) as pending_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status = 'completed') as completed_today
+        FROM bookings b
+        WHERE (b.vendor_id = $2 OR b.vendor_id = $3)${mainStatFrag2}`;
+      const bookingsStatsParams =
+        vendorIds.length === 1
+          ? [today, statsParam1, ...supMainTail]
+          : [today, statsParam1, statsParam2, ...supMainTail];
       const bookingsStats = await query(bookingsStatsQuery, bookingsStatsParams).catch(() => ({ rows: [{ today_bookings: '0', pending_bookings: '0', completed_today: '0' }] }));
 
       // Prefer vendor_earnings (source of truth) when available; fallback to bookings
@@ -355,21 +382,35 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         let veIds = await expandVendorIdsForEarningsContext(paramVendorId);
         if (veIds.length === 0) veIds = [resolvedVendorId];
         await backfillMissingVendorEarningsForVendorIds(veIds, '[DASHBOARD-EARNINGS-BACKFILL]');
+        const veSupSql = temporarySuppressionMain
+          ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 2, 3)}`
+          : '';
         const veRes = await query(
           `SELECT 
              COALESCE(SUM(amount), 0) as earnings,
              COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_settlement
-           FROM vendor_earnings
-           WHERE vendor_id = ANY($1::uuid[])`,
-          [veIds]
+           FROM vendor_earnings ve
+           WHERE ve.vendor_id = ANY($1::uuid[])${veSupSql}`,
+          [veIds, ...(temporarySuppressionMain ? [temporarySuppressionMain.vendorIds, temporarySuppressionMain.cutoffDateIst] : [])]
         ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
         earningsFromTable = veRes.rows[0] || earningsFromTable;
       }
 
+      const bkFrag1 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('bk', 2, 3)}`
+        : '';
+      const bkFrag2 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('bk', 3, 4)}`
+        : '';
       const earningsQuery = vendorIds.length === 1
-        ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE vendor_id = $1 AND status = 'completed'`
-        : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status = 'completed'`;
-      const earningsStats = await query(earningsQuery, vendorIds).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
+        ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings bk WHERE bk.vendor_id = $1 AND bk.status = 'completed'${bkFrag1}`
+        : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings bk WHERE (bk.vendor_id = $1 OR bk.vendor_id = $2) AND bk.status = 'completed'${bkFrag2}`;
+      const earningsStats = await query(
+        earningsQuery,
+        vendorIds.length === 1
+          ? [statsParam1, ...supMainTail]
+          : [statsParam1, statsParam2, ...supMainTail]
+      ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
       const earningsFromBookings = earningsStats.rows[0] || { earnings: '0', pending_settlement: '0' };
 
       // Use vendor_earnings when available for consistency with earnings API and payout flow
@@ -405,6 +446,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const startDateStr = startDate.toISOString().split('T')[0];
+      const listSup1 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}`
+        : '';
+      const listSup2 = temporarySuppressionMain
+        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}`
+        : '';
+
       const bookingsQuery = vendorIds.length === 1
         ? `SELECT b.*,
                 COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
@@ -420,6 +468,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            AND b.booking_date >= $2
            AND b.status != 'pending_payment'
            AND b.status != 'cancelled'
+           ${listSup1}
          ORDER BY b.booking_date ASC, b.booking_time ASC`
         : `SELECT b.*,
                 COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
@@ -435,8 +484,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            AND b.booking_date >= $3
            AND b.status != 'pending_payment'
            AND b.status != 'cancelled'
+           ${listSup2}
          ORDER BY b.booking_date ASC, b.booking_time ASC`;
-      const bookingsParams = vendorIds.length === 1 ? [resolvedVendorId, startDateStr] : [vendorIds[0], vendorIds[1], startDateStr];
+      const bookingsParams =
+        vendorIds.length === 1
+          ? [resolvedVendorId, startDateStr, ...supMainTail]
+          : [vendorIds[0], vendorIds[1], startDateStr, ...supMainTail];
       const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
 
       // Transform bookings for frontend
@@ -557,12 +610,15 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       // Get bookings (use resolved vendor id)
+      const analyticSup = getTemporaryVendorSuppressionParams();
+      const analyticBookFrag = analyticSup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
       const bookings = await query(
-        `SELECT * FROM bookings 
-         WHERE vendor_id = $1 
-           AND created_at >= $2
-         ORDER BY created_at DESC`,
-        [vendorId, periodStart.toISOString()]
+        `SELECT * FROM bookings b
+         WHERE b.vendor_id = $1 
+           AND b.created_at >= $2
+           ${analyticBookFrag}
+         ORDER BY b.created_at DESC`,
+        [vendorId, periodStart.toISOString(), ...(analyticSup ? [analyticSup.vendorIds, analyticSup.cutoffDateIst] : [])]
       ).catch(() => ({ rows: [] }));
 
       // Calculate analytics
@@ -695,24 +751,38 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       // Get vendor_earnings records (center-aware: align with GET /vendor/bookings/:id sibling vendors)
-      const earningsQuery = period === 'lifetime'
-        ? `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
+      const earnSupCtx = getTemporaryVendorSuppressionParams();
+      const earnVeFragLifetime = earnSupCtx
+        ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 2, 3)}`
+        : '';
+      const earnVeFragRanged = earnSupCtx
+        ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 3, 4)}`
+        : '';
+      const earningsQuery =
+        period === 'lifetime'
+          ? `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
            FROM vendor_earnings ve
            LEFT JOIN bookings b ON ve.booking_id = b.id
            LEFT JOIN services s ON b.service_id = s.id
-           WHERE ve.vendor_id = ANY($1::uuid[])
+           WHERE ve.vendor_id = ANY($1::uuid[])${earnVeFragLifetime}
            ORDER BY ve.realized_at DESC`
-        : `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
+          : `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
            FROM vendor_earnings ve
            LEFT JOIN bookings b ON ve.booking_id = b.id
            LEFT JOIN services s ON b.service_id = s.id
            WHERE ve.vendor_id = ANY($1::uuid[])
-             AND ve.realized_at >= $2
+             AND ve.realized_at >= $2${earnVeFragRanged}
            ORDER BY ve.realized_at DESC`;
 
       const earningsResult = await query(
         earningsQuery,
-        period === 'lifetime' ? [vendorIdsForEarnings] : [vendorIdsForEarnings, startDate.toISOString()]
+        period === 'lifetime'
+          ? [vendorIdsForEarnings, ...(earnSupCtx ? [earnSupCtx.vendorIds, earnSupCtx.cutoffDateIst] : [])]
+          : [
+              vendorIdsForEarnings,
+              startDate.toISOString(),
+              ...(earnSupCtx ? [earnSupCtx.vendorIds, earnSupCtx.cutoffDateIst] : []),
+            ]
       ).catch(() => ({ rows: [] }));
 
       const earnings = earningsResult.rows || [];
@@ -884,7 +954,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       let transactions: any[] = [];
       if (hasVendorEarnings) {
-        const veQuery = `
+        const txSupCtx = getTemporaryVendorSuppressionParams();
+        let veSqlBuilt = `
           SELECT 
             ve.id,
             ve.realized_at as created_at,
@@ -900,17 +971,23 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           LEFT JOIN services s ON b.service_id = s.id
           LEFT JOIN vendor_services vs ON b.service_id = vs.id
           LEFT JOIN customers c ON b.customer_id = c.id
-          WHERE ve.vendor_id = ANY($1::uuid[])
-            ${period !== 'lifetime' ? 'AND ve.realized_at >= $2' : ''}
-          ORDER BY ve.realized_at DESC
-          LIMIT $${period === 'lifetime' ? '2' : '3'}
-        `;
-        const veResult = await query(
-          veQuery,
-          period === 'lifetime'
-            ? [vendorIdsForTx, limit]
-            : [vendorIdsForTx, startDate.toISOString(), limit]
-        ).catch(() => ({ rows: [] }));
+          WHERE ve.vendor_id = ANY($1::uuid[])`;
+        const veParamsDyn: unknown[] = [vendorIdsForTx];
+        let veP = 2;
+        if (period !== 'lifetime') {
+          veSqlBuilt += `\n AND ve.realized_at >= $${veP}`;
+          veParamsDyn.push(startDate.toISOString());
+          veP++;
+        }
+        if (txSupCtx) {
+          veSqlBuilt += `\n AND ${sqlExcludeSuppressedVendorEarningsRows('ve', veP, veP + 1)}`;
+          veParamsDyn.push(txSupCtx.vendorIds, txSupCtx.cutoffDateIst);
+          veP += 2;
+        }
+        veSqlBuilt += `\n ORDER BY ve.realized_at DESC\n LIMIT $${veP}`;
+        veParamsDyn.push(limit);
+
+        const veResult = await query(veSqlBuilt, veParamsDyn).catch(() => ({ rows: [] }));
         const veRows = veResult.rows || [];
         transactions = veRows.map((t: any) => {
           const svcName = t.service_name || t.service || 'Service';
@@ -934,7 +1011,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       if (transactions.length === 0) {
         // Fallback to bookings
-        const transactionsQuery = `
+        const txSupBk = getTemporaryVendorSuppressionParams();
+        let fbSql = `
           SELECT 
             b.id,
             b.booking_date as date,
@@ -955,15 +1033,23 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           LEFT JOIN services s ON b.service_id = s.id
           LEFT JOIN customers c ON b.customer_id = c.id
           WHERE b.vendor_id = $1
-            AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')
-            ${period !== 'lifetime' ? 'AND b.created_at >= $3' : ''}
-          ORDER BY b.created_at DESC
-          LIMIT $2
-        `;
-        const result = await query(
-          transactionsQuery,
-          period === 'lifetime' ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
-        ).catch(() => ({ rows: [] }));
+            AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')`;
+        const fbParams: unknown[] = [vendorId];
+        let fbP = 2;
+        if (txSupBk) {
+          fbSql += `\n AND ${sqlExcludeSuppressedBookingRows('b', fbP, fbP + 1)}`;
+          fbParams.push(txSupBk.vendorIds, txSupBk.cutoffDateIst);
+          fbP += 2;
+        }
+        if (period !== 'lifetime') {
+          fbSql += `\n AND b.created_at >= $${fbP}`;
+          fbParams.push(startDate.toISOString());
+          fbP++;
+        }
+        fbSql += `\n ORDER BY b.created_at DESC\n LIMIT $${fbP}`;
+        fbParams.push(limit);
+
+        const result = await query(fbSql, fbParams).catch(() => ({ rows: [] }));
         const rows = result.rows || [];
         transactions = rows.map((t: any) => {
           const svcName = t.service_name || t.service || 'Service';
@@ -1031,7 +1117,11 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const settlement = settlementRows[0];
-      
+
+      if (shouldHideSettlementRowFromAdminUi(settlement as Record<string, unknown>)) {
+        return c.json({ error: 'Settlement not found' }, 404);
+      }
+
       // Parse stored breakup or calculate it
       let breakup = null;
       try {
@@ -1175,11 +1265,18 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendorIds = [...vendorIdSet];
       const vendorIdArraySql = `ANY($1::uuid[])`;
       let whereClause = `s.vendor_id = ${vendorIdArraySql}`;
-      const params: any[] = [vendorIds];
+      const params: unknown[] = [vendorIds];
 
       if (status && status !== 'all') {
-        whereClause += ' AND s.status = $2';
+        whereClause += ` AND s.status = $${params.length + 1}`;
         params.push(status);
+      }
+
+      const vendSetSup = getTemporaryVendorSuppressionParams();
+      if (vendSetSup) {
+        const nx = params.length + 1;
+        whereClause += ` AND ${sqlExcludeSuppressedSettlementRows('s', nx, nx + 1)}`;
+        params.push(vendSetSup.vendorIds, vendSetSup.cutoffDateIst);
       }
 
       const settlementsResult = await query(
@@ -1196,6 +1293,19 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Get summary - align with admin: pending_amount, completed_amount, processing_amount
       // Include vendor_earnings pending so "Available for payout" matches request validation
+      const sumSetExtra = vendSetSup
+        ? ` AND ${sqlExcludeSuppressedSettlementRows('settlements', 2, 3)}`
+        : '';
+      const earnPendExtra = vendSetSup
+        ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 2, 3)}`
+        : '';
+      const summaryAggParams = vendSetSup
+        ? [vendorIds, vendSetSup.vendorIds, vendSetSup.cutoffDateIst]
+        : [vendorIds];
+      const earningsPendingParams = vendSetSup
+        ? [vendorIds, vendSetSup.vendorIds, vendSetSup.cutoffDateIst]
+        : [vendorIds];
+
       const [summaryResult, earningsPendingResult, payoutsResult] = await Promise.all([
         query(
           `SELECT 
@@ -1207,20 +1317,21 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
              COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
            FROM settlements
-           WHERE vendor_id = ${vendorIdArraySql}`,
-          [vendorIds]
+           WHERE vendor_id = ${vendorIdArraySql}${sumSetExtra}`,
+          summaryAggParams
         ).catch(() => ({ rows: [{}] })),
         query(
-          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = ${vendorIdArraySql} AND status = 'pending'`,
-          [vendorIds]
+          `SELECT COALESCE(SUM(ve.amount), 0) as pending FROM vendor_earnings ve WHERE ve.vendor_id = ${vendorIdArraySql} AND ve.status = 'pending'${earnPendExtra}`,
+          earningsPendingParams
         ).catch(() => ({ rows: [{ pending: '0' }] })),
         query(
           `SELECT *
-           FROM payouts
-           WHERE vendor_id = ${vendorIdArraySql}
-           ORDER BY created_at DESC
+           FROM payouts po
+           WHERE po.vendor_id = ${vendorIdArraySql}
+           ${vendSetSup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('po', 2, 3)})` : ''}
+           ORDER BY po.created_at DESC
            LIMIT 30`,
-          [vendorIds]
+          vendSetSup ? summaryAggParams : [vendorIds]
         ).catch(() => ({ rows: [] })),
       ]);
 

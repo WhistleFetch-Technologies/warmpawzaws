@@ -22,6 +22,11 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { requireAdminAuth } from './admin.controller';
+import {
+	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedBookingRows,
+	sqlExcludeSuppressedVendorCreatedRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**
@@ -565,28 +570,45 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
+      const sup = getTemporaryVendorSuppressionParams();
+      const supParams = sup ? [sup.vendorIds, sup.cutoffDateIst] : [];
+      const bookingEx = sup ? ` AND (${sqlExcludeSuppressedBookingRows('b', 1, 2)})` : '';
+      const paymentEx = sup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('p', 1, 2)})` : '';
+      const orderEx = sup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('o', 1, 2)})` : '';
+
       const [bookings, payments, customers, vendors, orders] = await Promise.all([
-        query(`SELECT 
+        query(
+          `SELECT 
                 COUNT(*) as total, 
-                COUNT(*) FILTER (WHERE status = 'completed') as completed,
-                COALESCE(SUM(total_amount), 0) as gmv,
-                COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) as completed_gmv
-               FROM bookings WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, completed: 0, gmv: 0, completed_gmv: 0 }] })),
-        query(`SELECT 
-                COALESCE(SUM(amount), 0) as total_revenue,
-                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission
-               FROM payments 
-               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')`).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
+                COUNT(*) FILTER (WHERE b.status = 'completed') as completed,
+                COALESCE(SUM(b.total_amount), 0) as gmv,
+                COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) as completed_gmv
+               FROM bookings b
+               WHERE b.created_at >= CURRENT_DATE - INTERVAL '${days} days'${bookingEx}`,
+          supParams.length ? supParams : undefined,
+        ).catch(() => ({ rows: [{ total: 0, completed: 0, gmv: 0, completed_gmv: 0 }] })),
+        query(
+          `SELECT 
+                COALESCE(SUM(p.amount), 0) as total_revenue,
+                COALESCE(SUM(COALESCE(p.platform_fee, p.commission_amount)), 0) as commission
+               FROM payments p
+               WHERE p.created_at >= CURRENT_DATE - INTERVAL '${days} days' AND p.payment_status IN ('completed', 'success')${paymentEx}`,
+          supParams.length ? supParams : undefined,
+        ).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
         query(`SELECT 
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days') as new_customers
                FROM customers`).catch(() => ({ rows: [{ total: 0, new_customers: 0 }] })),
         query(`SELECT COUNT(*) as total FROM vendors 
                WHERE status = 'approved' AND is_active = true`).catch(() => ({ rows: [{ total: 0 }] })),
-        query(`SELECT 
+        query(
+          `SELECT 
                 COUNT(*) as total,
-                COALESCE(SUM(total_amount), 0) as order_gmv
-               FROM orders WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, order_gmv: 0 }] })),
+                COALESCE(SUM(o.total_amount), 0) as order_gmv
+               FROM orders o
+               WHERE o.created_at >= CURRENT_DATE - INTERVAL '${days} days'${orderEx}`,
+          supParams.length ? supParams : undefined,
+        ).catch(() => ({ rows: [{ total: 0, order_gmv: 0 }] })),
       ]);
 
       const totalBookings = parseInt(bookings.rows[0]?.total || '0');
@@ -640,15 +662,19 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
+      const supRev = getTemporaryVendorSuppressionParams();
+      const revPayEx =
+        supRev ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('p', 1, 2)})` : '';
       const revenueData = await query(
-        `SELECT DATE_TRUNC('day', created_at) as date, 
-                COALESCE(SUM(amount), 0) as revenue,
-                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission,
+        `SELECT DATE_TRUNC('day', p.created_at) as date, 
+                COALESCE(SUM(p.amount), 0) as revenue,
+                COALESCE(SUM(COALESCE(p.platform_fee, p.commission_amount)), 0) as commission,
                 COUNT(*) as count
-         FROM payments 
-         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')
-         GROUP BY DATE_TRUNC('day', created_at)
-         ORDER BY date`
+         FROM payments p
+         WHERE p.created_at >= CURRENT_DATE - INTERVAL '${days} days' AND p.payment_status IN ('completed', 'success')${revPayEx}
+         GROUP BY DATE_TRUNC('day', p.created_at)
+         ORDER BY date`,
+        supRev ? [supRev.vendorIds, supRev.cutoffDateIst] : undefined,
       ).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -699,6 +725,11 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
+      const supCat = getTemporaryVendorSuppressionParams();
+      const catBookEx = supCat
+        ? ` AND (${sqlExcludeSuppressedBookingRows('b', 1, 2)})`
+        : '';
+
       // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
       // ✅ FIX: Added is_deleted filter to exclude deleted vendors
       const categoryData = await query(
@@ -710,13 +741,14 @@ export function registerAnalyticsEndpoints(app: Hono) {
          LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id 
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-           AND b.status = 'completed'
+           AND b.status = 'completed'${catBookEx}
          WHERE v.status = 'approved' 
            AND v.is_active = true
            AND (v.is_deleted IS NULL OR v.is_deleted = false)
          GROUP BY COALESCE(rl.name, rl.display_name, v.category, 'Other')
          HAVING COALESCE(rl.name, rl.display_name, v.category, 'Other') IS NOT NULL
-         ORDER BY revenue DESC`
+         ORDER BY revenue DESC`,
+        supCat ? [supCat.vendorIds, supCat.cutoffDateIst] : undefined,
       ).catch(() => ({ rows: [] }));
 
       return c.json({
