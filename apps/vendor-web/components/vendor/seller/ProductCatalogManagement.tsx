@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
-  Check, AlertCircle, Image as ImageIcon, MapPin
+  Check, AlertCircle, Image as ImageIcon, MapPin, RefreshCcw
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
@@ -21,6 +21,22 @@ function stripAwsPresignFromProductImageUrl(url: string): string {
     /* ignore */
   }
   return url;
+}
+
+/**
+ * Badge label for vendor catalog.
+ * When admin sets status to active, treat as live unless is_active is explicitly false
+ * (avoids showing "pending" forever when is_active is null/undefined in older rows).
+ */
+function getVendorDisplayStatus(product: Pick<Product, 'status' | 'is_active'>): string {
+  const s = String(product.status ?? '').trim().toLowerCase();
+  if (s === 'rejected') return 'rejected';
+  if (s === 'draft') return 'draft';
+  if (s === 'active' && product.is_active !== false) return 'active';
+  if (s === 'active' && product.is_active === false) return 'pending';
+  if (!s) return 'pending';
+  if (s === 'pending_approval' || s === 'submit_for_approval' || s === 'submitted') return 'pending';
+  return s;
 }
 
 interface ProductCatalogManagementProps {
@@ -45,6 +61,7 @@ interface Product {
 export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -81,6 +98,15 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([loadProducts(), loadCategories()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('Are you sure you want to delete this product?')) return;
     
@@ -94,9 +120,10 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   };
 
   const filteredProducts = products.filter(product => {
+    const displayStatus = getVendorDisplayStatus(product);
     const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || product.status === selectedStatus;
+    const matchesStatus = selectedStatus === 'all' || displayStatus === selectedStatus;
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
@@ -121,7 +148,15 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className="flex items-center gap-2 px-5 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
         <button
           onClick={() => {
             setEditingProduct(null);
@@ -285,7 +320,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                       {product.stock}
                     </span>
                   </td>
-                  <td className="p-4 text-center">{getStatusBadge(product.status)}</td>
+                  <td className="p-4 text-center">{getStatusBadge(getVendorDisplayStatus(product))}</td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button 
@@ -343,7 +378,7 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
           <span>{product.emoji || '📦'}</span>
         )}
         <div className="absolute top-3 right-3">
-          {getStatusBadge(product.status)}
+          {getStatusBadge(getVendorDisplayStatus(product))}
         </div>
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
       </div>
@@ -396,7 +431,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     stock: product?.stock || '',
     sku: product?.sku || `SKU-${Date.now()}`,
     emoji: product?.emoji || '📦',
-    status: product?.status || 'draft'
+    status: product?.status || 'pending'
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);

@@ -1531,9 +1531,16 @@ export function CustomerHomeWrapper({
             } else if (screen === 'problem_grid') {
               setCurrentServiceType(data?.roleId || 'general');
               setCurrentScreen('problem_grid');
-            } else if (screen === 'shop' && data?.category) {
-              goToShopFromParent({ category: data.category });
-            }             else if (screen === 'support_help') {
+            } else if (screen === 'shop') {
+              const raw =
+                data && typeof data === 'object'
+                  ? (data as { category?: string; categoryId?: string }).category ??
+                    (data as { category?: string; categoryId?: string }).categoryId
+                  : undefined;
+              const cat = raw != null ? String(raw).trim() : '';
+              if (cat) goToShopFromParent({ category: cat });
+              else goToShopFromParent();
+            } else if (screen === 'support_help') {
               if (typeof window !== 'undefined' && data?.initialTab) {
                 try {
                   sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, data.initialTab);
