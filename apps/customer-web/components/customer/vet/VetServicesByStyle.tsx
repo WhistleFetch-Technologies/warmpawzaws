@@ -1128,8 +1128,10 @@ export function VetServicesByStyle({
                         >
                           {/* Row 1: name + package badge (left) | price (right) */}
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-                              <h5 className="font-medium text-gray-900 leading-5 line-clamp-2">{service.name}</h5>
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                {service.name}
+                              </h5>
                               {isPackage && (
                                 <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
                                   Package

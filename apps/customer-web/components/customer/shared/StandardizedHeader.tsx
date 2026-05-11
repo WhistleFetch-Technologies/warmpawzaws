@@ -106,13 +106,15 @@ export function StandardizedHeader({
             )}
           </button>
           <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center gap-1">
+            <div className="flex min-w-0 items-center gap-1">
               {trimmedTitle ? (
                 <h1 className="text-white text-base font-semibold tracking-tight truncate">{trimmedTitle}</h1>
               ) : homeGreeting ? (
                 <>
-                  <h1 className="text-white text-base font-semibold tracking-tight truncate">Hi, {userName}!</h1>
-                  <span className="text-sm" role="img" aria-label="wave">👋</span>
+                  <h1 className="min-w-0 flex-1 truncate text-white text-base font-semibold tracking-tight">
+                    Hi, {userName}!
+                  </h1>
+                  <span className="shrink-0 text-sm" role="img" aria-label="wave">👋</span>
                 </>
               ) : (
                 <h1 className="text-white text-base font-semibold tracking-tight truncate">{neutralShellTitle}</h1>
@@ -121,7 +123,9 @@ export function StandardizedHeader({
             {displaySubtitle ? (
               <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">{displaySubtitle}</p>
             ) : homeGreeting && !trimmedTitle ? (
-              <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">Explore Warmpawz Services</p>
+              <p className="truncate text-white/70 text-[11px] font-normal tracking-wide">
+                Explore Warmpawz Services
+              </p>
             ) : null}
           </div>
         </div>
