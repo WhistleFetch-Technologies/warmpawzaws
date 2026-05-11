@@ -60,6 +60,43 @@ NC='\033[0m'
 cd "$PROJECT_ROOT"
 
 cd "apps/${APP_NAME}"
+# Resolve API base URL up-front so we can pass NEXT_PUBLIC_* into the build
+# (layout.tsx renders the correct inline runtime-config from these env vars,
+# and the post-build sed substitution that used to corrupt the RSC payload is
+# no longer needed).
+if [ "$PROD" = true ]; then
+  RESOLVED_API_BASE_URL="${API_BASE_URL:-https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com}"
+  if command -v aws &>/dev/null; then
+    AWS_RESOLVED=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1 || echo "")
+    if [ -n "$AWS_RESOLVED" ] && [ "$AWS_RESOLVED" != "None" ]; then
+      RESOLVED_API_BASE_URL="${AWS_RESOLVED%/}"
+    fi
+  fi
+else
+  RESOLVED_API_BASE_URL=""
+  if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+    RESOLVED_API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+  fi
+  if [ -z "$RESOLVED_API_BASE_URL" ] || [ "$RESOLVED_API_BASE_URL" = "null" ]; then
+    if command -v aws &>/dev/null; then
+      RESOLVED_API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1 || echo "")
+    fi
+  fi
+  if [ -z "$RESOLVED_API_BASE_URL" ] || [ "$RESOLVED_API_BASE_URL" = "None" ]; then
+    RESOLVED_API_BASE_URL="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+  fi
+fi
+RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
+
+# Customer marketplace toggle (default off). Resolve here so the build picks it
+# up from the env, and the deploy-time runtime-config.js stays consistent.
+CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
+if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
+  CEE_JS="true"
+else
+  CEE_JS="false"
+fi
+
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
   echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
 else
@@ -68,11 +105,29 @@ else
   rm -rf .next dist node_modules/.cache
   sleep 2
 
-  if ! npm run build; then
+  # Pass NEXT_PUBLIC_* to npm so Next.js bakes the correct values into the
+  # static export (HTML + RSC payload). Doing it here avoids the post-build
+  # text surgery that previously broke the RSC JSON string and produced
+  # "Uncaught SyntaxError: Unexpected identifier 'https'" on prod.
+  if [ "$PROD" = true ]; then
+    BUILD_ENV=(
+      "NEXT_PUBLIC_ENVIRONMENT=production"
+      "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
+      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+    )
+  else
+    BUILD_ENV=(
+      "NEXT_PUBLIC_ENVIRONMENT=development"
+      "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
+      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+    )
+  fi
+
+  if ! env "${BUILD_ENV[@]}" npm run build; then
     echo -e "${YELLOW}⚠️  First build failed, retrying with full clean...${NC}"
     rm -rf .next dist node_modules/.cache
     sleep 3
-    npm run build
+    env "${BUILD_ENV[@]}" npm run build
   fi
 
   if [ ! -d "dist" ]; then
@@ -83,50 +138,19 @@ else
   echo -e "${GREEN}✅ Build completed successfully${NC}"
 fi
 
-echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
+echo -e "${BLUE}🔧 Writing runtime-config.js (external)...${NC}"
 cd "$PROJECT_ROOT"
 
-if [ "$PROD" = false ]; then
-  if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-    API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-  fi
-  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
-    CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
-    if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
-      API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
-    fi
-    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
-      if command -v aws &>/dev/null; then
-        API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
-      fi
-    fi
-    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-      echo -e "${YELLOW}⚠️  API Gateway URL not found. Set config/urls.json apiGatewayDefaultUrl.${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}⚠️  Using fallback API: $API_BASE_URL${NC}"
-  else
-    echo -e "${GREEN}✅ API Gateway (from config/urls.json): $API_BASE_URL${NC}"
-  fi
-elif [ "$PROD" = true ] && command -v aws &>/dev/null; then
-  RESOLVED=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
-  if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "None" ]; then
-    API_BASE_URL="${RESOLVED%/}"
-    echo -e "${GREEN}✅ API Gateway endpoint (prod, from AWS): $API_BASE_URL${NC}"
-  else
-    API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
-    echo -e "${GREEN}✅ API Gateway endpoint (prod, default): $API_BASE_URL${NC}"
-  fi
-fi
-API_BASE_URL="${API_BASE_URL%/}"
+# `API_BASE_URL` is kept for downstream log lines that may reference it.
+API_BASE_URL="${RESOLVED_API_BASE_URL}"
 
-# Customer marketplace on home + category-deep links (default off).
-CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
-if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
-  CEE_JS="true"
-else
-  CEE_JS="false"
-fi
+# The inline window.__WARMPAWZ_RUNTIME_CONFIG__ block is now baked into the
+# HTML by Next.js at build time (see apps/customer-web/app/layout.tsx — guarded
+# by NEXT_PUBLIC_ENVIRONMENT). We deliberately do NOT post-process HTML here:
+# the previous `sed` substitution corrupted Next.js's RSC payload (the
+# `self.__next_f.push([1, "..."])` JSON strings) by injecting unescaped quotes,
+# which broke prod with `Uncaught SyntaxError: Unexpected identifier 'https'`
+# and a white screen.
 
 if [ "$PROD" = true ]; then
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
@@ -156,20 +180,7 @@ else
 EOF
 fi
 
-echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
-
-echo -e "${BLUE}🔧 Replacing inline runtime-config in HTML files...${NC}"
-if [ "$PROD" = true ]; then
-  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: false, environment: 'production', customerEcommerceEnabled: ${CEE_JS} };"
-else
-  INLINE_CONFIG="window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '${API_BASE_URL}', uatMode: true, environment: 'development', customerEcommerceEnabled: ${CEE_JS} };"
-fi
-find "apps/${APP_NAME}/dist" -name "*.html" -type f | while read -r htmlfile; do
-  if grep -q 'runtime-config-inline' "$htmlfile" 2>/dev/null; then
-    sed -i "s|window.__WARMPAWZ_RUNTIME_CONFIG__ = {[^}]*};|${INLINE_CONFIG}|g" "$htmlfile"
-  fi
-done
-echo -e "${GREEN}✅ Inline runtime-config replaced in HTML files${NC}"
+echo -e "${GREEN}✅ runtime-config.js written (apiBaseUrl -> ${API_BASE_URL})${NC}"
 
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"
