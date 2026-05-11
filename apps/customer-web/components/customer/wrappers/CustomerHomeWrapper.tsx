@@ -426,6 +426,11 @@ export function CustomerHomeWrapper({
   /** `vet` → Diagnostic Labs: header back should return here, not home (set only from `handleVetNavigate` lab path). */
   const [labDiagnosticsReturnScreen, setLabDiagnosticsReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  /** Meal plans drill-down: vendor catalog (`GET /meal-plans/vendor/:id`) */
+  const [mealPlanVendorFocus, setMealPlanVendorFocus] = useState<{
+    vendorId: string;
+    vendorSnapshot?: Record<string, unknown>;
+  } | null>(null);
   /** Home Services hub → {@link UniversalHomeServiceRouter} (training, walker, grooming at home, etc.). */
   const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<
     'walker' | 'grooming' | 'training' | 'veterinary' | 'behaviourist' | 'sitter' | 'diagnostics'
@@ -2906,6 +2911,17 @@ export function CustomerHomeWrapper({
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
               setCurrentScreen('nutrition-meal-plans');
             } else if (screen === 'diet-consultation-services') {
               setPreviousScreen('nutritionist');
@@ -2992,6 +3008,8 @@ export function CustomerHomeWrapper({
         <MealPlansList 
           phone={phone} 
           onBack={() => setCurrentScreen('nutritionist')} 
+          vendorFocus={mealPlanVendorFocus}
+          onExitVendorFocus={() => setMealPlanVendorFocus(null)}
           onNavigate={(screen, data) => {
             if (screen === 'meal-order-checkout') {
               setSelectedVendorId(data?.vendorId);
@@ -3003,6 +3021,19 @@ export function CustomerHomeWrapper({
               setCurrentScreen('create-booking');
             } else if (screen === 'pets') {
               navigateToPets();
+            } else if (screen === 'nutrition-meal-plans') {
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
+              setCurrentScreen('nutrition-meal-plans');
             } else {
               setCurrentScreen(screen as any);
             }

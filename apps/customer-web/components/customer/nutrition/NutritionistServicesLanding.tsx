@@ -12,7 +12,10 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import {
+  NutritionVendorDetailsCard,
+  nutritionVendorFromDiscoveryRow,
+} from './NutritionVendorDetailsCard';
 
 
 
@@ -338,33 +341,26 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                   <p className="text-gray-500 text-sm">Check back soon for expert pet nutrition consultants!</p>
                 </Card>
               ) : (
-                (nutritionists.slice(0, 5).map((nutritionist: any, index) => (
-                  <div
-                    key={index}
-                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                    onClick={() => handleNutritionistSelect(nutritionist)}
-                  >
-                    <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                      {nutritionist.businessName ? nutritionist.businessName.charAt(0) : nutritionist.name ? nutritionist.name.charAt(0) : 'N'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-900 truncate">{nutritionist.businessName || nutritionist.name || `Nutritionist ${index}`}</h3>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-                        <StarRating
-                          rating={nutritionist.rating}
-                          reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
-                          starsClassName="w-3 h-3"
-                          textClassName="text-xs text-slate-500"
-                        />
-                        <span className="hidden sm:inline">•</span>
-                        <span>Certified Expert</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    </div>
-                  </div>
-                )))
+                nutritionists.slice(0, 5).map((nutritionist: any, index: number) => {
+                  const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
+                  const snapshot = nutritionVendorFromDiscoveryRow(nutritionist as Record<string, unknown>);
+                  return (
+                    <NutritionVendorDetailsCard
+                      key={vendorId || index}
+                      vendor={snapshot}
+                      showViewMealPlans
+                      onViewMealPlans={() => {
+                        if (!vendorId) return;
+                        onNavigate?.('nutrition-meal-plans', {
+                          vendorId,
+                          vendorSnapshot: snapshot,
+                        });
+                      }}
+                      showBookConsultation
+                      onBookConsultation={() => handleNutritionistSelect(nutritionist)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>

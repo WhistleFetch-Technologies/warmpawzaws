@@ -345,6 +345,10 @@ export function MealProductFormModal({
         if (!Number.isFinite(n) || n < 1) err.mealsPerDayCustom = 'Enter meals per day';
       }
     }
+    const prepMins = parseInt(String(form.preparationTime).trim(), 10);
+    if (!Number.isFinite(prepMins) || prepMins < 1 || prepMins > 24 * 60) {
+      err.preparationTime = 'Prep time is required (1–1440 minutes)';
+    }
     const shelf = parseInt(form.shelfLifeDays, 10);
     if (Number.isNaN(shelf) || shelf < 1 || shelf > 365) err.shelfLifeDays = 'Shelf life must be between 1 and 365 days';
     if (form.feedingInstructions.length > FEEDING_MAX) err.feedingInstructions = `Max ${FEEDING_MAX} characters`;
@@ -359,7 +363,7 @@ export function MealProductFormModal({
   const buildPayload = (): Record<string, unknown> => {
     const price = parseFloat(form.price);
     const shelfLifeDays = parseInt(form.shelfLifeDays, 10);
-    const preparationLeadTime = parseInt(form.preparationTime, 10) || 60;
+    const preparationLeadTime = parseInt(String(form.preparationTime).trim(), 10);
 
     const subPriceRaw = form.subscriptionPrice.trim();
     const subscriptionPrice =
@@ -459,8 +463,8 @@ export function MealProductFormModal({
             {editingProduct ? 'Edit meal product' : 'Add meal product'}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Required: meal name, description, image, price, categories, pet types, ingredients, preparation type,
-            purchase options, and shelf life (days).
+            Required: meal name, description, image, price, prep time (minutes), categories, pet types, ingredients,
+            preparation type, purchase options, and shelf life (days).
           </p>
         </div>
 
@@ -566,16 +570,27 @@ export function MealProductFormModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="prep-time">
-                  Prep time (min)
+                  Prep time (min) <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="prep-time"
                   type="number"
                   min={1}
+                  max={1440}
+                  required
                   value={form.preparationTime}
                   onChange={(e) => setForm((p) => ({ ...p, preparationTime: e.target.value }))}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  className={`w-full px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 ${
+                    fieldErrors.preparationTime ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                  aria-invalid={Boolean(fieldErrors.preparationTime)}
+                  aria-describedby={fieldErrors.preparationTime ? 'prep-time-error' : undefined}
                 />
+                {fieldErrors.preparationTime ? (
+                  <p id="prep-time-error" className="text-xs text-red-600 mt-1">
+                    {fieldErrors.preparationTime}
+                  </p>
+                ) : null}
               </div>
               <div className="md:col-span-2">
                 <span className="block text-sm font-medium text-slate-700 mb-1">
