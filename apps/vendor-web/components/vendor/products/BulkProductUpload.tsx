@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
-import { apiClient as vendorApiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface BulkProductUploadProps {
@@ -45,13 +44,8 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
   const handleDownloadTemplate = async () => {
     try {
       const vendorId = localStorage.getItem('vendorId');
-      if (!vendorId) {
-        throw new Error('Vendor ID not found. Please sign in again.');
-      }
-      const blob = await vendorApiClient.getBlob(`/vendor/${vendorId}/products/bulk/template`);
-      if (!blob || blob.size < 500) {
-        throw new Error('Template file from server was empty or invalid.');
-      }
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/vendor/${vendorId}/products/bulk/template`);
+      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
