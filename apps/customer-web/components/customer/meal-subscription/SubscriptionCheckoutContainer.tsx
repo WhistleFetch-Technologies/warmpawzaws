@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Loader2, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,6 +16,13 @@ import {
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
 import { toast } from 'sonner';
 import { getMealPlanCatalogDisplay } from '@/lib/meal-plan-catalog-display';
+import {
+  vendorWeeklyDeliveryDaysFromPlan,
+  vendorQuantityDefaultFromPlan,
+  vendorLocksMealsQuantity,
+  vendorMonthlyDeliveryFrequencyFromPlan,
+} from '@/lib/meal-plan-vendor-constraints';
+import { monthlyDeliveryFrequencyCustomerLabel } from '@/lib/meal-purchase-customer';
 import { SubscriptionScheduleSelector } from './SubscriptionScheduleSelector';
 import { DeliveryDaysPicker } from './DeliveryDaysPicker';
 import { DeliverySlotPicker } from './DeliverySlotPicker';
@@ -62,7 +69,17 @@ export function SubscriptionCheckoutContainer({
     convenienceFee?: number;
     totalAmount: number;
     leadTimeHours: number;
+    subscriptionCheckout?: {
+      deliveriesPerBillingCycle: number;
+      suggestedTotalSessions: number;
+      billingCycles: number;
+      totalSessionsUsed: number;
+      packageTotalAmount: number;
+      upfrontTotalAmount: number;
+    };
   } | null>(null);
+
+  const sessionsManualRef = useRef(false);
 
   const [petId, setPetId] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -73,13 +90,34 @@ export function SubscriptionCheckoutContainer({
   const [instructions, setInstructions] = useState('');
   const [weeklyPattern, setWeeklyPattern] = useState<SubscriptionDeliveryPattern>('weekly_default');
   const [weekdays, setWeekdays] = useState<string[]>(['mon', 'wed', 'fri']);
-  const [totalSessions, setTotalSessions] = useState(purchaseType === 'MONTHLY_PLAN' ? 12 : 8);
+  /** Placeholder until meal plan loads; weekly is recomputed from vendor days × plan weeks. */
+  const [totalSessions, setTotalSessions] = useState(purchaseType === 'MONTHLY_PLAN' ? 12 : 1);
   const [autoRenew, setAutoRenew] = useState(false);
   const [monthlyMode, setMonthlyMode] = useState<'fixed_sessions' | 'recurring_monthly'>('recurring_monthly');
+
+  const vendorOfferedDays = useMemo(
+    () => (mealPlan ? vendorWeeklyDeliveryDaysFromPlan(mealPlan) : []),
+    [mealPlan],
+  );
+  const vendorConstrainsWeekly = purchaseType === 'WEEKLY_PLAN' && vendorOfferedDays.length > 0;
+  const mealsQuantityLocked = mealPlan ? vendorLocksMealsQuantity(mealPlan, purchaseType) : false;
 
   useEffect(() => {
     loadData();
   }, [phone, mealPlanId]);
+
+  useEffect(() => {
+    if (!mealPlan) return;
+    sessionsManualRef.current = false;
+    setQuantity(vendorQuantityDefaultFromPlan(mealPlan, purchaseType));
+    if (purchaseType === 'WEEKLY_PLAN') {
+      const vd = vendorWeeklyDeliveryDaysFromPlan(mealPlan);
+      if (vd.length > 0) {
+        setWeeklyPattern('specific_weekdays');
+        setWeekdays([...vd]);
+      }
+    }
+  }, [mealPlan, purchaseType]);
 
   useEffect(() => {
     if (!mealPlanId || !quantity) return;
@@ -89,6 +127,14 @@ export function SubscriptionCheckoutContainer({
     const q = new URLSearchParams();
     q.set('quantity', String(quantity));
     q.set('logisticsType', 'warmpawz');
+    q.set('totalSessions', String(Math.max(1, totalSessions)));
+    if (purchaseType === 'WEEKLY_PLAN') {
+      q.set('weekdays', weekdays.join(','));
+      q.set(
+        'weeklyPattern',
+        vendorConstrainsWeekly ? 'specific_weekdays' : weeklyPattern,
+      );
+    }
     if (addrLat != null && addrLng != null) {
       q.set('customerLat', String(addrLat));
       q.set('customerLng', String(addrLng));
@@ -99,7 +145,23 @@ export function SubscriptionCheckoutContainer({
         if (res.success) setPreview(res);
       })
       .catch(() => setPreview(null));
-  }, [mealPlanId, quantity, addressId, addresses]);
+  }, [
+    mealPlanId,
+    quantity,
+    addressId,
+    addresses,
+    totalSessions,
+    weekdays,
+    weeklyPattern,
+    purchaseType,
+    vendorConstrainsWeekly,
+  ]);
+
+  useEffect(() => {
+    const sug = preview?.subscriptionCheckout?.suggestedTotalSessions;
+    if (sug == null || !Number.isFinite(sug) || sessionsManualRef.current) return;
+    setTotalSessions(Math.max(1, Math.floor(sug)));
+  }, [preview?.subscriptionCheckout?.suggestedTotalSessions]);
 
   const loadData = async () => {
     try {
@@ -170,6 +232,8 @@ export function SubscriptionCheckoutContainer({
 
   const estimatedTotal = useMemo(() => {
     if (!preview) return 0;
+    const upfront = preview.subscriptionCheckout?.upfrontTotalAmount;
+    if (upfront != null && Number.isFinite(upfront)) return Math.round(upfront * 100) / 100;
     return Math.round(preview.totalAmount * Math.max(1, totalSessions) * 100) / 100;
   }, [preview, totalSessions]);
 
@@ -188,8 +252,11 @@ export function SubscriptionCheckoutContainer({
       toast.error('Choose a start date');
       return;
     }
-    if (weeklyPattern === 'specific_weekdays' && weekdays.length === 0) {
-      toast.error('Pick at least one weekday');
+    if (
+      (weeklyPattern === 'specific_weekdays' || vendorConstrainsWeekly) &&
+      weekdays.length === 0
+    ) {
+      toast.error('Pick at least one weekday the vendor offers');
       return;
     }
     if (pets.length > 0 && !petId) {
@@ -217,8 +284,17 @@ export function SubscriptionCheckoutContainer({
         firstDeliveryDate: startDate,
         deliveryTimeSlot: { start: slotStart, end: slotEnd },
         deliverySchedule: {
-          weeklyPattern: purchaseType === 'WEEKLY_PLAN' ? weeklyPattern : undefined,
-          weekdays: weeklyPattern === 'specific_weekdays' ? weekdays : undefined,
+          weeklyPattern:
+            purchaseType === 'WEEKLY_PLAN'
+              ? vendorConstrainsWeekly
+                ? 'specific_weekdays'
+                : weeklyPattern
+              : undefined,
+          weekdays:
+            purchaseType === 'WEEKLY_PLAN' &&
+            (weeklyPattern === 'specific_weekdays' || vendorConstrainsWeekly)
+              ? weekdays
+              : undefined,
           customerInstructions: instructions || undefined,
           monthlyMode: purchaseType === 'MONTHLY_PLAN' ? monthlyMode : undefined,
         },
@@ -304,8 +380,16 @@ export function SubscriptionCheckoutContainer({
   minDate.setTime(minDate.getTime() + leadHours * 60 * 60 * 1000);
   const minDateStr = minDate.toISOString().split('T')[0];
 
+  const vendorMonthlyFreq =
+    purchaseType === 'MONTHLY_PLAN' ? vendorMonthlyDeliveryFrequencyFromPlan(mealPlan) : null;
   const recurrenceLabel =
-    purchaseType === 'WEEKLY_PLAN' ? `Weekly · ${weeklyPattern.replace(/_/g, ' ')}` : 'Monthly recurring';
+    purchaseType === 'MONTHLY_PLAN'
+      ? vendorMonthlyFreq
+        ? `Monthly plan · ${monthlyDeliveryFrequencyCustomerLabel(vendorMonthlyFreq)}`
+        : 'Monthly recurring'
+      : vendorConstrainsWeekly
+        ? `Weekly · your days among vendor offer (${weekdays.join(', ')})`
+        : `Weekly · ${weeklyPattern.replace(/_/g, ' ')}`;
 
   return (
     <div className="min-h-screen bg-orange-50 max-w-md mx-auto pb-28">
@@ -347,11 +431,31 @@ export function SubscriptionCheckoutContainer({
           </div>
         </Card>
 
-        <SubscriptionScheduleSelector
-          purchaseType={purchaseType}
-          weeklyPattern={weeklyPattern}
-          onWeeklyPatternChange={setWeeklyPattern}
-        />
+        {purchaseType === 'WEEKLY_PLAN' && vendorConstrainsWeekly ? (
+          <div className="rounded-xl border border-orange-100 bg-orange-50/50 p-4 space-y-2">
+            <Label className="text-sm font-medium text-slate-800">Delivery days</Label>
+            <p className="text-xs text-slate-600 leading-snug">
+              This vendor only delivers on the highlighted weekdays. Choose one or more for your subscription (subset
+              is OK).
+            </p>
+            <DeliveryDaysPicker
+              selected={weekdays}
+              onChange={setWeekdays}
+              allowedKeys={vendorOfferedDays}
+            />
+          </div>
+        ) : (
+          <SubscriptionScheduleSelector
+            purchaseType={purchaseType}
+            weeklyPattern={weeklyPattern}
+            onWeeklyPatternChange={setWeeklyPattern}
+            monthlyVendorFrequencyLabel={
+              purchaseType === 'MONTHLY_PLAN' && vendorMonthlyFreq
+                ? monthlyDeliveryFrequencyCustomerLabel(vendorMonthlyFreq)
+                : null
+            }
+          />
+        )}
 
         {purchaseType === 'MONTHLY_PLAN' && (
           <div>
@@ -368,7 +472,7 @@ export function SubscriptionCheckoutContainer({
           </div>
         )}
 
-        {purchaseType === 'WEEKLY_PLAN' && weeklyPattern === 'specific_weekdays' && (
+        {purchaseType === 'WEEKLY_PLAN' && !vendorConstrainsWeekly && weeklyPattern === 'specific_weekdays' && (
           <div>
             <Label className="text-sm font-medium mb-2 block">Delivery weekdays</Label>
             <DeliveryDaysPicker selected={weekdays} onChange={setWeekdays} />
@@ -401,25 +505,39 @@ export function SubscriptionCheckoutContainer({
         )}
 
         <div>
-          <Label>Meals per delivery</Label>
+          <Label>{purchaseType === 'MONTHLY_PLAN' ? 'Meals per day' : 'Meals per delivery'}</Label>
           <Input
             type="number"
             min={1}
             max={50}
             value={quantity}
+            disabled={mealsQuantityLocked}
             onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
           />
+          {mealsQuantityLocked ? (
+            <p className="text-xs text-slate-500 mt-1">Set by the vendor for this meal plan.</p>
+          ) : (
+            <p className="text-xs text-slate-500 mt-1">Vendor allows a custom amount for this plan.</p>
+          )}
         </div>
 
         <div>
-          <Label>Total sessions (this signup)</Label>
+          <Label>Total deliveries (sessions) — this signup</Label>
           <Input
             type="number"
             min={1}
             max={500}
             value={totalSessions}
-            onChange={(e) => setTotalSessions(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            onChange={(e) => {
+              sessionsManualRef.current = true;
+              setTotalSessions(Math.max(1, parseInt(e.target.value, 10) || 1));
+            }}
           />
+          <p className="text-xs text-slate-500 mt-1 leading-snug">
+            Each session is one delivery. Total pay uses your vendor&apos;s weekly/monthly bundle price × how many billing
+            cycles those sessions span (see pricing card). Defaults come from the API from vendor cadence and recommended
+            length.
+          </p>
         </div>
 
         <AutoRenewToggle value={autoRenew} onChange={setAutoRenew} />
@@ -455,9 +573,14 @@ export function SubscriptionCheckoutContainer({
           <SubscriptionPricingBreakdown
             purchaseTypeLabel={purchaseType === 'WEEKLY_PLAN' ? 'Weekly subscription' : 'Monthly subscription'}
             billingCycleLabel={purchaseType === 'WEEKLY_PLAN' ? 'Weekly cadence' : 'Monthly cadence'}
-            perDeliveryTotal={preview.totalAmount}
-            sessions={Math.max(1, totalSessions)}
             mealsPerDelivery={quantity}
+            packageTotalOneCycle={preview.totalAmount}
+            deliveriesPerBillingCycle={
+              preview.subscriptionCheckout?.deliveriesPerBillingCycle ?? Math.max(1, totalSessions)
+            }
+            billingCycles={preview.subscriptionCheckout?.billingCycles ?? 1}
+            totalSessions={Math.max(1, totalSessions)}
+            upfrontTotal={estimatedTotal}
           />
         )}
 
@@ -465,7 +588,11 @@ export function SubscriptionCheckoutContainer({
           <UpcomingDeliveriesPreview
             firstDeliveryDate={startDate}
             purchaseType={purchaseType}
-            weeklyPattern={weeklyPattern}
+            weeklyPattern={
+              vendorConstrainsWeekly ? 'specific_weekdays' : weeklyPattern
+            }
+            weekdays={purchaseType === 'WEEKLY_PLAN' ? weekdays : undefined}
+            monthlyVendorFreq={vendorMonthlyFreq}
             previewCount={Math.min(4, Math.max(1, totalSessions))}
           />
         )}

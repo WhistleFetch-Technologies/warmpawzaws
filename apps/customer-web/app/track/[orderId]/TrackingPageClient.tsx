@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
@@ -65,6 +66,10 @@ const deliveryStatusSteps = [
 ];
 
 export function TrackingPageClient({ orderId }: { orderId: string }) {
+  const searchParams = useSearchParams();
+  const phone = searchParams.get('phone')?.trim() || undefined;
+  const from = searchParams.get('from')?.trim() || undefined;
+
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,14 +86,18 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [orderId]);
+  }, [orderId, phone]);
 
   const loadTracking = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
       
-      const result = await apiClient.get<TrackingData>(`/customer/tracking/${orderId}`);
+      const qs =
+        phone && phone.trim()
+          ? `?phone=${encodeURIComponent(phone.trim())}`
+          : '';
+      const result = await apiClient.get<TrackingData>(`/customer/tracking/${orderId}${qs}`);
       setTracking(result);
       setError(null);
     } catch (err: any) {
@@ -173,7 +182,14 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <a href="/" className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition">
+          <a
+            href={
+              from === 'meal-plans' && phone
+                ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+                : '/'
+            }
+            className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition"
+          >
             <ArrowLeft className="w-6 h-6 text-gray-700" />
           </a>
           <h1 className="text-lg font-bold text-gray-900">Track Order</h1>

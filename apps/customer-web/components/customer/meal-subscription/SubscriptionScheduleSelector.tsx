@@ -14,18 +14,31 @@ export function SubscriptionScheduleSelector({
   purchaseType,
   weeklyPattern,
   onWeeklyPatternChange,
+  monthlyVendorFrequencyLabel,
 }: {
   purchaseType: 'WEEKLY_PLAN' | 'MONTHLY_PLAN';
   weeklyPattern: SubscriptionDeliveryPattern;
   onWeeklyPatternChange: (p: SubscriptionDeliveryPattern) => void;
+  /** When set, subscription deliveries follow vendor-configured cadence (customer UI only). */
+  monthlyVendorFrequencyLabel?: string | null;
 }) {
   if (purchaseType === 'MONTHLY_PLAN') {
     return (
       <div>
-        <Label className="text-sm font-medium text-slate-800">Monthly plan</Label>
+        <Label className="text-sm font-medium text-slate-800">Monthly nutrition plan</Label>
         <p className="text-xs text-slate-500 mt-1">
-          Deliveries recur monthly on your chosen start date. Configure total sessions below (fixed pack) or rely on
-          auto-renew for ongoing service.
+          {monthlyVendorFrequencyLabel ? (
+            <>
+              Cadence matches how this vendor sells the plan:{' '}
+              <span className="font-medium text-slate-700">{monthlyVendorFrequencyLabel}</span>. Total sessions is how
+              many deliveries you pay for in this signup; auto-renew continues the same rhythm when enabled.
+            </>
+          ) : (
+            <>
+              Deliveries follow the cadence stored for this meal plan (legacy plans may use one drop per month). Configure
+              total sessions below or use auto-renew for ongoing service.
+            </>
+          )}
         </p>
       </div>
     );

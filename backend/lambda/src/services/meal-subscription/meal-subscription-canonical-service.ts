@@ -5,7 +5,12 @@
 import type { PoolClient } from 'pg';
 import { randomBytes } from 'crypto';
 import { select, query, withTransaction } from '../../database/rds-connection';
-import { parseMealCatalogDiet, normalizePurchaseType } from '../../utils/meal-purchase-metadata';
+import {
+  parseMealCatalogDiet,
+  normalizePurchaseType,
+  normalizeCatalogDeliveryDaysArray,
+  assertQuantityMatchesVendorMealsPreset,
+} from '../../utils/meal-purchase-metadata';
 import { resolveMealLineSubtotalInr } from '../../utils/meal-order-pricing';
 import type { MealSubscriptionLifecycleStatus } from '../../constants/meal-subscription-canonical';
 import { ensureRollingSessions, type SubscriptionRowForGeneration } from './meal-subscription-session-generation';
@@ -124,6 +129,8 @@ export async function createCanonicalSubscription(
 
   const vendorId = plan.vendor_id as string;
   const qty = Math.max(1, Math.min(50, Number(input.quantity) || 1));
+  assertQuantityMatchesVendorMealsPreset(diet, input.purchaseType, qty);
+
   const pricePerDelivery = resolveMealLineSubtotalInr({ subtotal: 0, quantity: qty }, plan);
   if (!pricePerDelivery || pricePerDelivery <= 0) {
     throw Object.assign(new Error('Meal plan has no valid price'), { statusCode: 400 });
@@ -140,10 +147,52 @@ export async function createCanonicalSubscription(
   const dbStatus =
     lifecycle === 'pending_payment' ? 'pending_payment' : 'active';
 
-  const weeklyDefault =
-    input.purchaseType === 'WEEKLY_PLAN'
-      ? input.deliverySchedule?.weeklyPattern ?? 'weekly_default'
+  const vendorWeeklyDayCodes = normalizeCatalogDeliveryDaysArray(diet.deliveryDays);
+
+  let weeklyPatternResolved: SubscriptionDeliveryScheduleInput['weeklyPattern'] | undefined;
+  let weekdaysResolved: string[] | undefined;
+
+  if (input.purchaseType === 'WEEKLY_PLAN') {
+    if (vendorWeeklyDayCodes.length > 0) {
+      weeklyPatternResolved = 'specific_weekdays';
+      const rawWd = input.deliverySchedule?.weekdays;
+      if (!Array.isArray(rawWd) || rawWd.length === 0) {
+        throw Object.assign(
+          new Error('Choose at least one delivery day from the days this vendor offers'),
+          { statusCode: 400 },
+        );
+      }
+      const normalized = rawWd.map((x) => String(x).toLowerCase().slice(0, 3));
+      const dedup: string[] = [];
+      for (const d of normalized) {
+        if (!vendorWeeklyDayCodes.includes(d)) {
+          throw Object.assign(new Error(`This vendor does not deliver on ${d}`), { statusCode: 400 });
+        }
+        if (!dedup.includes(d)) dedup.push(d);
+      }
+      weekdaysResolved = dedup;
+    } else {
+      weeklyPatternResolved = input.deliverySchedule?.weeklyPattern ?? 'weekly_default';
+      if (input.deliverySchedule?.weekdays?.length) {
+        weekdaysResolved = input.deliverySchedule.weekdays.map((x) =>
+          String(x).toLowerCase().slice(0, 3),
+        );
+      }
+    }
+  }
+
+  const vendorMonthlyFreq =
+    input.purchaseType === 'MONTHLY_PLAN'
+      ? String(diet.deliveryFrequency || '').toUpperCase()
+      : '';
+  const monthlyFreqStored =
+    vendorMonthlyFreq === 'DAILY' ||
+    vendorMonthlyFreq === 'ALTERNATE_DAYS' ||
+    vendorMonthlyFreq === 'TWICE_WEEKLY' ||
+    vendorMonthlyFreq === 'WEEKLY'
+      ? vendorMonthlyFreq
       : undefined;
+
   const deliveryScheduleJson = {
     cadence: frequency,
     slot: {
@@ -151,8 +200,9 @@ export async function createCanonicalSubscription(
       end: input.deliveryTimeSlot.end ?? input.deliveryTimeSlot.start,
     },
     source: 'canonical_v1',
-    ...(weeklyDefault ? { weeklyPattern: weeklyDefault } : {}),
-    ...(input.deliverySchedule?.weekdays?.length ? { weekdays: input.deliverySchedule.weekdays } : {}),
+    ...(weeklyPatternResolved ? { weeklyPattern: weeklyPatternResolved } : {}),
+    ...(weekdaysResolved?.length ? { weekdays: weekdaysResolved } : {}),
+    ...(monthlyFreqStored ? { monthlyDeliveryFrequency: monthlyFreqStored } : {}),
     ...(input.deliverySchedule?.customerInstructions
       ? { customerInstructions: input.deliverySchedule.customerInstructions }
       : {}),
@@ -179,7 +229,13 @@ export async function createCanonicalSubscription(
 
   const subscriptionNumber = shortSubscriptionNumber();
   const preferredSlotJson = JSON.stringify(deliveryScheduleJson.slot);
-  const deliveryDaysColumn = computeDeliveryDaysFromSchedule(input.deliverySchedule);
+  const scheduleForDeliveryDays: SubscriptionDeliveryScheduleInput = {
+    weeklyPattern: weeklyPatternResolved,
+    weekdays: weekdaysResolved,
+    monthlyMode: input.deliverySchedule?.monthlyMode,
+    customerInstructions: input.deliverySchedule?.customerInstructions,
+  };
+  const deliveryDaysColumn = computeDeliveryDaysFromSchedule(scheduleForDeliveryDays);
 
   let deliveriesInserted = 0;
 

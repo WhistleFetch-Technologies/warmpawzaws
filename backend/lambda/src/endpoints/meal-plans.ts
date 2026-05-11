@@ -34,7 +34,15 @@ import {
   mealPlanMatchesCustomerMealType,
   mealPlanMatchesCustomerPurpose,
 } from '../utils/meal-plan-customer-filter';
-import { normalizePurchaseType, parseMealCatalogDiet } from '../utils/meal-purchase-metadata';
+import {
+  normalizeCatalogDeliveryDaysArray,
+  normalizePurchaseType,
+  parseMealCatalogDiet,
+} from '../utils/meal-purchase-metadata';
+import {
+  billingCyclesFromSessions,
+  deliveriesPerBillingCycle,
+} from '../utils/meal-subscription-schedule-utils';
 
 async function mealOrdersTableColumns(): Promise<Set<string>> {
   try {
@@ -69,6 +77,87 @@ function parseOptionalNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function recommendedSignupWeeksFromDiet(diet: Record<string, unknown>): number {
+  const sub = diet.subscriptionConfig;
+  const raw =
+    diet.recommendedPlanLengthWeeks ??
+    (typeof sub === 'object' && sub != null && !Array.isArray(sub)
+      ? (sub as Record<string, unknown>).recommendedPlanLengthWeeks
+      : undefined);
+  const n = Number(raw);
+  if (n === 1 || n === 2 || n === 4) return n;
+  return 1;
+}
+
+function buildSubscriptionPreviewSchedule(
+  diet: Record<string, unknown>,
+  purchaseType: string,
+  q: { weekdays?: string; weeklyPattern?: string },
+): Record<string, unknown> {
+  const pt = String(purchaseType || '').toUpperCase();
+  if (pt === 'WEEKLY_PLAN') {
+    const vendor = normalizeCatalogDeliveryDaysArray(diet.deliveryDays);
+    const wdRaw = String(q.weekdays || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase().slice(0, 3))
+      .filter(Boolean);
+    const pattern = String(q.weeklyPattern || 'weekly_default').trim();
+    if (vendor.length > 0) {
+      const weekdays = wdRaw.length ? wdRaw.filter((d) => vendor.includes(d)) : [...vendor];
+      return { weeklyPattern: 'specific_weekdays', weekdays: weekdays.length ? weekdays : [...vendor] };
+    }
+    return {
+      weeklyPattern: pattern,
+      ...(wdRaw.length ? { weekdays: wdRaw } : {}),
+    };
+  }
+  const mf = String(diet.deliveryFrequency || '').toUpperCase();
+  return mf ? { monthlyDeliveryFrequency: mf } : {};
+}
+
+function subscriptionCheckoutPreviewFields(
+  plan: Record<string, unknown>,
+  quantity: number,
+  q: { weekdays?: string; weeklyPattern?: string; totalSessions?: string },
+): {
+  subtotal: number;
+  deliveriesPerBillingCycle: number;
+  suggestedTotalSessions: number;
+  billingCycles: number;
+  totalSessionsUsed: number;
+} | null {
+  const diet = parseMealCatalogDiet(plan);
+  const pt = normalizePurchaseType(diet);
+  if (pt !== 'WEEKLY_PLAN' && pt !== 'MONTHLY_PLAN') return null;
+  const sched = buildSubscriptionPreviewSchedule(diet, pt, q);
+  const dpc = deliveriesPerBillingCycle(pt, sched);
+  const weeklyEff = pt === 'WEEKLY_PLAN' ? dpc : undefined;
+  const subtotal = resolveMealPurchaseSubtotalInr(plan, quantity, {
+    weeklyEffectiveDeliveryDays: weeklyEff,
+  });
+  const recWeeks = recommendedSignupWeeksFromDiet(diet);
+  const suggested = pt === 'WEEKLY_PLAN' ? recWeeks * dpc : dpc;
+  const tsp = parseInt(String(q.totalSessions || '').trim(), 10);
+  const totalSessionsUsed =
+    Number.isFinite(tsp) && tsp >= 1 ? Math.min(500, tsp) : suggested;
+  const billingCycles = billingCyclesFromSessions(totalSessionsUsed, dpc);
+  return {
+    subtotal,
+    deliveriesPerBillingCycle: dpc,
+    suggestedTotalSessions: suggested,
+    billingCycles,
+    totalSessionsUsed,
+  };
+}
+
+function parseRequiredPrepTimeMinutes(v: unknown): { ok: true; minutes: number } | { ok: false; message: string } {
+  const n = typeof v === 'number' ? v : parseInt(String(v ?? '').trim(), 10);
+  if (!Number.isFinite(n) || n < 1) {
+    return { ok: false, message: 'prepTimeMinutes is required and must be at least 1' };
+  }
+  return { ok: true, minutes: Math.min(10080, Math.floor(n)) };
 }
 
 export function registerMealPlanEndpoints(app: Hono) {
@@ -115,6 +204,11 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: 'vendorId, name, pricePerMeal, and ingredients are required' }, 400);
       }
 
+      const prepParsed = parseRequiredPrepTimeMinutes(prepTimeMinutes);
+      if (!prepParsed.ok) {
+        return c.json({ error: prepParsed.message }, 400);
+      }
+
       // Create meal plan
       const result = await insert('meal_plans', {
         vendor_id: vendorId,
@@ -132,7 +226,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         price_per_meal: pricePerMeal,
         price_per_week: pricePerWeek,
         price_per_month: pricePerMonth,
-        prep_time_minutes: prepTimeMinutes || 60,
+        prep_time_minutes: prepParsed.minutes,
         shelf_life_days: shelfLifeDays || (mealType === 'preserved_monthly' ? 30 : 1),
         storage_instructions: storageInstructions,
         serving_instructions: servingInstructions,
@@ -189,6 +283,14 @@ export function registerMealPlanEndpoints(app: Hono) {
       if (body.allergens) updateData.allergens = body.allergens;
       if (body.availableDays) updateData.available_days = body.availableDays;
       if (body.deliverySlots) updateData.delivery_slots = JSON.stringify(body.deliverySlots);
+
+      if (updateData.prep_time_minutes !== undefined) {
+        const prepParsed = parseRequiredPrepTimeMinutes(updateData.prep_time_minutes);
+        if (!prepParsed.ok) {
+          return c.json({ error: prepParsed.message }, 400);
+        }
+        updateData.prep_time_minutes = prepParsed.minutes;
+      }
 
       await update('meal_plans', { id: planId }, updateData);
 
@@ -485,10 +587,18 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
       const plan = planRow as Record<string, unknown>;
-      const subtotal = resolveMealPurchaseSubtotalInr(plan, quantity);
-      const purchaseTypeNorm = normalizePurchaseType(parseMealCatalogDiet(plan));
+      const diet = parseMealCatalogDiet(plan);
+      const purchaseTypeNorm = normalizePurchaseType(diet);
       const purchaseCadence =
         purchaseTypeNorm === 'ONE_TIME' ? 'one_time' : purchaseTypeNorm === 'WEEKLY_PLAN' ? 'weekly' : 'monthly';
+
+      const previewQ = {
+        weekdays: c.req.query('weekdays') || undefined,
+        weeklyPattern: c.req.query('weeklyPattern') || undefined,
+        totalSessions: c.req.query('totalSessions') || undefined,
+      };
+      const subCheckout = subscriptionCheckoutPreviewFields(plan, quantity, previewQ);
+      const subtotal = subCheckout?.subtotal ?? resolveMealPurchaseSubtotalInr(plan, quantity);
 
       let deliveryFee = 0;
       let platformFee = 0;
@@ -511,6 +621,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
         const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
         if (customerLat == null || customerLng == null) {
+          const packageTotalAmount = subtotal + platformFee + convenienceFee;
+          const upfrontTotalAmount = subCheckout
+            ? Math.round(packageTotalAmount * subCheckout.billingCycles * 100) / 100
+            : packageTotalAmount;
           return c.json(
             {
               success: true,
@@ -521,8 +635,17 @@ export function registerMealPlanEndpoints(app: Hono) {
               deliveryFeePendingAddress: true,
               platformFee,
               convenienceFee,
-              totalAmount: subtotal + platformFee + convenienceFee,
+              totalAmount: packageTotalAmount,
               leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+              ...(subCheckout
+                ? {
+                    subscriptionCheckout: {
+                      ...subCheckout,
+                      packageTotalAmount,
+                      upfrontTotalAmount,
+                    },
+                  }
+                : {}),
             },
             200
           );
@@ -549,7 +672,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         deliveryFee = 0;
         platformFee = Math.round(subtotal * 0.02);
       }
-      const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
+      const packageTotalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
+      const upfrontTotalAmount = subCheckout
+        ? Math.round(packageTotalAmount * subCheckout.billingCycles * 100) / 100
+        : packageTotalAmount;
       return c.json({
         success: true,
         subtotal,
@@ -558,8 +684,17 @@ export function registerMealPlanEndpoints(app: Hono) {
         deliveryFee,
         platformFee,
         convenienceFee,
-        totalAmount,
+        totalAmount: packageTotalAmount,
         leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+        ...(subCheckout
+          ? {
+              subscriptionCheckout: {
+                ...subCheckout,
+                packageTotalAmount,
+                upfrontTotalAmount,
+              },
+            }
+          : {}),
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);

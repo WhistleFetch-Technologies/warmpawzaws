@@ -44,6 +44,9 @@ function formatDeliveryTime(slot: any): string {
 function MealPlanOrdersContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const phoneForTracking =
+    searchParams?.get('phone')?.trim() ||
+    (typeof window !== 'undefined' ? localStorage.getItem('customerPhone')?.trim() || '' : '');
   const [orders, setOrders] = useState<MealPlanOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<MealPlanOrder | null>(null);
@@ -343,7 +346,10 @@ function MealPlanOrdersContent() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      router.push(`/track/${order.id}`);
+                      const q = new URLSearchParams();
+                      q.set('from', 'meal-plans');
+                      if (phoneForTracking) q.set('phone', phoneForTracking);
+                      router.push(`/track/${order.id}?${q.toString()}`);
                     }}
                     className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
                   >

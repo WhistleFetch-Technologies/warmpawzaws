@@ -511,7 +511,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       />
 
       <div className="-mt-1 max-w-customer mx-auto">
-        {/* Meal Plan Orders; enabled on dev deploy only (runtime-config environment development) */}
+        {/* Meal Plan Orders — opens /orders/meal-plans; Track Order uses /track/:id + booking phone */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
             type="button"

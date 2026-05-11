@@ -5,6 +5,8 @@
 
 import type { PoolClient } from 'pg';
 import { DEFAULT_SESSION_HORIZON_DAYS } from '../../constants/meal-subscription-canonical';
+import { advanceDeliveryCursor, asScheduleJson } from '../../utils/meal-subscription-schedule-utils';
+import { upsertVendorMealOrderForCanonicalDelivery } from './meal-subscription-vendor-meal-order-sync';
 
 export type SubscriptionRowForGeneration = {
   id: string;
@@ -28,12 +30,6 @@ function addDays(d: Date, n: number): Date {
   return o;
 }
 
-function addMonths(d: Date, n: number): Date {
-  const o = new Date(d);
-  o.setMonth(o.getMonth() + n);
-  return o;
-}
-
 function formatYmd(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -41,72 +37,23 @@ function formatYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function asScheduleJson(v: unknown): Record<string, unknown> | null {
-  if (!v) return null;
-  if (typeof v === 'string') {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
+/** Ensures each session lands on a strictly later calendar day (avoids duplicate vendor drops). */
+function nextDeliveryCursorStrictAfter(
+  prev: Date,
+  purchaseType: string,
+  scheduleJson: Record<string, unknown> | null,
+): Date {
+  let next = advanceDeliveryCursor(prev, purchaseType, scheduleJson);
+  let guard = 0;
+  while (formatYmd(next) <= formatYmd(prev) && guard < 62) {
+    next = addDays(next, 1);
+    guard++;
   }
-  if (typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
-  return null;
+  return next;
 }
 
-/** Next delivery instant after the given calendar day (exclusive advance from last session date). */
-export function advanceDeliveryCursor(
-  cursor: Date,
-  purchaseType: string,
-  schedule: Record<string, unknown> | null,
-): Date {
-  const pt = String(purchaseType || '').toUpperCase();
-  if (pt === 'MONTHLY_PLAN') {
-    return addMonths(cursor, 1);
-  }
-  const sch = schedule || {};
-  const pattern = String(sch.weeklyPattern || 'weekly_default');
-  if (pattern === 'everyday') {
-    return addDays(cursor, 1);
-  }
-  if (pattern === 'alternate_days') {
-    return addDays(cursor, 2);
-  }
-  if (pattern === 'weekdays_only') {
-    let d = addDays(cursor, 1);
-    for (let i = 0; i < 14; i++) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) return d;
-      d = addDays(d, 1);
-    }
-    return addDays(cursor, 1);
-  }
-  if (pattern === 'specific_weekdays') {
-    const raw = Array.isArray(sch.weekdays) ? sch.weekdays : [];
-    const map: Record<string, number> = {
-      sun: 0,
-      mon: 1,
-      tue: 2,
-      wed: 3,
-      thu: 4,
-      fri: 5,
-      sat: 6,
-    };
-    const targets = raw
-      .map((x) => map[String(x).toLowerCase().slice(0, 3)])
-      .filter((n) => n !== undefined) as number[];
-    if (!targets.length) {
-      return addDays(cursor, 7);
-    }
-    let d = addDays(cursor, 1);
-    for (let i = 0; i < 21; i++) {
-      if (targets.includes(d.getDay())) return d;
-      d = addDays(d, 1);
-    }
-    return addDays(cursor, 7);
-  }
-  return addDays(cursor, 7);
-}
+/** Re-export for callers that imported from this module. */
+export { advanceDeliveryCursor } from '../../utils/meal-subscription-schedule-utils';
 
 function defaultSlotFromSchedule(schedule: Record<string, unknown> | null): Record<string, string> {
   if (schedule && typeof schedule.slot === 'object' && schedule.slot !== null && !Array.isArray(schedule.slot)) {
@@ -141,6 +88,9 @@ export async function ensureRollingSessions(
   const scheduleJson = asScheduleJson(sub.delivery_schedule_json);
   const slot = defaultSlotFromSchedule(scheduleJson);
 
+  const fullSubRes = await client.query(`SELECT * FROM meal_subscriptions WHERE id = $1 LIMIT 1`, [sub.id]);
+  const fullSubRow = fullSubRes.rows?.[0] as Record<string, unknown> | undefined;
+
   const maxRes = await client.query(
     `SELECT COALESCE(MAX(session_number), 0)::int AS mx,
             MAX(delivery_date)::text AS max_d
@@ -161,7 +111,7 @@ export async function ensureRollingSessions(
         : addDays(new Date(), 1);
   } else if (maxDelivery) {
     const md = toDateOnly(maxDelivery);
-    cursor = advanceDeliveryCursor(md, purchaseType, scheduleJson);
+    cursor = nextDeliveryCursorStrictAfter(md, purchaseType, scheduleJson);
   } else {
     cursor = addDays(new Date(), 1);
   }
@@ -192,9 +142,21 @@ export async function ensureRollingSessions(
        RETURNING id`,
       [sub.id, sessionNumber, ymd, JSON.stringify(slot)],
     );
-    if (ins.rowCount && ins.rowCount > 0) inserted += 1;
+    if (ins.rowCount && ins.rowCount > 0) {
+      inserted += 1;
+      const newDeliveryId = ins.rows[0]?.id as string | undefined;
+      if (newDeliveryId && fullSubRow) {
+        await upsertVendorMealOrderForCanonicalDelivery(client, {
+          subscription: fullSubRow,
+          canonicalDeliveryId: newDeliveryId,
+          sessionNumber,
+          deliveryYmd: ymd,
+          slot,
+        });
+      }
+    }
 
-    cursor = advanceDeliveryCursor(cursor, purchaseType, scheduleJson);
+    cursor = nextDeliveryCursorStrictAfter(cursor, purchaseType, scheduleJson);
   }
 
   if (inserted === 0 || !lastDateStr) {

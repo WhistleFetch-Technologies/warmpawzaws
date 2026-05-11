@@ -100,16 +100,11 @@ function isProductionEnvironment(): boolean {
 }
 
 /**
- * Meal plan orders & tracking (My Bookings): enabled on dev deploy (`runtime-config` environment development),
- * localhost, and dev CloudFront; disabled when runtime-config marks production.
+ * Meal plan orders hub under My Bookings + `/track/:orderId` (hyperlocal delivery UI).
+ * Uses GET /customer/meal-plan-orders and GET /customer/tracking/:id — enabled in all environments.
  */
 export function isCustomerWebDevMealPlanOrdersEnabled(): boolean {
-  if (typeof window !== 'undefined') {
-    const env = getRuntimeConfig().environment;
-    if (env === 'production') return false;
-    if (env === 'development') return true;
-  }
-  return !isProductionEnvironment();
+  return true;
 }
 
 /**

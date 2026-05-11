@@ -3,17 +3,23 @@
 export function SubscriptionPricingBreakdown({
   purchaseTypeLabel,
   billingCycleLabel,
-  perDeliveryTotal,
-  sessions,
   mealsPerDelivery,
+  packageTotalOneCycle,
+  deliveriesPerBillingCycle,
+  billingCycles,
+  totalSessions,
+  upfrontTotal,
 }: {
   purchaseTypeLabel: string;
   billingCycleLabel: string;
-  perDeliveryTotal: number;
-  sessions: number;
   mealsPerDelivery: number;
+  /** One billing cycle (e.g. one week / one month bundle) incl. fees — from order-preview. */
+  packageTotalOneCycle: number;
+  deliveriesPerBillingCycle: number;
+  billingCycles: number;
+  totalSessions: number;
+  upfrontTotal: number;
 }) {
-  const estimated = Math.round(perDeliveryTotal * sessions * 100) / 100;
   return (
     <div className="rounded-xl border border-slate-100 bg-white p-4 space-y-2 text-sm">
       <h3 className="font-semibold text-slate-900">Subscription pricing</h3>
@@ -30,20 +36,29 @@ export function SubscriptionPricingBreakdown({
         <span className="font-medium text-slate-900">{mealsPerDelivery}</span>
       </div>
       <div className="flex justify-between text-slate-600">
-        <span>Est. per delivery (incl. fees)</span>
-        <span className="font-medium text-slate-900">₹{perDeliveryTotal}</span>
+        <span>One cycle total (incl. fees)</span>
+        <span className="font-medium text-slate-900">₹{packageTotalOneCycle}</span>
       </div>
       <div className="flex justify-between text-slate-600">
-        <span>Total sessions (this signup)</span>
-        <span className="font-medium text-slate-900">{sessions}</span>
+        <span>Deliveries per cycle</span>
+        <span className="font-medium text-slate-900">{deliveriesPerBillingCycle}</span>
+      </div>
+      <div className="flex justify-between text-slate-600">
+        <span>Billing cycles (this signup)</span>
+        <span className="font-medium text-slate-900">{billingCycles}</span>
+      </div>
+      <div className="flex justify-between text-slate-600">
+        <span>Total delivery sessions</span>
+        <span className="font-medium text-slate-900">{totalSessions}</span>
       </div>
       <div className="flex justify-between pt-2 border-t border-slate-100 font-semibold text-slate-900">
         <span>Estimated upfront total</span>
-        <span>₹{estimated}</span>
+        <span>₹{upfrontTotal}</span>
       </div>
       <p className="text-xs text-slate-500">
-        Razorpay will charge this estimate for your initial subscription payment. Renewals may differ slightly if fees
-        change.
+        The catalog price is a weekly or monthly bundle (not per single meal). Upfront = one cycle total × billing
+        cycles, where cycles are derived from your session count and vendor cadence. Razorpay charges this estimate now;
+        renewals may differ if fees change.
       </p>
     </div>
   );

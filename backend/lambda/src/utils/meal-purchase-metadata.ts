@@ -83,3 +83,79 @@ export function deliveryDaysCount(diet: Record<string, unknown>): number {
   if (!Array.isArray(days) || days.length === 0) return 0;
   return days.filter((d) => typeof d === 'string' && d.trim()).length;
 }
+
+const ORDERED_DAY_CODES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+/** Maps vendor catalog values (e.g. MONDAY) to short codes used by subscription/session code. */
+export function normalizeCatalogDeliveryDaysArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const upperMap: Record<string, string> = {
+    MONDAY: 'mon',
+    TUESDAY: 'tue',
+    WEDNESDAY: 'wed',
+    THURSDAY: 'thu',
+    FRIDAY: 'fri',
+    SATURDAY: 'sat',
+    SUNDAY: 'sun',
+  };
+  const found = new Set<string>();
+  for (const item of raw) {
+    const s = String(item || '').trim();
+    if (!s) continue;
+    const u = s.toUpperCase();
+    let code = upperMap[u];
+    if (!code) {
+      const low = s.toLowerCase().slice(0, 3);
+      if ((ORDERED_DAY_CODES as readonly string[]).includes(low)) code = low;
+    }
+    if (code) found.add(code);
+  }
+  return ORDERED_DAY_CODES.filter((d) => found.has(d));
+}
+
+/** Validates subscription quantity matches vendor meal catalog preset (non-CUSTOM). */
+export function assertQuantityMatchesVendorMealsPreset(
+  diet: Record<string, unknown>,
+  purchaseType: 'WEEKLY_PLAN' | 'MONTHLY_PLAN',
+  qty: number,
+): void {
+  if (purchaseType === 'WEEKLY_PLAN') {
+    const preset = String(diet.mealsPerDeliveryPreset || '').toUpperCase();
+    if (preset === 'CUSTOM') {
+      const customRaw = diet.mealsPerDeliveryCustom;
+      const n = typeof customRaw === 'number' ? customRaw : parseInt(String(customRaw || '').trim(), 10);
+      if (!Number.isFinite(n) || n < 1) {
+        throw Object.assign(new Error('Meal plan custom meals-per-delivery is invalid'), { statusCode: 400 });
+      }
+      if (qty !== Math.min(50, n)) {
+        throw Object.assign(new Error(`Meals per delivery must be ${n} for this meal plan`), { statusCode: 400 });
+      }
+      return;
+    }
+    const expected = resolveMealsPerDeliveryFromDiet(diet);
+    if (qty !== expected) {
+      throw Object.assign(new Error(`Meals per delivery must be ${expected} for this meal plan`), {
+        statusCode: 400,
+      });
+    }
+    return;
+  }
+
+  const preset = String(diet.mealsPerDayPreset || '').trim();
+  if (preset === 'CUSTOM') {
+    const n = parseInt(String(diet.mealsPerDayCustom || '').trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      throw Object.assign(new Error('Meal plan custom meals-per-day is invalid'), { statusCode: 400 });
+    }
+    if (qty !== Math.min(50, n)) {
+      throw Object.assign(new Error(`Meals per day must be ${n} for this meal plan`), { statusCode: 400 });
+    }
+    return;
+  }
+  const expected = resolveMonthlyMealsPerDayFromDiet(diet);
+  if (qty !== expected) {
+    throw Object.assign(new Error(`Meals per delivery must be ${expected} for this monthly plan`), {
+      statusCode: 400,
+    });
+  }
+}

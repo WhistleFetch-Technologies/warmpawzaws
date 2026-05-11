@@ -1,8 +1,5 @@
 import { Apple, Calendar, Heart, UtensilsCrossed, type LucideIcon } from "lucide-react";
 
-/** When true, meal-plan UIs are non-interactive and show a coming-soon state (customer + vendor). */
-export const MEAL_PLANS_COMING_SOON = false;
-
 export type NutritionServiceTypeCard = {
     icon: LucideIcon;
     label: string;

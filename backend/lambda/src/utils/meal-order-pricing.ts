@@ -35,7 +35,11 @@ export function mealPlanUnitPriceInr(plan: Record<string, unknown> | null | unde
  * WEEKLY_PLAN: (per-delivery price × deliveries/week) × qty — first billing cycle estimate
  * MONTHLY_PLAN: (per-day price × 30) × qty — monthly estimate
  */
-export function resolveMealPurchaseSubtotalInr(plan: Record<string, unknown> | null | undefined, quantity: number): number {
+export function resolveMealPurchaseSubtotalInr(
+  plan: Record<string, unknown> | null | undefined,
+  quantity: number,
+  opts?: { weeklyEffectiveDeliveryDays?: number },
+): number {
   if (!plan) return 0;
   const qty = Math.max(1, Math.floor(quantity || 1));
   const diet = parseMealCatalogDiet(plan);
@@ -49,7 +53,11 @@ export function resolveMealPurchaseSubtotalInr(plan: Record<string, unknown> | n
   const subPrice = safeMoney(diet.subscriptionPrice);
 
   if (pt === 'WEEKLY_PLAN') {
-    const deliveries = Math.max(1, deliveryDaysCount(diet));
+    let deliveries = Math.max(1, deliveryDaysCount(diet));
+    const eff = opts?.weeklyEffectiveDeliveryDays;
+    if (eff != null && Number.isFinite(eff) && eff >= 1) {
+      deliveries = Math.min(7, Math.floor(eff));
+    }
     const mpd = resolveMealsPerDeliveryFromDiet(diet);
     const perDelivery = subPrice > 0 ? subPrice : roundMoney(baseUnit * mpd);
     const weekly = roundMoney(perDelivery * deliveries);

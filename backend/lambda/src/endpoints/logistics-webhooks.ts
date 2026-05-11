@@ -1105,6 +1105,31 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
   // ============================================================================
   // CUSTOMER TRACKING ENDPOINT
   // ============================================================================
+
+  function normalizeTrackingPhoneDigits(p: string | undefined | null): string {
+    if (!p) return '';
+    let d = String(p).replace(/\D/g, '');
+    if (d.length > 10 && d.startsWith('91')) d = d.slice(-10);
+    else if (d.length > 10) d = d.slice(-10);
+    return d;
+  }
+
+  async function assertCustomerOwnsOrderForTracking(order: any, queryPhone: string | undefined): Promise<boolean> {
+    if (!queryPhone?.trim()) return true;
+    const want = normalizeTrackingPhoneDigits(queryPhone);
+    if (!want) return true;
+    const candidates = [order.customer_phone, order.shipping_phone, order.phone, order.customerPhone].map((x) =>
+      normalizeTrackingPhoneDigits(x),
+    );
+    if (candidates.some((c) => c && c === want)) return true;
+    const cid = order.customer_id;
+    if (cid) {
+      const r = await query(`SELECT phone FROM customers WHERE id = $1 LIMIT 1`, [cid]).catch(() => ({ rows: [] }));
+      const ph = normalizeTrackingPhoneDigits(r.rows[0]?.phone);
+      if (ph && ph === want) return true;
+    }
+    return false;
+  }
   
   /**
    * GET /customer/tracking/:orderId
@@ -1129,6 +1154,10 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       
       if (result.rows.length > 0) {
         order = result.rows[0];
+        const ot = String(order.order_type || '').toLowerCase();
+        if (ot === 'meal_plan_delivery' || ot === 'nutrition_delivery') {
+          orderType = 'meal';
+        }
       } else {
         // Check pharmacy orders
         result = await query(
@@ -1156,8 +1185,8 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         return c.json({ error: 'Order not found' }, 404);
       }
 
-      // Security: verify phone if provided
-      if (phone && order.customer_phone !== phone) {
+      const authorized = await assertCustomerOwnsOrderForTracking(order, phone);
+      if (!authorized) {
         return c.json({ error: 'Unauthorized' }, 403);
       }
 
@@ -1211,11 +1240,10 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           } : null,
         });
       } else {
-        // Pharmacy/Meal - Get delivery tracking
-        const column = orderType === 'pharmacy' ? 'pharmacy_order_id' : 'meal_order_id';
-        
-        const tracking = await query(
-          `SELECT dt.*,
+        // Pharmacy/Meal - Get delivery tracking (meal: meal_orders.id OR subscription_delivery_id)
+        const trackingSql =
+          orderType === 'pharmacy'
+            ? `SELECT dt.*,
                   COALESCE(
                     json_agg(
                       json_build_object(
@@ -1228,14 +1256,32 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                   ) as location_history
            FROM delivery_tracking dt
            LEFT JOIN delivery_location_history dlh ON dt.id = dlh.tracking_id
-           WHERE dt.${column} = $1
+           WHERE dt.pharmacy_order_id::text = $1
            GROUP BY dt.id
            ORDER BY dt.created_at DESC
-           LIMIT 1`,
-          [order.id]
-        );
+           LIMIT 1`
+            : `SELECT dt.*,
+                  COALESCE(
+                    json_agg(
+                      json_build_object(
+                        'lat', dlh.lat,
+                        'lng', dlh.lng,
+                        'time', dlh.recorded_at
+                      ) ORDER BY dlh.recorded_at DESC
+                    ) FILTER (WHERE dlh.id IS NOT NULL),
+                    '[]'
+                  ) as location_history
+           FROM delivery_tracking dt
+           LEFT JOIN delivery_location_history dlh ON dt.id = dlh.tracking_id
+           WHERE dt.meal_order_id::text = $1 OR dt.subscription_delivery_id::text = $1
+           GROUP BY dt.id
+           ORDER BY dt.created_at DESC
+           LIMIT 1`;
+
+        const tracking = await query(trackingSql, [order.id]).catch(() => ({ rows: [] }));
 
         const deliveryTracking = tracking.rows[0];
+        const displayStatus = order.status ?? order.order_status ?? 'pending';
 
         return c.json({
           success: true,
@@ -1244,7 +1290,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             id: order.id,
             order_number: order.order_number || order.id?.toString().slice(-8),
             orderNumber: order.order_number || order.id?.toString().slice(-8),
-            status: order.status,
+            status: displayStatus,
             total: order.total_amount,
             total_amount: order.total_amount,
             createdAt: order.created_at,

@@ -21,6 +21,12 @@ const FREQ_LABEL: Record<string, string> = {
   WEEKLY: 'Once a week',
 };
 
+/** Vendor catalog `deliveryFrequency` (monthly nutrition plans). */
+export function monthlyDeliveryFrequencyCustomerLabel(code: string): string {
+  const u = String(code || '').toUpperCase();
+  return FREQ_LABEL[u] || 'Recurring deliveries';
+}
+
 export function normalizeCustomerPurchaseType(diet: Record<string, unknown>): CustomerPurchaseType {
   const p = String(diet.purchaseType || '').toUpperCase();
   if (p === 'WEEKLY_PLAN' || p === 'MONTHLY_PLAN' || p === 'ONE_TIME') return p as CustomerPurchaseType;
