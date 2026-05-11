@@ -26,6 +26,12 @@ import {
   NetworkState,
   QueuedRequest,
 } from './network-resilience';
+import {
+  VendorSessionStorageKeys,
+  clearVendorSession,
+  getValidVendorAccessToken,
+  refreshVendorTokens,
+} from '../services/auth-session';
 
 // ============================================================================
 // CONFIGURATION
@@ -36,9 +42,9 @@ const API_BASE_URL = __DEV__
   ? 'https://dev.api.warmpawz.com' 
   : 'https://api.warmpawz.com';
 
-const AUTH_TOKEN_KEY = '@warmpawz_vendor_auth_token';
-const VENDOR_ID_KEY = '@warmpawz_vendor_id';
-const VENDOR_PHONE_KEY = '@warmpawz_vendor_phone';
+const AUTH_TOKEN_KEY = VendorSessionStorageKeys.legacyAuthToken;
+const VENDOR_ID_KEY = VendorSessionStorageKeys.legacyVendorId;
+const VENDOR_PHONE_KEY = VendorSessionStorageKeys.legacyVendorPhone;
 
 // Operations that should be queued when offline
 const OFFLINE_QUEUEABLE_METHODS = ['POST', 'PUT', 'DELETE'];
@@ -106,10 +112,16 @@ class VendorApiClient {
 
   private async loadStoredData(): Promise<void> {
     try {
-      [this.authToken, this.vendorId] = await Promise.all([
+      // Prefer the centralized session manager (handles silent refresh + 90-day
+      // window). Fall back to the legacy slot so older installs still resume.
+      const [sessionToken, legacyToken, legacyVendorId, plainVendorId] = await Promise.all([
+        getValidVendorAccessToken().catch(() => null),
         AsyncStorage.getItem(AUTH_TOKEN_KEY),
         AsyncStorage.getItem(VENDOR_ID_KEY),
+        AsyncStorage.getItem(VendorSessionStorageKeys.legacyVendorIdPlain),
       ]);
+      this.authToken = sessionToken || legacyToken || null;
+      this.vendorId = legacyVendorId || plainVendorId || null;
     } catch (error) {
       console.error('Error loading stored data:', error);
     }
@@ -121,12 +133,16 @@ class VendorApiClient {
     await AsyncStorage.multiSet([
       [AUTH_TOKEN_KEY, token],
       [VENDOR_ID_KEY, vendorId],
+      [VendorSessionStorageKeys.legacyVendorIdPlain, vendorId],
     ]);
   }
 
   async setVendorId(vendorId: string): Promise<void> {
     this.vendorId = vendorId;
-    await AsyncStorage.setItem(VENDOR_ID_KEY, vendorId);
+    await AsyncStorage.multiSet([
+      [VENDOR_ID_KEY, vendorId],
+      [VendorSessionStorageKeys.legacyVendorIdPlain, vendorId],
+    ]);
   }
 
   getVendorId(): string | null {
@@ -136,7 +152,8 @@ class VendorApiClient {
   async clearAuthData(): Promise<void> {
     this.authToken = null;
     this.vendorId = null;
-    await AsyncStorage.multiRemove([AUTH_TOKEN_KEY, VENDOR_ID_KEY, VENDOR_PHONE_KEY]);
+    // Full logout — drop *every* persisted slot.
+    await clearVendorSession();
   }
 
   // ============================================================================
@@ -153,17 +170,28 @@ class VendorApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    queueIfOffline = true
+    queueIfOffline = true,
+    isRetry = false,
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const method = options.method || 'GET';
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    if (this.authToken) {
-      headers['Authorization'] = `Bearer ${this.authToken}`;
+    // Always grab the freshest token from the session manager so we benefit
+    // from silent refresh on every request (90-day window).
+    let authToken: string | null = null;
+    try {
+      authToken = await getValidVendorAccessToken();
+    } catch {
+      authToken = null;
+    }
+    if (!authToken) authToken = this.authToken;
+    if (authToken) {
+      this.authToken = authToken;
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
 
     const finalOptions: RequestInit = {
@@ -177,6 +205,21 @@ class VendorApiClient {
     try {
       const response = await resilientFetch(url, finalOptions);
       const data = await response.json();
+
+      if (response.status === 401 && !isRetry) {
+        // Token might be stale — try silent refresh and retry once. We do NOT
+        // clear the session here: `refreshVendorTokens` clears it only when the
+        // refresh token is conclusively rejected.
+        try {
+          const renewed = await refreshVendorTokens();
+          if (renewed?.accessToken) {
+            this.authToken = renewed.accessToken;
+            return this.request<T>(endpoint, options, queueIfOffline, true);
+          }
+        } catch {
+          /* fall through */
+        }
+      }
 
       if (!response.ok) {
         throw new ApiError(
@@ -192,7 +235,7 @@ class VendorApiClient {
       if (error instanceof NetworkError && error.type === 'offline') {
         if (queueIfOffline && this.shouldQueueOffline(method, endpoint)) {
           console.log(`[VendorApiClient] Queueing offline request: ${method} ${endpoint}`);
-          
+
           await offlineQueue.enqueue({
             url,
             method,
@@ -207,7 +250,7 @@ class VendorApiClient {
             message: 'Request queued for when network is available',
           } as unknown as T;
         }
-        
+
         throw new ApiError(
           'You are offline. Please check your network connection.',
           0,
@@ -215,9 +258,20 @@ class VendorApiClient {
         );
       }
 
-      // Handle auth errors
-      if (error instanceof NetworkError && error.statusCode === 401) {
-        await this.clearAuthData();
+      // Handle auth errors. We try a silent refresh, but never clear the
+      // session for transient/network 401s — only when refreshVendorTokens
+      // itself returns null after a server-confirmed rejection (it clears the
+      // session internally in that case).
+      if (error instanceof NetworkError && error.statusCode === 401 && !isRetry) {
+        try {
+          const renewed = await refreshVendorTokens();
+          if (renewed?.accessToken) {
+            this.authToken = renewed.accessToken;
+            return this.request<T>(endpoint, options, queueIfOffline, true);
+          }
+        } catch {
+          /* fall through */
+        }
         throw new ApiError('Session expired. Please log in again.', 401, { sessionExpired: true });
       }
 

@@ -179,8 +179,16 @@ async function postRefreshToken(refreshToken: string, priorTokens: CognitoTokens
       if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
         console.warn('[customer-auth] refresh failed:', res.status, reason);
       }
-      clearCognitoTokens();
-      return { kind: 'failed_refresh', tokens: null };
+      // Only drop credentials when the server CONCLUSIVELY rejects the refresh
+      // token (4xx auth failure). For 5xx / 429 / proxy errors keep the session
+      // so backend deploys, restarts and transient outages don't log the user
+      // out — the next API call will retry refresh transparently.
+      const isAuthFailure = res.status === 400 || res.status === 401 || res.status === 403;
+      if (isAuthFailure) {
+        clearCognitoTokens();
+        return { kind: 'failed_refresh', tokens: null };
+      }
+      return { kind: 'failed_network', tokens: null };
     }
 
     const newAccess = data.accessToken;

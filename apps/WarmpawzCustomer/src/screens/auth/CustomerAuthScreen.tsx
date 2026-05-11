@@ -34,6 +34,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { useScreenTopInset } from '../../components/layout/ScreenShell';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerApi, ApiService } from '../../services/api';
+import { saveCustomerLoginResponse } from '../../services/auth-session';
 
 interface CustomerAuthScreenProps {
   onAuthSuccess: (session: any) => void;
@@ -230,30 +231,76 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     try {
       const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
 
-      const data = (await CustomerApi.verifyOtp(cleanPhone, otpCode, referralCode || undefined)) as {
-        sessionToken?: string;
-        customer: { id: string; onboardingComplete: boolean; petIds?: string[] };
-        isNewUser?: boolean;
-      };
+      // The Lambda response shape (see VerifyOtpHandlerEnhanced) is the
+      // canonical one: { success, data: { token: { access_token, id_token,
+      // refresh_token, expires_in }, user, profile, state } }. We accept any
+      // wrapping (response.data.data, response.data, or response) to stay
+      // resilient to envelopes added by API Gateway/Hono.
+      const apiResponse = (await CustomerApi.verifyOtp(
+        cleanPhone,
+        otpCode,
+        referralCode || undefined
+      )) as any;
+
       if (referralCode?.trim()) {
         await AsyncStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
 
-      if (data.sessionToken) {
-        await ApiService.saveSessionToken(data.sessionToken);
-      }
+      const responseData = apiResponse?.data?.data || apiResponse?.data || apiResponse;
+      const userBlock =
+        responseData?.user ||
+        responseData?.profile ||
+        responseData?.customer ||
+        apiResponse?.user ||
+        apiResponse?.customer ||
+        {};
 
-      const hasCompletedOnboarding = data.customer.onboardingComplete;
-      const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
+      const customerId: string | undefined =
+        userBlock?.id || userBlock?.customerId || userBlock?.customer_id;
+      const onboardingComplete: boolean =
+        userBlock?.onboardingComplete === true ||
+        userBlock?.onboarding_complete === true ||
+        userBlock?.profile_completed === true ||
+        userBlock?.profile_complete === true ||
+        userBlock?.onboarding_status === 'COMPLETED' ||
+        userBlock?.onboardingStatus === 'COMPLETED';
+      const petIds: string[] | undefined = userBlock?.petIds || userBlock?.pet_ids;
+      const hasPets = Array.isArray(petIds) && petIds.length > 0;
+      const isNewUser: boolean =
+        apiResponse?.isNewUser === true ||
+        responseData?.isNewUser === true ||
+        responseData?.state === 'new';
+
+      // Persist the *full* token bundle so the next cold start can restore
+      // the session and so silent refresh stays usable for 90 days.
+      const stored = await saveCustomerLoginResponse(apiResponse, {
+        phone: cleanPhone,
+        isNewLogin: true,
+        isNewUser,
+        hasCompletedOnboarding: onboardingComplete,
+        hasPets,
+      });
+
+      const accessTokenForSession =
+        stored?.accessToken ||
+        responseData?.token?.access_token ||
+        responseData?.sessionToken ||
+        apiResponse?.sessionToken;
+
+      // Keep the legacy single-key slot in sync as well (older code paths
+      // such as background uploaders read it directly).
+      if (accessTokenForSession) {
+        await ApiService.saveSessionToken(accessTokenForSession);
+      }
 
       onAuthSuccess({
         phone: cleanPhone,
-        customerId: data.customer.id,
-        customer: data.customer,
-        sessionToken: data.sessionToken,
+        customerId: customerId || stored?.customerId,
+        customer: userBlock,
+        sessionToken: accessTokenForSession,
         verified: true,
-        isNewUser: data.isNewUser,
-        hasCompletedOnboarding,
+        isNewUser,
+        hasCompletedOnboarding: onboardingComplete,
         hasPets,
       });
 

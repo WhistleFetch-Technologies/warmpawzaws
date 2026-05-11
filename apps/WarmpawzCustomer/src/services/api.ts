@@ -9,6 +9,12 @@ import { API_BASE_URL } from '../config/aws';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resilientFetch, NetworkMonitor, NetworkError, OfflineQueue } from '../lib/network-resilience';
 import NetInfo from '@react-native-community/netinfo';
+import {
+  CustomerSessionStorageKeys,
+  clearCustomerSession,
+  getValidCustomerAccessToken,
+  refreshCustomerTokens,
+} from './auth-session';
 
 // Validate API Base URL is configured. Warn only on truly broken values
 // (empty, or vanity DNS that does not resolve in production).
@@ -16,7 +22,7 @@ if (!API_BASE_URL || /(\.|^)(dev\.)?api\.warmpawz\.com/i.test(API_BASE_URL)) {
   console.warn('⚠️ API_BASE_URL is not properly configured. Set AWS_API_GATEWAY_URL or EXPO_PUBLIC_API_GATEWAY_URL to the resolvable HTTP API URL (e.g. https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com).');
 }
 
-const SESSION_TOKEN_KEY = 'warmpawz_session_token';
+const SESSION_TOKEN_KEY = CustomerSessionStorageKeys.legacySessionToken;
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -45,17 +51,46 @@ export class ApiService {
   }
 
   private static async getAuthHeaders(): Promise<Record<string, string>> {
-    const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    // Prefer the session manager so calls get a freshly-refreshed access
+    // token whenever the previous one is close to expiry. Falls back to the
+    // legacy single-key slot (kept in sync by saveCustomerLoginResponse) so
+    // partial logins / legacy flows continue working.
+    let token: string | null = null;
+    try {
+      token = await getValidCustomerAccessToken();
+    } catch {
+      /* swallow — fall through to legacy slot */
+    }
+    if (!token) {
+      token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    }
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
     };
   }
 
+  /**
+   * Resolve a 401 by trying the refresh token once. Returns `true` when the
+   * caller should retry the original request with a fresh Authorization
+   * header. Returns `false` for transient failures (we keep the session) and
+   * also `false` when the refresh token is conclusively rejected — in that
+   * case the session manager has already cleared storage.
+   */
+  private static async tryRefreshOn401(): Promise<boolean> {
+    try {
+      const renewed = await refreshCustomerTokens();
+      return !!renewed?.accessToken;
+    } catch {
+      return false;
+    }
+  }
+
   private static async handleRequest<T>(
     endpoint: string,
     options: RequestInit,
-    retryConfig?: Partial<import('../lib/network-resilience').RetryConfig>
+    retryConfig?: Partial<import('../lib/network-resilience').RetryConfig>,
+    retried401 = false
   ): Promise<T> {
     // Ensure initialized
     if (!this.initialized) {
@@ -90,12 +125,19 @@ export class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-        
-        // Handle 401 by clearing token
-        if (response.status === 401) {
-          await this.clearSessionToken();
+
+        // 90-day persistent login: on 401 we *first* try the refresh token.
+        // We only drop tokens when the refresh endpoint conclusively rejects
+        // them (see refreshCustomerTokens()) — never on a single bad request.
+        if (response.status === 401 && !retried401) {
+          const refreshed = await this.tryRefreshOn401();
+          if (refreshed) {
+            return this.handleRequest<T>(endpoint, options, retryConfig, true);
+          }
+          // No refresh available / network blip — leave the stored session
+          // alone so the next call can try again instead of forcing logout.
         }
-        
+
         // Check if retryable
         const retryableStatusCodes = retryConfig?.retryableStatusCodes || [408, 429, 500, 502, 503, 504];
         if (retryableStatusCodes.includes(response.status)) {
@@ -164,15 +206,25 @@ export class ApiService {
   }
 
   static async saveSessionToken(token: string) {
+    // Keep the legacy single-key slot in sync. The structured session bundle
+    // is written by saveCustomerLoginResponse() from auth-session.ts during
+    // OTP / password login.
     await AsyncStorage.setItem(SESSION_TOKEN_KEY, token);
   }
 
+  /**
+   * Full logout — only call from an explicit user action (e.g. Settings → Log
+   * out). API request failures should NEVER call this directly; the 401
+   * handler in handleRequest already takes care of recovering via refresh.
+   */
   static async clearSessionToken() {
-    await AsyncStorage.removeItem(SESSION_TOKEN_KEY);
+    await clearCustomerSession();
   }
 
   static async getSessionToken(): Promise<string | null> {
-    return await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    const fresh = await getValidCustomerAccessToken();
+    if (fresh) return fresh;
+    return AsyncStorage.getItem(SESSION_TOKEN_KEY);
   }
 }
 
