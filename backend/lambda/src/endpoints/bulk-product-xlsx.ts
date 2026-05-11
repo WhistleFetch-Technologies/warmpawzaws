@@ -1,28 +1,29 @@
 /**
- * XLSX bulk product template (styled) and parser for vendor bulk upload.
- *
- * Google Sheets rejects many ExcelJS outputs that use data validation, huge empty
- * styled ranges, or certain freeze-pane XML — keep the template simple for import.
+ * XLSX bulk product template — aligned with reference “15 Furries-Dog Dress” / NPI layout.
+ * Sheet name: **NPI**. Hidden **Lists** sheet holds dropdown source ranges (Google Sheets–safe).
  */
 
 import ExcelJS from 'exceljs';
 
-const SHEET_NAME = 'Products';
+/** Matches reference workbook primary sheet name */
+export const SHEET_NAME = 'NPI';
 
-/** Row 2 headers (display); * = required in validate/upload */
+const LISTS_SHEET = 'Lists';
+
+/** 46 columns: reference A–AS plus Stock Quantity* after Shelf Life (required by bulk validate). */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
   'Key Features',
   'Benefits',
-  'Unique Selling Proposition',
+  'Unique Selling Propositions',
   'Brand',
   'Type (Category)',
   'Size (Variant)',
   'Colour',
   'Flavours',
   'Ingredients',
-  'Serving or Feeding',
+  'Serving or Feeding Recommendations',
   'Barcode (EAN)',
   'Image (1000X1000px)',
   'A+ Content',
@@ -44,15 +45,15 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Category L4',
   'Category L5',
   'HSN',
-  'Certificate of Auth',
+  'Certficate of Authenticity',
   'Vendor Product Id',
   'Country of Origin',
   'Marketed By',
   'Manufactured By',
   'Imported By',
-  'Product Length in cm',
-  'Product Breadth cm',
-  'Product Height in cm',
+  'Product Lenght in cm or inches',
+  'Product Breadth cm or inches',
+  'Product Height in cm or inches',
   'Length(mm)',
   'Breadth(mm)',
   'Height(mm)',
@@ -66,7 +67,6 @@ const YELLOW: Fill = {
   pattern: 'solid',
   fgColor: { argb: 'FFFFFF00' },
 };
-/** Row 2 column headers — light orange/peach (screenshot) */
 const HEADER_ROW_FILL: Fill = {
   type: 'pattern',
   pattern: 'solid',
@@ -110,70 +110,28 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
   right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
 };
 
-/** Merged row-1 groups: startCol, endCol (1-based), title, fill */
+/** Row 1 merges — 46-column layout (reference + Stock column). */
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
-  { start: 1, end: 4, title: 'Product Details', fill: YELLOW },
-  { start: 5, end: 13, title: 'Product Information', fill: YELLOW },
+  { start: 1, end: 13, title: 'Product Details', fill: YELLOW },
   { start: 14, end: 16, title: 'Picture Information', fill: PINK },
   { start: 17, end: 19, title: 'Other Product Details', fill: PURPLE },
   { start: 20, end: 23, title: 'Pricing Details', fill: PINK },
-  { start: 24, end: 32, title: 'Product Brief', fill: GREEN },
-  { start: 33, end: 35, title: 'Vendor / Origin', fill: LIGHT_ORANGE },
-  { start: 36, end: 38, title: 'Manufacture Details', fill: LIGHT_ORANGE },
-  { start: 39, end: 41, title: 'Product Dimension', fill: BLUE },
-  { start: 42, end: 46, title: 'Shipping Dimensions (courier)', fill: TAN },
+  { start: 24, end: 34, title: 'Product Brief', fill: GREEN },
+  { start: 35, end: 39, title: 'Manufacture Details', fill: LIGHT_ORANGE },
+  { start: 40, end: 42, title: 'Product Dimension', fill: BLUE },
+  {
+    start: 43,
+    end: 46,
+    title: 'Shipping Dimensions- for Courier charges',
+    fill: TAN,
+  },
 ];
 
-const WRAP_COL_INDEXES = new Set([3, 4, 15, 16]); // Key Features, Benefits, A+, Size Chart (1-based)
+/** Columns (1-based) that wrap like the reference */
+const WRAP_COL_INDEXES = new Set([3, 4, 15, 16]);
 
-const SAMPLE_ROW: string[] = [
-  'Smiling Sunflower Dog Dress',
-  'Bright, happy, and full of joy - smiley flower print.',
-  'Design: Smiling Flower\nFabric: Cotton Rayon Blend\nOpening: Drawstrings\nSleeve: Sleeveless',
-  '',
-  'Dog Dress',
-  '15 FURRIES',
-  'Dogs-Clothing & Accessories',
-  '',
-  'Multicolour',
-  '',
-  '',
-  '',
-  '',
-  'https://drive.google.com/drive/folders/1baR14I-IeqXJC4XZu7SYOlu-rprHvfmB',
-  '',
-  '',
-  '150',
-  'g',
-  'NA',
-  '100',
-  '799',
-  '999',
-  '',
-  'Dogs',
-  'Non-Food',
-  '',
-  '',
-  '',
-  '',
-  '5%',
-  '',
-  '',
-  '12052000',
-  '',
-  '',
-  'India',
-  'Petfully Yours Pvt Ltd',
-  'Apparo Lifestyle Pvt Ltd, Mumbai',
-  '',
-  '35',
-  '25',
-  '1',
-  '33',
-  '27',
-  '2',
-  '250 grams',
-];
+const STATIC_PET_TYPES = ['Dogs', 'Cats', 'Small Pets', 'Birds', 'Fish'];
+const STATIC_TAX_LABELS = ['0%', '5%', '12%', '18%', '28%'];
 
 function colLetter(n: number): string {
   let s = '';
@@ -186,13 +144,134 @@ function colLetter(n: number): string {
   return s;
 }
 
-export async function buildBulkProductTemplateBuffer(): Promise<Buffer> {
+function buildSampleRow(sampleCategory: string): string[] {
+  const cat = sampleCategory || 'Pet Accessories';
+  return [
+    'Smiling Sunflower Dog Dress',
+    'Bright, happy, and full of joy — smiley flower print.',
+    'Design: Smiling Flower\nFabric: Cotton Rayon Blend\nOpening: Drawstrings\nSleeve: Sleeveless',
+    '',
+    'Dog Dress',
+    '15 FURRIES',
+    'Dogs-Clothing & Accessories',
+    '',
+    'Multicolour',
+    '',
+    '',
+    '',
+    '',
+    'https://drive.google.com/drive/folders/1baR14I-IeqXJC4XZu7SYOlu-rprHvfmB',
+    '',
+    '',
+    '150',
+    'g',
+    'NA',
+    '100',
+    '799',
+    '1598',
+    '',
+    'Dogs',
+    cat,
+    '',
+    '',
+    '',
+    '',
+    '5%',
+    '',
+    '',
+    '62052000',
+    '',
+    '',
+    'India',
+    'Petfully Yours Pvt Ltd',
+    'Apparo Lifestyle Pvt Ltd. 205, A wing, Vasupujya Estate, Goregaon West, Mumbai 400104',
+    '',
+    '35',
+    '25',
+    '1',
+    '33',
+    '27',
+    '3',
+    '250 grams',
+  ];
+}
+
+function addListValidations(
+  ws: ExcelJS.Worksheet,
+  categoryCount: number,
+  petRows: number,
+  taxRows: number
+): void {
+  const dv = (
+    ws as ExcelJS.Worksheet & {
+      dataValidations: { add: (range: string, opts: object) => void };
+    }
+  ).dataValidations;
+
+  const catEnd = Math.max(1, categoryCount);
+  const petEnd = Math.max(1, petRows);
+  const taxEnd = Math.max(1, taxRows);
+
+  const catRange = `'${LISTS_SHEET}'!$A$1:$A$${catEnd}`;
+  const petRange = `'${LISTS_SHEET}'!$B$1:$B$${petEnd}`;
+  const taxRange = `'${LISTS_SHEET}'!$C$1:$C$${taxEnd}`;
+
+  // G = Type (Category), Y = Category — same DB-driven list
+  for (const col of ['G', 'Y']) {
+    dv.add(`${col}3:${col}500`, {
+      type: 'list',
+      allowBlank: true,
+      formulae: [catRange],
+    });
+  }
+
+  dv.add(`X3:X500`, {
+    type: 'list',
+    allowBlank: true,
+    formulae: [petRange],
+  });
+
+  dv.add(`AC3:AC500`, {
+    type: 'list',
+    allowBlank: true,
+    formulae: [taxRange],
+  });
+}
+
+/**
+ * @param categoryNames deduped display names from ecommerce_categories (active).
+ */
+export async function buildBulkProductTemplateBuffer(categoryNames: string[]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
+
   const ws = wb.addWorksheet(SHEET_NAME);
 
+  const listWs = wb.addWorksheet(LISTS_SHEET, {
+    state: 'hidden',
+  });
+
+  const cats = categoryNames.filter(Boolean);
+  if (cats.length === 0) {
+    listWs.getCell(1, 1).value = '(No categories — add in Admin)';
+  } else {
+    cats.forEach((name, i) => {
+      listWs.getCell(i + 1, 1).value = name;
+    });
+  }
+
+  STATIC_PET_TYPES.forEach((p, i) => {
+    listWs.getCell(i + 1, 2).value = p;
+  });
+  STATIC_TAX_LABELS.forEach((t, i) => {
+    listWs.getCell(i + 1, 3).value = t;
+  });
+
   ws.getRow(1).height = 30;
-  ws.getRow(2).height = 36;
-  ws.getRow(3).height = 72;
+  ws.getRow(2).height = 38;
+  ws.getRow(3).height = 80;
+
+  const sampleCategory = cats[0] || 'Pet Accessories';
+  const SAMPLE_ROW = buildSampleRow(sampleCategory);
 
   for (const g of ROW1_GROUPS) {
     ws.mergeCells(`${colLetter(g.start)}1:${colLetter(g.end)}1`);
@@ -212,7 +291,8 @@ export async function buildBulkProductTemplateBuffer(): Promise<Buffer> {
     cell.fill = HEADER_ROW_FILL as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border = THIN_BORDER as ExcelJS.Borders;
-    ws.getColumn(c).width = c === 3 || c === 4 ? 30 : c === 14 ? 38 : c === 2 ? 34 : 14;
+    ws.getColumn(c).width =
+      c === 1 ? 52 : c === 3 || c === 4 ? 32 : c === 14 ? 40 : c === 2 ? 36 : 13;
   });
 
   SAMPLE_ROW.forEach((v, i) => {
@@ -227,11 +307,17 @@ export async function buildBulkProductTemplateBuffer(): Promise<Buffer> {
     cell.border = THIN_BORDER as ExcelJS.Borders;
   });
 
+  addListValidations(
+    ws,
+    cats.length > 0 ? cats.length : 1,
+    STATIC_PET_TYPES.length,
+    STATIC_TAX_LABELS.length
+  );
+
   const buf = await wb.xlsx.writeBuffer({ useSharedStrings: true });
   return Buffer.from(buf);
 }
 
-/** Normalize header label for field mapping (matches CSV path). */
 export function normalizeBulkHeader(raw: string): string {
   return raw
     .replace(/\u00a0/g, ' ')
@@ -243,7 +329,6 @@ export function normalizeBulkHeader(raw: string): string {
     .replace(/[()]/g, '');
 }
 
-/** Map normalized header -> internal product key (or alias consumed later). */
 export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   name: 'name',
   productname: 'name',
@@ -252,6 +337,7 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   desc: 'description',
   keyfeatures: 'key_features',
   benefits: 'benefits',
+  uniquesellingpropositions: 'usp',
   uniquesellingproposition: 'usp',
   category: 'category',
   categoryname: 'category',
@@ -300,9 +386,14 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   categoryl5: 'category_l5',
   colour: 'colour',
   flavours: 'flavours',
+  servingorfeedingrecommendations: 'serving',
   servingorfeeding: 'serving',
+  certficateofauthenticity: 'certificate',
+  productlenghtincmorinches: 'dim_len_cm',
   productlengthincm: 'dim_len_cm',
+  productbreadthcmorinches: 'dim_breadth_cm',
   productbreadthcm: 'dim_breadth_cm',
+  productheightincmorinches: 'dim_height_cm',
   productheightincm: 'dim_height_cm',
   lengthmm: 'ship_len_mm',
   breadthmm: 'ship_breadth_mm',
@@ -317,6 +408,10 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
 function cellText(cell: ExcelJS.Cell): string {
   const v = cell.value;
   if (v === null || v === undefined) return '';
+  if (typeof v === 'object' && v !== null && 'hyperlink' in v) {
+    const h = v as ExcelJS.CellHyperlinkValue;
+    return String(h.text ?? h.hyperlink ?? '');
+  }
   if (typeof v === 'object' && v !== null && 'richText' in v) {
     const rt = (v as { richText?: Array<{ text: string }> }).richText;
     if (Array.isArray(rt)) return rt.map((t) => t.text).join('');
@@ -330,8 +425,11 @@ function cellText(cell: ExcelJS.Cell): string {
 
 function parseGstPercent(raw: string): number | null {
   const s = raw.trim().replace(/%/g, '');
-  const n = parseFloat(s);
+  let n = parseFloat(s);
   if (isNaN(n)) return null;
+  if (n > 0 && n <= 1 && !raw.includes('%')) {
+    n = Math.round(n * 10000) / 100;
+  }
   return n;
 }
 
@@ -344,16 +442,16 @@ function extraTags(parts: string[]): string {
   return parts.map((p) => p.trim()).filter(Boolean).join(', ');
 }
 
-/**
- * Parse uploaded workbook: row 1 = groups, row 2 = headers, row 3+ = data.
- */
 export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
   headers: string[];
   products: Record<string, unknown>[];
 }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf as unknown as ExcelJS.Buffer);
-  const ws = wb.getWorksheet(SHEET_NAME) || wb.worksheets[0];
+  const ws =
+    wb.getWorksheet(SHEET_NAME) ||
+    wb.getWorksheet('Products') ||
+    wb.worksheets[0];
   if (!ws) {
     throw new Error('Workbook has no worksheets');
   }
@@ -390,21 +488,16 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
       if (!bag[internalKey]) bag[internalKey] = v;
     }
 
-    const name =
-      bag.name ||
-      bag.title ||
-      '';
+    const name = bag.name || '';
     const description = mergeDescriptionParts(
       bag.description || '',
       bag.key_features || '',
       bag.benefits || ''
     );
-    const category = bag.category?.trim() || bag.category_type?.trim() || '';
+    const category =
+      bag.category?.trim() || bag.category_type?.trim() || '';
     const sku =
-      bag.sku?.trim() ||
-      bag.sku_barcode?.trim() ||
-      bag.vendor_product_id?.trim() ||
-      '';
+      bag.sku?.trim() || bag.sku_barcode?.trim() || bag.vendor_product_id?.trim() || '';
     const priceRaw = bag.price || '';
     const stockRaw = bag.stock_quantity || '';
     const compareRaw = bag.compare_at_price || '';
@@ -414,7 +507,7 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     const dimParts = [
       bag.dimensions_variant,
       bag.dim_len_cm && bag.dim_breadth_cm && bag.dim_height_cm
-        ? `${bag.dim_len_cm}x${bag.dim_breadth_cm}x${bag.dim_height_cm} cm`
+        ? `${bag.dim_len_cm}x${bag.dim_breadth_cm}x${bag.dim_height_cm}`
         : '',
       bag.ship_len_mm && bag.ship_breadth_mm && bag.ship_height_mm
         ? `ship ${bag.ship_len_mm}x${bag.ship_breadth_mm}x${bag.ship_height_mm} mm`
@@ -425,6 +518,7 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
 
     const tagPieces = extraTags([
       bag.usp,
+      bag.certificate,
       bag.pet_type,
       bag.sub_category,
       bag.breed_name,
@@ -448,16 +542,16 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (description) product.description = description;
     if (category) product.category = category;
     if (sku) product.sku = sku;
-    if (priceRaw) product.price = parseFloat(priceRaw.replace(/,/g, ''));
-    if (compareRaw) product.compare_at_price = parseFloat(compareRaw.replace(/,/g, ''));
-    if (stockRaw) product.stock_quantity = parseFloat(stockRaw.replace(/,/g, ''));
+    if (priceRaw) product.price = parseFloat(String(priceRaw).replace(/,/g, ''));
+    if (compareRaw) product.compare_at_price = parseFloat(String(compareRaw).replace(/,/g, ''));
+    if (stockRaw) product.stock_quantity = parseFloat(String(stockRaw).replace(/,/g, ''));
     if (bag.hsn_code) product.hsn_code = bag.hsn_code.trim();
     if (gstRaw) {
       const g = parseGstPercent(gstRaw);
       if (g !== null) product.gst_rate = g;
     }
     if (weightRaw) {
-      const w = parseFloat(weightRaw.replace(/,/g, ''));
+      const w = parseFloat(String(weightRaw).replace(/,/g, ''));
       if (!isNaN(w)) product.weight = w;
     }
     if (dimensions) product.dimensions = dimensions;

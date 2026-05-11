@@ -352,8 +352,8 @@ export class ApiClient {
   }
 
   /**
-   * GET binary responses (e.g. bulk product XLSX). Same base URL and auth as JSON requests.
-   * Avoids relative `/api/...` which breaks on static-export vendor hosting (no API rewrite).
+   * GET binary (e.g. bulk XLSX template). Uses API Gateway base URL + auth — not relative `/api`,
+   * which fails on static-export vendor hosting.
    */
   async getBlob(endpoint: string): Promise<Blob> {
     const resolvedBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
@@ -364,7 +364,7 @@ export class ApiClient {
       const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
       await refreshVendorTokensIfNeeded();
     } catch {
-      // Same as request(): never block download on refresh failure
+      /* non-blocking */
     }
 
     const token = this.getAuthToken();
@@ -372,12 +372,8 @@ export class ApiClient {
       Accept:
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
     };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    if (UAT_MODE) {
-      headers['X-UAT-Mode'] = 'true';
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (UAT_MODE) headers['X-UAT-Mode'] = 'true';
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);

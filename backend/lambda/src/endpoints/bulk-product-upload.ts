@@ -52,7 +52,20 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
   app.get('/vendor/:vendorId/products/bulk/template', async (c) => {
     void c.req.param('vendorId');
-    const buf = await buildBulkProductTemplateBuffer();
+    const catResult = await query(
+      `SELECT name FROM ecommerce_categories WHERE is_active = true ORDER BY display_order NULLS LAST, name ASC`
+    );
+    const seen = new Set<string>();
+    const categoryNames: string[] = [];
+    for (const row of catResult.rows as { name: string }[]) {
+      const n = String(row.name ?? '').trim();
+      if (!n) continue;
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      categoryNames.push(n);
+    }
+    const buf = await buildBulkProductTemplateBuffer(categoryNames);
     return c.body(new Uint8Array(buf), 200, {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="product_upload_template.xlsx"',
@@ -93,7 +106,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
       // Get valid categories
       const categories = await select('ecommerce_categories', { is_active: true });
-      const validCategories = new Set(categories.map((c: any) => c.name?.toLowerCase()));
+      const validCategories = new Set(
+        categories.map((c: any) => String(c.name ?? '').trim().toLowerCase()).filter(Boolean)
+      );
 
       products.forEach((product: any, index: number) => {
         const rowNum = index + 1;
@@ -143,6 +158,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         if (product.weight !== undefined && product.weight !== null) {
           if (isNaN(Number(product.weight)) || Number(product.weight) < 0) {
             rowErrors.push({ row: rowNum, field: 'weight', message: 'Invalid weight', value: product.weight });
+          }
+        }
+
+        if (product.category && String(product.category).trim()) {
+          const cn = String(product.category).trim().toLowerCase();
+          if (!validCategories.has(cn)) {
+            rowErrors.push({
+              row: rowNum,
+              field: 'category',
+              message: 'Category must match an active catalog category',
+              value: product.category,
+            });
           }
         }
 
@@ -564,7 +591,6 @@ function escapeCsvValue(value: any): string {
   return str;
 }
 
-/** Align XLSX parser output with CSV row shape for validate/upload. */
 function normalizeParsedProductRow(raw: Record<string, unknown>): Record<string, any> {
   const product: Record<string, any> = { ...raw };
   if (product.is_active !== undefined && typeof product.is_active !== 'boolean') {
