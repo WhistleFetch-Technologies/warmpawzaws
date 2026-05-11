@@ -9,11 +9,14 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
  * React Native host activity. In-app safe areas use the JS `ScreenShell` component and `SafeAreaProvider`.
  *
  * **Razorpay standard checkout:** `RazorpayCheckout.open()` starts `com.razorpay.CheckoutActivity`.
- * That UI is not a React child, so JS `ScreenShell` does not apply. We pass `theme.hide_topbar=true`
- * from JS (see `applyWarmpawzCustomerToRazorpayOptions`) so Razorpay drops its tall orange merchant
- * toolbar; the manifest applies `AppTheme.RazorpayCheckout`: white opaque status bar with dark icons,
- * `windowLayoutInDisplayCutoutMode=never` (notch), and on API 35+ `windowOptOutEdgeToEdgeEnforcement`
- * so Razorpay's WebView lays out cleanly below the status bar.
+ * That UI is not a React child, so JS `ScreenShell` does not apply. The manifest applies
+ * `AppTheme.RazorpayCheckout` (white opaque status bar with dark icons,
+ * `windowLayoutInDisplayCutoutMode=never` for notch handling, and on API 35+
+ * `windowOptOutEdgeToEdgeEnforcement`). Razorpay's CheckoutActivity overrides those values at
+ * runtime from `theme.color`, so `RazorpayCheckoutWindowInsetsCallback` in `MainApplication.kt`
+ * re-applies WHITE statusBarColor + light-status-bar appearance after Razorpay's onCreate. Net
+ * result: the orange merchant toolbar (back button + "Warmpawz") sits cleanly below the system
+ * status bar instead of bleeding under it.
  */
 class MainActivity : ReactActivity() {
 

@@ -3,8 +3,10 @@ package com.warmpawz.customer
 import android.app.Activity
 import android.app.Application
 import android.app.Application.ActivityLifecycleCallbacks
+import android.graphics.Color
 import android.os.Bundle
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -64,10 +66,18 @@ class MainApplication : Application(), ReactApplication {
 
 /**
  * Razorpay Standard Checkout runs in [com.razorpay.CheckoutActivity], not in React Native.
- * Themes on that activity help, but their WebView chrome can still draw under the status bar.
- * Forcing decor to fit system windows applies top padding at the window level so Razorpay's
- * WebView (with `theme.hide_topbar=true` from JS) starts cleanly below the system status bar
- * (pairs with [AppTheme.RazorpayCheckout] in styles.xml — white status bar, dark icons).
+ *
+ * Razorpay's CheckoutActivity reads `theme.color` from the JS payload at runtime and overrides
+ * (a) `window.statusBarColor` to that brand color and (b) `setDecorFitsSystemWindows(window, false)`
+ * so the colored toolbar bleeds into the status bar (this is what makes our `← W Warmpawz`
+ * header render on top of the system clock / battery icons on Android).
+ *
+ * The XML theme alone (white statusBarColor + windowLightStatusBar=true + fitsSystemWindows=true
+ * in [AppTheme.RazorpayCheckout]) is not enough because Razorpay's runtime calls happen AFTER the
+ * theme is applied. We re-apply our preferences in onActivityCreated AND onActivityResumed AND in
+ * a posted runnable so that we win the last write — yielding the same look as the BHIVE / Razorpay
+ * reference design: white system status bar with dark icons, merchant toolbar starting cleanly
+ * below it.
  */
 private class RazorpayCheckoutWindowInsetsCallback : ActivityLifecycleCallbacks {
 
@@ -91,12 +101,18 @@ private class RazorpayCheckoutWindowInsetsCallback : ActivityLifecycleCallbacks 
 
   private fun applyIfRazorpayCheckout(activity: Activity) {
     if (activity.javaClass.name != CHECKOUT_CLASS) return
+    forceWhiteStatusBarBelowDecor(activity)
+    activity.window.decorView.post {
+      if (activity.isFinishing || activity.javaClass.name != CHECKOUT_CLASS) return@post
+      forceWhiteStatusBarBelowDecor(activity)
+    }
+  }
+
+  private fun forceWhiteStatusBarBelowDecor(activity: Activity) {
     val window = activity.window
     WindowCompat.setDecorFitsSystemWindows(window, true)
-    window.decorView.post {
-      if (activity.isFinishing || activity.javaClass.name != CHECKOUT_CLASS) return@post
-      WindowCompat.setDecorFitsSystemWindows(activity.window, true)
-    }
+    window.statusBarColor = Color.WHITE
+    WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
   }
 
   companion object {
