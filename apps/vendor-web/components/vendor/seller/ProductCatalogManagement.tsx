@@ -4,10 +4,12 @@ import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
-  Check, AlertCircle, Image as ImageIcon, MapPin, RefreshCcw
+  Check, AlertCircle, Image as ImageIcon, MapPin,   RefreshCcw,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -87,6 +89,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
@@ -180,24 +183,40 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-end gap-3">
+      <div className="flex flex-wrap justify-end items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3 mr-1 sm:mr-3">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2 px-5 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingProduct(null);
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            Add Product
+          </button>
+        </div>
+        <span
+          className="hidden sm:block h-9 w-px shrink-0 bg-slate-200 self-center"
+          aria-hidden
+        />
         <button
-          onClick={handleRefresh}
-          disabled={refreshing || loading}
-          className="flex items-center gap-2 px-5 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          type="button"
+          onClick={() => setShowBulkUpload(true)}
+          className="flex items-center gap-2 px-5 py-3 border border-orange-500 text-orange-600 rounded-xl font-semibold hover:bg-orange-50 transition-all"
         >
-          <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-        <button
-          onClick={() => {
-            setEditingProduct(null);
-            setShowAddModal(true);
-          }}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          Add Product
+          <FileSpreadsheet className="w-5 h-5" />
+          Bulk Upload
         </button>
       </div>
 
@@ -397,6 +416,16 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           }}
         />
       )}
+
+      <BulkProductUpload
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        vendorId={sellerId}
+        onSuccess={() => {
+          setShowBulkUpload(false);
+          loadProducts();
+        }}
+      />
     </div>
   );
 }

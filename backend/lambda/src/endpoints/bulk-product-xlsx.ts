@@ -1,6 +1,21 @@
 /**
- * XLSX bulk product template — aligned with reference “15 Furries-Dog Dress” / NPI layout.
- * Sheet name: **NPI**. Hidden **Lists** sheet holds dropdown source ranges (Google Sheets–safe).
+ * XLSX bulk product template — based on the “15 Furries-Dog Dress” / NPI reference,
+ * extended with a `Quantity*` column inside **Product Details** so vendors can ship
+ * sellable rows in one upload. Single visible sheet (`NPI`), inline data validation
+ * lists (Google-Sheets compatible), one demo row pre-filled with valid values.
+ *
+ * 46-column layout (1-based):
+ *   A–N  (1–14)  Product Details                      ← Title*, …, Barcode (EAN), Quantity*
+ *   O–Q  (15–17) Picture Information                  ← Image*, A+ Content, Size Chart
+ *   R–T  (18–20) Other Product Details                ← Weight, Weight Unit, Shelf Life
+ *   U–W  (21–23) Pricing Details                      ← SP*, MRP, COGS
+ *   X–AH (24–34) Product Brief                        ← Pet Type, Category*, …, Tax*, …, HSN*, Cert
+ *   AI–AM(35–39) Manufacture Details
+ *   AN–AP(40–42) Product Dimension                    ← Length/Breadth/Height (cm)
+ *   AQ–AT(43–46) Shipping Dimensions + Casepack Vol.
+ *
+ * Required (`*`) columns enforced by `bulk-product-upload.ts` validator:
+ *   Title*, Quantity*, Image*, SP*, Category*, Tax*, HSN*
  */
 
 import ExcelJS from 'exceljs';
@@ -8,10 +23,9 @@ import ExcelJS from 'exceljs';
 /** Matches reference workbook primary sheet name */
 export const SHEET_NAME = 'NPI';
 
-const LISTS_SHEET = 'Lists';
-
-/** 46 columns: reference A–AS plus Stock Quantity* after Shelf Life (required by bulk validate). */
+/** 46 columns. Compulsory ones carry a `*` suffix in the visible header. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
+  // Product Details (A–N, 14 cols)
   'Title*',
   'Description',
   'Key Features',
@@ -25,83 +39,82 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Ingredients',
   'Serving or Feeding Recommendations',
   'Barcode (EAN)',
-  'Image (1000X1000px)',
+  'Quantity*',
+  // Picture Information (O–Q, 3 cols)
+  'Image (1000X1000px)*',
   'A+ Content',
   'Size Chart',
+  // Other Product Details (R–T, 3 cols)
   'Weight',
   'Weight Unit(g)',
   'Shelf Life (Days)',
-  'Stock Quantity*',
+  // Pricing Details (U–W, 3 cols)
   'SP*',
   'MRP',
   'COGS',
+  // Product Brief (X–AH, 11 cols)
   'Pet Type',
-  'Category',
+  'Category*',
   'Sub Category',
   'Breed Name',
   'Breed Size',
   'Life Stage',
-  'Tax',
+  'Tax*',
   'Category L4',
   'Category L5',
-  'HSN',
+  'HSN*',
   'Certficate of Authenticity',
+  // Manufacture Details (AI–AM, 5 cols)
   'Vendor Product Id',
   'Country of Origin',
   'Marketed By',
   'Manufactured By',
   'Imported By',
+  // Product Dimension (AN–AP, 3 cols)
   'Product Lenght in cm or inches',
   'Product Breadth cm or inches',
   'Product Height in cm or inches',
+  // Shipping Dimensions (AQ–AT, 4 cols)
   'Length(mm)',
   'Breadth(mm)',
   'Height(mm)',
   'Casepack Volume',
 ];
 
+/** Column letters for the seven mandatory inputs — used for validation DV ranges. */
+const REQUIRED_COL_LETTERS = {
+  TITLE: 'A',
+  QUANTITY: 'N',
+  IMAGE: 'O',
+  TYPE_CATEGORY: 'G',
+  PET_TYPE: 'X',
+  CATEGORY: 'Y',
+  TAX: 'AD',
+  HSN: 'AG',
+  SP: 'U',
+} as const;
+
 type Fill = ExcelJS.Fill;
 
-const YELLOW: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFFFFF00' },
-};
 const HEADER_ROW_FILL: Fill = {
   type: 'pattern',
   pattern: 'solid',
   fgColor: { argb: 'FFF9CB9C' },
 };
-const LIGHT_ORANGE: Fill = {
+/** Required-column header gets a slightly stronger orange so vendors spot the `*` columns. */
+const HEADER_REQUIRED_FILL: Fill = {
   type: 'pattern',
   pattern: 'solid',
-  fgColor: { argb: 'FFF8CBAD' },
+  fgColor: { argb: 'FFF4A460' },
 };
-const PINK: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFFFC7CE' },
-};
-const PURPLE: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFE2D5F1' },
-};
-const GREEN: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFC6E0B4' },
-};
-const BLUE: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFBDD7EE' },
-};
-const TAN: Fill = {
-  type: 'pattern',
-  pattern: 'solid',
-  fgColor: { argb: 'FFF4E0C8' },
-};
+
+const YELLOW: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+const PINK: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+const PURPLE: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2D5F1' } };
+const LIGHT_ORANGE: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8CBAD' } };
+const GREEN: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
+const BLUE: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
+const TAN: Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4E0C8' } };
 
 const THIN_BORDER: Partial<ExcelJS.Borders> = {
   top: { style: 'thin', color: { argb: 'FFAAAAAA' } },
@@ -110,169 +123,167 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
   right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
 };
 
-/** Row 1 merges — 46-column layout (reference + Stock column). */
+/** Row 1 merged group titles — 46-column layout (Quantity added to Product Details). */
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
-  { start: 1, end: 13, title: 'Product Details', fill: YELLOW },
-  { start: 14, end: 16, title: 'Picture Information', fill: PINK },
-  { start: 17, end: 19, title: 'Other Product Details', fill: PURPLE },
-  { start: 20, end: 23, title: 'Pricing Details', fill: PINK },
+  { start: 1, end: 14, title: 'Product Details', fill: YELLOW },
+  { start: 15, end: 17, title: 'Picture Information', fill: PINK },
+  { start: 18, end: 20, title: 'Other Product Details', fill: PURPLE },
+  { start: 21, end: 23, title: 'Pricing Details', fill: PINK },
   { start: 24, end: 34, title: 'Product Brief', fill: GREEN },
   { start: 35, end: 39, title: 'Manufacture Details', fill: LIGHT_ORANGE },
   { start: 40, end: 42, title: 'Product Dimension', fill: BLUE },
-  {
-    start: 43,
-    end: 46,
-    title: 'Shipping Dimensions- for Courier charges',
-    fill: TAN,
-  },
+  { start: 43, end: 46, title: 'Shipping Dimensions- for Courier charges', fill: TAN },
 ];
 
-/** Columns (1-based) that wrap like the reference */
+/** Wide free-text columns that should wrap. */
 const WRAP_COL_INDEXES = new Set([3, 4, 15, 16]);
 
 const STATIC_PET_TYPES = ['Dogs', 'Cats', 'Small Pets', 'Birds', 'Fish'];
 const STATIC_TAX_LABELS = ['0%', '5%', '12%', '18%', '28%'];
 
-function colLetter(n: number): string {
-  let s = '';
-  let x = n;
-  while (x > 0) {
-    const r = (x - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    x = Math.floor((x - 1) / 26);
-  }
-  return s;
-}
+/**
+ * Built-in fallback so the template still has a useful Category dropdown even if
+ * the DB returns nothing (network blip, fresh stage, etc.). Keep aligned with
+ * the seed data in `admin-advanced.ts` (`Pet Food`, `Pet Accessories`, …).
+ */
+const DEFAULT_CATEGORIES = [
+  'Pet Food',
+  'Pet Accessories',
+  'Pet Toys',
+  'Pet Grooming',
+  'Pet Health',
+  'Pet Beds & Furniture',
+  'Pet Clothing',
+  'Pet Travel',
+  'Pet Pharmacy',
+  'Pet Training',
+];
 
+/**
+ * One fully-valid demo row covering every required (`*`) field plus a few
+ * optional ones — gives vendors a copy-pasteable example of correct values.
+ */
 function buildSampleRow(sampleCategory: string): string[] {
   const cat = sampleCategory || 'Pet Accessories';
   return [
-    'Smiling Sunflower Dog Dress',
-    'Bright, happy, and full of joy — smiley flower print.',
-    'Design: Smiling Flower\nFabric: Cotton Rayon Blend\nOpening: Drawstrings\nSleeve: Sleeveless',
-    '',
-    'Dog Dress',
-    '15 FURRIES',
-    'Dogs-Clothing & Accessories',
-    '',
-    'Multicolour',
-    '',
-    '',
-    '',
-    '',
-    'https://drive.google.com/drive/folders/1baR14I-IeqXJC4XZu7SYOlu-rprHvfmB',
-    '',
-    '',
-    '150',
-    'g',
-    'NA',
-    '100',
-    '799',
-    '1598',
-    '',
-    'Dogs',
-    cat,
-    '',
-    '',
-    '',
-    '',
-    '5%',
-    '',
-    '',
-    '62052000',
-    '',
-    '',
-    'India',
-    'Petfully Yours Pvt Ltd',
-    'Apparo Lifestyle Pvt Ltd. 205, A wing, Vasupujya Estate, Goregaon West, Mumbai 400104',
-    '',
-    '35',
-    '25',
-    '1',
-    '33',
-    '27',
-    '3',
-    '250 grams',
+    // Product Details
+    'Smiling Sunflower Dog Dress',                                  // 1  Title*
+    'Bright, happy, and full of joy — smiley flower print.',        // 2  Description
+    'Design: Smiling Flower\nFabric: Cotton Rayon Blend\nOpening: Drawstrings\nSleeve: Sleeveless', // 3  Key Features
+    '',                                                              // 4  Benefits
+    'Dog Dress',                                                     // 5  USP
+    '15 FURRIES',                                                    // 6  Brand
+    cat,                                                             // 7  Type (Category)
+    '',                                                              // 8  Size (Variant)
+    'Multicolour',                                                   // 9  Colour
+    '',                                                              // 10 Flavours
+    '',                                                              // 11 Ingredients
+    '',                                                              // 12 Serving / Feeding
+    '',                                                              // 13 Barcode (EAN)
+    '100',                                                           // 14 Quantity*
+    // Picture Information
+    'https://example.com/your-product-image-1000x1000.jpg',          // 15 Image*
+    '',                                                              // 16 A+ Content
+    '',                                                              // 17 Size Chart
+    // Other Product Details
+    '150',                                                           // 18 Weight
+    'g',                                                             // 19 Weight Unit
+    'NA',                                                            // 20 Shelf Life
+    // Pricing Details
+    '799',                                                           // 21 SP*
+    '1598',                                                          // 22 MRP
+    '',                                                              // 23 COGS
+    // Product Brief
+    'Dogs',                                                          // 24 Pet Type
+    cat,                                                             // 25 Category*
+    '',                                                              // 26 Sub Category
+    '',                                                              // 27 Breed Name
+    '',                                                              // 28 Breed Size
+    '',                                                              // 29 Life Stage
+    '5%',                                                            // 30 Tax*
+    '',                                                              // 31 Category L4
+    '',                                                              // 32 Category L5
+    '62052000',                                                      // 33 HSN*
+    '',                                                              // 34 Certificate
+    // Manufacture Details
+    'VPI-001',                                                       // 35 Vendor Product Id
+    'India',                                                         // 36 Country of Origin
+    'Petfully Yours Pvt Ltd',                                        // 37 Marketed By
+    'Apparo Lifestyle Pvt Ltd. 205, A wing, Vasupujya Estate, Goregaon West, Mumbai 400104', // 38 Manufactured By
+    '',                                                              // 39 Imported By
+    // Product Dimension (cm)
+    '35',                                                            // 40 Length cm
+    '25',                                                            // 41 Breadth cm
+    '1',                                                             // 42 Height cm
+    // Shipping Dimensions (mm)
+    '33',                                                            // 43 Length mm
+    '27',                                                            // 44 Breadth mm
+    '3',                                                             // 45 Height mm
+    '250 grams',                                                     // 46 Casepack Volume
   ];
 }
 
-function addListValidations(
+/**
+ * Excel/Google Sheets accept inline list formulae of the form `"a,b,c"`. The
+ * spec limit is 255 characters total for the formula string. We escape any
+ * embedded double-quote with `""` and skip values whose final length exceeds
+ * the limit (caller falls back to a free-text cell — preferable to a broken
+ * dropdown that can prevent the file from opening).
+ */
+function buildInlineListFormula(values: string[]): string | null {
+  const cleaned = values.map((v) => String(v ?? '').replace(/"/g, '""')).filter((v) => v.length > 0);
+  if (cleaned.length === 0) return null;
+  const formula = `"${cleaned.join(',')}"`;
+  if (formula.length > 255) return null;
+  return formula;
+}
+
+function addInlineDropdown(
   ws: ExcelJS.Worksheet,
-  categoryCount: number,
-  petRows: number,
-  taxRows: number
+  rangeRef: string,
+  values: string[]
 ): void {
-  const dv = (
+  const formula = buildInlineListFormula(values);
+  if (!formula) return;
+  (
     ws as ExcelJS.Worksheet & {
       dataValidations: { add: (range: string, opts: object) => void };
     }
-  ).dataValidations;
-
-  const catEnd = Math.max(1, categoryCount);
-  const petEnd = Math.max(1, petRows);
-  const taxEnd = Math.max(1, taxRows);
-
-  const catRange = `'${LISTS_SHEET}'!$A$1:$A$${catEnd}`;
-  const petRange = `'${LISTS_SHEET}'!$B$1:$B$${petEnd}`;
-  const taxRange = `'${LISTS_SHEET}'!$C$1:$C$${taxEnd}`;
-
-  // G = Type (Category), Y = Category — same DB-driven list
-  for (const col of ['G', 'Y']) {
-    dv.add(`${col}3:${col}500`, {
-      type: 'list',
-      allowBlank: true,
-      formulae: [catRange],
-    });
-  }
-
-  dv.add(`X3:X500`, {
+  ).dataValidations.add(rangeRef, {
     type: 'list',
     allowBlank: true,
-    formulae: [petRange],
-  });
-
-  dv.add(`AC3:AC500`, {
-    type: 'list',
-    allowBlank: true,
-    formulae: [taxRange],
+    showErrorMessage: false,
+    formulae: [formula],
   });
 }
 
 /**
  * @param categoryNames deduped display names from ecommerce_categories (active).
+ *   Falls back to DEFAULT_CATEGORIES if empty so the template is always usable.
  */
 export async function buildBulkProductTemplateBuffer(categoryNames: string[]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-
   const ws = wb.addWorksheet(SHEET_NAME);
 
-  const listWs = wb.addWorksheet(LISTS_SHEET, {
-    state: 'hidden',
-  });
+  // ExcelJS 4.4 ships with `properties.dyDescent = 55` (a known bug) which
+  // emits `<sheetFormatPr x14ac:dyDescent="55"/>`. The valid range is small
+  // floats (~0.25). This nonsense value is one of the reasons Google Sheets
+  // refuses to open the file with “File could not open. Try refreshing.”.
+  // Overwriting it before write makes the workbook valid for both Excel and
+  // Google Sheets / docs.google.com import.
+  (ws.properties as { dyDescent: number }).dyDescent = 0.25;
 
-  const cats = categoryNames.filter(Boolean);
-  if (cats.length === 0) {
-    listWs.getCell(1, 1).value = '(No categories — add in Admin)';
-  } else {
-    cats.forEach((name, i) => {
-      listWs.getCell(i + 1, 1).value = name;
-    });
-  }
-
-  STATIC_PET_TYPES.forEach((p, i) => {
-    listWs.getCell(i + 1, 2).value = p;
-  });
-  STATIC_TAX_LABELS.forEach((t, i) => {
-    listWs.getCell(i + 1, 3).value = t;
-  });
+  const cats = (categoryNames || []).map((s) => String(s ?? '').trim()).filter(Boolean);
+  const categories = cats.length > 0 ? cats : DEFAULT_CATEGORIES;
 
   ws.getRow(1).height = 30;
   ws.getRow(2).height = 38;
   ws.getRow(3).height = 80;
 
-  const sampleCategory = cats[0] || 'Pet Accessories';
+  const sampleCategory = categories[0] || 'Pet Accessories';
   const SAMPLE_ROW = buildSampleRow(sampleCategory);
 
+  // Row 1 — group headers
   for (const g of ROW1_GROUPS) {
     ws.mergeCells(`${colLetter(g.start)}1:${colLetter(g.end)}1`);
     const cell = ws.getCell(1, g.start);
@@ -283,18 +294,20 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.border = THIN_BORDER as ExcelJS.Borders;
   }
 
+  // Row 2 — column headers (required ones get a stronger fill so vendors notice the `*`).
   BULK_TEMPLATE_COLUMN_HEADERS.forEach((h, i) => {
     const c = i + 1;
     const cell = ws.getCell(2, c);
     cell.value = h;
-    cell.font = { bold: true, size: 10 };
-    cell.fill = HEADER_ROW_FILL as ExcelJS.Fill;
+    cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
+    cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border = THIN_BORDER as ExcelJS.Borders;
     ws.getColumn(c).width =
-      c === 1 ? 52 : c === 3 || c === 4 ? 32 : c === 14 ? 40 : c === 2 ? 36 : 13;
+      c === 1 ? 52 : c === 3 || c === 4 ? 32 : c === 15 ? 40 : c === 2 ? 36 : 13;
   });
 
+  // Row 3 — single demo row
   SAMPLE_ROW.forEach((v, i) => {
     const cell = ws.getCell(3, i + 1);
     cell.value = v;
@@ -307,15 +320,26 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.border = THIN_BORDER as ExcelJS.Borders;
   });
 
-  addListValidations(
-    ws,
-    cats.length > 0 ? cats.length : 1,
-    STATIC_PET_TYPES.length,
-    STATIC_TAX_LABELS.length
-  );
+  // Dropdowns — letters track REQUIRED_COL_LETTERS.
+  const { TYPE_CATEGORY, PET_TYPE, CATEGORY, TAX } = REQUIRED_COL_LETTERS;
+  addInlineDropdown(ws, `${TYPE_CATEGORY}3:${TYPE_CATEGORY}500`, categories);
+  addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
+  addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
+  addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
 
-  const buf = await wb.xlsx.writeBuffer({ useSharedStrings: true });
+  const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+function colLetter(n: number): string {
+  let s = '';
+  let x = n;
+  while (x > 0) {
+    const r = (x - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    x = Math.floor((x - 1) / 26);
+  }
+  return s;
 }
 
 export function normalizeBulkHeader(raw: string): string {
@@ -351,6 +375,7 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   sp: 'price',
   mrp: 'compare_at_price',
   compareatprice: 'compare_at_price',
+  cogs: 'cogs',
   stock: 'stock_quantity',
   stockquantity: 'stock_quantity',
   quantity: 'stock_quantity',
@@ -362,6 +387,8 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   tax: 'gst_rate',
   weight: 'weight',
   weightkg: 'weight',
+  weightunitg: 'weight_unit',
+  shelflifedays: 'shelf_life_days',
   dimensions: 'dimensions',
   size: 'dimensions',
   sizevariant: 'dimensions_variant',
@@ -375,6 +402,8 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   imageurls: 'images',
   image: 'images',
   image1000x1000px: 'images',
+  acontent: 'images_aplus',
+  sizechart: 'size_chart',
   isactive: 'is_active',
   active: 'is_active',
   pettype: 'pet_type',
@@ -389,7 +418,9 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   servingorfeedingrecommendations: 'serving',
   servingorfeeding: 'serving',
   certficateofauthenticity: 'certificate',
+  certificateofauthenticity: 'certificate',
   productlenghtincmorinches: 'dim_len_cm',
+  productlengthincmorinches: 'dim_len_cm',
   productlengthincm: 'dim_len_cm',
   productbreadthcmorinches: 'dim_breadth_cm',
   productbreadthcm: 'dim_breadth_cm',
@@ -423,6 +454,10 @@ function cellText(cell: ExcelJS.Cell): string {
   return String(v).trim();
 }
 
+/**
+ * Tax column may arrive as `"5%"`, `"5"`, `"0.05"`, etc. Returns the percent
+ * value (5, 12, 18, …) — or `null` if unparseable.
+ */
 function parseGstPercent(raw: string): number | null {
   const s = raw.trim().replace(/%/g, '');
   let n = parseFloat(s);
@@ -438,8 +473,11 @@ function mergeDescriptionParts(base: string, keyFeatures: string, benefits: stri
   return parts.join('\n\n');
 }
 
-function extraTags(parts: string[]): string {
-  return parts.map((p) => p.trim()).filter(Boolean).join(', ');
+function extraTags(parts: Array<string | undefined>): string {
+  return parts
+    .map((p) => (p == null ? '' : String(p).trim()))
+    .filter(Boolean)
+    .join(', ');
 }
 
 export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
@@ -494,8 +532,8 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
       bag.key_features || '',
       bag.benefits || ''
     );
-    const category =
-      bag.category?.trim() || bag.category_type?.trim() || '';
+    // Prefer the user-facing "Category" (col Y) over the legacy "Type (Category)" (col G).
+    const category = bag.category?.trim() || bag.category_type?.trim() || '';
     const sku =
       bag.sku?.trim() || bag.sku_barcode?.trim() || bag.vendor_product_id?.trim() || '';
     const priceRaw = bag.price || '';
@@ -544,7 +582,12 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (sku) product.sku = sku;
     if (priceRaw) product.price = parseFloat(String(priceRaw).replace(/,/g, ''));
     if (compareRaw) product.compare_at_price = parseFloat(String(compareRaw).replace(/,/g, ''));
-    if (stockRaw) product.stock_quantity = parseFloat(String(stockRaw).replace(/,/g, ''));
+    // Quantity is now a required column. Leave undefined here when missing so
+    // the validator can flag it; only coerce numeric strings.
+    if (stockRaw) {
+      const s = parseFloat(String(stockRaw).replace(/,/g, ''));
+      if (!isNaN(s)) product.stock_quantity = s;
+    }
     if (bag.hsn_code) product.hsn_code = bag.hsn_code.trim();
     if (gstRaw) {
       const g = parseGstPercent(gstRaw);
