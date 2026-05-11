@@ -12,6 +12,8 @@ import {
   assertQuantityMatchesVendorMealsPreset,
 } from '../../utils/meal-purchase-metadata';
 import { resolveMealLineSubtotalInr } from '../../utils/meal-order-pricing';
+import { computeMealSubscriptionCheckoutFees } from '../../utils/meal-subscription-checkout-fees';
+import { deliveriesPerBillingCycle } from '../../utils/meal-subscription-schedule-utils';
 import type { MealSubscriptionLifecycleStatus } from '../../constants/meal-subscription-canonical';
 import { ensureRollingSessions, type SubscriptionRowForGeneration } from './meal-subscription-session-generation';
 
@@ -61,6 +63,18 @@ function computeDeliveryDaysFromSchedule(s?: SubscriptionDeliveryScheduleInput):
 function shortSubscriptionNumber(): string {
   const s = `SUB${Date.now().toString(36)}${randomBytes(2).toString('hex')}`.toUpperCase();
   return s.slice(0, 20);
+}
+
+function recommendedSignupWeeksFromDiet(diet: Record<string, unknown>): number {
+  const sub = diet.subscriptionConfig;
+  const raw =
+    diet.recommendedPlanLengthWeeks ??
+    (typeof sub === 'object' && sub != null && !Array.isArray(sub)
+      ? (sub as Record<string, unknown>).recommendedPlanLengthWeeks
+      : undefined);
+  const n = Number(raw);
+  if (n === 1 || n === 2 || n === 4) return n;
+  return 1;
 }
 
 async function resolveCustomerId(input: CreateCanonicalSubscriptionInput): Promise<string | null> {
@@ -213,12 +227,12 @@ export async function createCanonicalSubscription(
   };
 
   const dietarySnapshot = { dietary_requirements: diet, meal_plan_id: input.mealPlanId };
-  const pricingSnapshot = {
-    pricePerDelivery,
-    quantity: qty,
-    currency: 'INR',
-    mealPlanId: input.mealPlanId,
-  };
+
+  const scheduleForDpc = deliveryScheduleJson as Record<string, unknown>;
+  const dpcDefault = Math.max(1, deliveriesPerBillingCycle(input.purchaseType, scheduleForDpc));
+  const recWeeks = recommendedSignupWeeksFromDiet(diet);
+  const suggestedSessions =
+    input.purchaseType === 'WEEKLY_PLAN' ? recWeeks * dpcDefault : dpcDefault;
 
   const totalSessions =
     input.totalSessions != null && Number.isFinite(Number(input.totalSessions))
@@ -226,6 +240,38 @@ export async function createCanonicalSubscription(
       : null;
 
   const remainingSessions = totalSessions;
+
+  const feeQuote = await computeMealSubscriptionCheckoutFees({
+    plan,
+    vendorId,
+    quantity: qty,
+    purchaseType: input.purchaseType,
+    schedule: scheduleForDpc,
+    totalSessionsUsed: totalSessions ?? suggestedSessions,
+    customerLat: lat != null ? Number(lat) : null,
+    customerLng: lng != null ? Number(lng) : null,
+    logisticsType: 'warmpawz',
+  });
+
+  const deliveryFeePerDelivery = feeQuote.perSessionDeliveryFee ?? 0;
+
+  const pricingSnapshot = {
+    pricePerDelivery,
+    quantity: qty,
+    currency: 'INR',
+    mealPlanId: input.mealPlanId,
+    deliveryFeePerSession: feeQuote.perSessionDeliveryFee,
+    totalDeliveryFeeUpfront: feeQuote.totalDeliveryFeeUpfront,
+    platformFeePerSession: feeQuote.platformFeePerSession,
+    convenienceFeePerSession: feeQuote.convenienceFeePerSession,
+    billingCycles: feeQuote.billingCycles,
+    totalSessionsUsed: feeQuote.totalSessionsUsed,
+    deliveriesPerBillingCycle: feeQuote.deliveriesPerBillingCycle,
+    perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
+    platformFeePerCycle: feeQuote.platformFeePerCycle,
+    convenienceFeePerCycle: feeQuote.convenienceFeePerCycle,
+    upfrontTotalAmount: feeQuote.upfrontTotalAmount,
+  };
 
   const subscriptionNumber = shortSubscriptionNumber();
   const preferredSlotJson = JSON.stringify(deliveryScheduleJson.slot);
@@ -281,23 +327,23 @@ export async function createCanonicalSubscription(
          $1, $2, $3, $4, $5,
          $6, $7, $8::varchar[], $9::jsonb,
          $10::jsonb, $11, $12,
-         $13, 0,
-         $14, $15::date,
-         $16,
-         'online',
-         $15::date,
-         NULL,
+         $13, $14,
+         $15, $16::date,
          $17,
+         'online',
+         $16::date,
+         NULL,
          $18,
          $19,
-         0, 0,
          $20,
-         $15::date,
+         0, 0,
          $21,
-         $22::jsonb,
+         $16::date,
+         $22,
          $23::jsonb,
          $24::jsonb,
-         $25,
+         $25::jsonb,
+         $26,
          NOW(),
          NOW()
        )
@@ -316,6 +362,7 @@ export async function createCanonicalSubscription(
           lat != null ? Number(lat) : null,
           lng != null ? Number(lng) : null,
           pricePerDelivery,
+          deliveryFeePerDelivery,
           billingCycle,
           input.firstDeliveryDate,
           dbStatus,

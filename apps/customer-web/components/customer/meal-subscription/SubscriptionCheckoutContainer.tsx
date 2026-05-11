@@ -65,6 +65,7 @@ export function SubscriptionCheckoutContainer({
   const [preview, setPreview] = useState<{
     subtotal: number;
     deliveryFee: number | null;
+    deliveryFeePendingAddress?: boolean;
     platformFee: number;
     convenienceFee?: number;
     totalAmount: number;
@@ -76,6 +77,10 @@ export function SubscriptionCheckoutContainer({
       totalSessionsUsed: number;
       packageTotalAmount: number;
       upfrontTotalAmount: number;
+      foodSubtotalUpfront?: number;
+      platformFeeUpfront?: number;
+      convenienceFeeUpfront?: number;
+      subtotalPerCycle?: number;
     };
   } | null>(null);
 
@@ -574,12 +579,32 @@ export function SubscriptionCheckoutContainer({
             purchaseTypeLabel={purchaseType === 'WEEKLY_PLAN' ? 'Weekly subscription' : 'Monthly subscription'}
             billingCycleLabel={purchaseType === 'WEEKLY_PLAN' ? 'Weekly cadence' : 'Monthly cadence'}
             mealsPerDelivery={quantity}
-            packageTotalOneCycle={preview.totalAmount}
+            subtotalPerCycle={
+              preview.subscriptionCheckout?.subtotalPerCycle ??
+              preview.subtotal
+            }
+            billingCycles={preview.subscriptionCheckout?.billingCycles ?? 1}
             deliveriesPerBillingCycle={
               preview.subscriptionCheckout?.deliveriesPerBillingCycle ?? Math.max(1, totalSessions)
             }
-            billingCycles={preview.subscriptionCheckout?.billingCycles ?? 1}
             totalSessions={Math.max(1, totalSessions)}
+            foodSubtotalUpfront={
+              preview.subscriptionCheckout?.foodSubtotalUpfront ??
+              Math.round(preview.subtotal * (preview.subscriptionCheckout?.billingCycles ?? 1) * 100) / 100
+            }
+            deliveryFee={preview.deliveryFee}
+            deliveryFeePendingAddress={preview.deliveryFeePendingAddress}
+            platformFeePerCycle={preview.platformFee}
+            platformFeeUpfront={
+              preview.subscriptionCheckout?.platformFeeUpfront ??
+              Math.round(preview.platformFee * (preview.subscriptionCheckout?.billingCycles ?? 1) * 100) / 100
+            }
+            convenienceFeePerCycle={preview.convenienceFee ?? 0}
+            convenienceFeeUpfront={
+              preview.subscriptionCheckout?.convenienceFeeUpfront ??
+              Math.round((preview.convenienceFee ?? 0) * (preview.subscriptionCheckout?.billingCycles ?? 1) * 100) /
+                100
+            }
             upfrontTotal={estimatedTotal}
           />
         )}

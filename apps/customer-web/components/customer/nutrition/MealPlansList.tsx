@@ -188,11 +188,20 @@ export function MealPlansList({
     const pricePerMonth = mealPlan.price_per_month ?? mealPlan.pricePerMonth ?? mealPlan.monthly_price ?? 0;
     const vendorRating = mealPlan.vendor_rating ?? mealPlan.vendorRating ?? mealPlan.avg_rating;
     const catalog = getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>);
+    const photosArr = Array.isArray(mealPlan.photos) ? mealPlan.photos : [];
+    const firstPhoto =
+      typeof photosArr[0] === 'string'
+        ? photosArr[0]
+        : photosArr[0] && typeof photosArr[0] === 'object'
+          ? String((photosArr[0] as { url?: string; src?: string }).url || (photosArr[0] as { url?: string; src?: string }).src || '')
+          : '';
     const mealImageUrl =
       mealPlan.mealImageUrl ||
+      mealPlan.thumbnail_url ||
       (mealPlan.dietary_requirements &&
         typeof mealPlan.dietary_requirements === 'object' &&
         mealPlan.dietary_requirements.mealImageUrl) ||
+      firstPhoto ||
       null;
 
     return (

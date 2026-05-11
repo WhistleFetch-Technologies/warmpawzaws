@@ -17,6 +17,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
   getPidgeCredentials,
@@ -637,6 +638,9 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
               status: orderStatus,
               updated_at: new Date().toISOString(),
             });
+            if (orderTable === 'meal_orders' && orderStatus === 'delivered') {
+              await ensureMealOrderSettlementOnDelivered(String(hyperlocalOrderId));
+            }
           }
 
           return c.json({

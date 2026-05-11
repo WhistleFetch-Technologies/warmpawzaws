@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 
 export function registerDeliveryTrackingEndpoints(app: Hono) {
 
@@ -145,6 +146,9 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
           await update('pharmacy_orders', { id: tracking.pharmacy_order_id }, { status: normalizedStatus });
         } else if (tracking.meal_order_id) {
           await update('meal_orders', { id: tracking.meal_order_id }, { status: normalizedStatus });
+          if (normalizedStatus === 'delivered') {
+            await ensureMealOrderSettlementOnDelivered(String(tracking.meal_order_id));
+          }
         }
       }
 
@@ -241,6 +245,7 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
           status: 'delivered',
           delivered_at: new Date().toISOString(),
         });
+        await ensureMealOrderSettlementOnDelivered(String(tracking.meal_order_id));
       }
 
       return c.json({

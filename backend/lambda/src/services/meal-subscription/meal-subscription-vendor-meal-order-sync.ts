@@ -22,6 +22,20 @@ function parseAddr(raw: unknown): Record<string, unknown> {
   return {};
 }
 
+function parsePricingSnap(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
+}
+
 export async function upsertVendorMealOrderForCanonicalDelivery(
   client: PoolClient,
   params: {
@@ -75,6 +89,17 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
   const pkg = Number(sub.price_per_delivery || 0);
   const lineSubtotal = perCycleDeliveries > 0 ? Math.round((pkg / perCycleDeliveries) * 100) / 100 : Math.round(pkg * 100) / 100;
 
+  const snap = parsePricingSnap(sub.pricing_snapshot);
+  const deliveryFeePerSession =
+    Number(sub.delivery_fee_per_delivery || snap.deliveryFeePerSession || snap.delivery_fee_per_session || 0) ||
+    0;
+  const platformFeePerSession = Number(snap.platformFeePerSession || snap.platform_fee_per_session || 0) || 0;
+  const convenienceFeePerSession =
+    Number(snap.convenienceFeePerSession || snap.convenience_fee_per_session || 0) || 0;
+  const platformCombined = Math.round((platformFeePerSession + convenienceFeePerSession) * 100) / 100;
+  const sessionDelivery = Math.round(deliveryFeePerSession * 100) / 100;
+  const totalAmount = Math.round((lineSubtotal + sessionDelivery + platformCombined) * 100) / 100;
+
   const addrObj = parseAddr(sub.delivery_address);
   const lat = sub.customer_lat ?? addrObj.lat ?? addrObj.latitude;
   const lng = sub.customer_lng ?? addrObj.lng ?? addrObj.longitude;
@@ -82,7 +107,7 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
   const petId = sub.pet_id != null ? sub.pet_id : null;
   const qty = Math.max(1, Math.min(50, Number(sub.meals_per_delivery) || 1));
 
-  const snap = {
+  const purchaseSnap = {
     canonicalDeliveryId: params.canonicalDeliveryId,
     sessionNumber: params.sessionNumber,
     source: 'canonical_meal_subscription',
@@ -98,9 +123,9 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
     quantity: qty,
     special_instructions: specialInstructions,
     subtotal: lineSubtotal,
-    delivery_fee: 0,
-    platform_fee: 0,
-    total_amount: lineSubtotal,
+    delivery_fee: sessionDelivery,
+    platform_fee: platformCombined,
+    total_amount: totalAmount,
     delivery_address: JSON.stringify(addrObj),
     customer_lat: lat != null ? Number(lat) : null,
     customer_lng: lng != null ? Number(lng) : null,
@@ -109,13 +134,13 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
     payment_status: 'paid',
     status: 'pending',
     logistics_type: 'warmpawz',
-    logistics_cost: 0,
+    logistics_cost: sessionDelivery,
     created_at: new Date(),
     updated_at: new Date(),
   };
 
   if (has.has('purchase_type')) row.purchase_type = purchaseType;
-  if (has.has('purchase_snapshot')) row.purchase_snapshot = JSON.stringify(snap);
+  if (has.has('purchase_snapshot')) row.purchase_snapshot = JSON.stringify(purchaseSnap);
 
   const keys = Object.keys(row).filter((k) => has.has(k));
   if (!keys.includes('customer_id') || !keys.includes('vendor_id')) return;

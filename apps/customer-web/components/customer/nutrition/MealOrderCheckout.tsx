@@ -133,11 +133,20 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     selectedAddress?.coordinates?.lng ?? selectedAddress?.longitude ?? selectedAddress?.lng ?? null;
   const hasSelectedAddressCoordinates = selectedAddressLat != null && selectedAddressLng != null;
 
+  const photosArr = mealPlan?.photos && Array.isArray(mealPlan.photos) ? mealPlan.photos : [];
+  const firstPhoto =
+    typeof photosArr[0] === 'string'
+      ? photosArr[0]
+      : photosArr[0] && typeof photosArr[0] === 'object'
+        ? String((photosArr[0] as { url?: string; src?: string }).url || (photosArr[0] as { url?: string; src?: string }).src || '')
+        : '';
   const mealPlanImageUrl =
     mealPlan?.mealImageUrl ||
+    (mealPlan as { thumbnail_url?: string })?.thumbnail_url ||
     (mealPlan?.dietary_requirements &&
       typeof mealPlan.dietary_requirements === 'object' &&
       (mealPlan.dietary_requirements as { mealImageUrl?: string }).mealImageUrl) ||
+    firstPhoto ||
     null;
 
   const catalog = mealPlan ? getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>) : null;

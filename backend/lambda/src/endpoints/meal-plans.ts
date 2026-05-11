@@ -43,6 +43,8 @@ import {
   billingCyclesFromSessions,
   deliveriesPerBillingCycle,
 } from '../utils/meal-subscription-schedule-utils';
+import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 
 async function mealOrdersTableColumns(): Promise<Set<string>> {
   try {
@@ -327,16 +329,51 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const result = await query(queryText, params);
 
+      const mealPlans = await Promise.all(
+        (result.rows || []).map(async (mp: any) => {
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+            mp as Record<string, unknown>,
+          );
+          let suitableFor = mp.suitable_for;
+          let ingredients = mp.ingredients;
+          let nutritionInfo = mp.nutrition_info;
+          let deliverySlots = mp.delivery_slots;
+          try {
+            suitableFor = typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for;
+          } catch {
+            suitableFor = mp.suitable_for;
+          }
+          try {
+            ingredients = typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients;
+          } catch {
+            ingredients = mp.ingredients;
+          }
+          try {
+            nutritionInfo = typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info;
+          } catch {
+            nutritionInfo = mp.nutrition_info;
+          }
+          try {
+            deliverySlots = typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots;
+          } catch {
+            deliverySlots = mp.delivery_slots;
+          }
+          return {
+            ...mp,
+            photos,
+            suitableFor,
+            ingredients,
+            nutritionInfo,
+            deliverySlots,
+            dietary_requirements,
+            mealImageUrl,
+          };
+        }),
+      );
+
       return c.json({
         success: true,
-        mealPlans: result.rows.map((mp: any) => ({
-          ...mp,
-          photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
-          suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
-          ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
-          nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
-          deliverySlots: typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots,
-        })),
+        mealPlans,
       });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
@@ -600,6 +637,65 @@ export function registerMealPlanEndpoints(app: Hono) {
       const subCheckout = subscriptionCheckoutPreviewFields(plan, quantity, previewQ);
       const subtotal = subCheckout?.subtotal ?? resolveMealPurchaseSubtotalInr(plan, quantity);
 
+      /** Weekly/monthly: delivery fee = (same per-session quote as one-time) × total sessions. */
+      if (subCheckout) {
+        const sched = buildSubscriptionPreviewSchedule(diet, purchaseTypeNorm, previewQ);
+        const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
+        const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
+        const feeQuote = await computeMealSubscriptionCheckoutFees({
+          plan,
+          vendorId: String(plan.vendor_id || ''),
+          quantity,
+          purchaseType: purchaseTypeNorm as 'WEEKLY_PLAN' | 'MONTHLY_PLAN',
+          schedule: sched,
+          totalSessionsUsed: subCheckout.totalSessionsUsed,
+          customerLat,
+          customerLng,
+          logisticsType,
+          weekend,
+          festival,
+          rain,
+        });
+        const cycleDeliveryTotal =
+          feeQuote.perSessionDeliveryFee != null
+            ? Math.round(feeQuote.perSessionDeliveryFee * feeQuote.deliveriesPerBillingCycle * 100) /
+              100
+            : 0;
+        const packageTotalAmount = feeQuote.nonDeliveryPackagePerCycle + cycleDeliveryTotal;
+        const bc = feeQuote.billingCycles;
+        const foodSubtotalUpfront =
+          Math.round(feeQuote.subtotalPerCycle * bc * 100) / 100;
+        const platformFeeUpfront =
+          Math.round(feeQuote.platformFeePerCycle * bc * 100) / 100;
+        const convenienceFeeUpfront =
+          Math.round(feeQuote.convenienceFeePerCycle * bc * 100) / 100;
+        return c.json({
+          success: true,
+          subtotal: subCheckout.subtotal,
+          purchaseType: purchaseTypeNorm,
+          purchaseCadence,
+          deliveryFee: feeQuote.deliveryFeePendingAddress ? null : feeQuote.totalDeliveryFeeUpfront,
+          deliveryFeePendingAddress: feeQuote.deliveryFeePendingAddress,
+          platformFee: feeQuote.platformFeePerCycle,
+          convenienceFee: feeQuote.convenienceFeePerCycle,
+          totalAmount: feeQuote.upfrontTotalAmount,
+          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          subscriptionCheckout: {
+            ...subCheckout,
+            packageTotalAmount,
+            upfrontTotalAmount: feeQuote.upfrontTotalAmount,
+            perSessionDeliveryFee: feeQuote.perSessionDeliveryFee,
+            totalDeliveryFeeUpfront: feeQuote.totalDeliveryFeeUpfront,
+            nonDeliveryPackagePerCycle: feeQuote.nonDeliveryPackagePerCycle,
+            perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
+            foodSubtotalUpfront,
+            platformFeeUpfront,
+            convenienceFeeUpfront,
+            subtotalPerCycle: feeQuote.subtotalPerCycle,
+          },
+        });
+      }
+
       let deliveryFee = 0;
       let platformFee = 0;
       let convenienceFee = 0;
@@ -622,9 +718,6 @@ export function registerMealPlanEndpoints(app: Hono) {
         const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
         if (customerLat == null || customerLng == null) {
           const packageTotalAmount = subtotal + platformFee + convenienceFee;
-          const upfrontTotalAmount = subCheckout
-            ? Math.round(packageTotalAmount * subCheckout.billingCycles * 100) / 100
-            : packageTotalAmount;
           return c.json(
             {
               success: true,
@@ -637,15 +730,6 @@ export function registerMealPlanEndpoints(app: Hono) {
               convenienceFee,
               totalAmount: packageTotalAmount,
               leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-              ...(subCheckout
-                ? {
-                    subscriptionCheckout: {
-                      ...subCheckout,
-                      packageTotalAmount,
-                      upfrontTotalAmount,
-                    },
-                  }
-                : {}),
             },
             200
           );
@@ -673,9 +757,6 @@ export function registerMealPlanEndpoints(app: Hono) {
         platformFee = Math.round(subtotal * 0.02);
       }
       const packageTotalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
-      const upfrontTotalAmount = subCheckout
-        ? Math.round(packageTotalAmount * subCheckout.billingCycles * 100) / 100
-        : packageTotalAmount;
       return c.json({
         success: true,
         subtotal,
@@ -686,15 +767,6 @@ export function registerMealPlanEndpoints(app: Hono) {
         convenienceFee,
         totalAmount: packageTotalAmount,
         leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-        ...(subCheckout
-          ? {
-              subscriptionCheckout: {
-                ...subCheckout,
-                packageTotalAmount,
-                upfrontTotalAmount,
-              },
-            }
-          : {}),
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);
@@ -1260,7 +1332,7 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       // If delivered, create settlement
       if (status === 'delivered') {
-        await createMealSettlement(orderId);
+        await ensureMealOrderSettlementOnDelivered(orderId);
       }
 
       return c.json({
@@ -1691,51 +1763,3 @@ export function registerMealPlanEndpoints(app: Hono) {
     }
   });
 }
-
-/**
- * Create settlement record for meal order
- */
-async function createMealSettlement(orderId: string) {
-  try {
-    const orders = await query(`SELECT * FROM meal_orders WHERE id = $1`, [orderId]);
-    if (orders.rows.length === 0) return;
-
-    const order = orders.rows[0];
-
-    // Get vendor tier for commission rate
-    const vendors = await query(
-      `SELECT v.*, vt.commission_rate 
-       FROM vendors v 
-       LEFT JOIN vendor_tiers vt ON v.tier_id = vt.id
-       WHERE v.id = $1`,
-      [order.vendor_id]
-    );
-
-    const vendor = vendors.rows[0];
-    const commissionRate = parseFloat(vendor?.commission_rate || '10');
-    const orderAmount = parseFloat(order.total_amount);
-    const deliveryFee = parseFloat(order.delivery_fee || '0');
-    const logisticsCost = order.logistics_type === 'warmpawz' ? parseFloat(order.logistics_cost || '0') : 0;
-    
-    const commissionAmount = Math.round((orderAmount - deliveryFee) * commissionRate / 100);
-    const netPayout = orderAmount - commissionAmount - logisticsCost;
-
-    await insert('delivery_settlements', {
-      meal_order_id: orderId,
-      vendor_id: order.vendor_id,
-      order_amount: orderAmount,
-      delivery_fee_collected: deliveryFee,
-      commission_rate: commissionRate,
-      commission_amount: commissionAmount,
-      logistics_cost: logisticsCost,
-      net_payout: netPayout,
-      status: 'pending',
-      order_delivered_at: new Date().toISOString(),
-    });
-
-    console.log(`💰 Settlement record created for meal order ${orderId}: ₹${netPayout}`);
-  } catch (error) {
-    console.error('Error creating meal settlement:', error);
-  }
-}
-
