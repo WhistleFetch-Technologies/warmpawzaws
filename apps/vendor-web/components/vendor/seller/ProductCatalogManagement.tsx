@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -52,10 +53,30 @@ interface Product {
   stock: number;
   sku: string;
   category_id: string;
+  /** Legacy / free-text category (API may filter with category_id OR category) */
+  category?: string;
   status: string;
   images?: string[];
   emoji?: string;
   is_active: boolean;
+}
+
+function productMatchesCategory(product: Product, selectedCategory: string): boolean {
+  if (selectedCategory === 'all') return true;
+  const sel = String(selectedCategory);
+  if (product.category_id != null && String(product.category_id) === sel) return true;
+  if (product.category != null && String(product.category) === sel) return true;
+  return false;
+}
+
+function productMatchesStatusFilter(product: Product, selectedStatus: string): boolean {
+  if (selectedStatus === 'all') return true;
+  const displayStatus = getVendorDisplayStatus(product);
+  if (selectedStatus === 'out_of_stock') {
+    const stock = Number(product.stock);
+    return displayStatus === 'out_of_stock' || (!Number.isNaN(stock) && stock <= 0);
+  }
+  return displayStatus === selectedStatus;
 }
 
 export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementProps) {
@@ -67,6 +88,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
@@ -119,13 +141,25 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
   };
 
-  const filteredProducts = products.filter(product => {
-    const displayStatus = getVendorDisplayStatus(product);
-    const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || displayStatus === selectedStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+  const trimmedSearch = searchQuery.trim();
+  const deferredSearch = useDeferredValue(trimmedSearch);
+  const deferredSearchLower = deferredSearch.toLowerCase();
+
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      if (!productMatchesCategory(product, selectedCategory)) return false;
+      if (!productMatchesStatusFilter(product, selectedStatus)) return false;
+      if (!deferredSearchLower) return true;
+      const name = product.name?.toLowerCase() ?? '';
+      const desc = product.description?.toLowerCase() ?? '';
+      const sku = product.sku?.toLowerCase() ?? '';
+      return (
+        name.includes(deferredSearchLower) ||
+        desc.includes(deferredSearchLower) ||
+        sku.includes(deferredSearchLower)
+      );
+    });
+  }, [products, deferredSearchLower, selectedCategory, selectedStatus]);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -148,7 +182,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 mr-2 sm:mr-4">
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
@@ -166,6 +200,14 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
         >
           <Plus className="w-5 h-5" />
           Add Product
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowBulkUpload(true)}
+          className="flex items-center gap-2 px-5 py-3 border border-orange-500 text-orange-600 rounded-xl font-semibold hover:bg-orange-50 transition-all"
+        >
+          <Upload className="w-5 h-5" />
+          Bulk Upload
         </button>
       </div>
 
@@ -364,6 +406,15 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           }}
         />
       )}
+
+      <BulkProductUpload
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onSuccess={() => {
+          setShowBulkUpload(false);
+          loadProducts();
+        }}
+      />
     </div>
   );
 }

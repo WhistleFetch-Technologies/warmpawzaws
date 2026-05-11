@@ -49,7 +49,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'product_upload_template.csv';
+      a.download = 'product_upload_template.xlsx';
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -64,7 +64,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'product_upload_template.csv';
+      a.download = 'product_upload_template.xlsx';
       a.click();
       window.URL.revokeObjectURL(url);
     }
@@ -78,14 +78,31 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
     setLoading(true);
 
     try {
-      const content = await file.text();
       const vendorId = localStorage.getItem('vendorId');
+      const isXlsx = file.name.toLowerCase().endsWith('.xlsx');
 
-      // Parse file
-      const parseResult = await apiClient.post<{ parsed?: { products: any[] } }>(`/vendor/${vendorId}/products/bulk/parse`, {
-        csvContent: content,
-        format: file.name.endsWith('.csv') ? 'csv' : 'excel',
-      });
+      let parsePayload: Record<string, unknown>;
+      if (isXlsx) {
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const s = r.result as string;
+            const comma = s.indexOf(',');
+            resolve(comma >= 0 ? s.slice(comma + 1) : s);
+          };
+          r.onerror = () => reject(r.error ?? new Error('Failed to read file'));
+          r.readAsDataURL(file);
+        });
+        parsePayload = { fileBase64, fileName: file.name, format: 'xlsx' };
+      } else {
+        const content = await file.text();
+        parsePayload = { csvContent: content, format: 'csv' };
+      }
+
+      const parseResult = await apiClient.post<{ parsed?: { products: any[] } }>(
+        `/vendor/${vendorId}/products/bulk/parse`,
+        parsePayload
+      );
 
       if (!parseResult.parsed?.products?.length) {
         throw new Error('No products found in file');
@@ -193,7 +210,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
             <div className="space-y-6">
               <div className="text-center">
                 <p className="text-gray-600 mb-4">
-                  Upload a CSV or Excel file to add multiple products at once.
+                  Upload an XLSX template (or CSV) to add multiple products at once.
                 </p>
                 <button
                   onClick={handleDownloadTemplate}
@@ -206,7 +223,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
 
               <TouchFilePicker
                 ref={fileInputRef}
-                accept=".csv,.xlsx,.xls"
+                accept=".xlsx,.csv"
                 onFileChange={handleFileSelect}
                 disabled={loading}
                 className="cursor-pointer rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center transition hover:border-orange-400 hover:bg-orange-50"
@@ -220,7 +237,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
                 <p className="font-medium text-gray-600">
                   {loading ? 'Processing file...' : 'Tap to upload or drag and drop'}
                 </p>
-                <p className="mt-1 text-sm text-gray-400">CSV or Excel files up to 10MB</p>
+                <p className="mt-1 text-sm text-gray-400">XLSX or CSV files up to 10MB</p>
               </TouchFilePicker>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">

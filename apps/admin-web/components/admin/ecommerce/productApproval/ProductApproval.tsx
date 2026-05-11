@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, CheckCircle, XCircle, RefreshCcw } from 'lucide-react';
+import { CheckCircle, Eye, Package, RefreshCcw, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { ProductDetailsModal } from '../shared/ProductDetailsModal';
 
 export function ProductApproval() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
   const loadPendingProducts = useCallback(async () => {
     try {
@@ -38,6 +40,7 @@ export function ProductApproval() {
     try {
       await apiClient.put(`/admin/ecommerce/product/${productId}`, { status: 'active' });
       toast.success('Product approved');
+      setSelectedProduct(null);
       loadPendingProducts();
     } catch (error) {
       console.error('Approve product failed:', error);
@@ -55,6 +58,7 @@ export function ProductApproval() {
         rejectionReason: reason,
       });
       toast.success('Product rejected');
+      setSelectedProduct(null);
       loadPendingProducts();
     } catch (error) {
       toast.error('Error rejecting product');
@@ -134,14 +138,26 @@ export function ProductApproval() {
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
+                          onClick={() => setSelectedProduct(product)}
+                          className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                          title="View product details"
+                          aria-label={`View details for ${product.name || 'product'}`}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleApprove(product.id)}
-                          className="p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                          className="p-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                          title="Approve product"
+                          aria-label={`Approve ${product.name || 'product'}`}
                         >
                           <CheckCircle className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleReject(product.id)}
-                          className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                          className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                          title="Reject product"
+                          aria-label={`Reject ${product.name || 'product'}`}
                         >
                           <XCircle className="w-4 h-4" />
                         </button>
@@ -155,6 +171,15 @@ export function ProductApproval() {
         </div>
       </div>
     </div>
+
+      {selectedProduct && (
+        <ProductDetailsModal
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          onApprove={handleApprove}
+          onReject={handleReject}
+        />
+      )}
     </div>
   );
 }

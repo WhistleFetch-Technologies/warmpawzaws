@@ -487,6 +487,10 @@ class CreateVendorProductHandler extends BaseHandler {
             ...(imagesNorm !== undefined && { images: imagesNorm }),
             ...(deliveryNorm !== undefined && { delivery_regions: deliveryNorm }),
           };
+          // Match PUT handler: list/grid read `products.images`; metadata-only broke create thumbnails.
+          if (imagesNorm !== undefined && cols.has('images')) {
+            productData.images = imagesNorm;
+          }
         } else {
           if (imagesNorm !== undefined && cols.has('images')) {
             productData.images = imagesNorm;

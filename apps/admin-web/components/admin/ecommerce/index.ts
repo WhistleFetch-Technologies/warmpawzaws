@@ -20,6 +20,7 @@ export { default as LogisticsManagement } from './logistics/LogisticsManagement'
 
 // Product Approval - use productApproval folder (existing)
 export { ProductApproval } from './productApproval/ProductApproval';
+export { ProductDetailsModal } from './shared/ProductDetailsModal';
 
 // GST Dashboard
 export { default as GSTDashboard } from './gst/GSTDashboard';
