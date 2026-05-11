@@ -162,7 +162,20 @@ export function BannerManagement({ sellerId }: BannerManagementProps) {
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button className="p-2 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg transition-colors">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm(`Delete banner "${banner.title}"?`)) return;
+                      try {
+                        await apiClient.delete(`/vendor/${sellerId}/banners/${banner.id}`);
+                        await loadBanners();
+                      } catch (e) {
+                        console.error('Error deleting banner:', e);
+                        alert('Failed to delete banner');
+                      }
+                    }}
+                    className="p-2 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg transition-colors"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
