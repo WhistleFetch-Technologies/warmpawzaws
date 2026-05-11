@@ -1,5 +1,13 @@
 /** Shared meal checkout math: legacy meal_plans use `price`; newer rows use `price_per_meal`. */
 
+import {
+  deliveryDaysCount,
+  normalizePurchaseType,
+  parseMealCatalogDiet,
+  resolveMealsPerDeliveryFromDiet,
+  resolveMonthlyMealsPerDayFromDiet,
+} from './meal-purchase-metadata';
+
 export function safeMoney(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
@@ -21,6 +29,43 @@ export function mealPlanUnitPriceInr(plan: Record<string, unknown> | null | unde
   return 0;
 }
 
+/**
+ * Checkout subtotal for meal catalog rows (respects purchaseType + subscription pricing in dietary JSON).
+ * ONE_TIME: base unit × qty
+ * WEEKLY_PLAN: (per-delivery price × deliveries/week) × qty — first billing cycle estimate
+ * MONTHLY_PLAN: (per-day price × 30) × qty — monthly estimate
+ */
+export function resolveMealPurchaseSubtotalInr(plan: Record<string, unknown> | null | undefined, quantity: number): number {
+  if (!plan) return 0;
+  const qty = Math.max(1, Math.floor(quantity || 1));
+  const diet = parseMealCatalogDiet(plan);
+  const pt = normalizePurchaseType(diet);
+  const baseUnit = mealPlanUnitPriceInr(plan);
+
+  if (pt === 'ONE_TIME') {
+    return baseUnit > 0 ? roundMoney(baseUnit * qty) : 0;
+  }
+
+  const subPrice = safeMoney(diet.subscriptionPrice);
+
+  if (pt === 'WEEKLY_PLAN') {
+    const deliveries = Math.max(1, deliveryDaysCount(diet));
+    const mpd = resolveMealsPerDeliveryFromDiet(diet);
+    const perDelivery = subPrice > 0 ? subPrice : roundMoney(baseUnit * mpd);
+    const weekly = roundMoney(perDelivery * deliveries);
+    return weekly > 0 ? roundMoney(weekly * qty) : 0;
+  }
+
+  if (pt === 'MONTHLY_PLAN') {
+    const mealsDay = resolveMonthlyMealsPerDayFromDiet(diet);
+    const perDay = subPrice > 0 ? subPrice : roundMoney(baseUnit * mealsDay);
+    const monthly = roundMoney(perDay * 30);
+    return monthly > 0 ? roundMoney(monthly * qty) : 0;
+  }
+
+  return baseUnit > 0 ? roundMoney(baseUnit * qty) : 0;
+}
+
 /** Meal line total (vendor listing): prefer persisted subtotal; else plan unit × qty. */
 export function resolveMealLineSubtotalInr(
   order: { subtotal?: unknown; quantity?: unknown },
@@ -35,6 +80,9 @@ export function resolveMealLineSubtotalInr(
     const n = typeof qtyRaw === 'number' ? qtyRaw : parseInt(String(qtyRaw), 10);
     if (Number.isFinite(n) && n >= 1) qty = Math.floor(n);
   }
+
+  const purchaseBased = resolveMealPurchaseSubtotalInr(plan ?? {}, qty);
+  if (purchaseBased > 0) return purchaseBased;
 
   const unit = mealPlanUnitPriceInr(plan);
   return unit > 0 ? roundMoney(unit * qty) : 0;

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Star, MapPin, UtensilsCrossed, Calendar, Clock } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, UtensilsCrossed, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { MEAL_PLANS_COMING_SOON } from './constants';
 import { MealPlansComingSoon } from './MealPlansComingSoon';
+import { getMealPlanCatalogDisplay } from '@/lib/meal-plan-catalog-display';
 
 const MAX_RADIUS_KM = 10;
 
@@ -225,8 +226,8 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                 const description = mealPlan.description || mealPlan.desc || 'Healthy and nutritious meal plan';
                 const pricePerMeal = mealPlan.price_per_meal ?? mealPlan.pricePerMeal ?? mealPlan.price ?? 0;
                 const pricePerMonth = mealPlan.price_per_month ?? mealPlan.pricePerMonth ?? mealPlan.monthly_price ?? 0;
-                const duration = mealPlan.duration_days ?? mealPlan.duration ?? 30;
                 const vendorRating = mealPlan.vendor_rating ?? mealPlan.vendorRating ?? mealPlan.avg_rating;
+                const catalog = getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>);
                 const mealImageUrl =
                   mealPlan.mealImageUrl ||
                   (mealPlan.dietary_requirements &&
@@ -295,20 +296,36 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                           </div>
                         )}
 
-                        {/* Plan Details – labels & prices from backend (price_per_meal, price_per_month) */}
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                          {duration && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              <span>{duration} days</span>
+                        {/* Purchase option + shelf life; pricing from catalog */}
+                        <div className="flex flex-col gap-1 text-[11px] text-slate-600">
+                          <div className="inline-flex items-center rounded-full bg-orange-50 text-orange-800 px-2 py-0.5 text-[10px] font-semibold w-fit border border-orange-100">
+                            {catalog.customerPurchaseHeadline}
+                          </div>
+                          {catalog.customerPricingLine ? (
+                            <div className="text-sm font-semibold text-slate-900 pt-0.5">{catalog.customerPricingLine}</div>
+                          ) : pricePerMeal > 0 ? (
+                            <div className="text-sm font-semibold text-slate-900 pt-0.5">
+                              ₹{Number(pricePerMeal).toLocaleString('en-IN')}
+                              {pricePerMonth > 0 ? (
+                                <span className="text-green-600 font-semibold ml-2">
+                                  ₹{Number(pricePerMonth).toLocaleString('en-IN')}/month
+                                </span>
+                              ) : null}
                             </div>
-                          )}
-                          {pricePerMeal > 0 && (
-                            <span className="font-medium text-slate-700">₹{Number(pricePerMeal).toLocaleString()}/meal</span>
-                          )}
-                          {pricePerMonth > 0 && (
-                            <span className="font-semibold text-green-600">₹{Number(pricePerMonth).toLocaleString()}/month</span>
-                          )}
+                          ) : null}
+                          {catalog.customerBenefits.length > 0 ? (
+                            <ul className="list-disc list-inside text-[10px] text-slate-600 space-y-0.5 pt-0.5">
+                              {catalog.customerBenefits.slice(0, 4).map((b) => (
+                                <li key={b}>{b}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {catalog.shelfLifeDays != null ? (
+                            <div>
+                              <span className="text-slate-500 font-medium">Shelf life: </span>
+                              <span>{catalog.shelfLifeDays} days</span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>

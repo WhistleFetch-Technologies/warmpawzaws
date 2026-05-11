@@ -28,7 +28,25 @@ import {
   deriveDistanceKmFromLocations,
 } from '../utils/customer-delivery-fee-quote';
 import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
-import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
+import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import {
+  mealPlanMatchesCustomerMealType,
+  mealPlanMatchesCustomerPurpose,
+} from '../utils/meal-plan-customer-filter';
+import { normalizePurchaseType, parseMealCatalogDiet } from '../utils/meal-purchase-metadata';
+
+async function mealOrdersTableColumns(): Promise<Set<string>> {
+  try {
+    const r = await query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'meal_orders'`,
+      []
+    );
+    return new Set((r.rows || []).map((row: { column_name: string }) => row.column_name));
+  } catch {
+    return new Set();
+  }
+}
 
 function parseOptionalBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -323,20 +341,16 @@ export function registerMealPlanEndpoints(app: Hono) {
         // Sort by distance after filtering
         filteredPlans.sort((a: any, b: any) => (a.distance_km || 999) - (b.distance_km || 999));
       }
-      // Phase 1: Filter by purpose and mealType in memory (columns may not exist in all schemas)
+      // Purpose / mealType: legacy columns + vendor catalog JSON (dietary_requirements)
       if (purpose) {
-        const purposeLower = purpose.toLowerCase();
-        filteredPlans = filteredPlans.filter((mp: any) => {
-          const p = mp.purpose || '';
-          return String(p).toLowerCase().includes(purposeLower);
-        });
+        filteredPlans = filteredPlans.filter((mp: any) =>
+          mealPlanMatchesCustomerPurpose(mp as Record<string, unknown>, purpose),
+        );
       }
       if (mealType) {
-        const mealTypeLower = mealType.toLowerCase();
-        filteredPlans = filteredPlans.filter((mp: any) => {
-          const mt = mp.meal_type || '';
-          return String(mt).toLowerCase() === mealTypeLower || String(mt).toLowerCase().includes(mealTypeLower);
-        });
+        filteredPlans = filteredPlans.filter((mp: any) =>
+          mealPlanMatchesCustomerMealType(mp as Record<string, unknown>, mealType),
+        );
       }
 
       const mealPlans = await Promise.all(
@@ -401,34 +415,39 @@ export function registerMealPlanEndpoints(app: Hono) {
     try {
       const { planId } = c.req.param();
 
-      const result = await query(
-        `SELECT mp.*, v.business_name as vendor_name, v.phone as vendor_phone,
-                v.city, v.address, v.metadata as vendor_metadata
-         FROM meal_plans mp
-         JOIN vendors v ON mp.vendor_id = v.id
-         WHERE mp.id = $1`,
-        [planId]
-      );
-
-      if (result.rows.length === 0) {
+      const mpRow = await resolveMealPlanOrProductById(planId);
+      if (!mpRow) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
 
-      const mp = result.rows[0];
+      const mp = mpRow as Record<string, unknown>;
 
       const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
         mp as Record<string, unknown>,
       );
+
+      const parseJsonish = (v: unknown, fallback: unknown) => {
+        if (v == null || v === '') return fallback;
+        if (typeof v === 'object') return v;
+        if (typeof v === 'string') {
+          try {
+            return JSON.parse(v);
+          } catch {
+            return fallback;
+          }
+        }
+        return fallback;
+      };
 
       return c.json({
         success: true,
         mealPlan: {
           ...mp,
           photos,
-          suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
-          ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
-          nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
-          deliverySlots: typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots,
+          suitableFor: parseJsonish(mp.suitable_for, {}),
+          ingredients: parseJsonish(mp.ingredients, []),
+          nutritionInfo: parseJsonish(mp.nutrition_info, {}),
+          deliverySlots: parseJsonish(mp.delivery_slots, []),
           dietary_requirements,
           mealImageUrl,
         },
@@ -461,12 +480,15 @@ export function registerMealPlanEndpoints(app: Hono) {
         parseOptionalBoolean(c.req.query('rain')) ??
         (policy.runtimeSignals?.rainActive ?? false);
 
-      const plans = await select('meal_plans', { id: planId });
-      if (plans.length === 0) {
+      const planRow = await resolveMealPlanOrProductById(planId);
+      if (!planRow) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
-      const plan = plans[0];
-      const subtotal = parseFloat(plan.price_per_meal || plan.price || 0) * quantity;
+      const plan = planRow as Record<string, unknown>;
+      const subtotal = resolveMealPurchaseSubtotalInr(plan, quantity);
+      const purchaseTypeNorm = normalizePurchaseType(parseMealCatalogDiet(plan));
+      const purchaseCadence =
+        purchaseTypeNorm === 'ONE_TIME' ? 'one_time' : purchaseTypeNorm === 'WEEKLY_PLAN' ? 'weekly' : 'monthly';
 
       let deliveryFee = 0;
       let platformFee = 0;
@@ -493,12 +515,14 @@ export function registerMealPlanEndpoints(app: Hono) {
             {
               success: true,
               subtotal,
+              purchaseType: purchaseTypeNorm,
+              purchaseCadence,
               deliveryFee: null,
               deliveryFeePendingAddress: true,
               platformFee,
               convenienceFee,
               totalAmount: subtotal + platformFee + convenienceFee,
-              leadTimeHours: plan.lead_time_hours ?? 24,
+              leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
             },
             200
           );
@@ -529,11 +553,13 @@ export function registerMealPlanEndpoints(app: Hono) {
       return c.json({
         success: true,
         subtotal,
+        purchaseType: purchaseTypeNorm,
+        purchaseCadence,
         deliveryFee,
         platformFee,
         convenienceFee,
         totalAmount,
-        leadTimeHours: plan.lead_time_hours ?? 24,
+        leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);
@@ -600,6 +626,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         weekend,
         festival,
         rain,
+        purchaseType: purchaseTypeFromBody,
       } = body;
 
       // Resolve customerId from customerPhone when not provided (e.g. profile shape mismatch on frontend)
@@ -661,8 +688,46 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const plan = plans[0];
 
+      const dietFull = parseMealCatalogDiet(plan as Record<string, unknown>);
+      const expectedPurchaseType = normalizePurchaseType(dietFull);
+      const requestedPurchaseType =
+        purchaseTypeFromBody != null && String(purchaseTypeFromBody).trim() !== ''
+          ? String(purchaseTypeFromBody).trim().toUpperCase()
+          : expectedPurchaseType;
+      if (requestedPurchaseType !== expectedPurchaseType) {
+        return c.json(
+          {
+            error: 'Selected purchase option does not match this meal product',
+            code: 'PURCHASE_TYPE_MISMATCH',
+            expectedPurchaseType,
+          },
+          400,
+        );
+      }
+
+      const subscriptionConfigSnap =
+        typeof dietFull.subscriptionConfig === 'object' &&
+        dietFull.subscriptionConfig !== null &&
+        !Array.isArray(dietFull.subscriptionConfig)
+          ? (dietFull.subscriptionConfig as Record<string, unknown>)
+          : {
+              deliveryFrequency: dietFull.deliveryFrequency,
+              deliveryDays: dietFull.deliveryDays,
+              mealsPerDelivery: dietFull.mealsPerDelivery,
+              subscriptionPrice: dietFull.subscriptionPrice,
+              pauseAllowed: dietFull.pauseAllowed,
+              cancelAnytime: dietFull.cancelAnytime,
+              recommendedPlanLengthWeeks: dietFull.recommendedPlanLengthWeeks,
+            };
+
+      const purchase_snapshot = {
+        purchaseType: expectedPurchaseType,
+        subscriptionConfig: subscriptionConfigSnap,
+      };
+
       // Check lead time (when plan has lead_time_hours set)
-      const leadTimeHours = plan.lead_time_hours != null ? Number(plan.lead_time_hours) : 0;
+      const leadTimeHours =
+        plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
       if (leadTimeHours > 0) {
         // ✅ FIX: Use the actual delivery datetime (date + slot time), not just date at midnight
         // This ensures the lead time is calculated correctly based on when delivery actually happens
@@ -765,8 +830,8 @@ export function registerMealPlanEndpoints(app: Hono) {
       
       const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
 
-      // Create order with all fee components (meal_orders has platform_fee only; store combined fee there)
-      const result = await insert('meal_orders', {
+      const moCols = await mealOrdersTableColumns();
+      const mealOrderRow: Record<string, unknown> = {
         customer_id: customerId,
         vendor_id: plan.vendor_id,
         meal_plan_id: mealPlanId,
@@ -788,7 +853,12 @@ export function registerMealPlanEndpoints(app: Hono) {
         logistics_type: logisticsType || 'warmpawz',
         logistics_cost: logisticsType === 'warmpawz' ? deliveryFee : 0,
         status: 'pending',
-      });
+      };
+      if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
+      if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
+
+      // Create order with all fee components (meal_orders has platform_fee only; store combined fee there)
+      const result = await insert('meal_orders', mealOrderRow);
 
       return c.json({
         success: true,

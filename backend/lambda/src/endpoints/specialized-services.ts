@@ -36,6 +36,13 @@ import {
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
 import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+import {
+  mealProductParsedToDietaryJson,
+  mealsPerDayColumnFromPreset,
+  type MealProductDietaryInput,
+} from '../utils/meal-product-dietary';
+import type { MealsPerDayPreset } from '../constants/meal-product-enums';
+import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
 function safeMoney(v: unknown): number {
@@ -1672,6 +1679,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * GET /vendor/:vendorId/meal-products
    * Get meal products for a nutritionist vendor (merged from products + meal_plans for consistent list)
    * Resolves vendorId (identity id → vendors id) for correct vendor lookup
+   *
+   * Each item includes `metadata` (or merged specs) with optional catalog keys:
+   * mealCategories, medicalConditionTags, feedingInstructions, storageInstructions, shelfLifeDays,
+   * deliveryType, mealsPerDayPreset, mealsPerDayCustom, allergens, preparationType, ingredients (string[]),
+   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl.
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1795,6 +1807,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * POST /vendor/:vendorId/meal-products
    * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
+   *
+   * Extended catalog fields (camelCase JSON, also persisted inside dietary_requirements / metadata):
+   * mealCategories[], medicalConditionTags[], feedingInstructions, storageInstructions, shelfLifeDays (1–365),
+   * purchaseType (ONE_TIME | WEEKLY_PLAN | MONTHLY_PLAN); legacy deliveryType still accepted and mirrored,
+   * subscriptionConfig object optional (fields also accepted top-level): deliveryFrequency, deliveryDays,
+   * mealsPerDelivery*, subscriptionPrice, recommendedPlanLengthWeeks, pauseAllowed, cancelAnytime,
+   * mealsPerDayPreset (1|2|3|CUSTOM), mealsPerDayCustom (when CUSTOM),
+   * allergens[], preparationType (FRESH_COOKED | FREEZE_DRIED | RAW | DEHYDRATED | HOMEMADE),
+   * ingredients[] (array of strings; legacy comma-separated string still accepted once and normalized).
+   * Omitted extended fields use safe defaults so older clients remain compatible.
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1808,21 +1830,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
-      const mealImageUrlRaw =
-        typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
-      const mealImageUrl = mealImageUrlRaw ? stripS3PresignQueryFromUrl(mealImageUrlRaw) : undefined;
-      const dietaryPayload = {
-        petTypes: data.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType,
-        suitableFor: data.suitableFor || [],
-        ingredients: data.ingredients || [],
-        nutritionalValue: data.nutritionalValue || {},
-        preparationLeadTime: data.preparationLeadTime,
-        storageInstructions: data.storageInstructions,
-        shelfLife: data.shelfLife,
-        packSize: data.packSize,
-        ...(mealImageUrl ? { mealImageUrl } : {}),
-      };
+      const parsed = parseMealProductRequest(data);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const p = parsed.data;
+
+      const mealImageUrl = p.mealImageUrl
+        ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
+        : undefined;
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, { mealImageUrl });
 
       // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
       const productCols = await getPublicTableColumns('products');
@@ -1832,14 +1849,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       try {
         const productPayload: any = {
           vendor_id: vendorId,
-          name: data.name,
-          description: data.description,
-          price: data.price,
+          name: p.name,
+          description: p.description,
+          price: p.price,
           category: 'meal_plan',
           sku: `MP-${Date.now()}`,
-          stock_quantity: data.stockQuantity || 100,
+          stock_quantity: p.stockQuantity ?? 100,
           is_active: true,
         };
+        if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;
+        if (productCols.has('subscription_config')) {
+          productPayload.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+        }
         if (hasMetadata) {
           productPayload.metadata = JSON.stringify(dietaryPayload);
         } else if (hasSpecifications) {
@@ -1854,17 +1875,30 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       // Fallback to meal_plans table
-      const mealPlan = await insert('meal_plans', {
+      const mpCols = await getPublicTableColumns('meal_plans');
+      const mealPlanRow: Record<string, unknown> = {
         vendor_id: vendorId,
-        plan_name: data.name,
-        description: data.description,
-        price_per_meal: data.price,
-        price: data.price,
-        duration_days: data.durationDays || 7,
-        meals_per_day: data.mealsPerDay || 2,
+        plan_name: p.name,
+        description: p.description,
+        price_per_meal: p.price,
+        price: p.price,
+        duration_days: p.shelfLifeDays,
+        meals_per_day: Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
         dietary_requirements: JSON.stringify(dietaryPayload),
         is_active: true,
-      });
+      };
+      if (mpCols.has('purchase_type')) mealPlanRow.purchase_type = p.purchaseType;
+      if (mpCols.has('subscription_config')) {
+        mealPlanRow.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+      }
+      if (mpCols.has('prep_time_minutes')) mealPlanRow.prep_time_minutes = p.preparationLeadTime;
+      if (mpCols.has('shelf_life_days')) mealPlanRow.shelf_life_days = p.shelfLifeDays;
+      if (mpCols.has('storage_instructions')) mealPlanRow.storage_instructions = p.storageInstructions ?? null;
+      if (mpCols.has('serving_instructions')) mealPlanRow.serving_instructions = p.feedingInstructions ?? null;
+      if (mpCols.has('allergens') && p.allergens?.length) mealPlanRow.allergens = p.allergens;
+      if (mpCols.has('ingredients')) mealPlanRow.ingredients = JSON.stringify(p.ingredients);
+
+      const mealPlan = await insert('meal_plans', mealPlanRow as any);
       const transformedProduct = {
         ...mealPlan[0],
         name: mealPlan[0].plan_name,
@@ -1881,6 +1915,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
    * Update a meal product (meal_plans.dietary_requirements, or products.metadata / products.specifications)
+   *
+   * Same extended fields as POST; body is merged with existing metadata before validation so partial
+   * payloads from older clients still merge safely.
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
@@ -1892,8 +1929,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const productCols = await getPublicTableColumns('products');
 
       let existingDiet: any = {};
+      let mealPlanRowHints: { meals_per_day?: number; shelfLifeDays?: number } = {};
       const existingMp = await query(
-        `SELECT dietary_requirements FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        `SELECT dietary_requirements, meals_per_day, shelf_life_days, duration_days FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
         [productId, vendorId]
       );
       if (existingMp.rows?.[0]) {
@@ -1903,6 +1941,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         } catch {
           existingDiet = {};
         }
+        const r = existingMp.rows[0];
+        if (r.meals_per_day != null) mealPlanRowHints.meals_per_day = Number(r.meals_per_day);
+        const sl = r.shelf_life_days != null ? Number(r.shelf_life_days) : NaN;
+        const dd = r.duration_days != null ? Number(r.duration_days) : NaN;
+        if (Number.isFinite(sl) && sl >= 1 && sl <= 365) mealPlanRowHints.shelfLifeDays = sl;
+        else if (Number.isFinite(dd) && dd >= 1 && dd <= 365) mealPlanRowHints.shelfLifeDays = dd;
       }
 
       let existingProdMeta: any = {};
@@ -1950,18 +1994,24 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           stripIfStr(existingProdMeta.mealImageUrl) ??
           stripIfStr(meta.mealImageUrl);
 
-      const dietaryPayload = {
-        petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType ?? meta.dietType ?? existingDiet.dietType,
-        suitableFor: data.suitableFor ?? meta.suitableFor ?? existingDiet.suitableFor ?? [],
-        ingredients: data.ingredients ?? meta.ingredients ?? existingDiet.ingredients ?? [],
-        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? existingDiet.nutritionalValue ?? {},
-        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime ?? existingDiet.preparationLeadTime,
-        storageInstructions: data.storageInstructions ?? meta.storageInstructions ?? existingDiet.storageInstructions,
-        shelfLife: data.shelfLife ?? meta.shelfLife ?? existingDiet.shelfLife,
-        packSize: data.packSize ?? meta.packSize ?? existingDiet.packSize,
-        ...(resolvedMealImageUrl ? { mealImageUrl: resolvedMealImageUrl } : {}),
+      const dataTop: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+      delete dataTop.metadata;
+      const mergeForParse: Record<string, unknown> = {
+        ...existingProdMeta,
+        ...existingDiet,
+        ...(mealPlanRowHints.meals_per_day != null ? { mealsPerDay: mealPlanRowHints.meals_per_day } : {}),
+        ...(mealPlanRowHints.shelfLifeDays != null ? { shelfLifeDays: mealPlanRowHints.shelfLifeDays } : {}),
+        ...dataTop,
       };
+      const parsed = parseMealProductRequest(mergeForParse);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const p = parsed.data;
+
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
+        mealImageUrl: resolvedMealImageUrl ?? undefined,
+      });
 
       // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
       const mealPlanCheck = await query(
@@ -1969,22 +2019,71 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         [productId, vendorId]
       );
       if (mealPlanCheck.rows?.length > 0) {
+        const mpCols = await getPublicTableColumns('meal_plans');
+        const mpParams: unknown[] = [
+          data.name ?? data.plan_name,
+          data.description,
+          data.price,
+          p.shelfLifeDays,
+          Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
+          JSON.stringify(dietaryPayload),
+        ];
+        let nextPh = 6;
+        let extras = '';
+        if (mpCols.has('prep_time_minutes')) {
+          nextPh += 1;
+          extras += `, prep_time_minutes = COALESCE($${nextPh}, prep_time_minutes)`;
+          mpParams.push(p.preparationLeadTime);
+        }
+        if (mpCols.has('shelf_life_days')) {
+          nextPh += 1;
+          extras += `, shelf_life_days = COALESCE($${nextPh}, shelf_life_days)`;
+          mpParams.push(p.shelfLifeDays);
+        }
+        if (mpCols.has('storage_instructions')) {
+          nextPh += 1;
+          extras += `, storage_instructions = COALESCE($${nextPh}, storage_instructions)`;
+          mpParams.push(p.storageInstructions ?? null);
+        }
+        if (mpCols.has('serving_instructions')) {
+          nextPh += 1;
+          extras += `, serving_instructions = COALESCE($${nextPh}, serving_instructions)`;
+          mpParams.push(p.feedingInstructions ?? null);
+        }
+        if (mpCols.has('allergens')) {
+          nextPh += 1;
+          extras += `, allergens = $${nextPh}`;
+          mpParams.push(p.allergens ?? []);
+        }
+        if (mpCols.has('ingredients')) {
+          nextPh += 1;
+          extras += `, ingredients = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(p.ingredients));
+        }
+        if (mpCols.has('purchase_type')) {
+          nextPh += 1;
+          extras += `, purchase_type = $${nextPh}`;
+          mpParams.push(p.purchaseType);
+        }
+        if (mpCols.has('subscription_config')) {
+          nextPh += 1;
+          extras += `, subscription_config = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(dietaryPayload.subscriptionConfig ?? {}));
+        }
+        const idPh = nextPh + 1;
+        const vendorPh = nextPh + 2;
+        mpParams.push(productId, vendorId);
         await query(
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
             price_per_meal = COALESCE($3, price_per_meal),
-            dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
+            duration_days = COALESCE($4, duration_days),
+            meals_per_day = COALESCE($5, meals_per_day),
+            dietary_requirements = COALESCE($6::jsonb, dietary_requirements)${extras},
             updated_at = NOW()
-           WHERE id = $5 AND vendor_id = $6`,
-          [
-            data.name ?? data.plan_name,
-            data.description,
-            data.price,
-            JSON.stringify(dietaryPayload),
-            productId,
-            vendorId,
-          ]
+           WHERE id = $${idPh} AND vendor_id = $${vendorPh}`,
+          mpParams,
         );
         return c.json({ success: true, message: 'Product updated' });
       }
@@ -2008,9 +2107,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -2026,9 +2125,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -2042,7 +2141,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             price = COALESCE($3, price),
             updated_at = NOW()
            WHERE id = $4 AND vendor_id = $5`,
-          [data.name, data.description, data.price, productId, vendorId]
+          [p.name, p.description, p.price, productId, vendorId]
         );
       }
 

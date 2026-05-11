@@ -288,6 +288,9 @@ export function registerAddressEndpoints(app: Hono) {
   app.get("/customer/addresses/:addressId", async (c) => {
     try {
       const { addressId } = c.req.param();
+      if (!isValidUUID(addressId)) {
+        return c.json({ error: 'Invalid address id', success: false }, 400);
+      }
       const addresses = await query(
         `SELECT * FROM customer_addresses WHERE id = $1`,
         [addressId]

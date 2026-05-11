@@ -14,6 +14,11 @@ import {
   fetchCheckoutEmailForPrefill,
 } from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
+import {
+  formatAllergenLabel,
+  formatCategoryLabel,
+  getMealPlanCatalogDisplay,
+} from '@/lib/meal-plan-catalog-display';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -131,6 +136,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       typeof mealPlan.dietary_requirements === 'object' &&
       (mealPlan.dietary_requirements as { mealImageUrl?: string }).mealImageUrl) ||
     null;
+
+  const catalog = mealPlan ? getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>) : null;
+  const purchaseTypeForOrder = catalog?.purchaseType;
   const buildDeliveryAddress = () => {
     if (!selectedAddress) return null;
     const parts = [
@@ -195,6 +203,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         mealPlanId: mealPlan.id,
         petId: petId || undefined,
         quantity,
+        purchaseType: purchaseTypeForOrder,
         specialInstructions: specialInstructions || undefined,
         deliveryAddress,
         scheduledDeliveryDate: scheduledDate,
@@ -295,18 +304,18 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         <Card className="p-4">
           <div className="flex gap-3">
             {mealPlanImageUrl ? (
-              <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-orange-100 bg-white">
+              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-orange-100 bg-white">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={mealPlanImageUrl} alt="" className="w-full h-full object-cover" />
               </div>
             ) : (
-            <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-              <UtensilsCrossed className="w-6 h-6 text-orange-600" />
+            <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+              <UtensilsCrossed className="w-7 h-7 text-orange-600" />
             </div>
             )}
-            <div>
+            <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-slate-900">{mealPlan.name || mealPlan.plan_name || 'Meal Plan'}</h2>
-              <p className="text-sm text-slate-600 line-clamp-2">{mealPlan.description || ''}</p>
+              <p className="text-sm text-slate-600 mt-0.5">{mealPlan.description || ''}</p>
               {preview && (
                 <p className="text-sm font-medium text-orange-600 mt-1">
                   Meal price: ₹{preview.subtotal}
@@ -314,6 +323,99 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               )}
             </div>
           </div>
+
+          {catalog && (
+            <div className="mt-4 pt-3 border-t border-slate-100 space-y-3 text-sm text-slate-800">
+              <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
+                <p>
+                  <span className="text-slate-500 font-medium">Plan: </span>
+                  {catalog.customerPurchaseHeadline}
+                </p>
+                {catalog.customerPricingLine ? (
+                  <p>
+                    <span className="text-slate-500 font-medium">Pricing: </span>
+                    {catalog.customerPricingLine}
+                  </p>
+                ) : null}
+                {catalog.customerBenefits.length > 0 ? (
+                  <ul className="list-disc list-inside text-slate-700 space-y-0.5">
+                    {catalog.customerBenefits.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p>
+                  <span className="text-slate-500 font-medium">Shelf life: </span>
+                  {catalog.shelfLifeDays != null ? `${catalog.shelfLifeDays} days` : '—'}
+                </p>
+                <p>
+                  <span className="text-slate-500 font-medium">Preparation: </span>
+                  {catalog.preparationLabel || '—'}
+                </p>
+                {catalog.dietTypeLabel ? (
+                  <p>
+                    <span className="text-slate-500 font-medium">Diet: </span>
+                    {catalog.dietTypeLabel}
+                  </p>
+                ) : null}
+              </div>
+
+              {catalog.mealCategories.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Meal categories</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalog.mealCategories.map((c) => (
+                      <span
+                        key={c}
+                        className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-900 text-xs border border-teal-100"
+                      >
+                        {formatCategoryLabel(c)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {catalog.petTypes.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Pet types</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalog.petTypes.map((pt) => (
+                      <span
+                        key={pt}
+                        className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-900 text-xs border border-blue-100"
+                      >
+                        {pt}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {catalog.ingredients.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Ingredients</p>
+                  <p className="text-xs text-slate-700 leading-relaxed">{catalog.ingredients.join(', ')}</p>
+                </div>
+              ) : null}
+
+              {catalog.allergens.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Allergens</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalog.allergens.map((a) => (
+                      <span
+                        key={a}
+                        className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 text-xs border border-amber-100"
+                      >
+                        {formatAllergenLabel(a)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
         </Card>
 
         {pets.length > 0 && (
