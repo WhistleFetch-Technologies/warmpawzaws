@@ -60,7 +60,6 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Error downloading template:', err);
-      // Fallback: create template manually
       const headers = ['name*', 'description', 'category', 'sku', 'price*', 'compare_at_price', 'stock_quantity*', 'hsn_code', 'gst_rate', 'weight_kg', 'dimensions', 'material', 'brand', 'tags', 'image_urls', 'is_active'];
       const sample = [
         '"Premium Dog Food"', '"High-quality grain-free dog food"', '"Pet Food"', '"SKU-001"', '599', '699', '100', '2309', '18', '2.5', '"30x20x10"', '"Chicken, Rice"', '"Warmpawz"', '"dog,food"', '"https://example.com/image.jpg"', 'true'
@@ -70,7 +69,7 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'product_upload_template.xlsx';
+      a.download = 'product_upload_template.csv';
       a.click();
       window.URL.revokeObjectURL(url);
     }
