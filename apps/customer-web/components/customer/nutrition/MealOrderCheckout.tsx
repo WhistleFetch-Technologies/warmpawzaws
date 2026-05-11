@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, Clock, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,6 +20,7 @@ import {
   formatCategoryLabel,
   getMealPlanCatalogDisplay,
 } from '@/lib/meal-plan-catalog-display';
+import { SubscriptionCheckoutContainer } from '@/components/customer/meal-subscription/SubscriptionCheckoutContainer';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -29,6 +31,7 @@ interface MealOrderCheckoutProps {
 }
 
 export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSuccess }: MealOrderCheckoutProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [mealPlan, setMealPlan] = useState<any>(null);
@@ -139,6 +142,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
 
   const catalog = mealPlan ? getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>) : null;
   const purchaseTypeForOrder = catalog?.purchaseType;
+  const isRecurring =
+    purchaseTypeForOrder === 'WEEKLY_PLAN' || purchaseTypeForOrder === 'MONTHLY_PLAN';
   const buildDeliveryAddress = () => {
     if (!selectedAddress) return null;
     const parts = [
@@ -282,6 +287,22 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         </Button>
         <p className="text-red-600">Meal plan not found.</p>
       </div>
+    );
+  }
+
+  if (isRecurring) {
+    return (
+      <SubscriptionCheckoutContainer
+        phone={phone}
+        mealPlanId={mealPlanId}
+        vendorId={vendorId}
+        purchaseType={purchaseTypeForOrder as 'WEEKLY_PLAN' | 'MONTHLY_PLAN'}
+        onBack={onBack}
+        onSuccess={(subscriptionId) => {
+          toast.success('Subscription is active');
+          router.push(`/subscriptions/detail?id=${encodeURIComponent(subscriptionId)}`);
+        }}
+      />
     );
   }
 

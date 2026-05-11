@@ -100,6 +100,19 @@ function isProductionEnvironment(): boolean {
 }
 
 /**
+ * Meal plan orders & tracking (My Bookings): enabled on dev deploy (`runtime-config` environment development),
+ * localhost, and dev CloudFront; disabled when runtime-config marks production.
+ */
+export function isCustomerWebDevMealPlanOrdersEnabled(): boolean {
+  if (typeof window !== 'undefined') {
+    const env = getRuntimeConfig().environment;
+    if (env === 'production') return false;
+    if (env === 'development') return true;
+  }
+  return !isProductionEnvironment();
+}
+
+/**
  * Get API Gateway URL based on environment
  * Production: mss9sa4y01
  * Development: z0b3obweb6

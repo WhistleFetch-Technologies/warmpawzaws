@@ -11,7 +11,13 @@
  */
 
 type WebSocketMessage = {
-  type: 'order_status_update' | 'pharmacy_broadcast' | 'meal_order_update' | 'delivery_update' | 'notification';
+  type:
+    | 'order_status_update'
+    | 'pharmacy_broadcast'
+    | 'meal_order_update'
+    | 'delivery_update'
+    | 'meal_subscription_delivery_update'
+    | 'notification';
   data: any;
   timestamp: string;
 };
@@ -147,6 +153,25 @@ class WebSocketClient {
       if (message.data.orderId === orderId) {
         handler(message.data);
       }
+    });
+  }
+
+  /** Canonical meal subscription delivery session (operational ID). */
+  onMealSubscriptionDeliveryUpdate(
+    mealSubscriptionDeliveryId: string,
+    handler: (data: any) => void,
+  ): () => void {
+    return this.on('meal_subscription_delivery_update', (message) => {
+      if (message.data.mealSubscriptionDeliveryId === mealSubscriptionDeliveryId) {
+        handler(message.data);
+      }
+    });
+  }
+
+  /** All meal subscription delivery updates for this connection (vendor queue / multi-session views). */
+  onMealSubscriptionDeliveryBroadcast(handler: (data: any) => void): () => void {
+    return this.on('meal_subscription_delivery_update', (message) => {
+      handler(message.data);
     });
   }
 

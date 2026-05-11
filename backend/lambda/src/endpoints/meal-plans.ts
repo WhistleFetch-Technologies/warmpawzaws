@@ -705,6 +705,18 @@ export function registerMealPlanEndpoints(app: Hono) {
         );
       }
 
+      if (requestedPurchaseType === 'WEEKLY_PLAN' || requestedPurchaseType === 'MONTHLY_PLAN') {
+        return c.json(
+          {
+            error:
+              'Recurring meal subscriptions must be created via POST /meal/subscriptions (canonical flow).',
+            code: 'SUBSCRIPTION_REQUIRES_MEAL_SUBSCRIPTIONS_API',
+            expectedPurchaseType: requestedPurchaseType,
+          },
+          400,
+        );
+      }
+
       const subscriptionConfigSnap =
         typeof dietFull.subscriptionConfig === 'object' &&
         dietFull.subscriptionConfig !== null &&

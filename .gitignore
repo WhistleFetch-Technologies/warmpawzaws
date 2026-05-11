@@ -147,9 +147,6 @@ scripts/migration-542-prod-runs.log
 # Local DB dumps (do not commit)
 db-dumps/
 
-# Local/untracked Maven service tree (not in repo; keeps working copy off branch)
-services/delivery-service/
-
 # =============================================================================
 # SCREENSHOTS & IMAGES IN ROOT
 # =============================================================================
