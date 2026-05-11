@@ -309,7 +309,7 @@ test.describe('1. Vendor Onboarding & Seller Hub Configuration', () => {
 
 test.describe('2. Product Management - Bulk Upload & Individual', () => {
   
-  test('2.1 Download bulk upload template (XLSX)', async ({ request }) => {
+  test('2.1 Download bulk upload template (CSV)', async ({ request }) => {
     const vendorId = testState.vendorId || 'test-vendor-id';
     
     const response = await request.get(`${API_BASE}/vendor/${vendorId}/products/bulk/template`);
@@ -318,7 +318,8 @@ test.describe('2. Product Management - Bulk Upload & Individual', () => {
     
     if (response.status() === 200) {
       const contentType = response.headers()['content-type'];
-      expect(contentType).toMatch(/application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/octet-stream/);
+      // Should return CSV file
+      expect(contentType).toMatch(/text\/csv|application\/octet-stream/);
     }
   });
 

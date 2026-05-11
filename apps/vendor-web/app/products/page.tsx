@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCcw, Upload } from 'lucide-react';
+import { RefreshCcw } from 'lucide-react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { AddProductModal } from '@/components/vendor/products/AddProductModal';
 import { EditProductModal } from '@/components/vendor/products/EditProductModal';
@@ -198,35 +198,32 @@ export default function ProductsPage() {
           subtitle="Manage your product inventory"
           onBack={() => router.push('/')}
           actions={[
-            <div
-              key="catalog-actions"
-              className="flex items-center gap-2 sm:gap-3 shrink-0 mr-1 sm:mr-2"
+            <button
+              key="bulk"
+              type="button"
+              onClick={() => setShowBulkUpload(true)}
+              className="whitespace-nowrap rounded-lg border border-orange-500 px-3 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50 transition"
             >
-              <button
-                type="button"
-                onClick={() => loadData({ showLoader: false })}
-                disabled={loading || refreshing}
-                className="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={handleAddProduct}
-                className="whitespace-nowrap rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600 transition"
-              >
-                + Add Product
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowBulkUpload(true)}
-                className="whitespace-nowrap rounded-lg border border-orange-500 px-3 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50 transition inline-flex items-center gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                Bulk Upload
-              </button>
-            </div>,
+              📤 Bulk Upload
+            </button>,
+            <button
+              key="refresh"
+              type="button"
+              onClick={() => loadData({ showLoader: false })}
+              disabled={loading || refreshing}
+              className="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            >
+              <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>,
+            <button
+              key="add"
+              type="button"
+              onClick={handleAddProduct}
+              className="whitespace-nowrap rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600 transition"
+            >
+              + Add Product
+            </button>,
           ]}
         />
 

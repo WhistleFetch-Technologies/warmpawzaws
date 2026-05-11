@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
-import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -88,7 +87,6 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
@@ -182,7 +180,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-end gap-3 mr-2 sm:mr-4">
+      <div className="flex justify-end gap-3">
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
@@ -200,14 +198,6 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
         >
           <Plus className="w-5 h-5" />
           Add Product
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowBulkUpload(true)}
-          className="flex items-center gap-2 px-5 py-3 border border-orange-500 text-orange-600 rounded-xl font-semibold hover:bg-orange-50 transition-all"
-        >
-          <Upload className="w-5 h-5" />
-          Bulk Upload
         </button>
       </div>
 
@@ -406,15 +396,6 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           }}
         />
       )}
-
-      <BulkProductUpload
-        isOpen={showBulkUpload}
-        onClose={() => setShowBulkUpload(false)}
-        onSuccess={() => {
-          setShowBulkUpload(false);
-          loadProducts();
-        }}
-      />
     </div>
   );
 }
