@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
@@ -74,8 +74,30 @@ const deliveryStatusSteps = [
 
 export function TrackingPageClient({ orderId }: { orderId: string }) {
   const searchParams = useSearchParams();
+  const routeParams = useParams();
+  const pathname = usePathname();
   const phone = searchParams.get('phone')?.trim() || undefined;
   const from = searchParams.get('from')?.trim() || undefined;
+
+  /** Static export only pre-renders `/track/placeholder`; real id must come from the client route or URL. */
+  const resolvedOrderId = useMemo(() => {
+    const fromDynamicSegment =
+      typeof routeParams?.orderId === 'string'
+        ? routeParams.orderId
+        : Array.isArray(routeParams?.orderId)
+          ? routeParams.orderId[0] ?? ''
+          : '';
+    const pathSeg =
+      typeof pathname === 'string' ? pathname.match(/^\/track\/([^/?#]+)/)?.[1] : undefined;
+    const decodedPath = pathSeg ? decodeURIComponent(pathSeg) : '';
+
+    const candidates = [fromDynamicSegment, decodedPath, orderId];
+    for (const c of candidates) {
+      const s = String(c || '').trim();
+      if (s && s !== 'placeholder') return s;
+    }
+    return String(orderId || '').trim();
+  }, [orderId, routeParams, pathname]);
 
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +115,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [orderId, phone]);
+  }, [resolvedOrderId, phone]);
 
   const loadTracking = async (silent = false) => {
     try {
@@ -104,7 +126,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         phone && phone.trim()
           ? `?phone=${encodeURIComponent(phone.trim())}`
           : '';
-      const result = await apiClient.get<TrackingData>(`/customer/tracking/${orderId}${qs}`);
+      const result = await apiClient.get<TrackingData>(`/customer/tracking/${resolvedOrderId}${qs}`);
       setTracking(result);
       setError(null);
     } catch (err: any) {
@@ -183,8 +205,10 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const isDelivered = tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
 
   const mealBackHref =
-    from === 'meal-plans' && phone
-      ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+    from === 'meal-plans'
+      ? phone
+        ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+        : '/orders/meal-plans'
       : '/';
 
   const orderTotal = tracking.order.total ?? tracking.order.total_amount;

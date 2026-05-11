@@ -134,6 +134,7 @@ import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { MealPlansList } from '../nutrition/MealPlansList';
 import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
+import { MealPlanOrdersPanel } from '../meal-plans/MealPlanOrdersPanel';
 import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
 import { NutritionistBookingRouter } from '../nutrition/NutritionistBookingRouter';
 import { DietConsultationVendors } from '../nutrition/DietConsultationVendors';
@@ -299,6 +300,7 @@ type ScreenType =
   | 'nutrition-meal-plans'
   | 'meal-order-checkout'
   | 'meal-order-tracking'
+  | 'meal-plan-orders'
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'diet-consultation-services'
@@ -399,6 +401,9 @@ export function CustomerHomeWrapper({
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [mealOrderTrackingBackScreen, setMealOrderTrackingBackScreen] = useState<
+    'nutrition-meal-plans' | 'meal-plan-orders'
+  >('nutrition-meal-plans');
   const [selectedProblem, setSelectedProblem] = useState<{
     id: string;
     title: string;
@@ -3052,6 +3057,7 @@ export function CustomerHomeWrapper({
         onSuccess={(orderId) => {
           toast.success('Order placed successfully');
           setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('nutrition-meal-plans');
           setCurrentScreen('meal-order-tracking');
         }}
       />
@@ -3062,7 +3068,20 @@ export function CustomerHomeWrapper({
       <OrderTrackingScreen
         orderId={selectedBookingId}
         orderType="meal"
-        onBack={() => setCurrentScreen('nutrition-meal-plans')}
+        onBack={() => setCurrentScreen(mealOrderTrackingBackScreen)}
+      />
+    );
+  }
+  if (currentScreen === 'meal-plan-orders') {
+    return (
+      <MealPlanOrdersPanel
+        fixedCustomerPhone={phone}
+        onBack={() => setCurrentScreen('my-bookings')}
+        onTrackOrder={(orderId) => {
+          setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('meal-plan-orders');
+          setCurrentScreen('meal-order-tracking');
+        }}
       />
     );
   }

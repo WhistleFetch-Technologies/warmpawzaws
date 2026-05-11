@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
   getPidgeCredentials,
@@ -471,15 +472,22 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      // Update order
+      // Update order (meal may be mirrored from subscription_delivery_id only)
       const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
-      const orderId = tracking.pharmacy_order_id || tracking.meal_order_id;
-      
+      let orderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+      if (!orderId && tracking.subscription_delivery_id) {
+        orderId =
+          (await resolveMealOrderIdForSubscriptionDelivery(String(tracking.subscription_delivery_id))) || null;
+      }
+
       if (orderId) {
         await update(orderTable, { id: orderId }, {
           status: normalizedStatus,
           updated_at: new Date().toISOString(),
         });
+        if (orderTable === 'meal_orders' && normalizedStatus === 'delivered') {
+          await ensureMealOrderSettlementOnDelivered(String(orderId));
+        }
       }
 
       return c.json({ success: true, status: normalizedStatus });
@@ -631,7 +639,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           });
 
           const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
-          const hyperlocalOrderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+          let hyperlocalOrderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+          if (!hyperlocalOrderId && tracking.subscription_delivery_id) {
+            hyperlocalOrderId =
+              (await resolveMealOrderIdForSubscriptionDelivery(String(tracking.subscription_delivery_id))) || null;
+          }
           const orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalizedStatus);
           if (hyperlocalOrderId && orderStatus) {
             await update(orderTable, { id: hyperlocalOrderId }, {

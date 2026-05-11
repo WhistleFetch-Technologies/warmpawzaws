@@ -32,6 +32,15 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
+/** Map delivery_settlements.status to vendor_earnings-like status for dashboard summaries. */
+function mapDeliverySettlementLedgerStatus(raw: string | undefined | null): string {
+  const k = String(raw || '').toLowerCase();
+  if (k === 'transferred') return 'paid_out';
+  if (k === 'processing') return 'settled';
+  if (k === 'failed') return 'cancelled';
+  return 'pending';
+}
+
 function buildDailyBreakdownLast7Days(
   earningsRows: Array<{ realized_at?: string | null; amount?: string | number | null }>,
   ref: Date = new Date()
@@ -787,6 +796,27 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const earnings = earningsResult.rows || [];
 
+      const settlementsSql =
+        period === 'lifetime'
+          ? `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
+                    net_payout, status, order_delivered_at, created_at, actual_payout_date
+             FROM delivery_settlements
+             WHERE vendor_id = ANY($1::uuid[])
+             ORDER BY COALESCE(order_delivered_at, created_at) DESC`
+          : `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
+                    net_payout, status, order_delivered_at, created_at, actual_payout_date
+             FROM delivery_settlements
+             WHERE vendor_id = ANY($1::uuid[])
+               AND COALESCE(order_delivered_at, created_at) >= $2
+             ORDER BY COALESCE(order_delivered_at, created_at) DESC`;
+
+      const settlementsResult = await query(
+        settlementsSql,
+        period === 'lifetime' ? [vendorIdsForEarnings] : [vendorIdsForEarnings, startDate.toISOString()],
+      ).catch(() => ({ rows: [] }));
+
+      const settlementRows = settlementsResult.rows || [];
+
       // Calculate summary
       const summary = {
         totalEarnings: 0,
@@ -820,12 +850,38 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         }
       });
 
+      settlementRows.forEach((ds: any) => {
+        const ledgerStatus = mapDeliverySettlementLedgerStatus(ds.status);
+        if (ledgerStatus === 'cancelled') return;
+
+        const amount = parseFloat(ds.net_payout || '0');
+        const commission = parseFloat(ds.commission_amount || '0');
+        const total = parseFloat(ds.order_amount || '0');
+
+        summary.totalEarnings += amount;
+        summary.totalCommission += commission;
+        summary.totalRevenue += total;
+
+        if (ledgerStatus === 'pending') {
+          summary.pendingSettlement += amount;
+        } else if (ledgerStatus === 'settled') {
+          summary.settled += amount;
+        } else if (ledgerStatus === 'paid_out') {
+          summary.paidOut += amount;
+        }
+
+        const realizedAt = ds.order_delivered_at || ds.created_at;
+        if (realizedAt && new Date(realizedAt) >= startDate) {
+          summary.thisPeriod += amount;
+        }
+      });
+
       // Get vendor info for bank verification status
       const vendors = await select('vendors', { id: vendorId });
       const vendor = vendors[0] || {};
 
-      // Transform transactions
-      const transactions = earnings.map((e: any) => ({
+      // Transform transactions (bookings + hyperlocal delivery settlements)
+      const bookingTransactions = earnings.map((e: any) => ({
         id: e.id,
         bookingId: e.booking_id,
         bookingDate: e.booking_date,
@@ -839,6 +895,26 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         paidOutAt: e.paid_out_at,
         settlementId: e.settlement_id,
       }));
+
+      const settlementTransactions = settlementRows.map((ds: any) => ({
+        id: ds.id,
+        bookingId: ds.meal_order_id || ds.pharmacy_order_id,
+        bookingDate: ds.order_delivered_at || ds.created_at,
+        serviceName: ds.meal_order_id ? 'Meal delivery' : ds.pharmacy_order_id ? 'Pharmacy delivery' : 'Delivery',
+        amount: parseFloat(ds.net_payout || '0'),
+        commission: parseFloat(ds.commission_amount || '0'),
+        totalAmount: parseFloat(ds.order_amount || '0'),
+        commissionRate: parseFloat(ds.commission_rate || '0'),
+        status: mapDeliverySettlementLedgerStatus(ds.status),
+        realizedAt: ds.order_delivered_at || ds.created_at,
+        paidOutAt: ds.actual_payout_date || null,
+        settlementId: ds.id,
+      }));
+
+      const transactions = [...bookingTransactions, ...settlementTransactions].sort(
+        (a: any, b: any) =>
+          new Date(b.realizedAt || 0).getTime() - new Date(a.realizedAt || 0).getTime(),
+      );
 
       // ✅ Get pending tier deductions
       const deductionsResult = await query(
@@ -862,7 +938,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       // Use computed total from vendor_earnings for lifetime so completed bookings show immediately
       const totalEarningsLifetime = period === 'lifetime' ? summary.totalEarnings : parseFloat(vendor.total_earnings || '0');
 
-      const dailyBreakdown = period === 'week' ? buildDailyBreakdownLast7Days(earnings) : undefined;
+      const dailyBreakdown =
+        period === 'week'
+          ? buildDailyBreakdownLast7Days([
+              ...earnings,
+              ...settlementRows.map((ds: any) => ({
+                realized_at: ds.order_delivered_at || ds.created_at,
+                amount: ds.net_payout,
+              })),
+            ])
+          : undefined;
 
       return c.json({
         success: true,

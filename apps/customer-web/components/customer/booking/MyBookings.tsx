@@ -142,6 +142,10 @@ export function MyBookings({
 
   const navigateToMealPlanOrders = () => {
     if (!mealPlanOrdersEnabled) return;
+    if (onNavigate) {
+      onNavigate('meal-plan-orders');
+      return;
+    }
     router.push(mealPlanOrdersUrl(phone));
   };
 
@@ -607,7 +611,7 @@ export function MyBookings({
       />
 
       <div className="max-w-customer mx-auto -mt-1">
-        {/* Meal Plan Orders — opens /orders/meal-plans; Track Order uses /track/:id + booking phone */}
+        {/* Meal Plan Orders — in shell: meal-plan-orders → OrderTrackingScreen; standalone: /orders/meal-plans */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
             type="button"
