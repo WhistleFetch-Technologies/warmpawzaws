@@ -1369,27 +1369,58 @@ export function GroomingServicesByStyle({
                       Available Services ({provider.services.length})
                     </h4>
                     {provider.services.length > 0 ? (
-                      provider.services.map((service) => (
-                        <div 
-                          key={service.id}
-                          className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                        >
-                          <div className="flex w-full min-w-0 items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1 pr-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
+                      provider.services.map((service) => {
+                        const descTrim = service.description?.trim() ?? '';
+                        return (
+                          <div
+                            key={service.id}
+                            className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                          >
+                            {/* Row 1: name + package badge (left) | price (right) */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                                <h5 className="font-medium text-gray-900 leading-5 line-clamp-2">{service.name}</h5>
                                 {service.isPackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">Package</span>
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                    Package
+                                  </span>
                                 )}
                               </div>
-                              {service.description?.trim() && (
-                                <ServiceDescriptionInline
-                                  description={service.description}
-                                  title={service.name}
-                                  className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                                />
-                              )}
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <div className="shrink-0 text-right">
+                                {service.originalPrice && service.originalPrice > service.price ? (
+                                  <>
+                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                                      {formatPriceWithSymbol(service.price)}
+                                    </div>
+                                    <div className="text-sm text-gray-400 line-through">
+                                      {formatPriceWithSymbol(service.originalPrice)}
+                                    </div>
+                                    {service.discountPercentage && (
+                                      <Badge className="bg-green-500 text-white text-xs mt-1">
+                                        {service.discountPercentage}% OFF
+                                      </Badge>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                                    {formatPriceWithSymbol(service.price)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Row 2: description full width */}
+                            {descTrim && (
+                              <ServiceDescriptionInline
+                                description={descTrim}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            )}
+
+                            {/* Row 3: badges (left) | Book Now (right) */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <Badge variant="outline" className="text-xs shrink-0">
                                   <Clock className="w-3 h-3 mr-1" />
                                   {service.duration} mins
@@ -1400,30 +1431,9 @@ export function GroomingServicesByStyle({
                                   </Badge>
                                 )}
                               </div>
-                            </div>
-                            <div className="shrink-0 text-right ml-2 min-w-[6.5rem]">
-                              {service.originalPrice && service.originalPrice > service.price ? (
-                                <div className="mb-2">
-                                  <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                    {formatPriceWithSymbol(service.price)}
-                                  </div>
-                                  <div className="text-sm text-gray-400 line-through">
-                                    {formatPriceWithSymbol(service.originalPrice)}
-                                  </div>
-                                  {service.discountPercentage && (
-                                    <Badge className="bg-green-500 text-white text-xs mt-1">
-                                      {service.discountPercentage}% OFF
-                                    </Badge>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
-                                  {formatPriceWithSymbol(service.price)}
-                                </div>
-                              )}
                               <Button
                                 size="sm"
-                                className="w-full bg-[#FF8C42] hover:bg-[#E67A35] text-white sm:w-auto"
+                                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleSelectService(provider, service);
@@ -1433,8 +1443,8 @@ export function GroomingServicesByStyle({
                               </Button>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
                         No services available from this provider

@@ -842,7 +842,7 @@ export function UniversalProviderProfile({
                         <div className="flex w-full min-w-0 items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="font-medium text-gray-900 break-words">{service.name}</h4>
+                              <h4 className="font-medium text-gray-900 leading-5 line-clamp-2">{service.name}</h4>
                               {service.popular && (
                                 <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
                               )}

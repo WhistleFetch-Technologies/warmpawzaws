@@ -1579,25 +1579,51 @@ export function UniversalServicesByStyle({
                       Available Services ({provider.services.length})
                     </h4>
                     {provider.services.map((service) => {
-                        return (
-                      <div 
-                        key={service.id}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                      >
-                        <div className="flex w-full min-w-0 items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1 pr-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">Package</span>
-                                )}
-                                {(service as any).inActivePackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200 shrink-0">In your package</span>
-                                )}
-                              </div>
+                      const isPackage =
+                        isVendorServicePackageRow(service as any) || (service as any).isPackage;
+                      const descTrim = service.description?.trim() ?? '';
+                      return (
+                        <div
+                          key={service.id}
+                          className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                        >
+                          {/* Row 1: name + package badges (left) | price (right) */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                              <h5 className="font-medium text-gray-900 leading-5 line-clamp-2">{service.name}</h5>
+                              {isPackage && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                  Package
+                                </span>
+                              )}
+                              {(service as any).inActivePackage && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-[#FF8C42] border border-orange-200 shrink-0">
+                                  In your package
+                                </span>
+                              )}
                             </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <div className="shrink-0 text-right">
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice || service.price}
+                                vendorDiscount={service.vendorDiscount}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Row 2: description full width */}
+                          {descTrim && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <ServiceDescriptionInline
+                                description={descTrim}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            </div>
+                          )}
+
+                          {/* Row 3: badges (left) | Book Now (right) */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <Badge variant="outline" className="text-xs shrink-0">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {(service.duration ?? 0)} mins
@@ -1608,25 +1634,9 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
-                            {service.description?.trim() && (
-                              <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                                <ServiceDescriptionInline
-                                  description={service.description!}
-                                  title={service.name}
-                                  className="m-0 text-sm leading-5 text-gray-500"
-                                />
-                              </div>
-                            )}
-                          </div>
-                          <div className="shrink-0 text-right ml-2 min-w-[6.5rem]">
-                            <ServicePricingDisplay
-                              basePrice={service.originalPrice || service.price}
-                              vendorDiscount={service.vendorDiscount}
-                              className="mb-2"
-                            />
                             <Button
                               size="sm"
-                              className="w-full bg-[#FF8C42] hover:bg-[#E67A35] text-white sm:w-auto"
+                              className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);
@@ -1636,8 +1646,8 @@ export function UniversalServicesByStyle({
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    );})}
+                      );
+                    })}
                   </div>
                 )}
 
