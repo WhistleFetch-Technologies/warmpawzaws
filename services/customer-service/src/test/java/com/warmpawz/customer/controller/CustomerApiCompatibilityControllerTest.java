@@ -351,7 +351,9 @@ class CustomerApiCompatibilityControllerTest {
         mockMvc.perform(get("/customer/{phone}/pets/{petId}/bookings", "9999999999", petId))
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Pet bookings are managed outside customer-service"));
+                .andExpect(jsonPath("$.message").value("Pet bookings are managed outside customer-service"))
+                .andExpect(jsonPath("$.data.ownerService").value("booking-service"))
+                .andExpect(jsonPath("$.data.status").value("not_migrated"));
 
         mockMvc.perform(post("/pets")
                         .contentType(MediaType.APPLICATION_JSON)

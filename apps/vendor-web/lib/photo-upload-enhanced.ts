@@ -195,7 +195,9 @@ async function uploadToS3WithProgress(
 }
 
 /**
- * Verify that uploaded photo is accessible
+ * Verify that uploaded photo is accessible.
+ * Uses GET (not HEAD): S3 SigV4 presigned URLs from GetObject are valid for GET only;
+ * HEAD uses a different canonical request and returns 403 even when the object exists.
  */
 async function verifyPhotoUpload(url: string, timeout: number = 5000): Promise<boolean> {
   try {
@@ -203,21 +205,23 @@ async function verifyPhotoUpload(url: string, timeout: number = 5000): Promise<b
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const response = await fetch(url, {
-      method: 'HEAD',
+      method: 'GET',
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
-    
-    // In development, if we get 403, it might be due to bucket blocking public access
-    // but the upload itself succeeded. Check if it's a 403 and assume success in dev.
+
+    if (response.body) {
+      await response.body.cancel().catch(() => {});
+    }
+
     if (!response.ok && response.status === 403) {
-      console.warn('Photo verification returned 403 (bucket may block public access), but upload likely succeeded');
-      // In development, assume success for 403 errors since upload succeeded
-      // The presigned URL should work, but if we're verifying public URL, skip it
+      console.warn(
+        'Photo verification returned 403 (often unsigned URL on a private bucket); treating as ok if upload succeeded'
+      );
       return true;
     }
-    
+
     return response.ok;
   } catch (error) {
     console.warn('Photo verification failed:', error);

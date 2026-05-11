@@ -17,6 +17,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,6 +55,25 @@ class CustomerServiceImplTest {
 
         assertFalse(customer.isActive());
         assertEquals(Customer.STATUS_INACTIVE, customer.getStatus());
+        assertNotNull(customer.getDeactivatedAt());
+        assertEquals("user request", customer.getDeactivationReason());
+    }
+
+    @Test
+    void deactivateCustomerAllowsMissingReason() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setActive(true);
+        customer.setStatus(Customer.STATUS_ACTIVE);
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+
+        customerService.deactivateCustomer(customerId, " ");
+
+        assertFalse(customer.isActive());
+        assertEquals(Customer.STATUS_INACTIVE, customer.getStatus());
+        assertNotNull(customer.getDeactivatedAt());
+        assertNull(customer.getDeactivationReason());
     }
 
     @Test

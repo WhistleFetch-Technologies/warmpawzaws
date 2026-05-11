@@ -118,7 +118,12 @@ aws ecs describe-task-definition \
 TASK_JSON="$TMP_DIR/register-task-definition.json"
 export TASK_SOURCE="$TMP_DIR/current-task-definition.json"
 export TASK_TARGET="$TASK_JSON"
-export ECS_TASK_FAMILY ECS_CONTAINER_NAME IMAGE_URI
+# API_BASE_URL is read by CustomerMapper.rewriteMediaUrl() to rewrite persisted S3 photo
+# URLs into <API_BASE_URL>/storage/media?url=<encoded>. The Lambda behind that path 302s
+# to a freshly-signed S3 URL on every load, so customer/pet photos self-heal without any
+# client work. Dev default is the dev HTTP API gateway; override via env when needed.
+API_BASE_URL_VALUE="${API_BASE_URL:-https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com}"
+export ECS_TASK_FAMILY ECS_CONTAINER_NAME IMAGE_URI API_BASE_URL_VALUE
 node <<'NODE'
 const fs = require('fs');
 const task = JSON.parse(fs.readFileSync(process.env.TASK_SOURCE, 'utf8'));
@@ -146,6 +151,14 @@ if (!target) {
   console.error(`Container ${want} not found; updating first container ${target.name}`);
 }
 target.image = process.env.IMAGE_URI;
+target.environment = Array.isArray(target.environment) ? target.environment : [];
+const upsertEnv = (name, value) => {
+  if (value == null || value === '') return;
+  const existing = target.environment.find((e) => e.name === name);
+  if (existing) existing.value = value;
+  else target.environment.push({ name, value });
+};
+upsertEnv('API_BASE_URL', process.env.API_BASE_URL_VALUE);
 fs.writeFileSync(process.env.TASK_TARGET, JSON.stringify(task, null, 2));
 NODE
 

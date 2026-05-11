@@ -161,7 +161,22 @@ public class CustomerController {
         update.setPincode(stringValue(profile.get("pincode")));
         update.setPhoto(stringValue(profile.get("photo")));
         update.setProfilePhotoUrl(stringValue(profile.get("profilePhotoUrl")));
+        // Granular address fields are persisted onto the default address row, not on customers.
+        update.setAddressLine1(stringValue(profile.get("addressLine1")));
+        update.setAddressLine2(stringValue(profile.get("addressLine2")));
+        update.setHouseNo(firstNonBlank(stringValue(profile.get("houseNo")), stringValue(profile.get("house_no"))));
+        update.setFlatNo(firstNonBlank(stringValue(profile.get("flatNo")), stringValue(profile.get("flat_no"))));
+        update.setFloor(stringValue(profile.get("floor")));
+        update.setStreetName(firstNonBlank(stringValue(profile.get("streetName")), stringValue(profile.get("street_name"))));
+        update.setApartmentName(firstNonBlank(stringValue(profile.get("apartmentName")), stringValue(profile.get("apartment_name"))));
+        update.setLandmark(stringValue(profile.get("landmark")));
         return update;
+    }
+
+    private String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) return a;
+        if (b != null && !b.isBlank()) return b;
+        return null;
     }
 
     private ResponseEntity<CommonResponse<CustomerResponse>> profileResponse(String phone) {

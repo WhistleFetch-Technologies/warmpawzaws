@@ -221,7 +221,12 @@ public class CustomerPetController {
         CommonResponse<Map<String, Object>> body = new CommonResponse<>();
         body.setSuccess(false);
         body.setMessage("Pet bookings are managed outside customer-service");
-        body.setData(Map.of("bookings", List.of(), "stats", Map.of()));
+        body.setData(Map.of(
+                "bookings", List.of(),
+                "stats", Map.of(),
+                "ownerService", "booking-service",
+                "status", "not_migrated"
+        ));
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(body);
     }
 

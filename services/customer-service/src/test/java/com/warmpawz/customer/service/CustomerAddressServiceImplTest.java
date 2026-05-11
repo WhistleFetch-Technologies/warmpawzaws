@@ -77,6 +77,7 @@ class CustomerAddressServiceImplTest {
         assertTrue(request.getIsDefault());
         org.junit.jupiter.api.Assertions.assertFalse(existingDefault.isDefault());
         verify(addressRepository).saveAndFlush(any(CustomerAddress.class));
+        verify(cache, times(2)).clear();
     }
 
     @Test

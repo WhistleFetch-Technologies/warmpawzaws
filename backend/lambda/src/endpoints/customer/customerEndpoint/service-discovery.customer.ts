@@ -475,6 +475,26 @@ async function columnExists(tableName: string, columnName: string): Promise<bool
   }
 }
 
+/**
+ * Migration 737 adds `vendors.service_distance_km`. Some dev RDS instances never ran it while
+ * deployed discovery SQL (or DB objects) reference `v.service_distance_km` → Postgres 42703 and
+ * GET /customer/discover-services returns 500. Idempotent DDL once per cold start; harmless if
+ * the column already exists. Requires ALTER on the DB role used by Lambda (typical on dev).
+ */
+let ensuredVendorsServiceDistanceKmColumn = false;
+async function ensureVendorsServiceDistanceKmColumnOnce(): Promise<void> {
+  if (ensuredVendorsServiceDistanceKmColumn) return;
+  ensuredVendorsServiceDistanceKmColumn = true;
+  try {
+    await query(
+      `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS service_distance_km NUMERIC(5, 2)`
+    );
+    columnExistsCache.delete('vendors.service_distance_km');
+  } catch (e: any) {
+    console.warn('[discovery-schema] vendors.service_distance_km ensure skipped:', e?.message || e);
+  }
+}
+
 const STYLE_ALIASES: Record<string, string> = {
   at_clinic: 'at_center',
   at_vendor: 'at_center',
@@ -1423,6 +1443,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
    */
   app.get('/customer/discovery/count', async (c) => {
     try {
+      await ensureVendorsServiceDistanceKmColumnOnce();
       const serviceStyle = c.req.query('serviceStyle') || c.req.query('style');
       if (!serviceStyle) {
         return c.json(
@@ -1874,6 +1895,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
    */
   app.get("/customer/discover-services", async (c) => {
     try {
+      await ensureVendorsServiceDistanceKmColumnOnce();
       // 1) Parse + validate
       const serviceStyle = c.req.query('serviceStyle') || c.req.query('style');
       if (!serviceStyle) {

@@ -17,12 +17,36 @@ public class UpdateCustomerRequest {
     private LocalDate dateOfBirth;
 
     private String address;
+    private String addressLine1;
+    private String addressLine2;
+    private String houseNo;
+    private String flatNo;
+    private String floor;
+    private String streetName;
+    private String apartmentName;
+    private String landmark;
     private String city;
     private String state;
     private String pincode;
 
     private String profilePhotoUrl;
     private String photo;
+
+    @JsonIgnore
+    public boolean hasGranularAddressFields() {
+        return hasText(addressLine1)
+                || hasText(addressLine2)
+                || hasText(houseNo)
+                || hasText(flatNo)
+                || hasText(floor)
+                || hasText(streetName)
+                || hasText(apartmentName)
+                || hasText(landmark);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
 
     @JsonIgnore
     public String resolveFullName() {

@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
@@ -49,6 +50,14 @@ public class CacheConfig {
         if (!redisCacheEnabled) {
             log.info("event=cache_backend_selected backend=caffeine reason=redis_disabled");
             return caffeineManager;
+        }
+
+        if (!isRedisReachable(redisConnectionFactory)) {
+            if (fallbackToCaffeineOnError) {
+                log.warn("event=cache_backend_selected backend=caffeine reason=redis_unreachable fallback=true");
+                return caffeineManager;
+            }
+            throw new IllegalStateException("Redis cache is enabled but Redis is not reachable");
         }
 
         RedisCacheManager redisManager = buildRedisManager(
@@ -137,6 +146,16 @@ public class CacheConfig {
                 .cacheDefaults(readConfig)
                 .withInitialCacheConfigurations(configs)
                 .build();
+    }
+
+    private boolean isRedisReachable(RedisConnectionFactory redisConnectionFactory) {
+        try (RedisConnection connection = redisConnectionFactory.getConnection()) {
+            String pong = connection.ping();
+            return "PONG".equalsIgnoreCase(pong);
+        } catch (RuntimeException ex) {
+            log.warn("event=redis_connectivity_check_failed reason={}", ex.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private static final class FallbackCacheManager implements CacheManager {

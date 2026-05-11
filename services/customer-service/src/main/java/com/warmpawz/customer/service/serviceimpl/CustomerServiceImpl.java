@@ -5,9 +5,11 @@ import com.warmpawz.customer.dto.request.UpdateCustomerRequest;
 import com.warmpawz.customer.dto.response.CustomerResponse;
 import com.warmpawz.customer.config.CacheNames;
 import com.warmpawz.customer.entity.Customer;
+import com.warmpawz.customer.entity.CustomerAddress;
 import com.warmpawz.customer.exception.BadRequestException;
 import com.warmpawz.customer.exception.NotFoundException;
 import com.warmpawz.customer.mapper.CustomerMapper;
+import com.warmpawz.customer.repository.CustomerAddressRepository;
 import com.warmpawz.customer.repository.CustomerRepository;
 import com.warmpawz.customer.service.CustomerProfileCompletionService;
 import com.warmpawz.customer.service.CustomerService;
@@ -18,6 +20,8 @@ import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -28,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class CustomerServiceImpl implements CustomerService {
 
     private final CustomerRepository customerRepository;
+    private final CustomerAddressRepository customerAddressRepository;
     private final CustomerProfileCompletionService completionService;
     private final CacheManager cacheManager;
     private final AtomicLong cacheHitCounter = new AtomicLong();
@@ -130,10 +135,73 @@ public class CustomerServiceImpl implements CustomerService {
         String resolvedPhoto = request.resolveProfilePhotoUrl();
         if (resolvedPhoto != null) customer.setProfilePhotoUrl(resolvedPhoto);
 
+        if (request.hasGranularAddressFields()) {
+            upsertDefaultAddressDetails(customer, request);
+        }
+
         // 🔥 ONBOARDING HOOK
         completionService.markBasicInfoCompleted(customerId);
         invalidateCustomerCaches(customerId, previousPhone);
         invalidateCustomerCaches(customerId, customer.getPhone());
+    }
+
+    /**
+     * Persist granular address fields (houseNo, floor, etc.) onto the customer's default address row.
+     * The Customer entity has no columns for these; they live on customer_addresses.
+     * Falls back to the first address if none is marked default, and creates a new default address
+     * row if the customer has no addresses yet so that subsequent reads can return the data.
+     */
+    private void upsertDefaultAddressDetails(Customer customer, UpdateCustomerRequest request) {
+        UUID customerId = customer.getId();
+        List<CustomerAddress> addresses = customerAddressRepository.findByCustomer_Id(customerId);
+        CustomerAddress target = addresses.stream()
+                .filter(CustomerAddress::isDefault)
+                .findFirst()
+                .orElseGet(() -> addresses.isEmpty() ? null : addresses.get(0));
+
+        boolean isNew = false;
+        if (target == null) {
+            target = new CustomerAddress();
+            target.setCustomer(customer);
+            target.setAddressType("home");
+            target.setFullName(customer.getFullName());
+            target.setPhone(customer.getPhone());
+            target.setDefault(true);
+            target.setCreatedAt(Instant.now());
+            isNew = true;
+        }
+
+        if (hasText(request.getAddressLine1())) target.setAddressLine1(request.getAddressLine1().trim());
+        else if (isNew && hasText(request.getAddress())) target.setAddressLine1(request.getAddress().trim());
+
+        if (hasText(request.getAddressLine2())) target.setAddressLine2(request.getAddressLine2().trim());
+        if (hasText(request.getHouseNo())) target.setHouseNo(request.getHouseNo().trim());
+        if (hasText(request.getFlatNo())) target.setFlatNo(request.getFlatNo().trim());
+        if (hasText(request.getFloor())) target.setFloor(request.getFloor().trim());
+        if (hasText(request.getStreetName())) target.setStreetName(request.getStreetName().trim());
+        if (hasText(request.getApartmentName())) target.setApartmentName(request.getApartmentName().trim());
+        if (hasText(request.getLandmark())) target.setLandmark(request.getLandmark().trim());
+
+        if (isNew) {
+            if (hasText(request.getCity())) target.setCity(request.getCity().trim());
+            else if (hasText(customer.getCity())) target.setCity(customer.getCity().trim());
+            if (hasText(request.getState())) target.setState(request.getState().trim());
+            else if (hasText(customer.getState())) target.setState(customer.getState().trim());
+            if (hasText(request.getPincode())) target.setPincode(request.getPincode().trim());
+            else if (hasText(customer.getPincode())) target.setPincode(customer.getPincode().trim());
+        }
+
+        target.setUpdatedAt(Instant.now());
+        customerAddressRepository.save(target);
+
+        Cache addressByCustomer = cacheManager.getCache(CacheNames.ADDRESSES_BY_CUSTOMER_ID);
+        if (addressByCustomer != null) addressByCustomer.clear();
+        Cache addressByPhone = cacheManager.getCache(CacheNames.ADDRESSES_BY_PHONE);
+        if (addressByPhone != null) addressByPhone.clear();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     @Override
@@ -142,6 +210,10 @@ public class CustomerServiceImpl implements CustomerService {
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
         customer.setActive(false);
         customer.setStatus(Customer.STATUS_INACTIVE);
+        customer.setDeactivatedAt(Instant.now());
+        if (reason != null && !reason.isBlank()) {
+            customer.setDeactivationReason(reason.trim());
+        }
         invalidateCustomerCaches(customerId, customer.getPhone());
     }
 

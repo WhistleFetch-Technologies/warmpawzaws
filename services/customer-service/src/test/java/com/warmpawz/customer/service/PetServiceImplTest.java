@@ -121,6 +121,29 @@ class PetServiceImplTest {
     }
 
     @Test
+    void replacePetsByPhoneClearsAllPaginatedPetCaches() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        Pet existing = new Pet();
+        existing.setCustomer(customer);
+        AddPetRequest request = new AddPetRequest();
+        request.setName("Milo");
+        request.setSpecies("dog");
+
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(petRepository.findByCustomer_Id(customerId)).thenReturn(List.of(existing));
+        when(cacheManager.getCache(CacheNames.PETS_BY_CUSTOMER_ID)).thenReturn(cache);
+        when(cacheManager.getCache(CacheNames.PETS_BY_PHONE)).thenReturn(cache);
+
+        petService.replacePetsByPhone("9999999999", List.of(request));
+
+        verify(petRepository).deleteAll(List.of(existing));
+        verify(cache, times(4)).clear();
+    }
+
+    @Test
     void phoneScopedPetLookupEnforcesOwnership() {
         UUID customerId = UUID.randomUUID();
         UUID petId = UUID.randomUUID();
