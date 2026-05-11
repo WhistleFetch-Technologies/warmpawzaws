@@ -326,6 +326,49 @@ export class ApiClient {
     return response.json();
   }
 
+  /**
+   * GET binary (e.g. bulk XLSX template). Uses API Gateway base URL + auth — not relative `/api`,
+   * which fails on static-export vendor hosting.
+   */
+  async getBlob(endpoint: string): Promise<Blob> {
+    const resolvedBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
+    const path = endpoint.replace(/^\/+/, '/');
+    const url = `${resolvedBaseUrl}${path}`;
+
+    try {
+      const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+      await refreshVendorTokensIfNeeded();
+    } catch {
+      /* non-blocking */
+    }
+
+    const token = this.getAuthToken();
+    const headers: Record<string, string> = {
+      Accept:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (UAT_MODE) headers['X-UAT-Mode'] = 'true';
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      throw e?.name === 'AbortError' ? new Error('Download timed out. Please try again.') : e;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(errText.slice(0, 240) || `HTTP ${response.status}`);
+    }
+
+    return response.blob();
+  }
+
   async get<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET' });
   }

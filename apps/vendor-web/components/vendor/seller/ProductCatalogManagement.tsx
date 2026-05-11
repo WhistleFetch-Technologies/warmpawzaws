@@ -237,6 +237,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="pending">Pending Approval</option>
+            <option value="rejected">Rejected</option>
             <option value="draft">Draft</option>
             <option value="out_of_stock">Out of Stock</option>
           </select>
