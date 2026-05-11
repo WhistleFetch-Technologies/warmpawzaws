@@ -35,6 +35,11 @@ import {
   MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
   MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE,
 } from '../../../lib/constants/vendor-payout';
+import {
+  getTemporaryVendorSuppressionParams,
+  shouldHideSettlementRowFromAdminUi,
+  sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
@@ -457,6 +462,13 @@ export function registerSettlementEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      const suppression = getTemporaryVendorSuppressionParams();
+      if (suppression) {
+        queryStr += ` AND ${sqlExcludeSuppressedSettlementRows('s', paramIndex, paramIndex + 1)}`;
+        params.push(suppression.vendorIds, suppression.cutoffDateIst);
+        paramIndex += 2;
+      }
+
       if (period && period !== 'all') {
         const days = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 30;
         queryStr += ` AND s.created_at >= NOW() - INTERVAL '${days} days'`;
@@ -513,7 +525,13 @@ export function registerSettlementEndpoints(app: Hono) {
    */
   app.get("/settlements/summary", async (c) => {
     try {
-      const summary = await query(`
+      const suppression = getTemporaryVendorSuppressionParams();
+      const suppressionWhere = suppression
+        ? ` WHERE ${sqlExcludeSuppressedSettlementRows('settlements', 1, 2)}`
+        : '';
+      const suppressionParams = suppression ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
+      const summary = await query(
+        `
         SELECT 
           COUNT(*) FILTER (WHERE status = 'pending') as total_pending,
           COUNT(*) FILTER (WHERE status = 'processing') as total_processing,
@@ -522,7 +540,10 @@ export function registerSettlementEndpoints(app: Hono) {
           COALESCE(SUM(COALESCE(net_amount, vendor_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
           COALESCE(SUM(COALESCE(net_amount, vendor_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount
         FROM settlements
-      `).catch(() => ({
+        ${suppressionWhere}
+      `,
+        suppressionParams.length ? suppressionParams : undefined,
+      ).catch(() => ({
         rows: [{
           total_pending: '0',
           total_processing: '0',
@@ -687,6 +708,10 @@ export function registerSettlementEndpoints(app: Hono) {
       }
 
       const settlement = settlements[0];
+
+      if (shouldHideSettlementRowFromAdminUi(settlement as Record<string, unknown>)) {
+        return c.json({ error: 'Settlement not found' }, 404);
+      }
 
       // Get related bookings
       const bookings = await query(`
@@ -1015,13 +1040,25 @@ export function registerSettlementEndpoints(app: Hono) {
 
       let settlements;
       try {
-        settlements = await query(
-          `SELECT * FROM settlements
+        const temporarySuppression = getTemporaryVendorSuppressionParams();
+        if (temporarySuppression) {
+          settlements = await query(
+            `SELECT * FROM settlements
+           WHERE vendor_id = $1
+             AND ${sqlExcludeSuppressedSettlementRows('settlements', 2, 3)}
+           ORDER BY created_at DESC
+           LIMIT 50`,
+            [vendorId, temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst]
+          );
+        } else {
+          settlements = await query(
+            `SELECT * FROM settlements
            WHERE vendor_id = $1
            ORDER BY created_at DESC
            LIMIT 50`,
-          [vendorId]
-        );
+            [vendorId]
+          );
+        }
       } catch (error: any) {
         // If UUID validation fails, return empty settlements
         if (error.message?.includes('invalid input syntax for type uuid')) {

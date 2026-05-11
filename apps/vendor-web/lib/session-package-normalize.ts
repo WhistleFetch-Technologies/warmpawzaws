@@ -15,7 +15,7 @@ export const SESSION_PERIOD_UNIT_DAYS: Record<SessionPackageType, number> = {
 };
 
 export const SESSION_PACKAGE_TYPE_LABEL: Record<SessionPackageType, string> = {
-  day: 'Day',
+  day: 'Daily',
   weekly: 'Weekly',
   monthly: 'Monthly',
   yearly: 'Yearly',

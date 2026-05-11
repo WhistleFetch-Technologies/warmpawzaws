@@ -35,6 +35,11 @@ import {
   vendorCancellationReasonLabel,
   applyRefundAfterProviderCancellation,
 } from '../../../lib/services/provider-booking-cancel-refund';
+import {
+  getTemporaryVendorSuppressionParams,
+  shouldHideBookingRowFromVendorUi,
+  sqlExcludeSuppressedBookingRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -137,6 +142,13 @@ export function registerVendorBookingsEndpoints(app: Hono) {
                COALESCE(b.total_amount, 0) <= 0
                OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
              )`;
+      }
+
+      const temporarySuppression = getTemporaryVendorSuppressionParams();
+      if (temporarySuppression) {
+        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
+        params.push(temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst);
+        paramIndex += 2;
       }
 
       // Filter by date
@@ -859,6 +871,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
+      if (shouldHideBookingRowFromVendorUi(booking as Record<string, unknown>)) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
       // ✅ FIX: Extract pet_id from notes if not in pet_id column
       // Legacy bookings stored pet_id in notes as "Pet ID: <uuid>"
       // Diagnostics store notes as JSON with optional petId, patientName, patientAge
@@ -1422,43 +1438,50 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
       let queryText = vendorIds.length === 1
-        ? `SELECT * FROM bookings WHERE vendor_id = $1
-           AND status != 'pending_payment'
+        ? `SELECT * FROM bookings b WHERE b.vendor_id = $1
+           AND b.status != 'pending_payment'
            AND (
-             COALESCE(total_amount, 0) <= 0
-             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             COALESCE(b.total_amount, 0) <= 0
+             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
            )`
-        : `SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2)
-           AND status != 'pending_payment'
+        : `SELECT * FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+           AND b.status != 'pending_payment'
            AND (
-             COALESCE(total_amount, 0) <= 0
-             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             COALESCE(b.total_amount, 0) <= 0
+             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
            )`;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
+      const tempSupAlias = getTemporaryVendorSuppressionParams();
+      if (tempSupAlias) {
+        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
+        params.push(tempSupAlias.vendorIds, tempSupAlias.cutoffDateIst);
+        paramIndex += 2;
+      }
+
       // Filter by date
       if (date) {
-        queryText += ` AND booking_date = $${paramIndex}`;
+        queryText += ` AND b.booking_date = $${paramIndex}`;
         params.push(date);
         paramIndex++;
       }
 
       // Filter by start date (for upcoming)
       if (startDate) {
-        queryText += ` AND booking_date >= $${paramIndex}`;
+        queryText += ` AND b.booking_date >= $${paramIndex}`;
         params.push(startDate);
         paramIndex++;
       }
 
       // Filter by status
       if (status && status !== 'all') {
-        queryText += ` AND status = $${paramIndex}`;
+        queryText += ` AND b.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
 
-      queryText += ' ORDER BY booking_date DESC, booking_time DESC';
+      queryText += ' ORDER BY b.booking_date DESC, b.booking_time DESC';
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 
@@ -1537,26 +1560,33 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
 
       const vendorIds = [vendorId];
       if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+      const todaySup = getTemporaryVendorSuppressionParams();
+      const todaySupFrag1 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
+      const todaySupFrag2 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}` : '';
+      const todaySupTail = todaySup ? [todaySup.vendorIds, todaySup.cutoffDateIst] : [];
+
       const result = vendorIds.length === 1
         ? await query(
-            `SELECT * FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND status != 'pending_payment'
+            `SELECT * FROM bookings b
+             WHERE b.vendor_id = $1 AND b.booking_date = $2 AND b.status != 'pending_payment'
                AND (
-                 COALESCE(total_amount, 0) <= 0
-                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+                 COALESCE(b.total_amount, 0) <= 0
+                 OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
                )
-             ORDER BY booking_time ASC`,
-            [vendorId, today]
+               ${todaySupFrag1}
+             ORDER BY b.booking_time ASC`,
+            [vendorId, today, ...todaySupTail]
           ).catch(() => ({ rows: [] }))
         : await query(
-            `SELECT * FROM bookings 
-             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 AND status != 'pending_payment'
+            `SELECT * FROM bookings b
+             WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.booking_date = $3 AND b.status != 'pending_payment'
                AND (
-                 COALESCE(total_amount, 0) <= 0
-                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+                 COALESCE(b.total_amount, 0) <= 0
+                 OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
                )
-             ORDER BY booking_time ASC`,
-            [vendorIds[0], vendorIds[1], today]
+               ${todaySupFrag2}
+             ORDER BY b.booking_time ASC`,
+            [vendorIds[0], vendorIds[1], today, ...todaySupTail]
           ).catch(() => ({ rows: [] }));
 
       // Enrich bookings with customer and service data

@@ -124,7 +124,7 @@ export function buildWalkerServiceDataForVendorPackagePurchase(opts: {
     normalized.serviceName ?? normalized.name ?? normalized.service_name ?? 'Package'
   ).trim();
 
-  /** vendor_services row id (API `id`); clinic UI may set only `vendorServiceId` when `id` is catalog `serviceId`. */
+  /** vendor_services row id (API `id`); never use catalog `serviceId`/`service_id` as vendorServiceId. */
   const idRaw = (normalized as Record<string, unknown>).id;
   const idStr = idRaw != null ? String(idRaw).trim() : '';
   const idLooksUuid =
