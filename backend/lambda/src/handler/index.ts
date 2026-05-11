@@ -1127,6 +1127,59 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
  * When API Gateway / CloudFront maps `/prefix/*` to this Lambda, `rawPath` still includes the prefix.
  * Hono routes are registered without that prefix — set `API_HTTP_PATH_PREFIX` (e.g. `/uat` or `/api`) to strip it.
  */
+/**
+ * Returns true when the Lambda response payload should be **base64-encoded** in
+ * the API Gateway response (set `isBase64Encoded: true`). Stringifying these
+ * bytes via `response.text()` corrupts the file (e.g. XLSX → "File could not
+ * open" in Google Sheets, mangled PDFs, broken images).
+ *
+ * Detection is conservative — anything with a binary-leaning content type *or*
+ * a `Content-Disposition: attachment` header is treated as binary.
+ */
+function isBinaryHttpContentType(
+  contentTypeLower: string,
+  contentDispositionLower: string
+): boolean {
+  if (contentDispositionLower.includes('attachment')) return true;
+  if (!contentTypeLower) return false;
+  // Fast path: explicit text/JSON/XML/form types are never binary.
+  if (
+    contentTypeLower.startsWith('text/') ||
+    contentTypeLower.startsWith('application/json') ||
+    contentTypeLower.startsWith('application/xml') ||
+    contentTypeLower.startsWith('application/javascript') ||
+    contentTypeLower.startsWith('application/x-www-form-urlencoded') ||
+    contentTypeLower.startsWith('application/ld+json') ||
+    contentTypeLower.endsWith('+json') ||
+    contentTypeLower.endsWith('+xml')
+  ) {
+    return false;
+  }
+  // Common binary families.
+  if (
+    contentTypeLower.startsWith('image/') ||
+    contentTypeLower.startsWith('video/') ||
+    contentTypeLower.startsWith('audio/') ||
+    contentTypeLower.startsWith('font/') ||
+    contentTypeLower.startsWith('multipart/') ||
+    contentTypeLower.startsWith('application/octet-stream') ||
+    contentTypeLower.startsWith('application/pdf') ||
+    contentTypeLower.startsWith('application/zip') ||
+    contentTypeLower.startsWith('application/x-zip') ||
+    contentTypeLower.startsWith('application/gzip') ||
+    contentTypeLower.startsWith('application/x-gzip') ||
+    contentTypeLower.startsWith('application/x-tar') ||
+    contentTypeLower.startsWith('application/x-7z-compressed') ||
+    contentTypeLower.startsWith('application/vnd.ms-') ||
+    contentTypeLower.startsWith('application/vnd.openxmlformats-') ||
+    contentTypeLower.startsWith('application/vnd.oasis.opendocument.') ||
+    contentTypeLower.startsWith('application/msword')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function applyHttpPathPrefixMapping(path: string): string {
   const p0 = path && path.startsWith('/') ? path : `/${path || ''}`;
   const prefix = (process.env.API_HTTP_PATH_PREFIX || '').trim();
@@ -1391,12 +1444,31 @@ export const handler = async (
       throw error;
     }
 
-    // Convert Response to API Gateway format
-    const responseBody = await response.text();
+    // Convert Response to API Gateway format.
+    //
+    // CRITICAL: API Gateway HTTP API requires binary responses (xlsx, pdf, zip,
+    // images, octet-stream …) to be **base64-encoded** with `isBase64Encoded: true`.
+    // Returning the body as a plain UTF-8 string corrupts non-text bytes, which
+    // is exactly why the bulk-product XLSX failed to open in Google Sheets even
+    // after the file-format fixes — the wire-level payload was mangled.
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value: string, key: string) => {
       responseHeaders[key] = value;
     });
+
+    const respContentType = (responseHeaders['content-type'] || '').toLowerCase();
+    const respDisposition = (responseHeaders['content-disposition'] || '').toLowerCase();
+    const isBinaryResponse = isBinaryHttpContentType(respContentType, respDisposition);
+
+    let responseBody: string;
+    let isBase64Encoded = false;
+    if (isBinaryResponse) {
+      const ab = await response.arrayBuffer();
+      responseBody = Buffer.from(ab).toString('base64');
+      isBase64Encoded = true;
+    } else {
+      responseBody = await response.text();
+    }
 
     // Ensure CORS headers are present in all responses
     const origin = event.headers?.origin || 
@@ -1415,10 +1487,11 @@ export const handler = async (
       Object.assign(finalHeaders, apiGwCorsHeadersForResponse(origin));
     }
     
-    const finalResponse = {
+    const finalResponse: APIGatewayProxyResultV2 = {
       statusCode: response.status,
       body: responseBody,
       headers: finalHeaders,
+      ...(isBase64Encoded ? { isBase64Encoded: true } : {}),
     };
     return finalResponse;
   } catch (error) {
