@@ -1,5 +1,8 @@
 /**
  * XLSX bulk product template (styled) and parser for vendor bulk upload.
+ *
+ * Google Sheets rejects many ExcelJS outputs that use data validation, huge empty
+ * styled ranges, or certain freeze-pane XML — keep the template simple for import.
  */
 
 import ExcelJS from 'exceljs';
@@ -63,10 +66,11 @@ const YELLOW: Fill = {
   pattern: 'solid',
   fgColor: { argb: 'FFFFFF00' },
 };
-const PEACH: Fill = {
+/** Row 2 column headers — light orange/peach (screenshot) */
+const HEADER_ROW_FILL: Fill = {
   type: 'pattern',
   pattern: 'solid',
-  fgColor: { argb: 'FFFCE4D6' },
+  fgColor: { argb: 'FFF9CB9C' },
 };
 const LIGHT_ORANGE: Fill = {
   type: 'pattern',
@@ -96,7 +100,14 @@ const BLUE: Fill = {
 const TAN: Fill = {
   type: 'pattern',
   pattern: 'solid',
-  fgColor: { argb: 'FFFCE4D6' },
+  fgColor: { argb: 'FFF4E0C8' },
+};
+
+const THIN_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+  left: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+  bottom: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+  right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
 };
 
 /** Merged row-1 groups: startCol, endCol (1-based), title, fill */
@@ -117,7 +128,7 @@ const WRAP_COL_INDEXES = new Set([3, 4, 15, 16]); // Key Features, Benefits, A+,
 
 const SAMPLE_ROW: string[] = [
   'Smiling Sunflower Dog Dress',
-  'Bright, happy, and full of joy — smiley flower print.',
+  'Bright, happy, and full of joy - smiley flower print.',
   'Design: Smiling Flower\nFabric: Cotton Rayon Blend\nOpening: Drawstrings\nSleeve: Sleeveless',
   '',
   'Dog Dress',
@@ -129,7 +140,7 @@ const SAMPLE_ROW: string[] = [
   '',
   '',
   '',
-  'https://drive.google.com/drive/folders/example',
+  'https://drive.google.com/drive/folders/1baR14I-IeqXJC4XZu7SYOlu-rprHvfmB',
   '',
   '',
   '150',
@@ -177,66 +188,46 @@ function colLetter(n: number): string {
 
 export async function buildBulkProductTemplateBuffer(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(SHEET_NAME, {
-    views: [{ state: 'frozen', ySplit: 2 }],
-  });
+  const ws = wb.addWorksheet(SHEET_NAME);
+
+  ws.getRow(1).height = 30;
+  ws.getRow(2).height = 36;
+  ws.getRow(3).height = 72;
 
   for (const g of ROW1_GROUPS) {
     ws.mergeCells(`${colLetter(g.start)}1:${colLetter(g.end)}1`);
     const cell = ws.getCell(1, g.start);
     cell.value = g.title;
     cell.fill = g.fill as ExcelJS.Fill;
-    cell.font = { bold: true };
+    cell.font = { bold: true, size: 11 };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = THIN_BORDER as ExcelJS.Borders;
   }
 
   BULK_TEMPLATE_COLUMN_HEADERS.forEach((h, i) => {
     const c = i + 1;
     const cell = ws.getCell(2, c);
     cell.value = h;
-    cell.font = { bold: true };
-    cell.fill = PEACH as ExcelJS.Fill;
+    cell.font = { bold: true, size: 10 };
+    cell.fill = HEADER_ROW_FILL as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    ws.getColumn(c).width = c === 3 || c === 4 ? 28 : c === 14 ? 36 : 14;
+    cell.border = THIN_BORDER as ExcelJS.Borders;
+    ws.getColumn(c).width = c === 3 || c === 4 ? 30 : c === 14 ? 38 : c === 2 ? 34 : 14;
   });
 
   SAMPLE_ROW.forEach((v, i) => {
     const cell = ws.getCell(3, i + 1);
     cell.value = v;
+    cell.font = { size: 10 };
     cell.alignment = {
       vertical: 'top',
       horizontal: 'left',
       wrapText: WRAP_COL_INDEXES.has(i + 1),
     };
+    cell.border = THIN_BORDER as ExcelJS.Borders;
   });
 
-  const dv = (ws as ExcelJS.Worksheet & { dataValidations: { add: (range: string, opts: object) => void } }).dataValidations;
-  dv.add(`X4:X500`, {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"Dogs,Cats,Small Pets,Birds,Fish"'],
-    showErrorMessage: true,
-    errorTitle: 'Pet Type',
-    error: 'Choose a value from the list.',
-  });
-  dv.add(`Y4:Y500`, {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"Food,Non-Food,Services"'],
-    showErrorMessage: true,
-    errorTitle: 'Category',
-    error: 'Choose a value from the list.',
-  });
-  dv.add(`AD4:AD500`, {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"0%,5%,12%,18%,28%"'],
-    showErrorMessage: true,
-    errorTitle: 'Tax',
-    error: 'Choose GST % from the list.',
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
+  const buf = await wb.xlsx.writeBuffer({ useSharedStrings: true });
   return Buffer.from(buf);
 }
 
