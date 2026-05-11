@@ -161,7 +161,8 @@ export class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    isRetry: boolean = false,
   ): Promise<T> {
     // Re-resolve base URL at call time so deploy-time runtime config always wins,
     // even if the client instance was created before runtime-config.js executed.
@@ -246,11 +247,35 @@ export class ApiClient {
           const loginAt = Number(sessionStorage.getItem('_warmpawz_vendor_login_at') || 0);
           const inGrace = loginAt > 0 && Date.now() - loginAt < VENDOR_POST_LOGIN_401_GRACE_MS;
           const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
+
+          // Before clearing the session, attempt ONE silent refresh + retry.
+          // This is the key to 90-day persistent login: a single 401 (caused by
+          // an expired/rotated access token, post-deploy revalidation, clock
+          // skew, etc.) must not log the user out as long as the refresh token
+          // is still inside its 90-day window.
+          if (!isRetry) {
+            try {
+              const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+              const renewed = await refreshVendorTokensIfNeeded({ force: true });
+              if (renewed?.idToken) {
+                // Silently retry the original request with the fresh token.
+                return this.request<T>(endpoint, options, true);
+              }
+            } catch {
+              /* refresh failed for an unknown reason — fall through */
+            }
+          }
+
           if (justLoggedIn || inGrace) {
             if (UAT_MODE) {
               console.warn('[API Client] 401 during post-login grace – skipping session clear');
             }
           } else {
+            // Final fallback: refresh attempt did not produce a new token AND
+            // we're outside the post-login grace. Only NOW do we clear the
+            // session and redirect — i.e. only when the refresh token itself
+            // was rejected (`refreshVendorTokensIfNeeded` already cleared
+            // storage on a confirmed 4xx in that case).
             const { clearVendorSession } = require('./session-utils');
             clearVendorSession();
             window.location.href = '/auth';

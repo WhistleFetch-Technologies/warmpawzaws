@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi, ApiService } from '../../services/api';
+import { saveVendorLoginResponse } from '../../services/auth-session';
 import { GradientBackground, BrandedCard, WarmPawzLogo } from '../../components/branded';
 
 interface VendorAuthScreenProps {
@@ -82,17 +83,25 @@ export function VendorAuthScreen({ onAuthSuccess }: VendorAuthScreenProps) {
       // First check if this is a staff member
       try {
         const staffCheckData = await ApiService.post('/staff/auth/check-phone', { phone: cleanPhone });
-        
+
         // If staff member, log them in as staff
         if (staffCheckData && staffCheckData.exists && staffCheckData.staff) {
           const staffData = await ApiService.post('/staff/auth/login', { phone: cleanPhone });
-          
+
           if (staffData.success && staffData.staff) {
-            // Save session token
+            // Persist the full token bundle (90-day refresh window) via the
+            // centralized session manager, then keep the legacy single-token
+            // slot in sync for any code still reading it directly.
+            await saveVendorLoginResponse(staffData, {
+              phone: cleanPhone,
+              isNewLogin: true,
+              staffIdOverride: staffData?.staff?.id || staffData?.staff?.staffId,
+              roleOverride: staffData?.staff?.role || 'staff',
+            });
             if (staffData.sessionToken) {
               await ApiService.saveSessionToken(staffData.sessionToken);
             }
-            
+
             onAuthSuccess({
               phone: cleanPhone,
               user: { isStaff: true },
@@ -113,19 +122,36 @@ export function VendorAuthScreen({ onAuthSuccess }: VendorAuthScreenProps) {
         phone: cleanPhone,
         portal: 'vendor'
       });
-      
-      // Save session token
-      if (data.session?.accessToken) {
-        await ApiService.saveSessionToken(data.session.accessToken);
+
+      const profile = data?.data?.profile || data?.profile;
+      const user = data?.data?.user || data?.user;
+      const vendorIdFromProfile =
+        profile?.id || profile?.vendorId || profile?.vendor_id || user?.vendorId || user?.id;
+
+      await saveVendorLoginResponse(data, {
+        phone: cleanPhone,
+        isNewLogin: true,
+        vendorIdOverride: vendorIdFromProfile,
+      });
+
+      // Keep the legacy single-token slot in sync for anything still reading
+      // it directly. saveVendorLoginResponse already mirrors this, but older
+      // shapes (data.session.accessToken) need an explicit copy.
+      const legacyToken =
+        data?.session?.accessToken ||
+        data?.data?.token?.access_token ||
+        data?.token?.access_token;
+      if (legacyToken) {
+        await ApiService.saveSessionToken(legacyToken);
       }
-      
-      if (data.user && data.profile) {
+
+      if (user && profile) {
         // Existing vendor
         onAuthSuccess({
           phone: cleanPhone,
-          user: data.user,
-          profile: data.profile,
-          state: data.state
+          user,
+          profile,
+          state: data?.data?.state || data?.state,
         });
       } else {
         // New vendor - will go to role selection
@@ -134,7 +160,7 @@ export function VendorAuthScreen({ onAuthSuccess }: VendorAuthScreenProps) {
           isNewUser: true
         });
       }
-      
+
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Failed to verify OTP');

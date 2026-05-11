@@ -102,8 +102,14 @@ export function getUserInfo(): any | null {
  * or null when the session is fully expired and the vendor must log in again.
  *
  * Safe to call on every API request — short-circuits immediately when still valid.
+ *
+ * Pass `{ force: true }` to bypass the local "still valid" short-circuit (used by
+ * the 401 retry path: the server has rejected the access token even though we
+ * locally think it's fresh, e.g. after a backend deploy or clock skew).
  */
-export async function refreshVendorTokensIfNeeded(): Promise<CognitoTokens | null> {
+export async function refreshVendorTokensIfNeeded(
+  opts?: { force?: boolean },
+): Promise<CognitoTokens | null> {
   if (typeof window === 'undefined') return null;
 
   const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -117,10 +123,11 @@ export async function refreshVendorTokensIfNeeded(): Promise<CognitoTokens | nul
   }
 
   const expiryTime = localStorage.getItem('vendorTokenExpiry');
-  // Access token still valid — return as-is.
-  if (expiryTime && Date.now() < parseInt(expiryTime, 10)) return tokens;
+  // Access token still valid AND caller didn't force — return as-is.
+  if (!opts?.force && expiryTime && Date.now() < parseInt(expiryTime, 10)) return tokens;
 
-  // Access token expired — check whether the 90-day refresh window is still open.
+  // Access token expired (or caller wants a fresh one) — check whether the
+  // 90-day refresh window is still open.
   const refreshExpiry = localStorage.getItem('vendorRefreshTokenExpiry');
   if (!refreshExpiry || Date.now() > parseInt(refreshExpiry, 10)) {
     clearCognitoTokens();
@@ -140,7 +147,16 @@ export async function refreshVendorTokensIfNeeded(): Promise<CognitoTokens | nul
     });
 
     if (!res.ok) {
-      clearCognitoTokens();
+      // Only drop credentials when the server CONCLUSIVELY rejects the
+      // refresh token (4xx auth failure). 5xx, 429 and proxy errors keep the
+      // session intact so backend deploys / restarts / transient outages do
+      // not log the vendor out — the next API call will retry refresh.
+      const isAuthFailure = res.status === 400 || res.status === 401 || res.status === 403;
+      if (isAuthFailure) {
+        clearCognitoTokens();
+      } else if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.warn('[vendor-auth] refresh non-auth failure — keeping session:', res.status);
+      }
       return null;
     }
 
@@ -158,8 +174,12 @@ export async function refreshVendorTokensIfNeeded(): Promise<CognitoTokens | nul
     // Do NOT touch vendorRefreshTokenExpiry — the 90-day clock must not reset on silent refresh.
 
     return updated;
-  } catch {
-    clearCognitoTokens();
+  } catch (e) {
+    // Network error — never log the user out on a flaky connection. The next
+    // authenticated API call will retry the refresh.
+    if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      console.warn('[vendor-auth] refresh network error — keeping session:', e);
+    }
     return null;
   }
 }
