@@ -89,20 +89,40 @@ export default function App() {
   const [navigationTarget, setNavigationTarget] = useState<any>(null);
 
   useEffect(() => {
-    // Check for existing session
+    // Restore persisted vendor/staff session at cold start so users who logged
+    // in within the last 90 days stay logged in (silent refresh happens
+    // transparently on the next API call).
     const checkSession = async () => {
       try {
-        // TODO: Check AsyncStorage for existing session
-        // For now, always show auth screen
+        const { loadStoredVendorSession } = require('./src/services/auth-session');
+        const stored = await loadStoredVendorSession();
+
+        if (stored && stored.phone) {
+          const isStaff = stored.role === 'staff' || !!stored.staffId;
+          const restoredSession: any = {
+            phone: stored.phone,
+            vendorId: stored.vendorId,
+            user: stored.vendor || (isStaff ? { isStaff: true } : undefined),
+            profile: !isStaff ? stored.vendor : undefined,
+            staff: isStaff ? stored.vendor || { id: stored.staffId } : undefined,
+            isStaffLogin: isStaff || undefined,
+          };
+          setSession(restoredSession);
+          if (isStaff) {
+            setNavigationTarget({ screen: 'StaffDashboard' });
+          } else if (stored.vendor) {
+            setVendorData(stored.vendor);
+          }
+        }
         setIsLoading(false);
       } catch (error) {
         console.error('Session check error:', error);
         setIsLoading(false);
       }
     };
-    
+
     checkSession();
-    
+
     // Cleanup
     return () => {
       // Cleanup if needed
@@ -804,9 +824,17 @@ export default function App() {
                     <LogoutScreen
                       {...props}
                       onBack={handleBack}
-                      onLogout={() => {
+                      onLogout={async () => {
+                        try {
+                          const { clearVendorSession } = require('./src/services/auth-session');
+                          await clearVendorSession();
+                        } catch (e) {
+                          console.warn('[vendor-app] logout cleanup failed:', e);
+                        }
                         setSession(null);
                         setVendorData(null);
+                        setShowOnboarding(false);
+                        setShowRoleSelection(false);
                         setNavigationTarget(null);
                       }}
                     />
