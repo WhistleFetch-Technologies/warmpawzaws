@@ -6,6 +6,7 @@ import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.config.CacheNames;
 import com.warmpawz.customer.entity.Customer;
 import com.warmpawz.customer.entity.Pet;
+import com.warmpawz.customer.exception.BadRequestException;
 import com.warmpawz.customer.exception.ConflictException;
 import com.warmpawz.customer.exception.NotFoundException;
 import com.warmpawz.customer.repository.CustomerRepository;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
@@ -66,6 +68,31 @@ class PetServiceImplTest {
         when(petRepository.existsNormalizedDuplicate(customerId, "Milo", "dog", "beagle")).thenReturn(true);
 
         assertThrows(ConflictException.class, () -> petService.addPet(customerId, request));
+    }
+
+    @Test
+    void getPetsByPhoneResolvesWhenStoredPhoneHasDifferentFormatting() {
+        UUID customerId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        // Stored value includes trunk digits; path uses national digits only (no country assumption in service code).
+        customer.setPhone("+001515151515");
+        Pet pet = new Pet();
+        pet.setName("PetA");
+        pet.setCustomer(customer);
+
+        when(cacheManager.getCache(anyString())).thenReturn(cache);
+        when(cache.get(org.mockito.ArgumentMatchers.contains("1515151515"))).thenReturn(null);
+        when(customerRepository.findByPhone("1515151515")).thenReturn(Optional.empty());
+        when(customerRepository.findFirstMatchingPhoneInput(eq("1515151515"), eq("1515151515")))
+                .thenReturn(Optional.of(customer));
+        when(petRepository.findByCustomer_Id(org.mockito.ArgumentMatchers.eq(customerId), any()))
+                .thenReturn(new PageImpl<>(List.of(pet)));
+
+        PaginatedResult<PetResponse> result = petService.getPetsByPhone("1515151515", 0, 10, "createdAt,desc");
+
+        assertEquals(1, result.getItems().size());
+        verify(customerRepository).findFirstMatchingPhoneInput(eq("1515151515"), eq("1515151515"));
     }
 
     @Test
@@ -139,6 +166,7 @@ class PetServiceImplTest {
 
         petService.replacePetsByPhone("9999999999", List.of(request));
 
+        verify(petRepository).unlinkBookingsByPetId(existing.getId());
         verify(petRepository).deleteAll(List.of(existing));
         verify(cache, times(4)).clear();
     }
@@ -196,5 +224,71 @@ class PetServiceImplTest {
         assertEquals(2, result.getPagination().getTotalPages());
         assertTrue(result.getPagination().isHasNext());
         verify(cache, times(2)).put(contains(":p=0:s=2:sort=createdAt,asc"), any());
+    }
+
+    @Test
+    void deletePetByPhoneUnlinksBookingsThenDeletes() {
+        UUID customerId = UUID.randomUUID();
+        UUID petId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        Pet pet = new Pet();
+        pet.setId(petId);
+        pet.setCustomer(customer);
+
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(petRepository.findByIdAndCustomer_Id(petId, customerId)).thenReturn(Optional.of(pet));
+        when(petRepository.countActiveBookingsByPetId(petId)).thenReturn(0L);
+        when(cacheManager.getCache(CacheNames.PETS_BY_CUSTOMER_ID)).thenReturn(cache);
+        when(cacheManager.getCache(CacheNames.PETS_BY_PHONE)).thenReturn(cache);
+
+        petService.deletePetByPhone("9999999999", petId);
+
+        verify(petRepository).unlinkBookingsByPetIdForCustomer(petId, customerId);
+        verify(petRepository).delete(pet);
+        verify(cache, times(2)).clear();
+    }
+
+    @Test
+    void deletePetByPhoneRejectsWhenActiveBookings() {
+        UUID customerId = UUID.randomUUID();
+        UUID petId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        Pet pet = new Pet();
+        pet.setId(petId);
+        pet.setCustomer(customer);
+
+        when(customerRepository.findByPhone("9999999999")).thenReturn(Optional.of(customer));
+        when(petRepository.findByIdAndCustomer_Id(petId, customerId)).thenReturn(Optional.of(pet));
+        when(petRepository.countActiveBookingsByPetId(petId)).thenReturn(2L);
+
+        assertThrows(BadRequestException.class, () -> petService.deletePetByPhone("9999999999", petId));
+
+        verify(petRepository, times(0)).unlinkBookingsByPetIdForCustomer(any(), any());
+        verify(petRepository, times(0)).delete(any());
+    }
+
+    @Test
+    void deletePetUnlinksAllBookingsThenDeletes() {
+        UUID customerId = UUID.randomUUID();
+        UUID petId = UUID.randomUUID();
+        Customer customer = new Customer();
+        customer.setId(customerId);
+        customer.setPhone("9999999999");
+        Pet pet = new Pet();
+        pet.setId(petId);
+        pet.setCustomer(customer);
+
+        when(petRepository.findById(petId)).thenReturn(Optional.of(pet));
+        when(cacheManager.getCache(CacheNames.PETS_BY_CUSTOMER_ID)).thenReturn(cache);
+        when(cacheManager.getCache(CacheNames.PETS_BY_PHONE)).thenReturn(cache);
+
+        petService.deletePet(petId);
+
+        verify(petRepository).unlinkBookingsByPetId(petId);
+        verify(petRepository).delete(pet);
     }
 }

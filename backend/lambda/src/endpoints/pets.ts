@@ -19,6 +19,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
+import { findCustomerByPhone } from '../utils/customer-phone-lookup';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -106,13 +107,10 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
-
-      const customer = customers[0];
 
       // Get pet and verify ownership
       const pets = await select('pets', { id: petId, customer_id: customer.id });
@@ -466,13 +464,10 @@ export function registerPetEndpoints(app: Hono) {
       const { phone, petId } = c.req.param();
       const petData = await c.req.json();
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
-
-      const customer = customers[0];
 
       // Verify pet ownership
       const pets = await select('pets', { id: petId, customer_id: customer.id });
@@ -562,13 +557,10 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
-
-      const customer = customers[0];
 
       // Verify pet ownership before deletion
       const pets = await select('pets', { id: petId, customer_id: customer.id });
@@ -618,13 +610,10 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
-
-      const customer = customers[0];
 
       // Verify pet ownership
       const pets = await select('pets', { id: petId, customer_id: customer.id });

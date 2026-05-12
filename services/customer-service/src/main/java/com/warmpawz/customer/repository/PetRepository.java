@@ -4,6 +4,7 @@ import com.warmpawz.customer.entity.Pet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -32,4 +33,27 @@ public interface PetRepository extends JpaRepository<Pet, UUID> {
             @Param("species") String species,
             @Param("breed") String breed
     );
+
+    /**
+     * Matches Lambda {@code DELETE /pets/:petId}: preserve booking rows, drop FK so delete can succeed.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = :petId", nativeQuery = true)
+    int unlinkBookingsByPetId(@Param("petId") UUID petId);
+
+    /**
+     * Matches Lambda {@code DELETE /customer/:phone/pets/:petId} unlink scope (same customer only).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE bookings SET pet_id = NULL, updated_at = NOW()
+            WHERE pet_id = :petId AND customer_id = :customerId
+            """, nativeQuery = true)
+    int unlinkBookingsByPetIdForCustomer(@Param("petId") UUID petId, @Param("customerId") UUID customerId);
+
+    @Query(value = """
+            SELECT COUNT(*) FROM bookings
+            WHERE pet_id = :petId AND status IN ('confirmed', 'in_progress', 'scheduled')
+            """, nativeQuery = true)
+    long countActiveBookingsByPetId(@Param("petId") UUID petId);
 }

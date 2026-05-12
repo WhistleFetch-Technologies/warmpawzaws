@@ -18,6 +18,12 @@ public class CommonResponse<T> {
     private Object pets;
     private Object pagination;
 
+    /** Optional; mirrors Lambda error bodies (e.g. pet delete with active bookings). */
+    private Long activeBookingsCount;
+
+    /** Optional; mirrors Lambda {@code error} string on some customer routes. */
+    private String error;
+
     public static <T> CommonResponse<T> success(T data) {
         CommonResponse<T> response = new CommonResponse<>();
         response.setSuccess(true);

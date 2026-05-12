@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 @ControllerAdvice
 public class ApiExceptionHandler {
@@ -43,7 +44,20 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<CommonResponse<Map<String, Object>>> handleBadRequest(BadRequestException ex) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of());
+        Map<String, Object> data = new HashMap<>(ex.getDetails());
+        CommonResponse<Map<String, Object>> body = new CommonResponse<>();
+        body.setSuccess(false);
+        body.setMessage(ex.getMessage());
+        body.setData(data.isEmpty() ? Map.of() : data);
+        Object count = ex.getDetails().get("activeBookingsCount");
+        if (count instanceof Number n) {
+            body.setActiveBookingsCount(n.longValue());
+        }
+        Object err = ex.getDetails().get("error");
+        if (err != null) {
+            body.setError(Objects.toString(err, null));
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(Exception.class)

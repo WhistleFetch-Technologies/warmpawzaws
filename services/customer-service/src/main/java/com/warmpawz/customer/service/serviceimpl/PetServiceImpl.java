@@ -29,6 +29,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -83,7 +85,7 @@ public class PetServiceImpl implements PetService {
     @Transactional
     public PetResponse addPet(AddPetRequest request) {
         if (request.getCustomerId() == null && request.getPhone() != null) {
-            Customer customer = customerRepository.findByPhone(request.getPhone())
+            Customer customer = findCustomerByFlexiblePhone(request.getPhone())
                     .orElseThrow(() -> new NotFoundException("Customer not found"));
             return addPetForCustomer(customer, request);
         }
@@ -96,9 +98,12 @@ public class PetServiceImpl implements PetService {
     @Override
     @Transactional
     public List<PetResponse> replacePetsByPhone(String phone, List<AddPetRequest> requests) {
-        Customer customer = customerRepository.findByPhone(phone)
+        Customer customer = findCustomerByFlexiblePhone(phone)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
         List<Pet> existing = petRepository.findByCustomer_Id(customer.getId());
+        for (Pet p : existing) {
+            petRepository.unlinkBookingsByPetId(p.getId());
+        }
         petRepository.deleteAll(existing);
         invalidatePetCaches(customer.getId(), customer.getPhone());
         if (requests == null) return List.of();
@@ -136,7 +141,7 @@ public class PetServiceImpl implements PetService {
         String cacheKey = paginatedCacheKey(phone, pageable);
         PaginatedResult<PetResponse> cached = getCached(CacheNames.PETS_BY_PHONE, cacheKey);
         if (cached != null) return cached;
-        Customer customer = customerRepository.findByPhone(phone)
+        Customer customer = findCustomerByFlexiblePhone(phone)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
         Page<Pet> petPage = petRepository.findByCustomer_Id(customer.getId(), pageable);
         List<PetResponse> response = petPage.stream()
@@ -191,21 +196,45 @@ public class PetServiceImpl implements PetService {
         Pet pet = petRepository.findById(petId)
                 .orElseThrow(() -> new NotFoundException("Pet not found"));
 
-        deletePetEntity(pet);
+        deletePetEntity(pet, false);
     }
 
     @Override
     @Transactional
     public void deletePetByPhone(String phone, UUID petId) {
         Pet pet = findOwnedPet(phone, petId);
-        deletePetEntity(pet);
+        deletePetEntity(pet, true);
     }
 
     private Pet findOwnedPet(String phone, UUID petId) {
-        Customer customer = customerRepository.findByPhone(phone)
+        Customer customer = findCustomerByFlexiblePhone(phone)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
         return petRepository.findByIdAndCustomer_Id(petId, customer.getId())
                 .orElseThrow(() -> new NotFoundException("Pet not found"));
+    }
+
+    /**
+     * Resolve customer by phone when path/query uses a different string than {@code customers.phone}
+     * (e.g. national digits vs E.164). Prefer indexed exact lookups, then digit-normalized SQL (PostgreSQL).
+     */
+    private Optional<Customer> findCustomerByFlexiblePhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = phone.trim();
+        Optional<Customer> byTrimmed = customerRepository.findByPhone(trimmed);
+        if (byTrimmed.isPresent()) {
+            return byTrimmed;
+        }
+        String digitsOnly = trimmed.replaceAll("\\D", "");
+        if (!digitsOnly.isEmpty()) {
+            Optional<Customer> byDigits = customerRepository.findByPhone(digitsOnly);
+            if (byDigits.isPresent()) {
+                return byDigits;
+            }
+        }
+        String digitsParam = digitsOnly.isEmpty() ? trimmed : digitsOnly;
+        return customerRepository.findFirstMatchingPhoneInput(trimmed, digitsParam);
     }
 
     private PetResponse updatePetEntity(Pet pet, AddPetRequest request) {
@@ -245,9 +274,32 @@ public class PetServiceImpl implements PetService {
         return CustomerMapper.toPetResponse(pet);
     }
 
-    private void deletePetEntity(Pet pet) {
+    /**
+     * @param phoneScoped when true, match Lambda {@code DELETE /customer/:phone/pets/:petId}:
+     *        reject if active bookings exist; then unlink only rows for this customer+pet.
+     *        When false, match {@code DELETE /pets/:petId}: unlink all bookings for this pet, then delete.
+     */
+    private void deletePetEntity(Pet pet, boolean phoneScoped) {
+        UUID petId = pet.getId();
         UUID customerId = pet.getCustomer().getId();
         String phone = pet.getCustomer().getPhone();
+
+        if (phoneScoped) {
+            long active = petRepository.countActiveBookingsByPetId(petId);
+            if (active > 0) {
+                throw new BadRequestException(
+                        "Cannot delete pet with active bookings",
+                        Map.of(
+                                "activeBookingsCount", active,
+                                "error", "Cannot delete pet with active bookings"
+                        )
+                );
+            }
+            petRepository.unlinkBookingsByPetIdForCustomer(petId, customerId);
+        } else {
+            petRepository.unlinkBookingsByPetId(petId);
+        }
+
         petRepository.delete(pet);
         invalidatePetCaches(customerId, phone);
     }
