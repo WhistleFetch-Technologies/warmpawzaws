@@ -3,6 +3,7 @@
  * platform/convenience exclusions). Idempotent per meal_order_id.
  */
 import { insert, query } from '../database/rds-connection';
+import { syncCanonicalMealSubscriptionDeliveryWhenMealOrderDelivered } from './sync-canonical-delivery-from-meal-order';
 
 export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string): Promise<void> {
   try {
@@ -13,6 +14,8 @@ export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string):
     if (String(order.status || '').toLowerCase() !== 'delivered') {
       return;
     }
+
+    await syncCanonicalMealSubscriptionDeliveryWhenMealOrderDelivered(mealOrderId);
 
     const dup = await query(
       `SELECT id FROM delivery_settlements WHERE meal_order_id = $1 LIMIT 1`,

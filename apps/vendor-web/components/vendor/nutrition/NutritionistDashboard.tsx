@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -125,6 +125,8 @@ interface MealOrder {
   /** Meal line total only (listed price × qty), from API `vendor_meal_total`. */
   vendor_meal_total?: number;
   created_at: string;
+  /** Scheduled drop-off day from meal_orders / booking flow (YYYY-MM-DD or ISO). */
+  scheduled_delivery_date?: string;
   confirmed_at?: string; // Timestamp when payment was confirmed
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
@@ -161,6 +163,59 @@ function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
 /** Vendor-facing meal listing amount only (never customer grand total / fees). */
 function vendorMealListingRupee(o: MealOrder): number {
   return coerceVendorMealListingAmount(o as Record<string, unknown>);
+}
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function scheduledYmdForOrder(o: MealOrder): string | null {
+  const raw = (o as Record<string, unknown>).scheduled_delivery_date as string | Date | undefined | null;
+  if (raw == null || raw === '') return null;
+  if (raw instanceof Date) return ymdLocal(raw);
+  const s = String(raw);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const t = new Date(s);
+  if (!Number.isNaN(t.getTime())) return ymdLocal(t);
+  return null;
+}
+
+/** Prefer scheduled delivery day; fall back to order created date (local calendar). */
+function formatOrderCalendarDate(o: MealOrder): string {
+  const sched = scheduledYmdForOrder(o);
+  if (sched) {
+    const [y, mo, d] = sched.split('-').map((x) => parseInt(x, 10));
+    return new Date(y, mo - 1, d).toLocaleDateString();
+  }
+  return new Date(o.created_at).toLocaleDateString();
+}
+
+/**
+ * Allow "Start preparing" only when the scheduled day is today or in the past (avoid early logistics / Pidge for future drops).
+ * Accept remains available for future-dated subscription sessions.
+ */
+function canStartPreparingForSchedule(o: MealOrder): boolean {
+  const sched = scheduledYmdForOrder(o);
+  const today = ymdLocal(new Date());
+  if (!sched) return true;
+  return sched <= today;
+}
+
+type VendorMealOrderBucket = 'past' | 'today' | 'upcoming';
+
+function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
+  const st = String(o.status || '').toLowerCase();
+  if (st === 'delivered' || st === 'cancelled') return 'past';
+  const sched = scheduledYmdForOrder(o);
+  const today = ymdLocal(new Date());
+  if (!sched) return 'today';
+  if (sched < today) return 'today';
+  if (sched === today) return 'today';
+  return 'upcoming';
 }
 
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
@@ -280,6 +335,27 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   }, [vendorId]);
 
+  const sortedOrders = useMemo(
+    () =>
+      [...orders].sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+      ),
+    [orders],
+  );
+
+  const { pastOrders, todayOrders, upcomingOrders } = useMemo(() => {
+    const past: MealOrder[] = [];
+    const today: MealOrder[] = [];
+    const upcoming: MealOrder[] = [];
+    for (const o of sortedOrders) {
+      const b = mealOrderBucket(o);
+      if (b === 'past') past.push(o);
+      else if (b === 'today') today.push(o);
+      else upcoming.push(o);
+    }
+    return { pastOrders: past, todayOrders: today, upcomingOrders: upcoming };
+  }, [sortedOrders]);
+
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
@@ -294,6 +370,23 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     };
     loadAll();
   }, [fetchProducts, fetchOrders]);
+
+  useEffect(() => {
+    if (activeTab !== 'orders') return;
+    const id = window.setInterval(() => {
+      void fetchOrders();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [activeTab, fetchOrders]);
+
+  useEffect(() => {
+    if (activeTab !== 'orders') return;
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void fetchOrders();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [activeTab, fetchOrders]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -422,6 +515,195 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       case 'cancelled': return 'bg-red-50 text-red-700 border-red-200';
       default: return 'bg-slate-50 text-slate-700 border-slate-200';
     }
+  };
+
+  const renderMealOrderCard = (order: MealOrder) => {
+    const prepOk = canStartPreparingForSchedule(order);
+    return (
+      <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
+                {Icons.package}
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800">{order.order_number || `Order #${order.id.slice(0, 8)}`}</h3>
+                <p className="text-sm text-slate-500 flex items-center gap-1">
+                  {Icons.user}
+                  {order.customer_name || 'Customer'}
+                </p>
+              </div>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
+              {order.status}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
+              <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
+              <span className="flex items-center gap-1" title="Scheduled delivery date (subscription sessions use this day)">
+                {Icons.clock} Delivery: {formatOrderCalendarDate(order)}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-lg font-semibold text-slate-800">₹{vendorMealListingRupee(order)}</span>
+              <p className="text-xs text-slate-500">Meal total (your listing)</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {order.status === 'pending' && (
+              <>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  {Icons.check}
+                  <span className="text-sm">Accept</span>
+                </button>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
+                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                >
+                  {Icons.x}
+                  <span className="text-sm ml-1">Cancel</span>
+                </button>
+              </>
+            )}
+
+            {(() => {
+              const shouldShowAccept =
+                order.status === 'confirmed' && !order.prep_started_at && !acceptedOrderIds.has(order.id);
+              if (order.status === 'confirmed' && !order.prep_started_at) {
+                console.log(
+                  `[NutritionistDashboard] Order ${order.id}: status=confirmed, prep_started_at=${order.prep_started_at}, in acceptedOrderIds=${acceptedOrderIds.has(order.id)}, shouldShowAccept=${shouldShowAccept}`,
+                );
+              }
+              return shouldShowAccept;
+            })() && (
+              <>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  {Icons.check}
+                  <span className="text-sm">Accept</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!prepOk}
+                  title={
+                    prepOk
+                      ? undefined
+                      : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                  }
+                  onClick={() => {
+                    if (!prepOk) return;
+                    handleUpdateOrderStatus(order.id, 'preparing');
+                  }}
+                  className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                    prepOk
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  {Icons.utensils}
+                  <span className="text-sm">Start Preparing</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
+                      handleUpdateOrderStatus(order.id, 'cancelled');
+                    }
+                  }}
+                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                >
+                  {Icons.x}
+                  <span className="text-sm ml-1">Cancel</span>
+                </button>
+              </>
+            )}
+
+            {order.status === 'confirmed' && !order.prep_started_at && acceptedOrderIds.has(order.id) && (
+              <>
+                <button
+                  type="button"
+                  disabled={!prepOk}
+                  title={
+                    prepOk
+                      ? undefined
+                      : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                  }
+                  onClick={() => {
+                    if (!prepOk) return;
+                    handleUpdateOrderStatus(order.id, 'preparing');
+                  }}
+                  className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                    prepOk
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  {Icons.utensils}
+                  <span className="text-sm">Start Preparing</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
+                      handleUpdateOrderStatus(order.id, 'cancelled');
+                    }
+                  }}
+                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                >
+                  {Icons.x}
+                  <span className="text-sm ml-1">Cancel</span>
+                </button>
+              </>
+            )}
+
+            {order.status === 'preparing' && (
+              <button
+                onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {Icons.package}
+                <span className="text-sm">Ready for Pickup</span>
+              </button>
+            )}
+            {order.status === 'ready_for_pickup' && (
+              <>
+                <button
+                  onClick={() => handleNotifyLogistics(order.id)}
+                  className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  {Icons.truck}
+                  <span className="text-sm">Notify Logistics</span>
+                </button>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'picked_up')}
+                  className="py-2 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="text-sm">Dispatched</span>
+                </button>
+              </>
+            )}
+            {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') && (
+              <button
+                onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {Icons.check}
+                <span className="text-sm">Mark Delivered</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -609,187 +891,36 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <p className="text-slate-500">Orders will appear here when customers place them</p>
               </div>
             ) : (
-              orders.map((order) => (
-                <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="p-4 border-b border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-                          {Icons.package}
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-slate-800">{order.order_number || `Order #${order.id.slice(0, 8)}`}</h3>
-                          <p className="text-sm text-slate-500 flex items-center gap-1">
-                            {Icons.user}
-                            {order.customer_name || 'Customer'}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
-                        {order.status}
-                      </span>
-                    </div>
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Previous / completed</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-800">{pastOrders.length}</p>
                   </div>
-
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
-                        <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
-                        <span className="flex items-center gap-1">{Icons.clock} {new Date(order.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-lg font-semibold text-slate-800">₹{vendorMealListingRupee(order)}</span>
-                        <p className="text-xs text-slate-500">Meal total (your listing)</p>
-                      </div>
-                    </div>
-
-                    {/* Order Actions – Phase 3: accept, ETA, notify logistics */}
-                    <div className="flex flex-wrap gap-2">
-                      {order.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      {/* BUSINESS LOGIC:
-                          1. Pending: Order created, payment not done → Show Accept (but payment should be done first)
-                          2. Confirmed (after payment): Payment done, vendor needs to accept → Show Accept + Start Preparing + Cancel
-                          3. After vendor accepts: Status stays 'confirmed', but prep_started_at is still null → Hide Accept, show Start Preparing + Cancel
-                          4. Preparing: Status = 'preparing', prep_started_at is set → Hide Accept, show Ready for Pickup, restrict Cancel
-                      */}
-                      
-                      {/* Pending orders: Payment not confirmed yet */}
-                      {order.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
-                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.check}
-                            <span className="text-sm">Accept</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* Confirmed orders (payment done): Vendor can accept or start preparing directly */}
-                      {/* If prep_started_at is null, vendor hasn't started, so show Accept button */}
-                      {/* If prep_started_at is not null, vendor has started, so hide Accept button */}
-                      {/* ✅ BUSINESS LOGIC: Confirmed orders (payment done) - Vendor needs to accept */}
-                      {/* Show Accept button only if vendor hasn't accepted yet (tracked in localStorage) */}
-                      {(() => {
-                        const shouldShowAccept = order.status === 'confirmed' && !order.prep_started_at && !acceptedOrderIds.has(order.id);
-                        if (order.status === 'confirmed' && !order.prep_started_at) {
-                          console.log(`[NutritionistDashboard] Order ${order.id}: status=confirmed, prep_started_at=${order.prep_started_at}, in acceptedOrderIds=${acceptedOrderIds.has(order.id)}, shouldShowAccept=${shouldShowAccept}`);
-                        }
-                        return shouldShowAccept;
-                      })() && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
-                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.check}
-                            <span className="text-sm">Accept</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.utensils}
-                            <span className="text-sm">Start Preparing</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                                handleUpdateOrderStatus(order.id, 'cancelled');
-                              }
-                            }}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* Confirmed orders where vendor has accepted but not started preparing yet */}
-                      {order.status === 'confirmed' && !order.prep_started_at && acceptedOrderIds.has(order.id) && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.utensils}
-                            <span className="text-sm">Start Preparing</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                                handleUpdateOrderStatus(order.id, 'cancelled');
-                              }
-                            }}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* "Preparing" → vendor only marks ready for pickup. Pidge is auto-dispatched
-                          when status flips to preparing using catalog prep_time_minutes; the rider
-                          arrival is targeted to expected_ready_at on the order. */}
-                      {order.status === 'preparing' && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
-                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.package}
-                          <span className="text-sm">Ready for Pickup</span>
-                        </button>
-                      )}
-                      {order.status === 'ready_for_pickup' && (
-                        <>
-                          <button
-                            onClick={() => handleNotifyLogistics(order.id)}
-                            className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.truck}
-                            <span className="text-sm">Notify Logistics</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'picked_up')}
-                            className="py-2 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            <span className="text-sm">Dispatched</span>
-                          </button>
-                        </>
-                      )}
-                      {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
-                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.check}
-                          <span className="text-sm">Mark Delivered</span>
-                        </button>
-                      )}
-                    </div>
+                  <div className="rounded-2xl bg-white border border-orange-100 p-4 shadow-sm ring-1 ring-orange-100">
+                    <p className="text-xs font-medium uppercase tracking-wide text-orange-800/90">Today&apos;s orders</p>
+                    <p className="mt-1 text-2xl font-bold text-orange-700">{todayOrders.length}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Upcoming</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-800">{upcomingOrders.length}</p>
                   </div>
                 </div>
-              ))
+                {[
+                  { title: 'Previous / completed', list: pastOrders, empty: 'No completed or cancelled orders in this view.' },
+                  { title: "Today's orders", list: todayOrders, empty: 'No orders for today (includes overdue items awaiting action).' },
+                  { title: 'Upcoming orders', list: upcomingOrders, empty: 'No future scheduled drops.' },
+                ].map((section) => (
+                  <div key={section.title} className="space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-800 px-1 pt-2">{section.title}</h3>
+                    {section.list.length === 0 ? (
+                      <p className="text-sm text-slate-400 px-1 py-1">{section.empty}</p>
+                    ) : (
+                      section.list.map((order) => renderMealOrderCard(order))
+                    )}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         )}

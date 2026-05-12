@@ -17,6 +17,45 @@ export type MealSubscriptionLifecycleFilter =
   | 'cancelled'
   | 'pending_payment';
 
+/**
+ * Idempotent: marks a canonical delivery delivered and bumps subscription session counters once.
+ * Use when `meal_orders` mirrors a subscription session (`purchase_snapshot.canonicalDeliveryId`).
+ */
+export async function markMealSubscriptionDeliveryDeliveredById(
+  deliveryId: string,
+  subscriptionId?: string | null,
+): Promise<boolean> {
+  const sid = subscriptionId != null && String(subscriptionId).trim() ? String(subscriptionId).trim() : null;
+  const sql = sid
+    ? `UPDATE meal_subscription_deliveries SET
+         status = 'delivered',
+         delivered_at = COALESCE(delivered_at, NOW()),
+         updated_at = NOW()
+       WHERE id = $1 AND subscription_id = $2::uuid
+         AND LOWER(COALESCE(status, '')) <> 'delivered'
+       RETURNING subscription_id`
+    : `UPDATE meal_subscription_deliveries SET
+         status = 'delivered',
+         delivered_at = COALESCE(delivered_at, NOW()),
+         updated_at = NOW()
+       WHERE id = $1
+         AND LOWER(COALESCE(status, '')) <> 'delivered'
+       RETURNING subscription_id`;
+  const params = sid ? [deliveryId, sid] : [deliveryId];
+  const r = await query(sql, params).catch(() => ({ rows: [] as { subscription_id: string }[] }));
+  const subIdOut = r.rows?.[0]?.subscription_id;
+  if (!subIdOut) return false;
+  await query(
+    `UPDATE meal_subscriptions SET
+       completed_sessions = COALESCE(completed_sessions, 0) + 1,
+       remaining_sessions = CASE WHEN remaining_sessions IS NOT NULL THEN GREATEST(0, remaining_sessions - 1) ELSE NULL END,
+       updated_at = NOW()
+     WHERE id = $1`,
+    [subIdOut],
+  );
+  return true;
+}
+
 export async function listCanonicalSubscriptionsForCustomer(
   customerId: string,
   filter: MealSubscriptionLifecycleFilter = 'all',
@@ -28,7 +67,10 @@ export async function listCanonicalSubscriptionsForCustomer(
              WHEN mp.dietary_requirements IS NOT NULL THEN
                COALESCE(
                  mp.dietary_requirements::jsonb ->> 'mealImageUrl',
-                 mp.dietary_requirements::jsonb ->> 'meal_image_url'
+                 mp.dietary_requirements::jsonb ->> 'meal_image_url',
+                 mp.dietary_requirements::jsonb ->> 'coverImageUrl',
+                 mp.dietary_requirements::jsonb ->> 'imageUrl',
+                 mp.dietary_requirements::jsonb ->> 'thumbnailUrl'
                )
              ELSE NULL
            END AS meal_plan_image_url,
@@ -374,23 +416,15 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
   const own = await assertVendorOwnsDelivery(vendorId, options.deliveryId);
   if (!own) return null;
 
-  const updates: string[] = ['status = $2', 'updated_at = NOW()'];
-  const params: unknown[] = [options.deliveryId, options.status];
   if (options.status === 'delivered') {
-    updates.push(`delivered_at = NOW()`);
-  }
-
-  await query(`UPDATE meal_subscription_deliveries SET ${updates.join(', ')} WHERE id = $1`, params);
-
-  if (options.status === 'delivered') {
-    await query(
-      `UPDATE meal_subscriptions SET
-         completed_sessions = COALESCE(completed_sessions, 0) + 1,
-         remaining_sessions = CASE WHEN remaining_sessions IS NOT NULL THEN GREATEST(0, remaining_sessions - 1) ELSE NULL END,
-         updated_at = NOW()
-       WHERE id = $1`,
-      [own.subscription.id],
+    await markMealSubscriptionDeliveryDeliveredById(
+      options.deliveryId,
+      own.subscription.id != null ? String(own.subscription.id) : null,
     );
+  } else {
+    const updates: string[] = ['status = $2', 'updated_at = NOW()'];
+    const params: unknown[] = [options.deliveryId, options.status];
+    await query(`UPDATE meal_subscription_deliveries SET ${updates.join(', ')} WHERE id = $1`, params);
   }
 
   const row = await vendorGetMealSubscriptionDelivery(vendorId, options.deliveryId);

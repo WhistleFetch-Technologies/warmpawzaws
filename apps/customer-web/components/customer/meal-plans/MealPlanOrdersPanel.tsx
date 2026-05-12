@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import {
   Package,
-  Package2,
   MapPin,
   Calendar,
   Clock,
@@ -111,6 +110,8 @@ export function MealPlanOrdersPanel({
         const mealPlanOrders = (r?.orders || []).map((o: Record<string, unknown>) => ({
           ...o,
           meal_plan_name: (o.meal_plan_name as string) || (o.meal_plan_id as string) || 'Meal Plan',
+          pet_name: (o.pet_name as string) || undefined,
+          quantity: o.quantity != null ? Number(o.quantity) : undefined,
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
           delivery_time:
             (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
@@ -214,47 +215,26 @@ export function MealPlanOrdersPanel({
     <div
       className="mt-5 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50/80 to-amber-50/60 p-3 sm:p-4"
       role="navigation"
-      aria-label="Subscriptions and packages"
+      aria-label="Subscriptions"
     >
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-orange-800/80">
         More nutrition
       </p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Link
-          href="/subscriptions"
-          className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
-              <UtensilsCrossed className="h-4 w-4" aria-hidden />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-gray-900">Subscriptions</span>
-              <span className="block truncate text-xs text-gray-500">Meal subs &amp; package subs</span>
-            </span>
+      <Link
+        href="/subscriptions"
+        className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+            <UtensilsCrossed className="h-4 w-4" aria-hidden />
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
-        </Link>
-        <Link
-          href="/my-packages"
-          className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-              <Package2 className="h-4 w-4" aria-hidden />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-gray-900">My packages</span>
-              <span className="block truncate text-xs text-gray-500">Sessions &amp; package progress</span>
-            </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-gray-900">Subscriptions</span>
+            <span className="block truncate text-xs text-gray-500">Meal plans &amp; recurring deliveries</span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
-        </Link>
-      </div>
-      <p className="mt-2 text-[11px] leading-snug text-gray-500">
-        For per-package sessions and progress, open <span className="font-medium text-gray-700">My packages</span> and
-        tap a package for full details.
-      </p>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
+      </Link>
     </div>
   );
 
@@ -348,7 +328,7 @@ export function MealPlanOrdersPanel({
 
                   <div className="text-right ml-4">
                     <p className="text-2xl font-bold text-orange-600">₹{order.total_amount}</p>
-                    <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity}</p>
+                    <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity ?? '—'}</p>
                   </div>
                 </div>
 
