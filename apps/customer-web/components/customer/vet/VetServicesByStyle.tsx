@@ -1033,21 +1033,21 @@ export function VetServicesByStyle({
                       : undefined
                   }
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 w-full items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
                       {/* Provider Photo or Initial */}
                       {provider.photo ? (
                         <img 
                           src={provider.photo} 
                           alt={provider.name}
-                          className="w-12 h-12 rounded-full object-cover border-2 border-[#FF8C42]"
+                          className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
                         />
                       ) : (
-                        <div className="w-12 h-12 bg-[#FF8C42] rounded-full flex items-center justify-center text-white font-bold text-lg">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white">
                           {provider.name.charAt(0)}
                         </div>
                       )}
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{provider.name}</h3>
                           {provider.isVerified && (
@@ -1076,8 +1076,8 @@ export function VetServicesByStyle({
                           )}
                         </div>
                         {providerAddress && (
-                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                          <div className="mt-1 flex min-w-0 items-start gap-1 text-xs text-gray-500">
+                            <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
                             <span className="line-clamp-1">{providerAddress}</span>
                           </div>
                         )}
@@ -1122,44 +1122,52 @@ export function VetServicesByStyle({
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                       >
-                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
+                        {/* Price + CTA on the right only; left = name, desc, duration/category (same grid as ClinicListView) */}
+                        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
+                          <div className="min-w-0 pr-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
+                                {service.name}
+                              </h5>
                               {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                                  Package
+                                </span>
                               )}
                             </div>
-                            {service.description?.trim() && (
-                              <ServiceDescriptionInline
-                                description={service.description}
-                                title={service.name}
-                                className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                              />
-                            )}
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="text-xs">
-                                <Clock className="w-3 h-3 mr-1" />
+                            {service.description?.trim() ? (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
+                                />
+                              </div>
+                            ) : null}
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="shrink-0 text-xs">
+                                <Clock className="mr-1 h-3 w-3" />
                                 {service.duration} mins
                               </Badge>
                               {service.category && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
                                   {service.category}
                                 </Badge>
                               )}
                             </div>
                           </div>
-                          <div className="ml-2 flex w-[7.5rem] shrink-0 flex-col items-end text-right">
-                            {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
+                          <div className="text-right">
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
                               className="mb-1"
                             />
-                            <p className="mt-0.5 w-full text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
+                            <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
+                              {INDICATIVE_PRICING_NOTE}
+                            </p>
                             <Button
                               size="sm"
-                              className="mt-2 h-9 w-full bg-[#FF8C42] px-2 text-white hover:bg-[#E67A35]"
+                              className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);
