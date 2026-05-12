@@ -602,7 +602,7 @@ export function ProblemGridFlowRouter({
   );
 
   const renderVendorServiceRows = (v: VendorGroupFromProblem) => (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       {v.rows.map((row, idx) => {
         const serviceId = String(row.serviceId || row.service_id || idx);
         const title = String(row.serviceName || row.name || 'Service');
@@ -632,7 +632,8 @@ export function ProblemGridFlowRouter({
             }}
             className="cursor-pointer rounded-xl border border-gray-100 bg-white shadow-sm transition hover:border-[#FF8C42] hover:shadow-md"
           >
-            <div className="flex items-stretch gap-3 p-4">
+            {/* Thumb + grid body (same grid pattern as ClinicListView — avoids flex column collapse on narrow viewports) */}
+            <div className="flex min-w-0 items-stretch gap-3 p-4">
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
                 {thumb ? (
                   <img src={thumb} alt="" className="h-full w-full object-cover" />
@@ -643,60 +644,63 @@ export function ProblemGridFlowRouter({
                 )}
               </div>
 
-              {/* Price + CTA on the right; left = title, desc, metadata only (avoids horizontal overflow) */}
-              <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 pr-1">
-                  <h3 className="font-medium text-gray-900 leading-snug break-words">{title}</h3>
-                  <div className="mt-1">
-                    {showDesc ? (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <ServiceDescriptionInline
-                          description={descTrim}
-                          title={title}
-                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                          dialogHint="Full service description (from your provider)"
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
-                        Professional care — tap Book Now to continue.
+              <div className="min-w-0 flex-1">
+                <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
+                  <div className="min-w-0 pr-1">
+                    <h3 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">{title}</h3>
+                    <div className="mt-1">
+                      {showDesc ? (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <ServiceDescriptionInline
+                            description={descTrim}
+                            title={title}
+                            className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
+                            dialogHint="Full service description (from your provider)"
+                          />
+                        </div>
+                      ) : (
+                        <p className="mt-1 line-clamp-2 text-sm italic text-gray-400">
+                          Professional care — tap Book Now to continue.
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="shrink-0 text-xs">
+                        <Clock className="mr-1 h-3 w-3" />
+                        {duration > 0 ? `${duration} mins` : 'Duration on request'}
+                      </Badge>
+                      {showDistance && (
+                        <span className="flex shrink-0 items-center gap-1 text-xs text-gray-600">
+                          <MapPin className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                          {distFmt}
+                        </span>
+                      )}
+                      <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
+                        {categoryLabel}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="mb-1 text-lg font-bold tabular-nums text-[#FF8C42]">
+                      {formatPriceWithSymbol(price)}
+                    </div>
+                    {isVetProblem(selectedProblem) && (
+                      <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
+                        {INDICATIVE_PRICING_NOTE}
                       </p>
                     )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleServiceRowSelect(row);
+                      }}
+                    >
+                      Book Now
+                    </Button>
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {duration > 0 ? `${duration} mins` : 'Duration on request'}
-                    </Badge>
-                    {showDistance && (
-                      <span className="flex items-center gap-1 text-xs text-gray-600 shrink-0">
-                        <MapPin className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                        {distFmt}
-                      </span>
-                    )}
-                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                      {categoryLabel}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-col items-end text-right ml-1 min-w-[6.5rem]">
-                  <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
-                    {formatPriceWithSymbol(price)}
-                  </div>
-                  {isVetProblem(selectedProblem) && (
-                    <p className="mb-2 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white w-full sm:w-auto"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleServiceRowSelect(row);
-                    }}
-                  >
-                    Book Now
-                  </Button>
                 </div>
               </div>
             </div>
@@ -762,7 +766,7 @@ export function ProblemGridFlowRouter({
             return (
               <Card
                 key={vendor.vendorId}
-                className={`overflow-hidden transition border-gray-200 ${expanded ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : ''}`}
+                className={`min-w-0 overflow-hidden transition border-gray-200 ${expanded ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : ''}`}
               >
                 <div
                   role={headerInteractive ? 'button' : undefined}
@@ -782,11 +786,11 @@ export function ProblemGridFlowRouter({
                         }
                       : undefined
                   }
-                  className={`p-4 text-left w-full ${
+                  className={`min-w-0 p-4 text-left w-full ${
                     headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
                   }`}
                 >
-                  <div className="flex gap-4">
+                  <div className="flex min-w-0 gap-4">
                     <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
                       {vendor.photo ? (
                         <img src={vendor.photo} alt={vendor.vendorName} className="w-full h-full object-cover" />
@@ -862,15 +866,12 @@ export function ProblemGridFlowRouter({
                         ₹{vendor.minPrice.toLocaleString('en-IN')}
                       </p>
                       <p className="text-xs text-gray-500">onwards</p>
-                      {isVetProblem(selectedProblem) && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                      )}
                     </div>
                   </div>
                 </div>
 
                 {expanded && selectedServiceStyle && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-3">
+                  <div className="min-w-0 space-y-3 border-t border-gray-100 bg-gray-50 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h4 className="text-sm font-semibold text-gray-700">
                         Available Services ({vendor.rows.length})
@@ -879,7 +880,7 @@ export function ProblemGridFlowRouter({
                     {vendor.rows.length === 0 ? (
                       <p className="text-sm text-gray-500 text-center py-2">No services listed for this provider.</p>
                     ) : (
-                      <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1">
+                      <div className="max-h-[min(60vh,28rem)] min-w-0 overflow-y-auto overflow-x-hidden pr-1">
                         {renderVendorServiceRows(vendor)}
                       </div>
                     )}
@@ -894,9 +895,6 @@ export function ProblemGridFlowRouter({
                         {' '}
                         from ₹{vendor.minPrice.toLocaleString('en-IN')}
                       </span>
-                      {isVetProblem(selectedProblem) && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                      )}
                     </div>
                     <Button
                       type="button"

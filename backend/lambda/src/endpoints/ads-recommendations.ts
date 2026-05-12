@@ -419,7 +419,7 @@ app.get('/products/similar', async (c) => {
       FROM products p
       LEFT JOIN vendors v ON p.vendor_id = v.id
       WHERE p.is_active = true
-        AND p.stock_quantity > 0
+        AND p.stock > 0
     `;
 
     if (category) {

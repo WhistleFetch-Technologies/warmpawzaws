@@ -422,7 +422,7 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         category: data.category,
         vendor_id: data.vendor_id,
         price: data.price,
-        stock_quantity: data.stock_quantity,
+        stock_quantity: data.stock ?? data.stock_quantity ?? 0,
         rating: data.rating || 0,
         tags: parseJsonArray(data.tags),
         is_active: data.is_active,

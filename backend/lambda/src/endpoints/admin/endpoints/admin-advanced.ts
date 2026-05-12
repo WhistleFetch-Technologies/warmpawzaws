@@ -2692,7 +2692,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.categoryId !== undefined) updateData.category_id = body.categoryId;
       if (body.price !== undefined) updateData.price = parseFloat(body.price);
-      if (body.stock !== undefined) updateData.stock_quantity = parseInt(body.stock, 10);
+      if (body.stock !== undefined) updateData.stock = parseInt(String(body.stock), 10);
+      else if (body.stock_quantity !== undefined) {
+        updateData.stock = parseInt(String(body.stock_quantity), 10);
+      }
       if (body.status !== undefined) {
         updateData.is_active = body.status !== 'inactive';
       }
@@ -3371,6 +3374,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           if (updates.category !== undefined) {
             updateData.category_id = updates.category;
           }
+          if (updates.stock !== undefined) {
+            updateData.stock = parseInt(String(updates.stock), 10);
+          } else if (updates.stock_quantity !== undefined) {
+            updateData.stock = parseInt(String(updates.stock_quantity), 10);
+          }
           break;
         default:
           return c.json({ success: false, error: `Invalid item type: ${itemType}` }, 400);
@@ -3380,7 +3388,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const ALLOWED_COLUMNS: Record<string, string[]> = {
         vendors: ['status', 'is_active', 'is_verified', 'commission_rate', 'rating', 'tier_level'],
         services: ['status', 'is_active', 'price', 'duration', 'category_id'],
-        products: ['is_active', 'price', 'category_id', 'status', 'stock_quantity'],
+        products: ['is_active', 'price', 'category_id', 'status', 'stock'],
       };
 
       // Validate all update field names against whitelist
@@ -5194,7 +5202,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           p.name,
           p.sku,
           p.stock,
-          p.stock_quantity,
           p.price,
           p.status,
           p.category_id,
@@ -5210,7 +5217,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         id: String(p.id || ''),
         name: String(p.name || ''),
         sku: String(p.sku || `SKU-${p.id}`),
-        stock: parseInt(p.stock || p.stock_quantity || '0', 10),
+        stock: parseInt(p.stock || '0', 10),
         price: parseFloat(p.price || '0'),
         status: String(p.status || 'active'),
         categoryId: String(p.category_id || ''),
@@ -5245,7 +5252,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         };
         if (product.stock !== undefined) {
           updateData.stock = parseInt(product.stock, 10);
-          updateData.stock_quantity = parseInt(product.stock, 10);
         }
         if (product.status !== undefined) {
           updateData.status = product.status;

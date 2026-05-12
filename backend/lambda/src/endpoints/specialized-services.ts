@@ -1685,7 +1685,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             ingredients: meta.ingredients || [],
             nutritionalValue: meta.nutritionalValue || {},
             sku: p.sku,
-            stock_quantity: p.stock_quantity,
+            stock_quantity: p.stock ?? p.stock_quantity,
             is_active: p.is_active,
             created_at: p.created_at,
             updated_at: p.updated_at,
@@ -1795,7 +1795,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           price: data.price,
           category: 'meal_plan',
           sku: `MP-${Date.now()}`,
-          stock_quantity: data.stockQuantity || 100,
+          stock: data.stockQuantity || 100,
           is_active: true,
         };
         if (hasMetadata) {

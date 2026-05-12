@@ -225,77 +225,74 @@ export function BoardingVendorExpandableCard({
             <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
               {v.planRows.map((plan) => {
                 const descTrim = plan.description?.trim() ?? '';
-                const isPackage =
-                  plan.isPackage || isVendorServicePackageRow(plan as Record<string, unknown>);
                 return (
                   <div
                     key={plan.rowId}
-                    className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                    className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                   >
-                    {/* Row 1: name + package badge (left) | price (right) */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                          {plan.name}
-                        </h5>
-                        {isPackage && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                            Package
-                          </span>
+                    {/* Price + CTA on the right only; left = name, desc, duration/category (avoids flex overflow on narrow viewports) — same grid as ClinicListView */}
+                    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
+                      <div className="min-w-0 pr-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h5 className="font-medium text-gray-900 leading-5 line-clamp-2 break-words">
+                            {plan.name}
+                          </h5>
+                          {(plan.isPackage ||
+                            isVendorServicePackageRow(plan as Record<string, unknown>)) && (
+                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                              Package
+                            </span>
+                          )}
+                        </div>
+                        {descTrim ? (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={descTrim}
+                              title={plan.name}
+                              className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
+                              dialogHint="Full description from the center (vendor-provided)"
+                            />
+                          </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
+                            Boarding plan — tap Book Now to continue.
+                          </p>
                         )}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {plan.duration != null && plan.duration > 0 && (
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {plan.duration >= 60
+                                ? `${Math.round(plan.duration / 60)} hrs`
+                                : `${plan.duration} mins`}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                            {plan.categoryLabel?.trim() || planBadgeLabel}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-[#FF8C42] mb-1 tabular-nums">
                           {formatPriceWithSymbol(plan.price)}
                         </div>
                         {showPriceDisclaimer && (
-                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                          <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
+                            {INDICATIVE_PRICING_NOTE}
+                          </p>
                         )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onBookPlan(v, plan);
+                          }}
+                        >
+                          Book Now
+                        </Button>
                       </div>
-                    </div>
-
-                    {/* Row 2: description full width */}
-                    {descTrim ? (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <ServiceDescriptionInline
-                          description={descTrim}
-                          title={plan.name}
-                          className="m-0 text-sm leading-5 text-gray-500"
-                          dialogHint="Full description from the center (vendor-provided)"
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-gray-400 text-sm line-clamp-2 italic">
-                        Boarding plan — tap Book Now to continue.
-                      </p>
-                    )}
-
-                    {/* Row 3: badges (left) | Book Now (right) */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {plan.duration != null && plan.duration > 0 && (
-                          <Badge variant="outline" className="text-xs shrink-0">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {plan.duration >= 60
-                              ? `${Math.round(plan.duration / 60)} hrs`
-                              : `${plan.duration} mins`}
-                          </Badge>
-                        )}
-                        <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                          {plan.categoryLabel?.trim() || planBadgeLabel}
-                        </Badge>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onBookPlan(v, plan);
-                        }}
-                      >
-                        Book Now
-                      </Button>
                     </div>
                   </div>
                 );
@@ -306,13 +303,16 @@ export function BoardingVendorExpandableCard({
       )}
 
       {!expanded && (
-        <div className="px-4 py-3 bg-gray-50 flex flex-row items-center justify-between gap-2">
-          <div className="text-sm text-gray-600 truncate">
+        <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="text-sm text-gray-600">
             {v.planRows.length > 0 ? (
               <>
                 {v.planRows.length} service{v.planRows.length !== 1 ? 's' : ''} available
                 {minP != null && (
                   <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(minP)}</span>
+                )}
+                {showPriceDisclaimer && minP != null && (
+                  <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                 )}
               </>
             ) : v.needsServiceFetch ? (
