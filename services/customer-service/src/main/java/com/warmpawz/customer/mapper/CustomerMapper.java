@@ -95,46 +95,6 @@ public class CustomerMapper {
     }
 
     // =========================
-    // CUSTOMER → PROFILE
-    // =========================
-    public static CustomerProfileResponse toCustomerProfileResponse(Customer customer) {
-        if (customer == null) return null;
-
-        CustomerProfileResponse response = new CustomerProfileResponse();
-
-        response.setId(customer.getId());
-        response.setPhone(customer.getPhone());
-        response.setName(customer.getFullName());
-        response.setEmail(customer.getEmail());
-
-        response.setAddress(customer.getAddress());
-        response.setCity(customer.getCity());
-        response.setState(customer.getState());
-        response.setPincode(customer.getPincode());
-        applyDefaultAddressDetails(customer, response::setAddressLine1, response::setAddressLine2,
-                response::setHouseNo, response::setFlatNo, response::setFloor,
-                response::setStreetName, response::setApartmentName, response::setLandmark);
-
-        response.setPhoto(rewriteMediaUrl(customer.getProfilePhotoUrl()));
-
-        response.setStatus(customer.getStatus());
-        response.setOnboardingStatus(customer.getOnboardingStatus());
-        response.setProfileCompleted(customer.isProfileCompleted());
-
-        response.setCreatedAt(toString(customer.getCreatedAt()));
-
-        if (customer.getPets() != null) {
-            response.setPets(
-                    customer.getPets().stream()
-                            .map(CustomerMapper::toPetResponse)
-                            .toList()
-            );
-        }
-
-        return response;
-    }
-
-    // =========================
     // CUSTOMER → UNIFIED PROFILE
     // =========================
     public static CustomerUnifiedProfileResponse toUnifiedProfile(Customer customer) {

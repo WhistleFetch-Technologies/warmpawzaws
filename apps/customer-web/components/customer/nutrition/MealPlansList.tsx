@@ -45,8 +45,17 @@ export function MealPlansList({
 
   const focusVendorId = vendorFocus?.vendorId?.trim() || null;
 
-  const getLocation = useCallback((): { lat: number; lng: number } | null => {
+  const getLocation = useCallback(async (): Promise<{ lat: number; lng: number } | null> => {
     if (typeof window === 'undefined') return null;
+    try {
+      const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+      const ph = resolveCustomerDiscoveryPhone(phone);
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+      if (latitude && longitude) {
+        const n = parseFloat(latitude), g = parseFloat(longitude);
+        if (!Number.isNaN(n) && !Number.isNaN(g)) return { lat: n, lng: g };
+      }
+    } catch { /* ignore */ }
     const lat = localStorage.getItem('customer_latitude') || localStorage.getItem('customer_lat');
     const lng = localStorage.getItem('customer_longitude') || localStorage.getItem('customer_lng');
     if (lat && lng) {
@@ -94,10 +103,10 @@ export function MealPlansList({
   const fetchMealPlansForBrowse = async () => {
     try {
       setLoading(true);
+      const loc = await getLocation();
       const buildParams = (withLocalRadius: boolean) => {
         const params = new URLSearchParams();
-        const loc = withLocalRadius ? getLocation() : null;
-        if (loc) {
+        if (withLocalRadius && loc) {
           params.set('lat', String(loc.lat));
           params.set('lng', String(loc.lng));
           params.set('maxRadius', String(MAX_RADIUS_KM));

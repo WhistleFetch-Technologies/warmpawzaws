@@ -187,9 +187,10 @@ export function HomeServiceProviderListView({
 
       let locationParams = '';
       try {
-        const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-        const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-        if (lat && lng) locationParams = `&latitude=${lat}&longitude=${lng}`;
+        const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+        const ph = resolveCustomerDiscoveryPhone(phone);
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+        if (latitude && longitude) locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
       } catch (_) {}
 
       // Primary: /customer/discover-services (solo providers only, at_home, enriched data)

@@ -67,18 +67,25 @@ export function VendorListingByStyle({
   const [minRating, setMinRating] = useState<number>(0);
   const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Get customer location on mount
+  // Get customer location on mount (localStorage → profile API → geolocation)
   useEffect(() => {
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        setCustomerLocation({ lat: parseFloat(customerLat), lng: parseFloat(customerLng) });
-      }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-  }, []);
+    import('@/lib/customer-discovery-coords').then(({ resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone }) => {
+      const ph = resolveCustomerDiscoveryPhone(phone);
+      resolveCustomerDiscoveryCoords(ph).then(({ latitude, longitude }) => {
+        if (latitude && longitude) {
+          setCustomerLocation({ lat: parseFloat(latitude), lng: parseFloat(longitude) });
+        }
+      });
+    }).catch(() => {
+      try {
+        const customerLat = localStorage.getItem('customer_latitude');
+        const customerLng = localStorage.getItem('customer_longitude');
+        if (customerLat && customerLng) {
+          setCustomerLocation({ lat: parseFloat(customerLat), lng: parseFloat(customerLng) });
+        }
+      } catch { /* ignore */ }
+    });
+  }, [phone]);
 
   useEffect(() => {
     loadVendors();

@@ -444,7 +444,7 @@ export function ProblemBasedFlowRouter({
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
 
       // Fetch provider counts for each allowed style
-      const locationParams = getLocationParams();
+      const locationParams = await getLocationParams();
       
       const updatedStyles = await Promise.all(
         allStyles.map(async (style) => {
@@ -575,14 +575,15 @@ export function ProblemBasedFlowRouter({
     }
   };
 
-  const getLocationParams = () => {
+  const getLocationParams = async (): Promise<string> => {
     try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        return `&latitude=${customerLat}&longitude=${customerLng}`;
+      const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+      const ph = resolveCustomerDiscoveryPhone(phone);
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+      if (latitude && longitude) {
+        return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
     return '';

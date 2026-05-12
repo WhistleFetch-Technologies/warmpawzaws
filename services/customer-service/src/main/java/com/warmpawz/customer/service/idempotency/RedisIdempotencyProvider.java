@@ -50,7 +50,11 @@ public class RedisIdempotencyProvider implements IdempotencyProvider {
             return Optional.empty();
         }
         try {
-            return Optional.of(objectMapper.readValue(raw, IdempotencyEntry.class));
+            IdempotencyEntry entry = objectMapper.readValue(raw, IdempotencyEntry.class);
+            if (entry.getExpiresAt() == null || !entry.getExpiresAt().isAfter(Instant.now())) {
+                return Optional.empty();
+            }
+            return Optional.of(entry);
         } catch (JsonProcessingException ex) {
             return Optional.empty();
         }

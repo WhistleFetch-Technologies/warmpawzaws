@@ -258,9 +258,10 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
 
   const getLocationQuerySuffix = useCallback(async (): Promise<string> => {
     try {
-      const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-      const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-      if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
+      const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+      const ph = resolveCustomerDiscoveryPhone(phone);
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+      if (latitude && longitude) return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     } catch (_) {}
     if (typeof phone !== 'undefined' && phone) {
       try {

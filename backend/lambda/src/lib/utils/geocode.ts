@@ -12,23 +12,55 @@ export interface GeocodeResult {
 let _apiKeyCache: string | null = null;
 async function getApiKey(): Promise<string> {
   if (_apiKeyCache) return _apiKeyCache;
+
+  // Tier 1: direct env var (fastest, no network call)
   if (process.env.GOOGLE_MAPS_API_KEY) {
     _apiKeyCache = process.env.GOOGLE_MAPS_API_KEY;
     return _apiKeyCache;
   }
+
   try {
     const { getSecret, getSecretJson } = await import('../../utils/aws/secrets-manager');
+
+    // Tier 2: fetch by secret ARN when the env var is provided (avoids name-construction ambiguity)
+    const secretArn = process.env.GOOGLE_MAPS_SECRET_ARN;
+    if (secretArn) {
+      const { SecretsManagerClient, GetSecretValueCommand } = await import('@aws-sdk/client-secrets-manager');
+      const client = new SecretsManagerClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+      try {
+        const resp = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
+        if (resp.SecretString) {
+          const parsed = JSON.parse(resp.SecretString) as { apiKey?: string; api_key?: string; key?: string };
+          _apiKeyCache = parsed.apiKey || parsed.api_key || parsed.key || null;
+          if (_apiKeyCache) return _apiKeyCache;
+        }
+      } catch (arnErr: any) {
+        console.warn('[Geocode] GOOGLE_MAPS_SECRET_ARN fetch failed:', arnErr?.message);
+      }
+    }
+
+    // Tier 3: fetch by conventional name (warmpawz/{stage}/google-maps)
     const secretJson = await getSecretJson<{ apiKey?: string; api_key?: string; key?: string }>('google-maps');
     if (secretJson?.apiKey) _apiKeyCache = secretJson.apiKey;
-    if (!(_apiKeyCache) && secretJson?.api_key) _apiKeyCache = secretJson.api_key;
-    if (!(_apiKeyCache) && secretJson?.key) _apiKeyCache = secretJson.key;
-    if (!(_apiKeyCache)) {
+    if (!_apiKeyCache && secretJson?.api_key) _apiKeyCache = secretJson.api_key;
+    if (!_apiKeyCache && secretJson?.key) _apiKeyCache = secretJson.key;
+    if (!_apiKeyCache) {
       const key = await getSecret('google-maps/api-key');
       if (key) _apiKeyCache = key;
     }
-  } catch {
-    // ignore
+  } catch (err: any) {
+    console.warn('[Geocode] getApiKey Secrets Manager lookup failed:', err?.message);
   }
+
+  if (!_apiKeyCache) {
+    console.warn(
+      '[Geocode] No Google Maps API key found. ' +
+      'Set GOOGLE_MAPS_API_KEY env var on the Lambda, or ensure the secret at ' +
+      `GOOGLE_MAPS_SECRET_ARN (${process.env.GOOGLE_MAPS_SECRET_ARN ?? 'unset'}) / ` +
+      'warmpawz/{stage}/google-maps contains an apiKey / api_key / key field.'
+    );
+  }
+
   return _apiKeyCache || '';
 }
 

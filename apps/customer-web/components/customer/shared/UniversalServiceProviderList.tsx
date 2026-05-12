@@ -605,13 +605,14 @@ export function UniversalServiceProviderList({
     try {
       setLoading(true);
 
-      // Get customer location for distance-based sorting
+      // Resolve customer coordinates (localStorage → profile API → geolocation)
       let locationParams = '';
       try {
-        const customerLat = localStorage.getItem('customer_latitude');
-        const customerLng = localStorage.getItem('customer_longitude');
-        if (customerLat && customerLng) {
-          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
+        const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+        const ph = resolveCustomerDiscoveryPhone(phone);
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+        if (latitude && longitude) {
+          locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
         }
       } catch (e) {
         console.log('Could not get customer location');

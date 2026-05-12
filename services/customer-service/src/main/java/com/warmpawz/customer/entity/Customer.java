@@ -69,10 +69,6 @@ public class Customer {
 
     // ================= RELATIONS =================
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_identity_id")
-    private CustomerIdentity customerIdentity;
-
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private CustomerProfileCompletion profileCompletion;
 

@@ -837,17 +837,17 @@ export function CustomerHomeComplete({
     try {
       setServicesLoading(true);
 
+      // Resolve coordinates (localStorage → profile API → geolocation) and cache for all sub-pages
       let locationParams = '';
-      if (typeof window !== 'undefined') {
-        try {
-          const customerLat = localStorage.getItem('customer_latitude');
-          const customerLng = localStorage.getItem('customer_longitude');
-          if (customerLat && customerLng) {
-            locationParams = `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
-          }
-        } catch {
-          /* ignore */
+      try {
+        const { resolveCustomerDiscoveryCoords, resolveCustomerDiscoveryPhone } = await import('@/lib/customer-discovery-coords');
+        const ph = resolveCustomerDiscoveryPhone(phone);
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(ph);
+        if (latitude && longitude) {
+          locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
         }
+      } catch {
+        /* ignore */
       }
       const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
 

@@ -6094,6 +6094,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           longitude: vendor.longitude,
           pincode: vendor.pincode,
         });
+        if (!distResult) {
+          console.log(
+            `[by-style] distance=null for vendor ${vendor.vendor_id || vendor.id}, lat=${vendor.latitude}, lng=${vendor.longitude}, pin=${vendor.pincode}`
+          );
+        }
         let nextAvailable: any = null;
         try {
           nextAvailable = await getNextAvailableSlot(

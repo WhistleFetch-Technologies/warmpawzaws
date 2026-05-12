@@ -12,6 +12,16 @@ export function resolveCustomerDiscoveryPhone(candidate?: string): string {
   ).trim();
 }
 
+function cacheCoords(lat: string, lng: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('customer_latitude', lat);
+    localStorage.setItem('customer_longitude', lng);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Same resolution order as useHubVendorDiscovery for discover-services parity. */
 export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
   latitude?: string;
@@ -20,6 +30,8 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
   let latitude: string | undefined;
   let longitude: string | undefined;
   const ph = (phone || '').trim();
+
+  // Tier 1: customer profile API (most accurate — from their saved default address)
   if (ph.length >= 8) {
     try {
       const profileRes = (await apiClient.get(
@@ -29,11 +41,14 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       if (profile?.latitude != null && profile?.longitude != null) {
         latitude = String(profile.latitude);
         longitude = String(profile.longitude);
+        cacheCoords(latitude, longitude);
       }
     } catch {
       /* ignore */
     }
   }
+
+  // Tier 2: localStorage (already cached from a previous resolution)
   if (latitude == null && typeof window !== 'undefined') {
     try {
       const lat = localStorage.getItem('customer_latitude');
@@ -46,6 +61,8 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       /* ignore */
     }
   }
+
+  // Tier 3: browser geolocation
   if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -56,9 +73,11 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       });
       latitude = String(pos.coords.latitude);
       longitude = String(pos.coords.longitude);
+      cacheCoords(latitude, longitude);
     } catch {
       /* ignore */
     }
   }
+
   return { latitude, longitude };
 }

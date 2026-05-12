@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -192,15 +193,10 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
 
-  const getLocationParams = () => {
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        return `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
-      }
-    } catch {
-      /* ignore */
+  const getLocationParams = async (): Promise<string> => {
+    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+    if (latitude && longitude) {
+      return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     }
     return '';
   };
@@ -331,7 +327,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const loadClinics = async () => {
     try {
       setLoading(true);
-      const locationParams = getLocationParams();
+      const locationParams = await getLocationParams();
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
 
       let mapped: ClinicProvider[] = [];
