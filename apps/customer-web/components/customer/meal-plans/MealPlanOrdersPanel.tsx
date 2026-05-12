@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import {
   Package,
+  Package2,
   MapPin,
   Calendar,
   Clock,
@@ -19,6 +21,8 @@ import {
   Phone,
   User,
   AlertCircle,
+  UtensilsCrossed,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
@@ -206,13 +210,53 @@ export function MealPlanOrdersPanel({
     else goBackOrHome(router);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+  const hubNav = (
+    <div
+      className="mt-5 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50/80 to-amber-50/60 p-3 sm:p-4"
+      role="navigation"
+      aria-label="Subscriptions and packages"
+    >
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-orange-800/80">
+        More nutrition
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Link
+          href="/subscriptions"
+          className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+              <UtensilsCrossed className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">Subscriptions</span>
+              <span className="block truncate text-xs text-gray-500">Meal subs &amp; package subs</span>
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
+        </Link>
+        <Link
+          href="/my-packages"
+          className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Package2 className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">My packages</span>
+              <span className="block truncate text-xs text-gray-500">Sessions &amp; package progress</span>
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
+        </Link>
       </div>
-    );
-  }
+      <p className="mt-2 text-[11px] leading-snug text-gray-500">
+        For per-package sessions and progress, open <span className="font-medium text-gray-700">My packages</span> and
+        tap a package for full details.
+      </p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -229,9 +273,16 @@ export function MealPlanOrdersPanel({
             Meal Plan Orders
           </h1>
           <p className="text-gray-600 mt-2">Track your meal plan deliveries</p>
+          {hubNav}
         </div>
 
-        {orders.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <div className="h-12 w-12 animate-spin rounded-full border-2 border-orange-200 border-t-orange-500" />
+          </div>
+        ) : null}
+
+        {!loading && orders.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center">
             <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Yet</h3>
@@ -243,7 +294,9 @@ export function MealPlanOrdersPanel({
               Order Meal Plan
             </button>
           </div>
-        ) : (
+        ) : null}
+
+        {!loading && orders.length > 0 ? (
           <div className="space-y-4">
             {orders.map((order) => (
               <div
@@ -414,7 +467,7 @@ export function MealPlanOrdersPanel({
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
