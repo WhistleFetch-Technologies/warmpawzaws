@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { PharmacyBroadcastMap, type BroadcastPharmacy } from '../pharmacy/PharmacyBroadcastMap';
@@ -246,9 +247,7 @@ export function PharmacyOrderFlow({
   const loadAddresses = async () => {
     try {
       // Use phone query param for address lookup (customer may be identified by phone)
-      const res = await apiClient.get<any>(
-        `/customer/addresses?phone=${encodeURIComponent(customerPhone)}`
-      );
+      const res = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
       const addressList = res.addresses || [];
       setAddresses(addressList);
       

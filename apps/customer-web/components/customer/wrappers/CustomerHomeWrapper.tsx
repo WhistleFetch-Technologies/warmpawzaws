@@ -72,6 +72,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
@@ -560,7 +561,7 @@ export function CustomerHomeWrapper({
         }
         
         // Also load pets for header pet selector
-        const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+        const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
         if (petsResponse?.pets) {
           setPets(petsResponse.pets);
           if (petsResponse.pets.length > 0 && !selectedPet) {

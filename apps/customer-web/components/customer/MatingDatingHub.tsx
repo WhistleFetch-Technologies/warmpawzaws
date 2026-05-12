@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhoneQuery } from '@/lib/customer-service-list-urls';
 import { getResolvedCustomerId, isCustomerDatabaseUuid, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 import { PresignableImage } from '@/components/shared/PresignableImage';
@@ -94,7 +95,7 @@ export function MatingDatingHub(props: MatingDatingHubProps) {
   const loadMyPets = useCallback(async () => {
     if (!phone) return;
     try {
-      const res = await apiClient.get<any>(`/customer/pets?phone=${encodeURIComponent(phone)}`);
+      const res = await apiClient.get<any>(urlCustomerPetsByPhoneQuery(phone));
       const pets: MyPet[] = res?.pets || [];
       setMyPets(pets);
       setFromPetId((prev) => {

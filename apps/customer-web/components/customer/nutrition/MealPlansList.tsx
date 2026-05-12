@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Star, MapPin, UtensilsCrossed, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { getMealPlanCatalogDisplay } from '@/lib/meal-plan-catalog-display';
 import {
@@ -70,7 +71,7 @@ export function MealPlansList({
 
   const fetchPets = async () => {
     try {
-      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);

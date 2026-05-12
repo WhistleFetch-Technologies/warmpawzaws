@@ -25,7 +25,6 @@ export function PresignableImage({ src, alt, className }: Props) {
     const url = current || src || '';
     if (!url || triedRefresh) return;
     if (!url.includes('amazonaws.com')) return;
-    if (url.includes('X-Amz-Algorithm=') || url.includes('X-Amz-Credential=')) return;
 
     setTriedRefresh(true);
     try {

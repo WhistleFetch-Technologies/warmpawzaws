@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
@@ -384,7 +385,7 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
   const loadPets = async () => {
     try {
       setLoadingPets(true);
-      const response = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const response = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (response?.pets) {
         setPets(response.pets);
       }

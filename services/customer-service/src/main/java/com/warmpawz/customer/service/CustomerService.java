@@ -15,4 +15,6 @@ public interface CustomerService {
     CustomerResponse getCustomerByPhone(String phone);
 
     void updateCustomer(UUID customerId, UpdateCustomerRequest request);
+
+    void deactivateCustomer(UUID customerId, String reason);
 }

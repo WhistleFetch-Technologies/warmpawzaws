@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
@@ -63,8 +64,9 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
   }, [formData.checkInDate, formData.checkOutDate]);
 
   const loadPets = async () => {
+    if (!phone) return;
     try {
-      const response = await apiClient.get<any>(`/customer/pets/${phone}`);
+      const response = await apiClient.get<any>(urlCustomerPetsByPhonePath(phone));
       setPets(response.pets || response || []);
       if (props.petId && (response.pets || response).length > 0) {
         setFormData(prev => ({ ...prev, petId: props.petId || '' }));

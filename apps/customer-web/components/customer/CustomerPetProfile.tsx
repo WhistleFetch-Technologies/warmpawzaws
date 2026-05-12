@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, Plus, Camera, X, ChevronDown } from 'lucide-react';
 // ImageWithFallback component not found - using img tag instead
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { DOG_BREEDS, CAT_BREEDS } from '@/lib/breed-data';
 
 interface Pet {
@@ -114,7 +115,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     const loadExistingPets = async () => {
       if (!session?.phone) return;
       try {
-        const response = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+        const response = await apiClient.get(urlCustomerPetsByPhonePath(session.phone)) as any;
         if (response?.pets && Array.isArray(response.pets) && response.pets.length > 0) {
           const mappedPets: Pet[] = response.pets.map((p: any) => ({
             id: p.id,
@@ -239,7 +240,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
       // Save to backend immediately
       try {
         // Get existing pets
-        const getPetsData = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+        const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(session.phone)) as any;
         let existingPets = [];
         const petsData = getPetsData as any;
         if (Array.isArray(petsData)) {

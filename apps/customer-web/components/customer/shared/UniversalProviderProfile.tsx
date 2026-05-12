@@ -11,6 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -236,7 +240,7 @@ export function UniversalProviderProfile({
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
     try {
-      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
         const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
         setAddresses(normalized);
@@ -259,7 +263,7 @@ export function UniversalProviderProfile({
   const loadCustomerData = async () => {
     try {
       // Load pets
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse?.pets) {
         setPets(petsResponse.pets);
         // Auto-select first pet
@@ -271,7 +275,7 @@ export function UniversalProviderProfile({
       // Load addresses (for at_home service style) — use ?phone= and normalize so list/selected have .address and .label
       if (serviceStyle === 'at_home') {
         try {
-          const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+          const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
           if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
             const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
             setAddresses(normalized);

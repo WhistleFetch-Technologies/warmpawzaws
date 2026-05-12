@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, User, Check } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhoneQuery } from '@/lib/customer-service-list-urls';
 import { CalendarSlotPicker } from './CalendarSlotPicker';
 
 interface CenterBookingPageProps {
@@ -44,7 +45,7 @@ export function CenterBookingPage({
   const fetchPets = async () => {
     try {
       setLoadingPets(true);
-      const response = await apiClient.get<{ pets: any[] }>(`/customer/pets?phone=${encodeURIComponent(phone)}`);
+      const response = await apiClient.get<{ pets: any[] }>(urlCustomerPetsByPhoneQuery(phone));
       if (response.pets) {
         setPets(response.pets);
         if (petId && response.pets.find(p => p.id === petId)) {

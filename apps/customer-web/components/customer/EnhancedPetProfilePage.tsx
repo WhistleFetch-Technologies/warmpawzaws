@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 
@@ -93,7 +94,7 @@ export function EnhancedPetProfilePage({
   const fetchPets = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const response = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       
       let petsData: Pet[] = [];
       if (Array.isArray(response)) {

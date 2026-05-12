@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { urlPetsCustomerByCustomerId } from '@/lib/customer-service-list-urls';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -122,7 +123,7 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
       if (customerRes.customer) {
         const customerId = customerRes.customer.id;
         const [petsRes, addressesRes] = await Promise.all([
-          apiClient.get<any>(`/pets/customer/${customerId}`),
+          apiClient.get<any>(urlPetsCustomerByCustomerId(customerId)),
           apiClient.get<any>(`/addresses/customer/${customerId}`),
         ]);
 

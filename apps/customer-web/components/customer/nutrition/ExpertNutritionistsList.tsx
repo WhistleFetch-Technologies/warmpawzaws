@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import {
   NutritionVendorDetailsCard,
   nutritionVendorFromDiscoveryRow,
@@ -30,7 +31,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
 
   const fetchPets = async () => {
     try {
-      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);

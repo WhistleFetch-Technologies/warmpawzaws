@@ -1,3 +1,8 @@
+import {
+  parsePaginationFromCustomerServiceResponse,
+  type CustomerServicePaginationMeta,
+} from '@warmpawz/shared-types';
+
 /**
  * Normalize GET pets responses from multiple backend shapes:
  * - Enhanced: { success, data: { pets } }
@@ -108,4 +113,14 @@ export function petsFromApiResponse(res: unknown): PetUi[] {
     if (n) out.push(n);
   }
   return out;
+}
+
+export function petsAndPaginationFromApiResponse(res: unknown): {
+  pets: PetUi[];
+  pagination?: CustomerServicePaginationMeta;
+} {
+  return {
+    pets: petsFromApiResponse(res),
+    pagination: parsePaginationFromCustomerServiceResponse(res),
+  };
 }

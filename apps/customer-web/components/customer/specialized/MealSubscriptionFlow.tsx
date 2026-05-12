@@ -25,6 +25,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByCustomerId,
+  urlCustomerPetsByCustomerId,
+} from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -166,8 +170,8 @@ export function MealSubscriptionFlow({
       const [plansRes, subsRes, petsRes, addressRes] = await Promise.all([
         apiClient.get<any>(`/meals/plans?${params}`),
         apiClient.get<any>(`/meals/subscriptions/customer/${customerId}`),
-        apiClient.get<any>(`/customer/${customerId}/pets`),
-        apiClient.get<any>(`/customer/${customerId}/addresses`),
+        apiClient.get<any>(urlCustomerPetsByCustomerId(customerId)),
+        apiClient.get<any>(urlCustomerAddressesByCustomerId(customerId)),
       ]);
 
       if (plansRes.success) setMealPlans(plansRes.mealPlans || []);

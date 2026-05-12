@@ -25,6 +25,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { FeaturedVendorSpotlights } from '../shared/FeaturedVendorSpotlights';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -499,13 +503,13 @@ export function HomeServiceRouter({
   const loadCustomerData = async () => {
     try {
       // Load pets
-      const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+      const petsResponse = await apiClient.get<any>(urlCustomerPetsByPhonePath(phone));
       if (petsResponse.pets) {
         setPets(petsResponse.pets);
       }
 
       // Load addresses — normalize and pre-select default or first
-      const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+      const addressResponse = await apiClient.get<any>(urlCustomerAddressesByPhone(phone));
       if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
         const list = addressResponse.addresses;
         setAddresses(list);

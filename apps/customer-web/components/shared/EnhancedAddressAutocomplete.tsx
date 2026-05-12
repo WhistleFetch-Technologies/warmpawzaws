@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom';
 import { MapPin, Loader2, ChevronRight } from 'lucide-react';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { stripDuplicatePincodeFromState } from '@/lib/address-field-sanitize';
 
 export interface AddressComponents {
   street?: string;
@@ -68,6 +69,10 @@ function parsePlaceToComponents(place: any): AddressComponents {
       components.landmark = component.long_name;
     }
   });
+
+  if (components.state) {
+    components.state = stripDuplicatePincodeFromState(components.state, components.pincode);
+  }
 
   return components;
 }

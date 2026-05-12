@@ -8,6 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhoneQuery,
+} from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
@@ -139,7 +143,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     try {
       setLoadingPets(true);
       const data = await apiClient.get<{ pets?: any[] }>(
-        `/customer/pets?phone=${encodeURIComponent(phone)}`
+        urlCustomerPetsByPhoneQuery(phone)
       );
       setPets(data.pets || []);
     } catch (err) {
@@ -153,7 +157,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     try {
       setLoadingAddresses(true);
       const data = await apiClient.get<{ addresses?: SavedAddress[] }>(
-        `/customer/addresses?phone=${encodeURIComponent(phone)}`
+        urlCustomerAddressesByPhone(phone)
       );
       const list = data.addresses || [];
       setSavedAddresses(list);

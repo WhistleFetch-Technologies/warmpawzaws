@@ -5,6 +5,7 @@ import { ArrowLeft, Apple, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRi
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
@@ -42,7 +43,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   //---------------------------fucntions----------------------------------//
   const loadPets = async () => {
     try {
-      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);

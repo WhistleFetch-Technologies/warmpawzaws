@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
@@ -125,7 +126,9 @@ export function AddressBookPage({
   const loadAddresses = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<{ addresses?: Address[] }>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+      const response = await apiClient.get<{ addresses?: Address[] }>(
+        urlCustomerAddressesByPhone(phone)
+      );
       const addressList = response.addresses || [];
       setAddresses(addressList);
     } catch (error) {

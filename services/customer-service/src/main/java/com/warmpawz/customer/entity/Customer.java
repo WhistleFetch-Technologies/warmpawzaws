@@ -61,6 +61,12 @@ public class Customer {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    @Column(name = "deactivated_at")
+    private Instant deactivatedAt;
+
+    @Column(name = "deactivation_reason")
+    private String deactivationReason;
+
     // ================= RELATIONS =================
 
     @OneToOne(fetch = FetchType.LAZY)

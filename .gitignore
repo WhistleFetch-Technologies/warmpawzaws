@@ -164,6 +164,12 @@ reports/
 test-data/
 misc/
 docs/
+!services/customer-service/docs/
+services/customer-service/docs/*
+!services/customer-service/docs/sql/
+services/customer-service/docs/sql/*
+!services/customer-service/docs/sql/canary-hardening.sql
+!services/customer-service/docs/sql/customer-deactivation-reason.sql
 
 # =============================================================================
 # BUILD BACKUP DIRECTORIES
@@ -175,6 +181,8 @@ dist_backup/
 # =============================================================================
 $null
 **/undefined/
+
+.deploy-customer-service-tmp-*/
 
 # =============================================================================
 # CDK COMPILED OUTPUT (keep .ts source, ignore compiled output)

@@ -28,7 +28,8 @@ public class CustomerUnifiedProfileResponse {
 
         private List<AddressResponse> addresses;
 
-        private List<Object> bookings; // from booking-service later
+        // Option A: bookings stay outside customer-service until a BFF is introduced.
+        private List<Object> bookings;
 
         private Stats stats;
 

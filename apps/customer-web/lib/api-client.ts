@@ -9,6 +9,11 @@ import {
   isCustomerDatabaseUuid,
   reconcileCustomerIdStorageOnLoad,
 } from './customer-id-storage';
+import {
+  urlCustomerAddressesByCustomerId,
+  urlCustomerPetsByPhonePath,
+  urlPetsCustomerByCustomerId,
+} from './customer-service-list-urls';
 import { ApiError } from './error-handling';
 
 type RuntimeConfig = {
@@ -1103,8 +1108,9 @@ export const petsApi = {
 
   // READ
   get: (petId: string) => apiClient.get(`/pets/${petId}`),
-  getByCustomer: (customerId: string) => apiClient.get(`/pets/customer/${customerId}`),
-  getByPhone: (phone: string) => apiClient.get(`/customer/pets/${phone}`),
+  getByCustomer: (customerId: string) =>
+    apiClient.get(urlPetsCustomerByCustomerId(customerId)),
+  getByPhone: (phone: string) => apiClient.get(urlCustomerPetsByPhonePath(phone)),
 
   // UPDATE
   update: (petId: string, data: {
@@ -1141,7 +1147,8 @@ export const addressesApi = {
   }) => apiClient.post(`/customer/${customerId}/addresses`, data),
 
   // READ
-  list: (customerId: string) => apiClient.get(`/customer/${customerId}/addresses`),
+  list: (customerId: string) =>
+    apiClient.get(urlCustomerAddressesByCustomerId(customerId)),
 
   // UPDATE
   update: (customerId: string, addressId: string, data: {

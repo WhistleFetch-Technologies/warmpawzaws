@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, MapPin, Video, Loader2, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouter } from './NutritionistBookingRouter';
@@ -27,7 +28,7 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
 
   const fetchPets = async () => {
     try {
-      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);

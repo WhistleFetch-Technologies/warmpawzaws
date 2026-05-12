@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
@@ -662,7 +666,7 @@ export function CustomerHomeComplete({
     let state = '';
     try {
       const addressesResponse = (await apiClient
-        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+        .get(urlCustomerAddressesByPhone(phone))
         .catch(() => null)) as any;
       const addresses = addressesResponse?.addresses || [];
       const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
@@ -971,7 +975,7 @@ export function CustomerHomeComplete({
         // Default address is the most reliable source for customer's current location
         try {
           const addressesResponse = (await apiClient
-            .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+            .get(urlCustomerAddressesByPhone(phone))
             .catch(() => null)) as any;
           
           const addresses = addressesResponse?.addresses || [];
@@ -1633,7 +1637,7 @@ export function CustomerHomeComplete({
       // Load profile and pets in parallel using phone-based endpoints with better error handling
       const [profileResult, petsResult] = await Promise.allSettled([
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
-        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`)
+        apiClient.get(urlCustomerPetsByPhonePath(phone))
       ]);
 
       // Handle profile response
