@@ -6,123 +6,133 @@
 
 import { API_BASE_URL } from '../config/aws';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  VendorSessionStorageKeys,
+  clearVendorSession,
+  getValidVendorAccessToken,
+  refreshVendorTokens,
+} from './auth-session';
 
-const SESSION_TOKEN_KEY = 'warmpawz_vendor_session_token';
+const SESSION_TOKEN_KEY = VendorSessionStorageKeys.legacySessionToken;
+
+async function tryRefreshOn401(): Promise<boolean> {
+  try {
+    const renewed = await refreshVendorTokens();
+    return !!renewed?.accessToken;
+  } catch {
+    return false;
+  }
+}
 
 export class ApiService {
   private static async getAuthHeaders(): Promise<Record<string, string>> {
-    const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    // Prefer the session-manager flow (auto-refresh + 90-day window) and fall
+    // back to the legacy slot so older callers continue to work transparently.
+    let token: string | null = null;
+    try {
+      token = await getValidVendorAccessToken();
+    } catch {
+      token = null;
+    }
+    if (!token) {
+      token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    }
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
     };
   }
 
-  static async get(endpoint: string) {
-    try {
+  private static async handleRequest(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    endpoint: string,
+    body?: any,
+    isRetry = false,
+  ): Promise<any> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(error.error || `Request failed with status ${response.status}`);
-    }
-    
-    return response.json();
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
     } catch (error: any) {
-      // Enhanced error handling with retry logic for network errors
-      if (error.message?.includes('Network request failed')) {
+      if (error?.message?.includes('Network request failed')) {
         throw new Error('Network error. Please check your connection and try again.');
       }
       throw error;
     }
+
+    if (response.status === 401 && !isRetry) {
+      // Token might just be stale; try a silent refresh and retry once before
+      // surfacing an auth error. We deliberately do NOT clear the session here —
+      // `refreshVendorTokens` only clears it when the backend conclusively
+      // rejects the refresh token.
+      const refreshed = await tryRefreshOn401();
+      if (refreshed) {
+        return this.handleRequest(method, endpoint, body, true);
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(error.error || `Request failed with status ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  static async get(endpoint: string) {
+    return this.handleRequest('GET', endpoint);
   }
 
   static async post(endpoint: string, data: any) {
-    try {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(error.error || `Request failed with status ${response.status}`);
-    }
-    
-    return response.json();
-    } catch (error: any) {
-      if (error.message?.includes('Network request failed')) {
-        throw new Error('Network error. Please check your connection and try again.');
-      }
-      throw error;
-    }
+    return this.handleRequest('POST', endpoint, data);
   }
 
   static async put(endpoint: string, data: any) {
-    try {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(error.error || `Request failed with status ${response.status}`);
-    }
-    
-    return response.json();
-    } catch (error: any) {
-      if (error.message?.includes('Network request failed')) {
-        throw new Error('Network error. Please check your connection and try again.');
-      }
-      throw error;
-    }
+    return this.handleRequest('PUT', endpoint, data);
   }
 
   static async delete(endpoint: string) {
-    try {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'DELETE',
-      headers,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(error.error || `Request failed with status ${response.status}`);
-    }
-    
-    return response.json();
-    } catch (error: any) {
-      if (error.message?.includes('Network request failed')) {
-        throw new Error('Network error. Please check your connection and try again.');
-      }
-      throw error;
-    }
+    return this.handleRequest('DELETE', endpoint);
   }
 
+  /**
+   * Legacy entry point. New code should use `saveVendorLoginResponse` from
+   * `services/auth-session.ts` to persist the full token bundle (access/id/
+   * refresh + 90-day window). This method is preserved so older call-sites
+   * that only have a single access token continue to function.
+   */
   static async saveSessionToken(token: string): Promise<void> {
     try {
-    await AsyncStorage.setItem(SESSION_TOKEN_KEY, token);
+      await AsyncStorage.setItem(SESSION_TOKEN_KEY, token);
     } catch (error) {
       console.error('Error saving session token:', error);
-  }
+    }
   }
 
   static async getSessionToken(): Promise<string | null> {
     try {
-    return await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+      const fromSession = await getValidVendorAccessToken();
+      if (fromSession) return fromSession;
+      return await AsyncStorage.getItem(SESSION_TOKEN_KEY);
     } catch (error) {
       console.error('Error getting session token:', error);
       return null;
+    }
+  }
+
+  /**
+   * Full logout: clears every persisted slot (new + legacy). Should only be
+   * triggered when the user explicitly taps "logout".
+   */
+  static async clearSessionToken(): Promise<void> {
+    try {
+      await clearVendorSession();
+    } catch (error) {
+      console.error('Error clearing vendor session:', error);
     }
   }
 }

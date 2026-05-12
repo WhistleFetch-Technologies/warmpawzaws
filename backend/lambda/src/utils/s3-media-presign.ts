@@ -79,6 +79,25 @@ export async function presignProductImagesJsonb(raw: unknown): Promise<unknown> 
 /** Presign product.images and metadata.images for API responses (private S3 bucket). */
 export async function presignProductRowForDisplay(row: Record<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
+
+  const top = out.images;
+  const topEmpty =
+    top == null ||
+    top === '' ||
+    (Array.isArray(top) && top.length === 0);
+  if (
+    topEmpty &&
+    out.metadata != null &&
+    typeof out.metadata === 'object' &&
+    !Array.isArray(out.metadata)
+  ) {
+    const m = out.metadata as Record<string, unknown>;
+    const metaImgs = m.images;
+    if (Array.isArray(metaImgs) && metaImgs.length > 0) {
+      out.images = metaImgs;
+    }
+  }
+
   if ('images' in out) {
     out.images = await presignProductImagesJsonb(out.images);
   }
@@ -149,13 +168,21 @@ export async function presignMealPlanRowDisplayFields(mp: Record<string, unknown
   } catch {
     photos = [];
   }
+  photos = await presignProductImagesJsonb(photos);
   const drSigned = await presignMealImageUrlInRecord(dietaryReqs);
   const thumb = mp.thumbnail_url;
+  const firstPhoto =
+    Array.isArray(photos) && photos.length > 0
+      ? typeof photos[0] === 'string'
+        ? photos[0]
+        : photos[0] && typeof photos[0] === 'object' && !Array.isArray(photos[0])
+          ? String((photos[0] as Record<string, unknown>).url ?? (photos[0] as Record<string, unknown>).src ?? '')
+          : ''
+      : '';
   let mealImageUrl: string | null =
     (typeof drSigned.mealImageUrl === 'string' && drSigned.mealImageUrl) ||
     (typeof thumb === 'string' && thumb) ||
-    (Array.isArray(photos) && typeof photos[0] === 'string' && photos[0]) ||
-    null;
+    (firstPhoto ? firstPhoto : null);
   if (typeof mealImageUrl === 'string') {
     mealImageUrl = (await presignS3GetUrlIfApplicable(mealImageUrl)) ?? mealImageUrl;
   }

@@ -75,6 +75,7 @@ import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
 import { registerVendorPromotionsEndpoints } from '../endpoints/vendor/endpoints/vendor-promotions';
+import { registerVendorBannersEndpoints } from '../endpoints/vendor/endpoints/vendor-banners';
 import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
 import { registerEventEndpoints } from '../endpoints/events';
 import { registerHealthEndpoints } from '../endpoints/health';
@@ -139,6 +140,8 @@ import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } f
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
+import { registerMealCanonicalSubscriptionEndpoints } from '../endpoints/meal-canonical-subscriptions';
+import { registerMealSubscriptionVendorOperationalEndpoints } from '../endpoints/meal-subscription-vendor-endpoints';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
@@ -174,6 +177,7 @@ import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor/endpoints
 import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/customerEndpoint/customer-enhanced';
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
+import { registerCustomerDeliveryFeePolicyEndpoints } from '../endpoints/customer-delivery-fee-policy-endpoints';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
@@ -194,13 +198,19 @@ import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 // Create Hono app
 const app = new Hono();
 
-/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList). */
+/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList).
+ * Include 127.0.0.1 — browsers treat it as distinct from localhost for CORS. */
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:3002',
+  'http://127.0.0.1:3003',
+  'http://127.0.0.1:5173',
 ];
 
 /** Must stay aligned with API Gateway AllowHeaders (infra/modules/api-gateway/main.tf). */
@@ -592,6 +602,7 @@ registerNotificationEndpoints(app); // /customer/notifications - before /custome
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
+registerCustomerDeliveryFeePolicyEndpoints(app); // /customer/delivery-fee-policy, /customer/delivery-fee/calculate, /admin/delivery-fee-policy
 // ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
@@ -635,6 +646,8 @@ registerPharmacyOrderEndpoints(app);
 registerAdditionalPharmacyEndpoints(app); // ✅ FIX: Register additional pharmacy endpoints (invoice, logistics, tracking)
 registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
+registerMealCanonicalSubscriptionEndpoints(app);
+registerMealSubscriptionVendorOperationalEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
 registerVendorBankAccountEndpoints(app);
@@ -668,6 +681,7 @@ registerPackageBookingEndpoints(app);
 registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
 registerVendorPromotionsEndpoints(app);
+registerVendorBannersEndpoints(app);
 registerAdsRecommendationEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);
@@ -677,7 +691,7 @@ registerAdminVendorDailyAccrualEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
-registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo (Pidge → Java delivery-service /webhooks/pidge), /logistics/auto-create-shipment, …
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
@@ -1119,6 +1133,59 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
  * When API Gateway / CloudFront maps `/prefix/*` to this Lambda, `rawPath` still includes the prefix.
  * Hono routes are registered without that prefix — set `API_HTTP_PATH_PREFIX` (e.g. `/uat` or `/api`) to strip it.
  */
+/**
+ * Returns true when the Lambda response payload should be **base64-encoded** in
+ * the API Gateway response (set `isBase64Encoded: true`). Stringifying these
+ * bytes via `response.text()` corrupts the file (e.g. XLSX → "File could not
+ * open" in Google Sheets, mangled PDFs, broken images).
+ *
+ * Detection is conservative — anything with a binary-leaning content type *or*
+ * a `Content-Disposition: attachment` header is treated as binary.
+ */
+function isBinaryHttpContentType(
+  contentTypeLower: string,
+  contentDispositionLower: string
+): boolean {
+  if (contentDispositionLower.includes('attachment')) return true;
+  if (!contentTypeLower) return false;
+  // Fast path: explicit text/JSON/XML/form types are never binary.
+  if (
+    contentTypeLower.startsWith('text/') ||
+    contentTypeLower.startsWith('application/json') ||
+    contentTypeLower.startsWith('application/xml') ||
+    contentTypeLower.startsWith('application/javascript') ||
+    contentTypeLower.startsWith('application/x-www-form-urlencoded') ||
+    contentTypeLower.startsWith('application/ld+json') ||
+    contentTypeLower.endsWith('+json') ||
+    contentTypeLower.endsWith('+xml')
+  ) {
+    return false;
+  }
+  // Common binary families.
+  if (
+    contentTypeLower.startsWith('image/') ||
+    contentTypeLower.startsWith('video/') ||
+    contentTypeLower.startsWith('audio/') ||
+    contentTypeLower.startsWith('font/') ||
+    contentTypeLower.startsWith('multipart/') ||
+    contentTypeLower.startsWith('application/octet-stream') ||
+    contentTypeLower.startsWith('application/pdf') ||
+    contentTypeLower.startsWith('application/zip') ||
+    contentTypeLower.startsWith('application/x-zip') ||
+    contentTypeLower.startsWith('application/gzip') ||
+    contentTypeLower.startsWith('application/x-gzip') ||
+    contentTypeLower.startsWith('application/x-tar') ||
+    contentTypeLower.startsWith('application/x-7z-compressed') ||
+    contentTypeLower.startsWith('application/vnd.ms-') ||
+    contentTypeLower.startsWith('application/vnd.openxmlformats-') ||
+    contentTypeLower.startsWith('application/vnd.oasis.opendocument.') ||
+    contentTypeLower.startsWith('application/msword')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function applyHttpPathPrefixMapping(path: string): string {
   const p0 = path && path.startsWith('/') ? path : `/${path || ''}`;
   const prefix = (process.env.API_HTTP_PATH_PREFIX || '').trim();
@@ -1383,12 +1450,31 @@ export const handler = async (
       throw error;
     }
 
-    // Convert Response to API Gateway format
-    const responseBody = await response.text();
+    // Convert Response to API Gateway format.
+    //
+    // CRITICAL: API Gateway HTTP API requires binary responses (xlsx, pdf, zip,
+    // images, octet-stream …) to be **base64-encoded** with `isBase64Encoded: true`.
+    // Returning the body as a plain UTF-8 string corrupts non-text bytes, which
+    // is exactly why the bulk-product XLSX failed to open in Google Sheets even
+    // after the file-format fixes — the wire-level payload was mangled.
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value: string, key: string) => {
       responseHeaders[key] = value;
     });
+
+    const respContentType = (responseHeaders['content-type'] || '').toLowerCase();
+    const respDisposition = (responseHeaders['content-disposition'] || '').toLowerCase();
+    const isBinaryResponse = isBinaryHttpContentType(respContentType, respDisposition);
+
+    let responseBody: string;
+    let isBase64Encoded = false;
+    if (isBinaryResponse) {
+      const ab = await response.arrayBuffer();
+      responseBody = Buffer.from(ab).toString('base64');
+      isBase64Encoded = true;
+    } else {
+      responseBody = await response.text();
+    }
 
     // Ensure CORS headers are present in all responses
     const origin = event.headers?.origin || 
@@ -1407,10 +1493,11 @@ export const handler = async (
       Object.assign(finalHeaders, apiGwCorsHeadersForResponse(origin));
     }
     
-    const finalResponse = {
+    const finalResponse: APIGatewayProxyResultV2 = {
       statusCode: response.status,
       body: responseBody,
       headers: finalHeaders,
+      ...(isBase64Encoded ? { isBase64Encoded: true } : {}),
     };
     return finalResponse;
   } catch (error) {

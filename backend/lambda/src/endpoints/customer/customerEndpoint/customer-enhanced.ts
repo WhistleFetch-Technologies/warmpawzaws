@@ -33,6 +33,7 @@ import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { resolveMealCheckoutTotalInr } from '../../../utils/meal-order-pricing';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -479,7 +480,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       // 1. From meal_orders (MealOrderCheckout flow)
       const mealResult = await query(
-        `SELECT mo.*, mp.name as meal_plan_name, v.business_name as vendor_name
+        `SELECT mo.*, mp.name as meal_plan_name, mp.plan_name as mp_plan_name,
+                mp.price_per_meal as mp_price_per_meal, mp.price as mp_legacy_price,
+                v.business_name as vendor_name
          FROM meal_orders mo
          LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
          LEFT JOIN vendors v ON mo.vendor_id = v.id
@@ -488,18 +491,30 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         [customerId]
       ).catch(() => ({ rows: [] }));
 
+      const safeMoney = (v: unknown) => {
+        if (v === null || v === undefined || v === '') return 0;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
       for (const o of (mealResult as any).rows || []) {
+        const planForPricing = {
+          price_per_meal: o.mp_price_per_meal,
+          price: o.mp_legacy_price,
+        };
+        const { subtotal, total } = resolveMealCheckoutTotalInr(o, planForPricing);
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
           order_type: 'meal_plan_delivery',
           orderType: 'meal_plan_delivery',
           meal_plan_id: o.meal_plan_id,
-          meal_plan_name: o.meal_name || o.meal_plan_name,
+          meal_plan_name: o.meal_name || o.meal_plan_name || o.mp_plan_name,
           pet_id: o.pet_id,
           vendor_id: o.vendor_id,
           vendor_name: o.vendor_name,
-          total_amount: o.total_amount,
+          subtotal,
+          total_amount: total,
           status: o.status,
           delivery_address: o.delivery_address,
           scheduled_delivery_date: o.scheduled_delivery_date,
@@ -538,7 +553,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
               pet_id: null,
               vendor_id: o.vendor_id,
               vendor_name: o.vendor_name,
-              total_amount: o.total_amount,
+              total_amount: safeMoney(o.total_amount),
               status: o.status,
               delivery_address: o.delivery_address,
               scheduled_delivery_date: o.scheduled_delivery_date,

@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { StarRating } from '@/components/customer/shared/StarRating';
 import { apiClient } from '@/lib/api-client';
 import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
+import {
+  NutritionVendorDetailsCard,
+  nutritionVendorFromDiscoveryRow,
+} from './NutritionVendorDetailsCard';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
-import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface ExpertNutritionistsListProps {
@@ -118,53 +120,23 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
           ) : (
             <div className="space-y-3">
               {nutritionists.map((nutritionist: any, index: number) => {
-                const vendorId = nutritionist.id || nutritionist.vendorId;
-                const vendorName = nutritionist.businessName || nutritionist.name || `Nutritionist ${index + 1}`;
-
+                const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
+                const snapshot = nutritionVendorFromDiscoveryRow(nutritionist as Record<string, unknown>);
                 return (
-                  <Card
+                  <NutritionVendorDetailsCard
                     key={vendorId || index}
-                    className="p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-200 hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => handleNutritionistClick(nutritionist)}
-                  >
-                    <div className="flex items-start gap-4">
-                      {/* Vendor Avatar */}
-                      <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                        {vendorName.charAt(0).toUpperCase()}
-                      </div>
-
-                      {/* Vendor Info */}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-900 truncate mb-1">
-                          {vendorName}
-                        </h3>
-                        
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mb-2">
-                          <StarRating
-                            rating={nutritionist.rating}
-                            reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
-                            starsClassName="w-3 h-3"
-                            textClassName="text-xs text-slate-500"
-                          />
-                          <span className="hidden sm:inline">•</span>
-                          <span>Certified Expert</span>
-                        </div>
-
-                        {nutritionist.address && (
-                          <div className="flex items-center gap-1 text-xs text-slate-600 mb-1">
-                            <MapPin className="w-3 h-3" />
-                            <span className="truncate">{nutritionist.address}</span>
-                          </div>
-                        )}
-
-                        {nutritionist.city && (
-                          <div className="text-xs text-slate-500">
-                            {nutritionist.city}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
+                    vendor={snapshot}
+                    showViewMealPlans
+                    onViewMealPlans={() => {
+                      if (!vendorId) return;
+                      onNavigate?.('nutrition-meal-plans', {
+                        vendorId,
+                        vendorSnapshot: snapshot,
+                      });
+                    }}
+                    showBookConsultation
+                    onBookConsultation={() => handleNutritionistClick(nutritionist)}
+                  />
                 );
               })}
             </div>

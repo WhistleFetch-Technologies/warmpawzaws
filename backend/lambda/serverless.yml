@@ -49,6 +49,11 @@ provider:
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
 
+    # Java customer-service: when CUSTOMER_SERVICE_ENABLED=true and URL is set, GET /customer/by-phone uses it first.
+    CUSTOMER_SERVICE_URL: ${env:CUSTOMER_SERVICE_URL, ''}
+    CUSTOMER_SERVICE_ENABLED: ${env:CUSTOMER_SERVICE_ENABLED, 'false'}
+    CUSTOMER_SERVICE_API_KEY: ${env:CUSTOMER_SERVICE_API_KEY, ''}
+
     # EventBridge — must match a bus that has a rule: source app.warmpawz, detail-type ActionOccurred → loyalty SQS.
     # Dev: custom bus warmpawz-dev-events + route-actionoccurred-to-loyalty-queue-dev → loyalty-events-queue.
     # Prod: default bus + action-occurred-rule → loyalty-events-prod-queue.

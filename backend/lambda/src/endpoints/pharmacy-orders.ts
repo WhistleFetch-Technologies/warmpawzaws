@@ -23,6 +23,7 @@ import { prescriptionOCRService } from '../lib/services/prescription-ocr-service
 import { websocketService } from '../lib/services/websocket-service';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { autoAssignDeliveryPartner } from '../endpoints/delivery-partner-automation';
+import { computePolicyDeliveryFeeForOrder } from '../utils/customer-delivery-fee-quote';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -36,30 +37,19 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c;
 }
 
-// Calculate delivery fee based on logistics rules
-async function calculateDeliveryFee(distanceKm: number): Promise<number> {
+// Calculate delivery fee from customer delivery fee policy (single source of truth)
+async function calculateDeliveryFee(
+  distanceKm: number,
+  orderSubtotalInr = 0,
+  logisticsType: string = 'warmpawz'
+): Promise<number> {
   try {
-    const rules = await query(
-      `SELECT * FROM logistics_rules 
-       WHERE is_active = true 
-       AND 'pharmacy' = ANY(applies_to)
-       AND (min_distance_km <= $1 AND (max_distance_km IS NULL OR max_distance_km >= $1))
-       ORDER BY rule_type = 'slab' DESC, min_distance_km ASC
-       LIMIT 1`,
-      [distanceKm]
-    );
-    
-    if (rules.rows.length > 0) {
-      const rule = rules.rows[0];
-      if (rule.rule_type === 'slab') {
-        return parseFloat(rule.base_fee);
-      } else if (rule.rule_type === 'per_km') {
-        return parseFloat(rule.base_fee) + (distanceKm * parseFloat(rule.per_km_rate));
-      }
-    }
-    
-    // Default fee if no rule found
-    return 50;
+    const quote = await computePolicyDeliveryFeeForOrder({
+      orderSubtotalInr,
+      distanceKm,
+      logisticsType,
+    });
+    return quote.deliveryFeeInr;
   } catch (error) {
     console.error('Error calculating delivery fee:', error);
     return 50;

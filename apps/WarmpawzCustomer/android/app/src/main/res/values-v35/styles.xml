@@ -2,8 +2,11 @@
 <resources>
     <!--
       API 35+: same Razorpay checkout bar policy as values/styles.xml (white system status bar,
-      dark icons to pair with `theme.hide_topbar=true` Razorpay WebView), plus mandatory opt-out
-      of default edge-to-edge (Android 15) so the WebView is not drawn under the status bar / cutout.
+      dark icons so the orange Razorpay merchant toolbar lays out below the system bar), plus
+      mandatory opt-out of default edge-to-edge (Android 15) so the WebView is not drawn under
+      the status bar / cutout. Pairs with the runtime fix in
+      MainApplication.RazorpayCheckoutWindowInsetsCallback (re-applies WHITE statusBarColor +
+      light-status-bar appearance after Razorpay's CheckoutActivity overrides the theme).
     -->
     <style name="AppTheme.RazorpayCheckout" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowTranslucentStatus">false</item>

@@ -126,24 +126,38 @@ export default function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
 
   useEffect(() => {
-    // Check for existing session
+    // Restore the persisted customer session at cold start so users who
+    // logged in within the last 90 days stay logged in (silent refresh
+    // happens transparently on the next API call).
     const checkSession = async () => {
       try {
-        // Initialize API service with network monitoring
         const { ApiService } = require('./src/services/api');
         await ApiService.initialize();
-        
-        // TODO: Check AsyncStorage for existing session
-        // For now, always show auth screen
+
+        const { loadStoredCustomerSession } = require('./src/services/auth-session');
+        const stored = await loadStoredCustomerSession();
+
+        if (stored && stored.phone) {
+          setSession({
+            phone: stored.phone,
+            customerId: stored.customerId,
+            customer: stored.customer,
+            sessionToken: stored.accessToken,
+            verified: true,
+            isNewUser: !!stored.isNewUser && !stored.hasCompletedOnboarding,
+            hasCompletedOnboarding: !!stored.hasCompletedOnboarding,
+            hasPets: !!stored.hasPets,
+          });
+        }
         setIsLoading(false);
       } catch (error) {
         console.error('Session check error:', error);
         setIsLoading(false);
       }
     };
-    
+
     checkSession();
-    
+
     // Cleanup
     return () => {
       // Cleanup if needed
@@ -744,8 +758,16 @@ export default function App() {
                         phone={session.phone}
                         onBack={() => handleNavigate('CustomerProfile')}
                         onNavigate={handleNavigate}
-                        onLogout={() => {
-                          setSession({ phone: '', isAuthenticated: false, navigationTarget: null });
+                        onLogout={async () => {
+                          try {
+                            const { clearCustomerSession } = require('./src/services/auth-session');
+                            await clearCustomerSession();
+                          } catch (e) {
+                            console.warn('[customer-app] logout cleanup failed:', e);
+                          }
+                          setSession(null);
+                          setOnboardingStage(null);
+                          setShowUserProfile(false);
                         }}
                       />
                     )}
@@ -1252,7 +1274,13 @@ export default function App() {
                         vendorId={props.route?.params?.vendorId || ''}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ServiceDiscovery')}
+                        onBack={() => {
+                          if (props.navigation.canGoBack()) {
+                            props.navigation.goBack();
+                          } else {
+                            handleNavigate('ServiceDiscovery');
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}

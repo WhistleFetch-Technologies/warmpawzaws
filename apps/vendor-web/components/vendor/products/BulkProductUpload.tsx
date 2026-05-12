@@ -2,13 +2,18 @@
 
 import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
-import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { apiClient as vendorApiClient } from '@/lib/api-client';
+
+/** Keep under API Gateway JSON body limits after base64 (~33% overhead). */
+const MAX_BULK_FILE_BYTES = 6 * 1024 * 1024;
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface BulkProductUploadProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  /** When set (e.g. Seller Hub `sellerId`), used instead of `localStorage.vendorId` for API paths */
+  vendorId?: string;
 }
 
 interface ValidationResult {
@@ -31,42 +36,92 @@ interface UploadResult {
   errors: Array<{ row: number; error: string }>;
 }
 
-export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUploadProps) {
+export function BulkProductUpload({
+  isOpen,
+  onClose,
+  onSuccess,
+  vendorId: vendorIdOverride,
+}: BulkProductUploadProps) {
+  const resolveVendorId = (): string | null => {
+    const v = vendorIdOverride?.trim();
+    if (v) return v;
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('vendorId');
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<'upload' | 'preview' | 'result'>('upload');
   const [loading, setLoading] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateOkMessage, setTemplateOkMessage] = useState('');
   const [error, setError] = useState('');
 
   const [parsedProducts, setParsedProducts] = useState<any[]>([]);
+  /** Only rows that passed server-side validation — what we actually upload. */
+  const [validProducts, setValidProducts] = useState<any[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
 
+  async function blobLooksLikeXlsx(blob: Blob): Promise<boolean> {
+    if (!blob || blob.size < 64) return false;
+    const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    // ZIP / Office Open XML: PK\x03\x04
+    return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+  }
+
+  const handleDownloadCsvFallback = () => {
+    setError('');
+    setTemplateOkMessage('');
+    // Compulsory headers carry `*` so the parser still maps them after
+    // normalization (`*` is stripped). Order matches the XLSX template.
+    const headers = ['name*', 'description', 'category*', 'sku', 'price*', 'compare_at_price', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'weight', 'dimensions', 'material', 'brand', 'tags', 'images*', 'is_active'];
+    const sample = [
+      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Pet Accessories"', '"SKU-001"', '799', '1598', '100', '62052000', '5', '0.15', '"35x25x1"', '"Cotton Rayon Blend"', '"15 FURRIES"', '"dog,dress"', '"https://example.com/your-product-image-1000x1000.jpg"', 'false'
+    ];
+    const csv = headers.join(',') + '\n' + sample.join(',');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'product_upload_template_simple.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setTemplateOkMessage('Downloaded simple CSV. Use this OR the Excel template above — both upload to the same place. Required: name, category, price, stock_quantity, hsn_code, gst_rate, images. Allowed categories: Pet Food, Pet Accessories, Pet Toys, Pet Grooming, Pet Health, Pet Beds & Furniture, Pet Clothing, Pet Travel, Pet Pharmacy, Pet Training.');
+  };
+
   const handleDownloadTemplate = async () => {
+    setTemplateLoading(true);
+    setTemplateOkMessage('');
+    setError('');
     try {
-      const vendorId = localStorage.getItem('vendorId');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/vendor/${vendorId}/products/bulk/template`);
-      const blob = await response.blob();
+      const vendorId = resolveVendorId();
+      if (!vendorId) {
+        throw new Error('Vendor ID not found. Please sign in again.');
+      }
+      const blob = await vendorApiClient.getBlob(`/vendor/${vendorId}/products/bulk/template`);
+      if (!blob || blob.size < 500) {
+        throw new Error('Template from server was empty or too small. Check your connection or sign in again.');
+      }
+      if (!(await blobLooksLikeXlsx(blob))) {
+        throw new Error(
+          'Server did not return a valid Excel file (corrupt or an error page). Try again, or use the simple CSV below.'
+        );
+      }
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'product_upload_template.csv';
+      a.download = 'product_upload_template.xlsx';
       a.click();
       window.URL.revokeObjectURL(url);
+      setTemplateOkMessage(
+        'Saved product_upload_template.xlsx. Open in Excel, or in Google Drive: upload the file → right-click → Open with → Google Sheets.'
+      );
     } catch (err) {
       console.error('Error downloading template:', err);
-      // Fallback: create template manually
-      const headers = ['name*', 'description', 'category', 'sku', 'price*', 'compare_at_price', 'stock_quantity*', 'hsn_code', 'gst_rate', 'weight_kg', 'dimensions', 'material', 'brand', 'tags', 'image_urls', 'is_active'];
-      const sample = [
-        '"Premium Dog Food"', '"High-quality grain-free dog food"', '"Pet Food"', '"SKU-001"', '599', '699', '100', '2309', '18', '2.5', '"30x20x10"', '"Chicken, Rice"', '"Warmpawz"', '"dog,food"', '"https://example.com/image.jpg"', 'true'
-      ];
-      const csv = headers.join(',') + '\n' + sample.join(',');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'product_upload_template.csv';
-      a.click();
-      window.URL.revokeObjectURL(url);
+      const msg = err instanceof Error ? err.message : 'Download failed.';
+      setError(msg);
+    } finally {
+      setTemplateLoading(false);
     }
   };
 
@@ -77,15 +132,43 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
     setError('');
     setLoading(true);
 
-    try {
-      const content = await file.text();
-      const vendorId = localStorage.getItem('vendorId');
+    if (file.size > MAX_BULK_FILE_BYTES) {
+      setError(
+        `File is too large (${Math.round(file.size / 1024 / 1024)} MB). Max ${MAX_BULK_FILE_BYTES / 1024 / 1024} MB for bulk upload. Try fewer rows or CSV.`
+      );
+      setLoading(false);
+      return;
+    }
 
-      // Parse file
-      const parseResult = await apiClient.post<{ parsed?: { products: any[] } }>(`/vendor/${vendorId}/products/bulk/parse`, {
-        csvContent: content,
-        format: file.name.endsWith('.csv') ? 'csv' : 'excel',
-      });
+    try {
+      const vendorId = resolveVendorId();
+      if (!vendorId) {
+        throw new Error('Vendor ID not found. Please sign in again.');
+      }
+      const isXlsx = file.name.toLowerCase().endsWith('.xlsx');
+
+      let parsePayload: Record<string, unknown>;
+      if (isXlsx) {
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const s = r.result as string;
+            const comma = s.indexOf(',');
+            resolve(comma >= 0 ? s.slice(comma + 1) : s);
+          };
+          r.onerror = () => reject(r.error ?? new Error('Failed to read file'));
+          r.readAsDataURL(file);
+        });
+        parsePayload = { fileBase64, fileName: file.name, format: 'xlsx' };
+      } else {
+        const content = await file.text();
+        parsePayload = { csvContent: content, format: 'csv' };
+      }
+
+      const parseResult = await vendorApiClient.post<{ parsed?: { products: any[] } }>(
+        `/vendor/${vendorId}/products/bulk/parse`,
+        parsePayload
+      );
 
       if (!parseResult.parsed?.products?.length) {
         throw new Error('No products found in file');
@@ -94,11 +177,15 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
       setParsedProducts(parseResult.parsed.products);
 
       // Validate products
-      const validationResult = await apiClient.post<{ validation?: ValidationResult; validProducts?: any[] }>(`/vendor/${vendorId}/products/bulk/validate`, {
-        products: parseResult.parsed.products,
-      });
+      const validationResult = await vendorApiClient.post<{ validation?: ValidationResult; validProducts?: any[] }>(
+        `/vendor/${vendorId}/products/bulk/validate`,
+        {
+          products: parseResult.parsed.products,
+        }
+      );
 
       setValidation(validationResult.validation || null);
+      setValidProducts(validationResult.validProducts || []);
       setStep('preview');
     } catch (err: any) {
       console.error('Error processing file:', err);
@@ -113,9 +200,15 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
     setError('');
 
     try {
-      const vendorId = localStorage.getItem('vendorId');
-      const result = await apiClient.post<{ results?: UploadResult }>(`/vendor/${vendorId}/products/bulk/upload`, {
-        products: parsedProducts,
+      const vendorId = resolveVendorId();
+      if (!vendorId) {
+        throw new Error('Vendor ID not found. Please sign in again.');
+      }
+      // Only push rows that passed server-side validation — falls back to raw
+      // parsedProducts if for some reason validProducts wasn't populated.
+      const productsToUpload = validProducts.length > 0 ? validProducts : parsedProducts;
+      const result = await vendorApiClient.post<{ results?: UploadResult }>(`/vendor/${vendorId}/products/bulk/upload`, {
+        products: productsToUpload,
       });
 
       setUploadResult(result.results || null);
@@ -131,9 +224,12 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
   const handleReset = () => {
     setStep('upload');
     setParsedProducts([]);
+    setValidProducts([]);
     setValidation(null);
     setUploadResult(null);
     setError('');
+    setTemplateOkMessage('');
+    setTemplateLoading(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -191,22 +287,47 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
           {/* Upload Step */}
           {step === 'upload' && (
             <div className="space-y-6">
-              <div className="text-center">
-                <p className="text-gray-600 mb-4">
-                  Upload a CSV or Excel file to add multiple products at once.
+              <div className="text-center space-y-3">
+                <p className="text-gray-600 mb-2">
+                  Upload an XLSX template (or CSV) from your device to add multiple products at once. You do{' '}
+                  <strong>not</strong> need Google Sheets in the browser—pick the saved file here.
                 </p>
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
-                >
-                  <Download className="w-5 h-5" />
-                  Download Template
-                </button>
+                <p className="text-xs text-gray-500 max-w-lg mx-auto">
+                  If sheets.google.com shows “File could not open”, clear google.com cookies or use Excel / LibreOffice,
+                  then upload the .xlsx here.
+                </p>
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    disabled={templateLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-orange-600 hover:bg-orange-50 rounded-lg transition disabled:opacity-60 disabled:pointer-events-none"
+                  >
+                    {templateLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Download className="w-5 h-5" />
+                    )}
+                    {templateLoading ? 'Downloading…' : 'Download Excel template'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadCsvFallback}
+                    className="text-sm text-gray-500 hover:text-orange-600 underline underline-offset-2"
+                  >
+                    Simple CSV instead (basic columns)
+                  </button>
+                </div>
+                {templateOkMessage && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-left text-sm text-green-800 max-w-lg mx-auto">
+                    {templateOkMessage}
+                  </div>
+                )}
               </div>
 
               <TouchFilePicker
                 ref={fileInputRef}
-                accept=".csv,.xlsx,.xls"
+                accept=".xlsx,.csv"
                 onFileChange={handleFileSelect}
                 disabled={loading}
                 className="cursor-pointer rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center transition hover:border-orange-400 hover:bg-orange-50"
@@ -220,16 +341,25 @@ export function BulkProductUpload({ isOpen, onClose, onSuccess }: BulkProductUpl
                 <p className="font-medium text-gray-600">
                   {loading ? 'Processing file...' : 'Tap to upload or drag and drop'}
                 </p>
-                <p className="mt-1 text-sm text-gray-400">CSV or Excel files up to 10MB</p>
+                <p className="mt-1 text-sm text-gray-400">
+                  XLSX or CSV up to {MAX_BULK_FILE_BYTES / 1024 / 1024} MB (API limit)
+                </p>
               </TouchFilePicker>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h4 className="font-semibold text-amber-800 mb-2">📋 Required Fields</h4>
-                <ul className="text-sm text-amber-700 space-y-1">
-                  <li>• <strong>name</strong> - Product name (required)</li>
-                  <li>• <strong>price</strong> - Selling price in ₹ (required)</li>
-                  <li>• <strong>stock_quantity</strong> - Available inventory (required)</li>
+                <h4 className="font-semibold text-amber-800 mb-2">📋 Required Fields (marked <span className="font-mono">*</span> in the template)</h4>
+                <ul className="text-sm text-amber-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                  <li>• <strong>Title*</strong> — product name</li>
+                  <li>• <strong>Quantity*</strong> — whole number ≥ 0</li>
+                  <li>• <strong>Image*</strong> — http(s) URL, 1000×1000 px</li>
+                  <li>• <strong>SP*</strong> — selling price in ₹ (&gt; 0)</li>
+                  <li>• <strong>Category*</strong> — pick from dropdown</li>
+                  <li>• <strong>Tax*</strong> — 0, 5, 12, 18, or 28%</li>
+                  <li>• <strong>HSN*</strong> — 4–8 digit code</li>
                 </ul>
+                <p className="text-xs text-amber-700 mt-2">
+                  Allowed categories: Pet Food, Pet Accessories, Pet Toys, Pet Grooming, Pet Health, Pet Beds &amp; Furniture, Pet Clothing, Pet Travel, Pet Pharmacy, Pet Training.
+                </p>
               </div>
 
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">

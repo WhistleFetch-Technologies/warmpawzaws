@@ -35,6 +35,11 @@ import {
   vendorCancellationReasonLabel,
   applyRefundAfterProviderCancellation,
 } from '../../../lib/services/provider-booking-cancel-refund';
+import {
+  getTemporaryVendorSuppressionParams,
+  shouldHideBookingRowFromVendorUi,
+  sqlExcludeSuppressedBookingRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -137,6 +142,13 @@ export function registerVendorBookingsEndpoints(app: Hono) {
                COALESCE(b.total_amount, 0) <= 0
                OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
              )`;
+      }
+
+      const temporarySuppression = getTemporaryVendorSuppressionParams();
+      if (temporarySuppression) {
+        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
+        params.push(temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst);
+        paramIndex += 2;
       }
 
       // Filter by date
@@ -358,7 +370,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
         // Publish notification event
         try {
-          const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+          const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
           await publishBookingStatusUpdated({
             bookingId,
             customerId: booking.customer_id,
@@ -444,7 +456,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       // Publish notification event
       try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
         await publishBookingStatusUpdated({
           bookingId,
           customerId: booking.customer_id,
@@ -543,7 +555,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       // Publish notification event
       try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
         await publishBookingStatusUpdated({
           bookingId,
           customerId: booking.customer_id,
@@ -603,6 +615,60 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: `Booking cannot be declined. Current status: ${oldStatus}` }, 400);
       }
 
+      const pkgPurchaseIdEarly =
+        (booking as any).package_purchase_id ?? (booking as any).packagePurchaseId ?? null;
+      if (Boolean((booking as any).is_package_session) && pkgPurchaseIdEarly) {
+        return c.json(
+          {
+            error:
+              'Decline the package parent booking to refund the customer and cancel all sessions.',
+          },
+          400
+        );
+      }
+
+      const pkgPidForParentCheck =
+        (booking as any).package_purchase_id ?? (booking as any).packagePurchaseId ?? null;
+      const isPackageParentDecline = Boolean(pkgPidForParentCheck) && !Boolean((booking as any).is_package_session);
+      if (isPackageParentDecline && pkgPidForParentCheck) {
+        try {
+          const s1Res = await query(
+            `SELECT status::text AS st, started_at
+             FROM bookings
+             WHERE package_purchase_id = $1::uuid
+               AND COALESCE(is_package_session, false) = true
+               AND COALESCE(package_session_number, 0) = 1
+             LIMIT 1`,
+            [String(pkgPidForParentCheck)]
+          );
+          const r = (s1Res as any).rows?.[0];
+          if (r) {
+            const st = String(r.st ?? '').toLowerCase();
+            const sessionOneStarted =
+              r.started_at != null ||
+              [
+                'in_progress',
+                'arrived',
+                'completed',
+                'active',
+                'service_started',
+                'started',
+              ].includes(st);
+            if (sessionOneStarted) {
+              return c.json(
+                {
+                  error:
+                    'Cannot decline this package: session 1 has already started. Contact support if you need to cancel remaining sessions.',
+                },
+                400
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('[vendor/decline] session-1 check failed:', (e as any)?.message);
+        }
+      }
+
       const reasonLabel = vendorCancellationReasonLabel(vendorCancellationReason);
       const extraNote = typeof reason === 'string' && reason.trim() ? reason.trim() : '';
       const alt =
@@ -624,8 +690,34 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         }
       );
 
+      const pkgPidRaw =
+        (booking as any).package_purchase_id ?? (booking as any).packagePurchaseId ?? null;
+      const isPkgSession = Boolean((booking as any).is_package_session);
+      const isPackagePurchaseParentRow = Boolean(pkgPidRaw) && !isPkgSession;
+
+      let bookingRowForRefund: Record<string, any> = booking as Record<string, any>;
+      if (isPackagePurchaseParentRow && pkgPidRaw) {
+        try {
+          const ppRes = await query(
+            `SELECT COALESCE(total_with_tax, amount, package_price, 0)::numeric AS pkg_amt
+             FROM package_purchases WHERE id = $1::uuid LIMIT 1`,
+            [String(pkgPidRaw)]
+          );
+          const pkgAmt = ppRes.rows?.[0]?.pkg_amt;
+          const ta = Number((booking as any).total_amount ?? 0);
+          if (pkgAmt != null && Number(pkgAmt) > 0.009 && ta <= 0.009) {
+            bookingRowForRefund = {
+              ...(booking as Record<string, any>),
+              total_amount: Number(pkgAmt),
+            };
+          }
+        } catch (e) {
+          console.warn('[vendor/decline] package purchase amount lookup failed:', (e as any)?.message);
+        }
+      }
+
       const refundInfo = await applyRefundAfterProviderCancellation(
-        booking,
+        bookingRowForRefund,
         vendorCancellationReason,
         cancellation_reason,
         { refundMethod: 'wallet' }
@@ -633,6 +725,73 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         console.warn('[vendor/decline] refund apply failed:', e?.message);
         return null;
       });
+
+      const cascadeNote = `${cancellation_reason} (All package sessions cancelled.)`;
+      let cancelledSessionIds: string[] = [];
+      if (isPackagePurchaseParentRow && pkgPidRaw) {
+        try {
+          const casRes = await query(
+            `UPDATE bookings AS b
+             SET
+               status = 'cancelled',
+               cancellation_reason = $3,
+               cancelled_at = NOW(),
+               cancelled_by = 'provider'
+             FROM (
+               SELECT id, status AS old_st
+               FROM bookings
+               WHERE package_purchase_id = $1::uuid
+                 AND id <> $2::uuid
+                 AND COALESCE(is_package_session, false) = true
+                 AND status NOT IN ('completed', 'cancelled')
+             ) AS t
+             WHERE b.id = t.id
+             RETURNING b.id::text AS id, t.old_st::text AS old_status`,
+            [String(pkgPidRaw), bookingId, cascadeNote]
+          );
+          const rows = (casRes as any).rows || [];
+          cancelledSessionIds = rows.map((r: { id: string }) => r.id);
+          for (const r of rows) {
+            const sid = String((r as any).id);
+            const oldSt = String((r as any).old_status || 'confirmed');
+            try {
+              await logBookingStatusChange(
+                sid,
+                oldSt,
+                'cancelled',
+                vendorId || (booking as any).vendor_id,
+                'vendor',
+                `Session cancelled: provider declined package (parent booking ${bookingId})`
+              );
+            } catch (e) {
+              console.warn('[vendor/decline] cascade log failed for', sid, (e as any)?.message);
+            }
+            try {
+              const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
+              await publishBookingStatusUpdated({
+                bookingId: sid,
+                customerId: (booking as any).customer_id,
+                vendorId: (booking as any).vendor_id || vendorId,
+                oldStatus: oldSt,
+                newStatus: 'cancelled',
+                reason: cascadeNote,
+                eventTimestamp: new Date().toISOString(),
+                eventId: randomUUID(),
+              });
+            } catch (e) {
+              console.warn('[vendor/decline] cascade publish failed for', sid, (e as any)?.message);
+            }
+          }
+          await query(
+            `UPDATE package_purchases
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE id = $1::uuid AND status = 'active'`,
+            [String(pkgPidRaw)]
+          ).catch(() => null);
+        } catch (cascadeErr: any) {
+          console.error('[vendor/decline] package session cascade failed:', cascadeErr?.message);
+        }
+      }
 
       // Log status change
       await logBookingStatusChange(
@@ -646,7 +805,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       // Publish notification event
       try {
-        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
         await publishBookingStatusUpdated({
           bookingId,
           customerId: booking.customer_id,
@@ -666,6 +825,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         booking: updated[0],
         message: 'Booking declined successfully',
         refund: refundInfo ?? undefined,
+        cancelledPackageSessionIds:
+          cancelledSessionIds.length > 0 ? cancelledSessionIds : undefined,
       });
     } catch (error: any) {
       console.error('Error declining booking:', error);
@@ -709,6 +870,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       }
 
       const booking = bookings[0];
+
+      if (shouldHideBookingRowFromVendorUi(booking as Record<string, unknown>)) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
 
       // ✅ FIX: Extract pet_id from notes if not in pet_id column
       // Legacy bookings stored pet_id in notes as "Pet ID: <uuid>"
@@ -1273,43 +1438,50 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
       let queryText = vendorIds.length === 1
-        ? `SELECT * FROM bookings WHERE vendor_id = $1
-           AND status != 'pending_payment'
+        ? `SELECT * FROM bookings b WHERE b.vendor_id = $1
+           AND b.status != 'pending_payment'
            AND (
-             COALESCE(total_amount, 0) <= 0
-             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             COALESCE(b.total_amount, 0) <= 0
+             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
            )`
-        : `SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2)
-           AND status != 'pending_payment'
+        : `SELECT * FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+           AND b.status != 'pending_payment'
            AND (
-             COALESCE(total_amount, 0) <= 0
-             OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+             COALESCE(b.total_amount, 0) <= 0
+             OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
            )`;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
+      const tempSupAlias = getTemporaryVendorSuppressionParams();
+      if (tempSupAlias) {
+        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
+        params.push(tempSupAlias.vendorIds, tempSupAlias.cutoffDateIst);
+        paramIndex += 2;
+      }
+
       // Filter by date
       if (date) {
-        queryText += ` AND booking_date = $${paramIndex}`;
+        queryText += ` AND b.booking_date = $${paramIndex}`;
         params.push(date);
         paramIndex++;
       }
 
       // Filter by start date (for upcoming)
       if (startDate) {
-        queryText += ` AND booking_date >= $${paramIndex}`;
+        queryText += ` AND b.booking_date >= $${paramIndex}`;
         params.push(startDate);
         paramIndex++;
       }
 
       // Filter by status
       if (status && status !== 'all') {
-        queryText += ` AND status = $${paramIndex}`;
+        queryText += ` AND b.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
 
-      queryText += ' ORDER BY booking_date DESC, booking_time DESC';
+      queryText += ' ORDER BY b.booking_date DESC, b.booking_time DESC';
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 
@@ -1388,26 +1560,33 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
 
       const vendorIds = [vendorId];
       if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+      const todaySup = getTemporaryVendorSuppressionParams();
+      const todaySupFrag1 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
+      const todaySupFrag2 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}` : '';
+      const todaySupTail = todaySup ? [todaySup.vendorIds, todaySup.cutoffDateIst] : [];
+
       const result = vendorIds.length === 1
         ? await query(
-            `SELECT * FROM bookings 
-             WHERE vendor_id = $1 AND booking_date = $2 AND status != 'pending_payment'
+            `SELECT * FROM bookings b
+             WHERE b.vendor_id = $1 AND b.booking_date = $2 AND b.status != 'pending_payment'
                AND (
-                 COALESCE(total_amount, 0) <= 0
-                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+                 COALESCE(b.total_amount, 0) <= 0
+                 OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
                )
-             ORDER BY booking_time ASC`,
-            [vendorId, today]
+               ${todaySupFrag1}
+             ORDER BY b.booking_time ASC`,
+            [vendorId, today, ...todaySupTail]
           ).catch(() => ({ rows: [] }))
         : await query(
-            `SELECT * FROM bookings 
-             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 AND status != 'pending_payment'
+            `SELECT * FROM bookings b
+             WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.booking_date = $3 AND b.status != 'pending_payment'
                AND (
-                 COALESCE(total_amount, 0) <= 0
-                 OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+                 COALESCE(b.total_amount, 0) <= 0
+                 OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
                )
-             ORDER BY booking_time ASC`,
-            [vendorIds[0], vendorIds[1], today]
+               ${todaySupFrag2}
+             ORDER BY b.booking_time ASC`,
+            [vendorIds[0], vendorIds[1], today, ...todaySupTail]
           ).catch(() => ({ rows: [] }));
 
       // Enrich bookings with customer and service data

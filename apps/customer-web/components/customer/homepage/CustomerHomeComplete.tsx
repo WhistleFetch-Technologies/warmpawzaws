@@ -10,7 +10,7 @@ import {
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical,   MessageSquare,
+  Navigation, AlertCircle, FlaskConical, MessageSquare, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -54,6 +54,20 @@ import {
 } from '@warmpawz/service-launch-mappings';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+
+function customerHomeIconForShopCategory(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes('food')) return <Bone className="w-5 h-5 text-orange-500" />;
+  if (n.includes('toy')) return <Dog className="w-5 h-5 text-blue-500" />;
+  if (n.includes('cloth')) return <Shirt className="w-5 h-5 text-teal-500" />;
+  if (n.includes('accessor')) return <Watch className="w-5 h-5 text-pink-500" />;
+  if (n.includes('medic')) return <Pill className="w-5 h-5 text-red-500" />;
+  if (n.includes('groom')) return <Scissors className="w-5 h-5 text-purple-500" />;
+  if (n.includes('bed')) return <Bed className="w-5 h-5 text-indigo-500" />;
+  if (n.includes('bowl')) return <UtensilsCrossed className="w-5 h-5 text-green-500" />;
+  return <ShoppingBag className="w-5 h-5 text-[#FF8C42]" />;
+}
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -198,6 +212,7 @@ export function CustomerHomeComplete({
   onOpenMenu,
   onOpenCategoryMapper,
   refreshKey = 0,
+  onRefresh,
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
@@ -416,6 +431,29 @@ export function CustomerHomeComplete({
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
+  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>(
+    [],
+  );
+
+  useEffect(() => {
+    if (!isCustomerEcommerceEnabled()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{ categories?: Array<{ id?: string; name?: string }> }>('/ecommerce/categories');
+        const list = res?.categories;
+        if (cancelled || !Array.isArray(list)) return;
+        setEcommerceShopCategories(
+          list.map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? 'Category') })).filter((c) => c.id),
+        );
+      } catch {
+        if (!cancelled) setEcommerceShopCategories([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Single entry for home CTAs: internal screens → onNavigate; paths → router; http(s) / mailto / tel → window. */
   const handleNavigation = useCallback(
@@ -814,6 +852,9 @@ export function CustomerHomeComplete({
       const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
 
       // discover-services requires serviceStyle (backend 400 if omitted)
+      const productRequest = isCustomerEcommerceEnabled()
+        ? apiClient.get<any>('/products?featured=true&limit=3')
+        : Promise.resolve({ products: [] });
       const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
         apiClient.get<any>(
           `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}${phoneParam}`
@@ -821,7 +862,7 @@ export function CustomerHomeComplete({
         apiClient.get<any>(
           `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${phoneParam}`
         ),
-        apiClient.get<any>('/products?featured=true&limit=3'),
+        productRequest,
       ]);
 
       // Handle grooming services
@@ -1787,11 +1828,11 @@ export function CustomerHomeComplete({
       {!hideHeaderFooter && (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
           {/* Top Row - User Info & Actions */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 onClick={() => onProfileClick && onProfileClick()}
-                className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
+                className="w-11 h-11 shrink-0 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
               >
                 {userProfilePhoto ? (
                   <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
@@ -1801,15 +1842,19 @@ export function CustomerHomeComplete({
                   </div>
                 )}
               </button>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1">
-                  <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
-                  <span className="text-base" role="img" aria-label="wave">👋</span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-center gap-1">
+                  <h1 className="min-w-0 truncate text-white text-lg font-bold tracking-tight">
+                    Hi, {userData.name}!
+                  </h1>
+                  <span className="shrink-0 text-base" role="img" aria-label="wave">👋</span>
                 </div>
-                <p className="text-white/65 text-xs font-normal tracking-wide">Explore Warmpawz Services</p>
+                <p className="truncate text-white/65 text-xs font-normal tracking-wide">
+                  Explore Warmpawz Services
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 items-center gap-1.5">
               {/* Wallet Icon - Gold coin style with balance */}
               <WalletIcon
                 customerPhone={phone}
@@ -1817,6 +1862,15 @@ export function CustomerHomeComplete({
                 size="sm"
                 showBalance={true}
               />
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                aria-label="Refresh home"
+                title="Refresh"
+              >
+                <RefreshCw className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+              </button>
               <button
                 type="button"
                 onClick={() => handleNavigation('booking-messages')}
@@ -2030,6 +2084,10 @@ export function CustomerHomeComplete({
                 return;
               }
               if (result.type === 'product') {
+                if (!isCustomerEcommerceEnabled()) {
+                  toast.info('Shop is coming soon.');
+                  return;
+                }
                 handleNavigation('shop');
                 return;
               }
@@ -2172,7 +2230,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Shop Categories - Horizontal Slider (shop catalog coming soon) */}
+        {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2180,33 +2238,65 @@ export function CustomerHomeComplete({
               <h2 className="text-gray-900 text-sm font-semibold">Shop</h2>
             </div>
             <div className="flex-1 h-px bg-gray-100" aria-hidden />
-          </div>
-          <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
-            {[
-              { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
-              { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
-              { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
-              { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
-              { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
-              { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
-              { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
-              { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
-            ].map((category) => (
-              <div
-                key={category.id}
-                className="flex-shrink-0 flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
-                aria-label={`${category.label} — coming soon`}
+            {isCustomerEcommerceEnabled() && ecommerceShopCategories.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => handleNavigation('shop')}
+                className="text-[11px] text-[#FF8C42] font-medium shrink-0"
               >
-                <div className="relative w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
-                  {category.icon}
-                  <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
-                    Soon
-                  </span>
-                </div>
-                <span className="text-[10px] text-gray-500 text-center font-medium leading-tight">{category.label}</span>
-              </div>
-            ))}
+                View all
+              </button>
+            ) : null}
           </div>
+          {!isCustomerEcommerceEnabled() ? (
+            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
+              {[
+                { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
+                { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
+                { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
+                { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
+                { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
+                { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
+                { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
+                { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
+              ].map((category) => (
+                <div
+                  key={category.id}
+                  className="flex-shrink-0 flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
+                  aria-label={`${category.label} — coming soon`}
+                >
+                  <div className="relative w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
+                    {category.icon}
+                    <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
+                      Soon
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 text-center font-medium leading-tight">{category.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : ecommerceShopCategories.length === 0 ? (
+            <div className="px-4 py-3 text-xs text-gray-500">Marketplace categories will appear here when available.</div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
+              {ecommerceShopCategories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className="flex-shrink-0 flex flex-col items-center gap-1 min-w-[4.5rem] active:opacity-90"
+                  onClick={() => handleNavigation('shop', { category: category.id })}
+                  aria-label={`Browse ${category.name}`}
+                >
+                  <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
+                    {customerHomeIconForShopCategory(category.name)}
+                  </div>
+                  <span className="text-[10px] text-gray-700 text-center font-medium leading-tight line-clamp-2">
+                    {category.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick Services Grid - Compact */}

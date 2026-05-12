@@ -27,6 +27,14 @@ export default function RootLayout({
   const prodApiUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
+  // Customer marketplace tiles default off (build-time switch). Kept in sync
+  // with `apps/customer-web/lib/customer-ecommerce-flag.ts` and the deploy
+  // scripts so the inline config matches `/runtime-config.js`.
+  const customerEcommerceEnabledRaw = (
+    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED || 'false'
+  ).toLowerCase();
+  const customerEcommerceEnabled =
+    customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -84,7 +92,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-                window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
+                window.__NEXT_PUBLIC_API_BASE_URL__ = ${JSON.stringify(prodApiUrl)};
               `,
           }}
         />
@@ -97,9 +105,10 @@ export default function RootLayout({
             dangerouslySetInnerHTML={{
               __html: `
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: "${prodApiUrl}",
+                  apiBaseUrl: ${JSON.stringify(prodApiUrl)},
                   environment: "production",
-                  uatMode: false
+                  uatMode: false,
+                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)}
                 };
               `,
             }}

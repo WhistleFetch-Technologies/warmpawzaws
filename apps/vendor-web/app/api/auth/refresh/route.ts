@@ -19,7 +19,9 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.text();
   } catch {
-    return NextResponse.json({ error: 'Invalid or expired refresh token' }, { status: 401 });
+    // Malformed request payload — return 400 (NOT 401) so the client does not
+    // mistake this for "refresh token rejected" and wipe the vendor session.
+    return NextResponse.json({ error: 'Malformed refresh request body' }, { status: 400 });
   }
 
   const upstream = `${gatewayBase()}/auth/refresh`;
@@ -32,7 +34,13 @@ export async function POST(request: NextRequest) {
       body,
     });
   } catch {
-    return NextResponse.json({ error: 'Invalid or expired refresh token' }, { status: 401 });
+    // Upstream Lambda is unreachable (network blip, deploy, cold start). Return
+    // 502 — the client refresh helper treats non-auth statuses as transient and
+    // keeps the existing session intact (90-day refresh window stays open).
+    return NextResponse.json(
+      { error: 'Upstream auth service unreachable', refreshFailureCode: 'upstream_unreachable' },
+      { status: 502 },
+    );
   }
 
   const responseBody = await res.text();

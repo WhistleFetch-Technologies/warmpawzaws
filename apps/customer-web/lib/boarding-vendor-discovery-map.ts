@@ -9,10 +9,12 @@ import {
 } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingPlanRow {
   rowId: string;
   serviceId?: string;
+  vendorServiceId?: string;
   name: string;
   price: number;
   duration?: number;
@@ -20,6 +22,46 @@ export interface BoardingPlanRow {
   description?: string;
   /** Per-service category for badges (e.g. Boarding, Dog walking). Falls back to hub `planBadgeLabel` when absent. */
   categoryLabel?: string;
+  /** Vendor multi-session bundle — pass through from discovery APIs for Package badge + booking routing */
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
+}
+
+function parseMetadataIfString(meta: unknown): Record<string, unknown> | undefined {
+  if (meta == null) return undefined;
+  if (typeof meta === 'object' && !Array.isArray(meta)) return meta as Record<string, unknown>;
+  if (typeof meta === 'string') {
+    try {
+      const parsed = JSON.parse(meta) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined;
+}
+
+function packageFieldsFromServiceRow(s: Record<string, unknown>): {
+  isPackage: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
+} {
+  const parsedMeta = parseMetadataIfString(s.metadata);
+  const packageDetails = s.packageDetails ?? parsedMeta?.packageDetails;
+  const normalizedForCheck: Record<string, unknown> = {
+    ...s,
+    metadata: parsedMeta ?? s.metadata,
+    packageDetails,
+    isPackage: s.isPackage ?? parsedMeta?.isPackage,
+  };
+  return {
+    isPackage: isVendorServicePackageRow(normalizedForCheck),
+    packageDetails,
+    metadata: parsedMeta ?? s.metadata,
+  };
 }
 
 /** Map stored category slugs / short names to customer-facing badge text. */
@@ -191,15 +233,20 @@ export function planRowsFromDiscoveryServices(services: unknown[] | undefined): 
     seen.add(rowId);
     const price = parseFloat(String(s.price ?? s.custom_price ?? s.base_price ?? '0')) || 0;
     const desc = pickBestDescription(s);
+    const pkg = packageFieldsFromServiceRow(s);
     out.push({
       rowId,
       serviceId: (s.serviceId || s.service_id) as string | undefined,
+      vendorServiceId: String(s.vendorServiceId ?? s.vendor_service_id ?? s.id ?? '').trim() || undefined,
       name: name || 'Boarding',
       price,
       duration: (s.duration || s.duration_minutes) as number | undefined,
       serviceStyle: (s.serviceStyle || s.service_style) as string | undefined,
       description: desc || undefined,
       categoryLabel: categoryLabelFromServiceRow(s),
+      isPackage: pkg.isPackage,
+      packageDetails: pkg.packageDetails,
+      metadata: pkg.metadata,
     });
   }
   return out;
@@ -233,15 +280,21 @@ export function mapServicesApiResponseToPlanRows(servicesResponse: any): Boardin
     if (!rowId || seen.has(rowId)) continue;
     seen.add(rowId);
     const desc = pickBestDescription(s);
+    const src = (s as Record<string, unknown>) || {};
+    const pkg = packageFieldsFromServiceRow(src);
     mapped.push({
       rowId,
       serviceId: s.serviceId || s.service_id,
+      vendorServiceId: String(s.vendorServiceId ?? s.vendor_service_id ?? s.id ?? '').trim() || undefined,
       name: s.serviceName || s.name || s.service_name || 'Boarding',
       price: parseFloat(String(s.price || '0')) || 0,
       duration: s.duration || s.duration_minutes,
       serviceStyle: s.serviceStyle || s.service_style,
       description: desc || undefined,
       categoryLabel: categoryLabelFromServiceRow(s as Record<string, unknown>),
+      isPackage: pkg.isPackage,
+      packageDetails: pkg.packageDetails,
+      metadata: pkg.metadata,
     });
   }
   return mapped;

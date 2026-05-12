@@ -10,6 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { DeclineBookingModal } from '@/components/vendor/DeclineBookingModal';
+import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
 
 interface VendorBookingManagementScreenProps {
   vendorId?: string;
@@ -206,51 +207,42 @@ export function VendorBookingManagementScreen({
                     (() => {
                       const packagePurchaseId = String((booking as any).packagePurchaseId ?? (booking as any).package_purchase_id ?? '').trim();
                       const isPackageSessionRow = Boolean((booking as any).isPackageSession ?? (booking as any).is_package_session);
-                      const isPackageParentRow = Boolean(packagePurchaseId && !isPackageSessionRow);
-                      const sessionOneStartedForParent =
-                        isPackageParentRow &&
-                        bookings.some((b: any) => {
-                          const samePackage =
-                            String(b.packagePurchaseId ?? b.package_purchase_id ?? '').trim() === packagePurchaseId;
-                          if (!samePackage) return false;
-                          const isSession = Boolean(b.isPackageSession ?? b.is_package_session);
-                          const sessionNo = Number(b.packageSessionNumber ?? b.package_session_number ?? 0);
-                          if (!isSession || sessionNo !== 1) return false;
-                          const st = String(b.status || '').toLowerCase();
-                          const hasStartedStamp = Boolean(
-                            b.sessionStartedAt || b.session_started_at || b.startedAt || b.started_at
-                          );
-                          return (
-                            hasStartedStamp ||
-                            ['in_progress', 'arrived', 'completed', 'service_started', 'started'].includes(st)
-                          );
-                        });
 
-                      // Remove decline on individual package session rows.
+                      // Session rows: decline only from package parent. Parent row: show Decline here.
                       if (isPackageSessionRow && packagePurchaseId) return null;
 
-                      const canDecline = !isPackageParentRow || !sessionOneStartedForParent;
+                      const isPackageParentRow = Boolean(packagePurchaseId && !isPackageSessionRow);
+
+                      const sessionOneStarted =
+                        isPackageParentRow && packagePurchaseId
+                          ? isPackageSessionOneStarted(packagePurchaseId, bookings as any[])
+                          : false;
+
                       return (
                     <div className="flex space-x-2 mb-3">
                       <button
                         className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                          canDecline
-                            ? 'bg-red-500 text-white hover:bg-red-600'
-                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          sessionOneStarted
+                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            : 'bg-red-500 text-white hover:bg-red-600'
                         }`}
-                        disabled={!canDecline}
-                        onClick={() =>
-                          canDecline &&
+                        disabled={sessionOneStarted}
+                        onClick={() => {
+                          if (sessionOneStarted) return;
                           setDeclineBooking({
                             ...booking,
                             id: booking.id,
                             customerName: booking.customer_name,
                             scheduledDate: booking.booking_date,
                             scheduledTime: booking.booking_time,
-                          } as any)
-                        }
+                          } as any);
+                        }}
                       >
-                        {canDecline ? 'Decline / refund' : 'Decline disabled (session 1 started)'}
+                        {sessionOneStarted
+                          ? 'Decline unavailable'
+                          : isPackageParentRow
+                            ? 'Decline package'
+                            : 'Decline / refund'}
                       </button>
                     </div>
                       );

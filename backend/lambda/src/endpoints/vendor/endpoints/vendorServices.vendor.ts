@@ -22,6 +22,7 @@ import { checkVendorCapability } from '../../../middleware/capability-enforcemen
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../../../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../../../types/entities';
 import { resolveVendorById } from './vendorProfile.vendor';
+import { normalizeSessionPackageDetails } from '../../../lib/session-package-normalize';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -1954,6 +1955,34 @@ export function registerVendorServicesEndpoints(app: Hono) {
           (serviceData as any).termsAndConditions
         ) {
           enrichedPackageDetails.termsAndConditions = (serviceData as any).termsAndConditions;
+        }
+        const pkgTypeLower = String(serviceData.packageType ?? '').toLowerCase();
+        const detailsRec = enrichedPackageDetails as Record<string, unknown>;
+        /** Session trainer packages only — avoids rewriting combo/subscription metadata. */
+        const shouldNormalizeSessionPackage = pkgTypeLower === 'session';
+        if (shouldNormalizeSessionPackage) {
+          const n = normalizeSessionPackageDetails({
+            sessionType: detailsRec.sessionType as string | undefined,
+            sessionFrequency: Number(detailsRec.sessionFrequency),
+            packagePeriodCount:
+              detailsRec.packagePeriodCount != null
+                ? Number(detailsRec.packagePeriodCount)
+                : undefined,
+            sessionsPerDay:
+              detailsRec.sessionsPerDay != null ? Number(detailsRec.sessionsPerDay) : undefined,
+            packageDuration:
+              detailsRec.packageDuration != null ? Number(detailsRec.packageDuration) : undefined,
+          });
+          Object.assign(enrichedPackageDetails, {
+            sessionType: n.sessionType,
+            sessionFrequency: n.sessionFrequency,
+            packagePeriodCount: n.packagePeriodCount,
+            validityDays: n.validityDays,
+            totalSessions: n.totalSessions,
+            sessionsPerDay: n.sessionsPerDay,
+            packageDuration: n.packageDuration,
+            sessionIntervalDays: n.sessionIntervalDays,
+          });
         }
         metadata.packageDetails = enrichedPackageDetails;
         if (enrichedPackageDetails.cancellationPolicy)

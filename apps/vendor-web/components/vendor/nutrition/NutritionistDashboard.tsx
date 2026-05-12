@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
-import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -112,8 +111,9 @@ interface MealProduct {
   description: string;
   price: number;
   category: string;
-  metadata?: any;
+  metadata?: unknown;
   is_active?: boolean;
+  duration_days?: number;
 }
 
 interface MealOrder {
@@ -122,7 +122,8 @@ interface MealOrder {
   customer_name: string;
   customer_phone: string;
   status: string;
-  total_amount: number;
+  /** Meal line total only (listed price × qty), from API `vendor_meal_total`. */
+  vendor_meal_total?: number;
   created_at: string;
   confirmed_at?: string; // Timestamp when payment was confirmed
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
@@ -135,6 +136,33 @@ interface NutritionistDashboardProps {
   vendorName?: string;
 }
 
+function safeRupee(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Meal line total from API (snake_case or camelCase); ignores customer checkout totals. */
+function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
+  const candidates = [
+    raw.vendor_meal_total,
+    raw.vendorMealTotal,
+    raw.subtotal,
+    raw.meal_line_total,
+    raw.mealLineTotal,
+  ];
+  for (const c of candidates) {
+    const n = safeRupee(c);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+/** Vendor-facing meal listing amount only (never customer grand total / fees). */
+function vendorMealListingRupee(o: MealOrder): number {
+  return coerceVendorMealListingAmount(o as Record<string, unknown>);
+}
+
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'analytics'>('products');
@@ -144,7 +172,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const [refreshing, setRefreshing] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<MealProduct | null>(null);
-  const [uploadingMealImage, setUploadingMealImage] = useState(false);
   // ✅ Track vendor-accepted orders locally (since we can't distinguish from payment confirmation in DB)
   // Use localStorage to persist across page refreshes
   const getStoredAcceptedOrders = (): Set<string> => {
@@ -181,21 +208,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     });
   }, [vendorId]);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: '',
-    durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-    ingredients: '',
-    calories: '',
-    protein: '',
-    dietType: 'Non-Veg',
-    suitableFor: [] as string[],
-    petTypes: ['Dog'] as string[],
-    preparationTime: '60',
-    mealImageUrl: '',
-  });
   const fetchProducts = useCallback(async () => {
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-products`);
@@ -211,7 +223,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-orders`);
       if (response && (response as any).success) {
-        const fetchedOrders = (response as any).orders || [];
+        const rawList = (response as any).orders || [];
+        const fetchedOrders = rawList.map((raw: Record<string, unknown>) => ({
+          ...raw,
+          vendor_meal_total: coerceVendorMealListingAmount(raw),
+        })) as MealOrder[];
         setOrders(fetchedOrders);
         
         // ✅ Initialize acceptedOrderIds: Merge stored accepted IDs with orders that have progressed
@@ -285,63 +301,32 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     setRefreshing(false);
   };
 
-  const handleSaveProduct = async () => {
-    // ✅ VALIDATION: Required fields from meal_plans schema (NOT NULL constraints)
-    if (!formData.name || formData.name.trim() === '') {
-      toast.error('Meal Name is required');
-      return;
-    }
-    
-    const price = parseFloat(formData.price);
-    if (isNaN(price) || price <= 0) {
-      toast.error('Valid Price is required (must be a positive number)');
-      return;
-    }
-    
-    const durationDays = parseInt(formData.durationDays);
-    if (isNaN(durationDays) || durationDays <= 0) {
-      toast.error('Duration Days is required (must be a positive number)');
-      return;
-    }
-
+  const handleSaveMealProduct = async ({
+    payload,
+    editingId,
+  }: {
+    payload: Record<string, unknown>;
+    editingId: string | null;
+  }) => {
     try {
-      const payload = {
-        name: formData.name,
-        description: formData.description,
-        price: price,
-        durationDays: durationDays, // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-        ingredients: formData.ingredients ? formData.ingredients.split(',').map(i => i.trim()) : [],
-        nutritionalValue: {
-          calories: formData.calories,
-          protein: formData.protein,
-        },
-        dietType: formData.dietType,
-        suitableFor: formData.suitableFor,
-        petTypes: formData.petTypes,
-        preparationLeadTime: parseInt(formData.preparationTime) || 60,
-        // Include empty string on edit so the API clears stored mealImageUrl when the vendor removes the image.
-        mealImageUrl: formData.mealImageUrl?.trim()
-          ? formData.mealImageUrl.trim()
-          : editingProduct
-            ? ''
-            : undefined,
-      };
-
-      if (editingProduct) {
-        await apiClient.put(`/vendor/${vendorId}/meal-products/${editingProduct.id}`, payload);
+      if (editingId) {
+        await apiClient.put(`/vendor/${vendorId}/meal-products/${editingId}`, payload);
         toast.success('Meal product updated successfully');
       } else {
         await apiClient.post(`/vendor/${vendorId}/meal-products`, payload);
         toast.success('Meal product created successfully');
       }
-
       setShowAddProduct(false);
       setEditingProduct(null);
-      resetForm();
       await fetchProducts();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving product:', error);
-      toast.error(error?.message || 'Failed to save meal product. Please check all required fields.');
+      const msg =
+        error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: string }).message)
+          : 'Failed to save meal product. Please check all required fields.';
+      toast.error(msg);
+      throw error;
     }
   };
 
@@ -396,17 +381,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
-  const handleSetPreparationEta = async (orderId: string, minutes: number) => {
-    try {
-      await apiClient.post(`/meal-orders/${orderId}/update-preparation-eta`, { preparationEtaMinutes: minutes });
-      toast.success(`ETA set: ${minutes} min`);
-      await fetchOrders();
-    } catch (error: any) {
-      console.error('Error setting ETA:', error);
-      toast.error(error?.message || 'Failed to set ETA');
-    }
-  };
-
   const handleNotifyLogistics = async (orderId: string) => {
     try {
       await apiClient.post(`/meal/orders/${orderId}/notify-logistics`);
@@ -418,58 +392,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      price: '',
-      durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-      ingredients: '',
-      calories: '',
-      protein: '',
-      dietType: 'Non-Veg',
-      suitableFor: [],
-      petTypes: ['Dog'],
-      preparationTime: '60',
-      mealImageUrl: '',
-    });
-  };
-
-  const handleMealImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploadingMealImage(true);
-    try {
-      const res = await uploadImageWithProgress(file, `meal-products/${vendorId}`, { verifyUpload: false });
-      if (!res.success || !(res.publicUrl || res.url)) {
-        toast.error(res.error || 'Image upload failed');
-        return;
-      }
-      const url = res.publicUrl || res.url || '';
-      setFormData((prev) => ({ ...prev, mealImageUrl: url }));
-      toast.success('Meal image uploaded');
-    } finally {
-      setUploadingMealImage(false);
-    }
-  };
-
   const openEditModal = (product: MealProduct) => {
-    const metadata = product.metadata ? (typeof product.metadata === 'string' ? JSON.parse(product.metadata) : product.metadata) : {};
-    setFormData({
-      name: product.name || '',
-      description: product.description || '',
-      price: product.price?.toString() || '',
-      durationDays: (product as any).duration_days?.toString() || '7', // ✅ REQUIRED: meal_plans.duration_days
-      ingredients: (metadata.ingredients || []).join(', '),
-      calories: metadata.nutritionalValue?.calories || '',
-      protein: metadata.nutritionalValue?.protein || '',
-      dietType: metadata.dietType || 'Non-Veg',
-      suitableFor: metadata.suitableFor || [],
-      petTypes: metadata.petTypes || ['Dog'],
-      preparationTime: metadata.preparationLeadTime?.toString() || '60',
-      mealImageUrl: (metadata.mealImageUrl as string) || '',
-    });
     setEditingProduct(product);
     setShowAddProduct(true);
   };
@@ -584,12 +507,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         {activeTab === 'products' && (
           <div className="space-y-4">
             {/* Add Product Button */}
-            <button
-              onClick={() => {
-                resetForm();
-                setEditingProduct(null);
-                setShowAddProduct(true);
-              }}
+              <button
+                onClick={() => {
+                  setEditingProduct(null);
+                  setShowAddProduct(true);
+                }}
               className="w-full py-4 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 font-medium hover:bg-emerald-50 transition-colors flex items-center justify-center gap-2"
             >
               {Icons.plus}
@@ -705,7 +627,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
                         <span className="flex items-center gap-1">{Icons.clock} {new Date(order.created_at).toLocaleDateString()}</span>
                       </div>
-                      <span className="text-lg font-semibold text-slate-800">₹{order.total_amount || 0}</span>
+                      <div className="text-right">
+                        <span className="text-lg font-semibold text-slate-800">₹{vendorMealListingRupee(order)}</span>
+                        <p className="text-xs text-slate-500">Meal total (your listing)</p>
+                      </div>
                     </div>
 
                     {/* Order Actions – Phase 3: accept, ETA, notify logistics */}
@@ -813,39 +738,17 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         </>
                       )}
                       
-                      {/* Confirmed orders where vendor has accepted (prep_started_at is null but vendor clicked Accept) */}
-                      {/* This case is handled by the condition above - if prep_started_at is null, show Accept */}
-                      {/* After vendor clicks Accept, status stays 'confirmed', prep_started_at stays null until "Start Preparing" */}
-                      {/* So we need to track acceptance differently - for now, allow "Start Preparing" which implicitly accepts */}
-                      {/* ETA buttons: Show for preparing orders only (vendor has started) */}
+                      {/* "Preparing" → vendor only marks ready for pickup. Pidge is auto-dispatched
+                          when status flips to preparing using catalog prep_time_minutes; the rider
+                          arrival is targeted to expected_ready_at on the order. */}
                       {order.status === 'preparing' && (
-                        <>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 30)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 30m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 45)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 45m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 60)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 60m
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
-                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.package}
-                            <span className="text-sm">Ready for Pickup</span>
-                          </button>
-                        </>
+                        <button
+                          onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                        >
+                          {Icons.package}
+                          <span className="text-sm">Ready for Pickup</span>
+                        </button>
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <>
@@ -907,218 +810,26 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600">
                   {Icons.dollarSign}
                 </div>
-                <span className="text-slate-600">Revenue</span>
+                <span className="text-slate-600">Meal listing total</span>
               </div>
               <p className="text-3xl font-bold text-slate-800">
-                ₹{orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)}
+                ₹{orders.reduce((sum, o) => sum + vendorMealListingRupee(o), 0)}
               </p>
             </div>
           </div>
         )}
       </main>
 
-      {/* Add/Edit Product Modal */}
-      {showAddProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="p-4 border-b border-slate-100">
-              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                {Icons.utensils}
-                {editingProduct ? 'Edit Meal Product' : 'Add New Meal Product'}
-              </h2>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Meal Name *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="e.g., Chicken & Rice Bowl"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  rows={2}
-                  placeholder="Describe your meal..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Meal image (one photo)</label>
-                <p className="text-xs text-slate-500 mb-2">Shown to customers on meal lists. JPEG, PNG, or WebP up to 10MB.</p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <TouchFilePicker
-                    onFileChange={handleMealImageFile}
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    disabled={uploadingMealImage}
-                    className="inline-block min-h-[2.5rem] min-w-[7rem] rounded-lg"
-                    innerClassName="items-center justify-center"
-                  >
-                    <span className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800">
-                      {uploadingMealImage ? 'Uploading…' : formData.mealImageUrl ? 'Replace image' : 'Upload image'}
-                    </span>
-                  </TouchFilePicker>
-                  {formData.mealImageUrl ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={formData.mealImageUrl} alt="" className="h-16 w-16 rounded-lg object-cover border border-slate-200" />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, mealImageUrl: '' })}
-                        className="text-sm text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Price (₹) *</label>
-                  <input
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="299"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Duration (Days) *</label>
-                  <input
-                    type="number"
-                    value={formData.durationDays}
-                    onChange={(e) => setFormData({ ...formData, durationDays: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="7"
-                    min="1"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Prep Time (min)</label>
-                  <input
-                    type="number"
-                    value={formData.preparationTime}
-                    onChange={(e) => setFormData({ ...formData, preparationTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="60"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Ingredients (comma separated)</label>
-                <input
-                  type="text"
-                  value={formData.ingredients}
-                  onChange={(e) => setFormData({ ...formData, ingredients: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="Chicken, Rice, Carrots, Peas"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Calories</label>
-                  <input
-                    type="text"
-                    value={formData.calories}
-                    onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="350 kcal"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Protein</label>
-                  <input
-                    type="text"
-                    value={formData.protein}
-                    onChange={(e) => setFormData({ ...formData, protein: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="25g"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Diet Type</label>
-                <div className="flex gap-2">
-                  {['Non-Veg', 'Veg', 'Egg'].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, dietType: type })}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.dietType === type
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Pet Types</label>
-                <div className="flex gap-2">
-                  {['Dog', 'Cat'].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        const current = formData.petTypes;
-                        if (current.includes(type)) {
-                          setFormData({ ...formData, petTypes: current.filter(t => t !== type) });
-                        } else {
-                          setFormData({ ...formData, petTypes: [...current, type] });
-                        }
-                      }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.petTypes.includes(type)
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-100 flex gap-3">
-              <button
-                onClick={() => { setShowAddProduct(false); setEditingProduct(null); resetForm(); }}
-                className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProduct}
-                className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-              >
-                {editingProduct ? 'Update' : 'Create'} Product
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MealProductFormModal
+        open={showAddProduct}
+        onClose={() => {
+          setShowAddProduct(false);
+          setEditingProduct(null);
+        }}
+        vendorId={vendorId}
+        editingProduct={editingProduct}
+        onSave={handleSaveMealProduct}
+      />
     </div>
   );
 }

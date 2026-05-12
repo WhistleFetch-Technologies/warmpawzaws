@@ -65,10 +65,25 @@ export function useWebSocket(userId?: string, userType: 'customer' | 'vendor' = 
     return clientRef.current.onDeliveryUpdate(orderId, handler);
   }, []);
 
+  const subscribeToMealSubscriptionDelivery = useCallback(
+    (mealSubscriptionDeliveryId: string, handler: (data: any) => void) => {
+      if (!clientRef.current) return () => {};
+      return clientRef.current.onMealSubscriptionDeliveryUpdate(mealSubscriptionDeliveryId, handler);
+    },
+    [],
+  );
+
+  const subscribeToMealSubscriptionDeliveryBroadcast = useCallback((handler: (data: any) => void) => {
+    if (!clientRef.current) return () => {};
+    return clientRef.current.onMealSubscriptionDeliveryBroadcast(handler);
+  }, []);
+
   return {
     isConnected: clientRef.current?.isConnected() || false,
     subscribeToOrder,
     subscribeToPharmacyBroadcast,
     subscribeToDelivery,
+    subscribeToMealSubscriptionDelivery,
+    subscribeToMealSubscriptionDeliveryBroadcast,
   };
 }

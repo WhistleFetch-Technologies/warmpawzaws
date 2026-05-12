@@ -105,6 +105,14 @@ function isProductionEnvironment(): boolean {
 }
 
 /**
+ * Meal plan orders hub under My Bookings + `/track/:orderId` (hyperlocal delivery UI).
+ * Uses GET /customer/meal-plan-orders and GET /customer/tracking/:id — enabled in all environments.
+ */
+export function isCustomerWebDevMealPlanOrdersEnabled(): boolean {
+  return true;
+}
+
+/**
  * Get API Gateway URL based on environment
  * Production: mss9sa4y01
  * Development: z0b3obweb6

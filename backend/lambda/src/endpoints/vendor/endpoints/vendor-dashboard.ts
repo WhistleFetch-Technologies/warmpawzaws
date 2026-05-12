@@ -22,6 +22,12 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
+import {
+  getTemporaryVendorSuppressionParams,
+  sqlExcludeSuppressedBookingRows,
+  filterBookingsTemporarySuppression,
+} from '../../../utils/temporary-vendor-ui-suppression';
+import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 
 // ============================================================================
 // VENDOR DASHBOARD HANDLERS
@@ -66,6 +72,18 @@ class VendorDashboardHandler extends BaseHandler {
             });
             const resolvedTierName = tr.tier;
             const resolvedCommission = tr.commission_percentage;
+            const dashPin = payload.pin || payload.pincode || '';
+            let dashCreateGeo: { latitude: number; longitude: number } | null = null;
+            try {
+              dashCreateGeo = await geocodeVendorAddressFields({
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: dashPin,
+              });
+            } catch (e: any) {
+              console.warn('[DASHBOARD] Geocode failed (non-fatal):', e?.message);
+            }
             const newVendor = await insert('vendors', {
               id: vendorId,
               phone: identity.phone,
@@ -77,7 +95,7 @@ class VendorDashboardHandler extends BaseHandler {
               address: payload.address || 'Not specified',
               city: payload.city || 'Not specified',
               state: payload.state || 'Not specified',
-              pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+              pincode: dashPin, // Don't use default - require actual pincode
               status: 'active',
               is_active: true,
               is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
@@ -85,6 +103,9 @@ class VendorDashboardHandler extends BaseHandler {
               commission_percentage: resolvedCommission,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              ...(dashCreateGeo
+                ? { latitude: dashCreateGeo.latitude, longitude: dashCreateGeo.longitude }
+                : {}),
             });
             vendors = newVendor;
             console.log(`[DASHBOARD] Created vendor record for ${vendorId}`);
@@ -166,7 +187,9 @@ class VendorDashboardHandler extends BaseHandler {
 
     // ✅ SQL: Get bookings for vendor (exclude unpaid holds — same as enhanced dashboard)
     const bookingsRaw = await select('bookings', { vendor_id: vendorId });
-    const bookings = bookingsRaw.filter((b: any) => b.status !== 'pending_payment');
+    const bookings = filterBookingsTemporarySuppression(
+      bookingsRaw.filter((b: any) => b.status !== 'pending_payment'),
+    );
 
     // Calculate stats
     const today = new Date().toISOString().split('T')[0];
@@ -249,11 +272,18 @@ class VendorStatsHandler extends BaseHandler {
     }
 
     // ✅ SQL: Get bookings in date range
-    let bookingsQuery = `SELECT * FROM bookings WHERE vendor_id = $1`;
-    const params: any[] = [vendorId];
+    const supStats = getTemporaryVendorSuppressionParams();
+    let bookingsQuery = `SELECT * FROM bookings bk WHERE bk.vendor_id = $1`;
+    const params: unknown[] = [vendorId];
+    let nextP = 2;
+    if (supStats) {
+      bookingsQuery += ` AND ${sqlExcludeSuppressedBookingRows('bk', nextP, nextP + 1)}`;
+      params.push(supStats.vendorIds, supStats.cutoffDateIst);
+      nextP += 2;
+    }
 
     if (startDate && endDate) {
-      bookingsQuery += ` AND booking_date BETWEEN $2 AND $3`;
+      bookingsQuery += ` AND bk.booking_date BETWEEN $${nextP} AND $${nextP + 1}`;
       params.push(startDate, endDate);
     }
 

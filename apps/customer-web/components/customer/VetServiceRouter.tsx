@@ -27,6 +27,10 @@ import {
 } from '@/lib/boarding-vendor-discovery-map';
 import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -296,15 +300,80 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
     const raw = (v.raw || {}) as Record<string, unknown>;
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
-    const doctorId =
-      providerType === 'staff' || providerType === 'individual'
-        ? String(raw.providerId || raw.provider_id || v.id)
-        : String(v.id);
-    handleNavigate('vet-doctor-details', {
-      doctorId,
+
+    const serviceObj: Record<string, unknown> = {
+      /** Prefer vendor_services UUID over composite row keys so package purchase resolves strict intent in prod. */
+      id: plan.vendorServiceId ?? plan.rowId,
+      vendorServiceId: plan.vendorServiceId,
+      serviceId: plan.serviceId,
+      serviceName: plan.name,
+      name: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle,
+      description: plan.description,
+      isPackage: plan.isPackage,
+      packageDetails: plan.packageDetails,
+      metadata: plan.metadata,
+    };
+
+    /** Solo / staff practitioner — doctor profile + booking */
+    if (providerType === 'staff' || providerType === 'individual') {
+      const doctorId =
+        pickVetPractitionerProfileEntityId(raw) ||
+        String(raw.providerId || raw.provider_id || v.id);
+      const vendorForPkg = String(raw.vendorId || raw.vendor_id || doctorId || '').trim();
+      if (isVendorServicePackageRow(serviceObj) && vendorForPkg) {
+        const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: vendorForPkg,
+          vendorName: v.name,
+          serviceRow: serviceObj,
+          serviceTypeCategory: 'vet',
+          serviceStyle: String(plan.serviceStyle || 'at_center'),
+        });
+        if (pkgNav) {
+          handleNavigate('purchase-package', pkgNav);
+          return;
+        }
+      }
+      handleNavigate('vet-doctor-details', {
+        doctorId,
+        serviceId: plan.rowId,
+        serviceName: plan.name,
+        price: plan.price,
+      });
+      return;
+    }
+
+    /** Facility / clinic vendor */
+    const vendorId = String(
+      pickCustomerVendorAccountId(raw) || raw.vendorId || raw.vendor_id || v.id || ''
+    ).trim();
+
+    if (vendorId && isVendorServicePackageRow(serviceObj)) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId,
+        vendorName: v.name,
+        serviceRow: serviceObj,
+        serviceTypeCategory: 'vet',
+        serviceStyle: String(plan.serviceStyle || 'at_center'),
+      });
+      if (pkgNav) {
+        handleNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
+
+    handleNavigate('vet-booking', {
+      vendorId,
+      vendorName: v.name,
       serviceId: plan.rowId,
       serviceName: plan.name,
       price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      serviceType: 'at_center',
+      service: serviceObj,
     });
   };
 

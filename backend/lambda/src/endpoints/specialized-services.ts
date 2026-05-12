@@ -35,6 +35,52 @@ import {
   presignMealPlanRowDisplayFields,
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
+import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+import { dispatchMealLogistics } from '../utils/meal-dispatch';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import {
+  mealProductParsedToDietaryJson,
+  mealsPerDayColumnFromPreset,
+  type MealProductDietaryInput,
+} from '../utils/meal-product-dietary';
+import type { MealsPerDayPreset } from '../constants/meal-product-enums';
+import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
+
+/** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
+function safeMoney(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Vendor-facing meal list: meal line total only (quantity × listed price). Strip checkout fees & platform economics. */
+const VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS = new Set([
+  'total_amount',
+  'delivery_fee',
+  'platform_fee',
+  'logistics_cost',
+  'commission_amount',
+  'logistics_deduction',
+  'vendor_payout',
+  'tax_amount',
+  'gst_amount',
+  'cgst_amount',
+  'sgst_amount',
+  'igst_amount',
+  'convenience_fee',
+  'service_fee',
+]);
+
+function sanitizeVendorMealOrderRow(row: Record<string, unknown>): Record<string, unknown> {
+  const mealOnly = safeMoney(row.subtotal);
+  const next: Record<string, unknown> = { ...row };
+  for (const k of VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS) {
+    delete next[k];
+  }
+  delete next.subtotal;
+  next.vendor_meal_total = mealOnly;
+  return next;
+}
 
 /** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
 async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
@@ -1268,6 +1314,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         description: mealPlanData.description || null,
         duration_days: durationDays,
         price_per_meal: price,
+        price,
         meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
         dietary_requirements: JSON.stringify({
           pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
@@ -1317,7 +1364,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
       if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
       if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
-      if (price != null) { updates.push(`price_per_meal = $${idx}`); params.push(price); idx++; }
+      if (price != null) {
+        updates.push(`price_per_meal = $${idx}`, `price = $${idx + 1}`);
+        params.push(price, price);
+        idx += 2;
+      }
       if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
       if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
       if (petTypes != null) {
@@ -1630,6 +1681,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * GET /vendor/:vendorId/meal-products
    * Get meal products for a nutritionist vendor (merged from products + meal_plans for consistent list)
    * Resolves vendorId (identity id → vendors id) for correct vendor lookup
+   *
+   * Each item includes `metadata` (or merged specs) with optional catalog keys:
+   * mealCategories, medicalConditionTags, feedingInstructions, storageInstructions, shelfLifeDays,
+   * deliveryType, mealsPerDayPreset, mealsPerDayCustom, allergens, preparationType, ingredients (string[]),
+   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl.
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1753,6 +1809,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * POST /vendor/:vendorId/meal-products
    * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
+   *
+   * Extended catalog fields (camelCase JSON, also persisted inside dietary_requirements / metadata):
+   * mealCategories[], medicalConditionTags[], feedingInstructions, storageInstructions, shelfLifeDays (1–365),
+   * purchaseType (ONE_TIME | WEEKLY_PLAN | MONTHLY_PLAN); legacy deliveryType still accepted and mirrored,
+   * subscriptionConfig object optional (fields also accepted top-level): deliveryFrequency, deliveryDays,
+   * mealsPerDelivery*, subscriptionPrice, recommendedPlanLengthWeeks, pauseAllowed, cancelAnytime,
+   * mealsPerDayPreset (1|2|3|CUSTOM), mealsPerDayCustom (when CUSTOM),
+   * allergens[], preparationType (FRESH_COOKED | FREEZE_DRIED | RAW | DEHYDRATED | HOMEMADE),
+   * ingredients[] (array of strings; legacy comma-separated string still accepted once and normalized).
+   * Omitted extended fields use safe defaults so older clients remain compatible.
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1766,21 +1832,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
-      const mealImageUrlRaw =
-        typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
-      const mealImageUrl = mealImageUrlRaw ? stripS3PresignQueryFromUrl(mealImageUrlRaw) : undefined;
-      const dietaryPayload = {
-        petTypes: data.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType,
-        suitableFor: data.suitableFor || [],
-        ingredients: data.ingredients || [],
-        nutritionalValue: data.nutritionalValue || {},
-        preparationLeadTime: data.preparationLeadTime,
-        storageInstructions: data.storageInstructions,
-        shelfLife: data.shelfLife,
-        packSize: data.packSize,
-        ...(mealImageUrl ? { mealImageUrl } : {}),
-      };
+      const parsed = parseMealProductRequest(data);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const p = parsed.data;
+
+      const mealImageUrl = p.mealImageUrl
+        ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
+        : undefined;
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, { mealImageUrl });
 
       // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
       const productCols = await getPublicTableColumns('products');
@@ -1790,14 +1851,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       try {
         const productPayload: any = {
           vendor_id: vendorId,
-          name: data.name,
-          description: data.description,
-          price: data.price,
+          name: p.name,
+          description: p.description,
+          price: p.price,
           category: 'meal_plan',
           sku: `MP-${Date.now()}`,
-          stock_quantity: data.stockQuantity || 100,
+          stock_quantity: p.stockQuantity ?? 100,
           is_active: true,
         };
+        if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;
+        if (productCols.has('subscription_config')) {
+          productPayload.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+        }
         if (hasMetadata) {
           productPayload.metadata = JSON.stringify(dietaryPayload);
         } else if (hasSpecifications) {
@@ -1812,16 +1877,30 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       // Fallback to meal_plans table
-      const mealPlan = await insert('meal_plans', {
+      const mpCols = await getPublicTableColumns('meal_plans');
+      const mealPlanRow: Record<string, unknown> = {
         vendor_id: vendorId,
-        plan_name: data.name,
-        description: data.description,
-        price_per_meal: data.price,
-        duration_days: data.durationDays || 7,
-        meals_per_day: data.mealsPerDay || 2,
+        plan_name: p.name,
+        description: p.description,
+        price_per_meal: p.price,
+        price: p.price,
+        duration_days: p.shelfLifeDays,
+        meals_per_day: Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
         dietary_requirements: JSON.stringify(dietaryPayload),
         is_active: true,
-      });
+      };
+      if (mpCols.has('purchase_type')) mealPlanRow.purchase_type = p.purchaseType;
+      if (mpCols.has('subscription_config')) {
+        mealPlanRow.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+      }
+      if (mpCols.has('prep_time_minutes')) mealPlanRow.prep_time_minutes = p.preparationLeadTime;
+      if (mpCols.has('shelf_life_days')) mealPlanRow.shelf_life_days = p.shelfLifeDays;
+      if (mpCols.has('storage_instructions')) mealPlanRow.storage_instructions = p.storageInstructions ?? null;
+      if (mpCols.has('serving_instructions')) mealPlanRow.serving_instructions = p.feedingInstructions ?? null;
+      if (mpCols.has('allergens') && p.allergens?.length) mealPlanRow.allergens = p.allergens;
+      if (mpCols.has('ingredients')) mealPlanRow.ingredients = JSON.stringify(p.ingredients);
+
+      const mealPlan = await insert('meal_plans', mealPlanRow as any);
       const transformedProduct = {
         ...mealPlan[0],
         name: mealPlan[0].plan_name,
@@ -1838,6 +1917,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
    * Update a meal product (meal_plans.dietary_requirements, or products.metadata / products.specifications)
+   *
+   * Same extended fields as POST; body is merged with existing metadata before validation so partial
+   * payloads from older clients still merge safely.
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
@@ -1849,8 +1931,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const productCols = await getPublicTableColumns('products');
 
       let existingDiet: any = {};
+      let mealPlanRowHints: { meals_per_day?: number; shelfLifeDays?: number } = {};
       const existingMp = await query(
-        `SELECT dietary_requirements FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        `SELECT dietary_requirements, meals_per_day, shelf_life_days, duration_days FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
         [productId, vendorId]
       );
       if (existingMp.rows?.[0]) {
@@ -1860,6 +1943,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         } catch {
           existingDiet = {};
         }
+        const r = existingMp.rows[0];
+        if (r.meals_per_day != null) mealPlanRowHints.meals_per_day = Number(r.meals_per_day);
+        const sl = r.shelf_life_days != null ? Number(r.shelf_life_days) : NaN;
+        const dd = r.duration_days != null ? Number(r.duration_days) : NaN;
+        if (Number.isFinite(sl) && sl >= 1 && sl <= 365) mealPlanRowHints.shelfLifeDays = sl;
+        else if (Number.isFinite(dd) && dd >= 1 && dd <= 365) mealPlanRowHints.shelfLifeDays = dd;
       }
 
       let existingProdMeta: any = {};
@@ -1907,18 +1996,24 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           stripIfStr(existingProdMeta.mealImageUrl) ??
           stripIfStr(meta.mealImageUrl);
 
-      const dietaryPayload = {
-        petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType ?? meta.dietType ?? existingDiet.dietType,
-        suitableFor: data.suitableFor ?? meta.suitableFor ?? existingDiet.suitableFor ?? [],
-        ingredients: data.ingredients ?? meta.ingredients ?? existingDiet.ingredients ?? [],
-        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? existingDiet.nutritionalValue ?? {},
-        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime ?? existingDiet.preparationLeadTime,
-        storageInstructions: data.storageInstructions ?? meta.storageInstructions ?? existingDiet.storageInstructions,
-        shelfLife: data.shelfLife ?? meta.shelfLife ?? existingDiet.shelfLife,
-        packSize: data.packSize ?? meta.packSize ?? existingDiet.packSize,
-        ...(resolvedMealImageUrl ? { mealImageUrl: resolvedMealImageUrl } : {}),
+      const dataTop: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+      delete dataTop.metadata;
+      const mergeForParse: Record<string, unknown> = {
+        ...existingProdMeta,
+        ...existingDiet,
+        ...(mealPlanRowHints.meals_per_day != null ? { mealsPerDay: mealPlanRowHints.meals_per_day } : {}),
+        ...(mealPlanRowHints.shelfLifeDays != null ? { shelfLifeDays: mealPlanRowHints.shelfLifeDays } : {}),
+        ...dataTop,
       };
+      const parsed = parseMealProductRequest(mergeForParse);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const p = parsed.data;
+
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
+        mealImageUrl: resolvedMealImageUrl ?? undefined,
+      });
 
       // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
       const mealPlanCheck = await query(
@@ -1926,22 +2021,71 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         [productId, vendorId]
       );
       if (mealPlanCheck.rows?.length > 0) {
+        const mpCols = await getPublicTableColumns('meal_plans');
+        const mpParams: unknown[] = [
+          data.name ?? data.plan_name,
+          data.description,
+          data.price,
+          p.shelfLifeDays,
+          Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
+          JSON.stringify(dietaryPayload),
+        ];
+        let nextPh = 6;
+        let extras = '';
+        if (mpCols.has('prep_time_minutes')) {
+          nextPh += 1;
+          extras += `, prep_time_minutes = COALESCE($${nextPh}, prep_time_minutes)`;
+          mpParams.push(p.preparationLeadTime);
+        }
+        if (mpCols.has('shelf_life_days')) {
+          nextPh += 1;
+          extras += `, shelf_life_days = COALESCE($${nextPh}, shelf_life_days)`;
+          mpParams.push(p.shelfLifeDays);
+        }
+        if (mpCols.has('storage_instructions')) {
+          nextPh += 1;
+          extras += `, storage_instructions = COALESCE($${nextPh}, storage_instructions)`;
+          mpParams.push(p.storageInstructions ?? null);
+        }
+        if (mpCols.has('serving_instructions')) {
+          nextPh += 1;
+          extras += `, serving_instructions = COALESCE($${nextPh}, serving_instructions)`;
+          mpParams.push(p.feedingInstructions ?? null);
+        }
+        if (mpCols.has('allergens')) {
+          nextPh += 1;
+          extras += `, allergens = $${nextPh}`;
+          mpParams.push(p.allergens ?? []);
+        }
+        if (mpCols.has('ingredients')) {
+          nextPh += 1;
+          extras += `, ingredients = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(p.ingredients));
+        }
+        if (mpCols.has('purchase_type')) {
+          nextPh += 1;
+          extras += `, purchase_type = $${nextPh}`;
+          mpParams.push(p.purchaseType);
+        }
+        if (mpCols.has('subscription_config')) {
+          nextPh += 1;
+          extras += `, subscription_config = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(dietaryPayload.subscriptionConfig ?? {}));
+        }
+        const idPh = nextPh + 1;
+        const vendorPh = nextPh + 2;
+        mpParams.push(productId, vendorId);
         await query(
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
             price_per_meal = COALESCE($3, price_per_meal),
-            dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
+            duration_days = COALESCE($4, duration_days),
+            meals_per_day = COALESCE($5, meals_per_day),
+            dietary_requirements = COALESCE($6::jsonb, dietary_requirements)${extras},
             updated_at = NOW()
-           WHERE id = $5 AND vendor_id = $6`,
-          [
-            data.name ?? data.plan_name,
-            data.description,
-            data.price,
-            JSON.stringify(dietaryPayload),
-            productId,
-            vendorId,
-          ]
+           WHERE id = $${idPh} AND vendor_id = $${vendorPh}`,
+          mpParams,
         );
         return c.json({ success: true, message: 'Product updated' });
       }
@@ -1965,9 +2109,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -1983,9 +2127,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -1999,7 +2143,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             price = COALESCE($3, price),
             updated_at = NOW()
            WHERE id = $4 AND vendor_id = $5`,
-          [data.name, data.description, data.price, productId, vendorId]
+          [p.name, p.description, p.price, productId, vendorId]
         );
       }
 
@@ -2750,22 +2894,27 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           }
         }
         
-        // Fetch meal plan name if not already included
+        // Meal plan display name + pricing row (subtotal may be 0 in DB if only legacy `price` was set)
         let mealName = o.meal_name;
-        if (!mealName && o.meal_plan_id) {
+        let mealPlanRow: Record<string, unknown> | null = null;
+        if (o.meal_plan_id) {
           try {
             const mealPlanData = await query(
-              `SELECT name, plan_name FROM meal_plans WHERE id = $1 LIMIT 1`,
+              `SELECT name, plan_name, price_per_meal, price FROM meal_plans WHERE id = $1 LIMIT 1`,
               [o.meal_plan_id]
             ).catch(() => ({ rows: [] }));
             if (mealPlanData.rows.length > 0) {
-              mealName = mealPlanData.rows[0].name || mealPlanData.rows[0].plan_name;
+              const row = mealPlanData.rows[0];
+              mealName = mealName || row.name || row.plan_name;
+              mealPlanRow = row as Record<string, unknown>;
             }
           } catch (err) {
             console.warn(`[meal-orders] Error fetching meal plan data:`, err);
           }
         }
-        
+
+        const lineSubtotal = resolveMealLineSubtotalInr(o, mealPlanRow);
+
         allOrders.push({
           ...o,
           source: 'meal_orders',
@@ -2775,6 +2924,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           meal_name: mealName,
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
+          subtotal: lineSubtotal,
         });
       }
 
@@ -2787,7 +2937,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           // ✅ FIX: Query using ALL vendor IDs, not just the one from URL
           let ordQuery = `
             SELECT o.id, o.customer_id, o.vendor_id, o.order_number, o.order_status as status,
-                   o.total_amount, o.shipping_address as delivery_address, o.created_at,
+                   o.subtotal, o.shipping_address as delivery_address, o.created_at,
                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot,
                    c.full_name as customer_name, c.phone as customer_phone,
                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_name
@@ -2805,6 +2955,30 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           const ordResult = await query(ordQuery, ordParams).catch(() => ({ rows: [] }));
           for (const o of ordResult.rows) {
             const parsedAddr = typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address;
+            let lineQty = 1;
+            let mpForLine: Record<string, unknown> | null = null;
+            try {
+              const mpRow = await query(
+                `SELECT mpo.quantity AS q, mp.price_per_meal, mp.price
+                 FROM meal_plan_orders mpo
+                 JOIN meal_plans mp ON mp.id = mpo.meal_plan_id
+                 WHERE mpo.order_id = $1
+                 LIMIT 1`,
+                [o.id]
+              ).catch(() => ({ rows: [] }));
+              const r = mpRow.rows?.[0];
+              if (r) {
+                const q = Number(r.q);
+                if (Number.isFinite(q) && q >= 1) lineQty = Math.floor(q);
+                mpForLine = { price_per_meal: r.price_per_meal, price: r.price };
+              }
+            } catch {
+              /* ignore */
+            }
+            const lineSubtotal = resolveMealLineSubtotalInr(
+              { subtotal: o.subtotal, quantity: lineQty },
+              mpForLine,
+            );
             allOrders.push({
               id: o.id,
               customer_id: o.customer_id,
@@ -2812,12 +2986,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               meal_plan_id: null,
               pet_id: null,
               order_type: 'meal_plan_delivery',
-              quantity: 1,
+              quantity: lineQty,
               special_instructions: null,
-              subtotal: o.total_amount,
-              delivery_fee: 0,
-              platform_fee: 0,
-              total_amount: o.total_amount,
+              subtotal: lineSubtotal,
               status: o.status,
               payment_status: 'pending',
               scheduled_delivery_date: o.scheduled_delivery_date,
@@ -2844,7 +3015,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 100);
 
-      return c.json({ success: true, orders: deduped, total: deduped.length });
+      const forVendor = deduped.map((row) => sanitizeVendorMealOrderRow(row as Record<string, unknown>));
+      return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
       return c.json({ success: true, orders: [], total: 0 });
@@ -2963,7 +3135,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         // Direct status update to 'confirmed' (not via 'accepted')
         updatePayload.confirmed_at = new Date().toISOString();
       } else if (actualStatus === 'preparing') {
-        updatePayload.prep_started_at = new Date().toISOString();
+        const prepStartedAt = new Date();
+        updatePayload.prep_started_at = prepStartedAt.toISOString();
+
+        // Snapshot prep_time_minutes from the meal plan if meal_orders.prep_minutes is null,
+        // and compute expected_ready_at = prep_started_at + prep_minutes. New columns added in
+        // migration 1010 — guarded so older deployments don't fail when columns are missing.
+        try {
+          const moInfo = await query(
+            `SELECT mo.prep_minutes, mp.prep_time_minutes AS plan_prep_minutes
+               FROM meal_orders mo
+               LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
+              WHERE mo.id = $1`,
+            [orderId]
+          ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+          const moRow = (moInfo.rows && moInfo.rows[0]) as Record<string, unknown> | undefined;
+          const existingPrep =
+            moRow && typeof moRow.prep_minutes === 'number' ? (moRow.prep_minutes as number) : null;
+          const planPrep =
+            moRow && typeof moRow.plan_prep_minutes === 'number'
+              ? (moRow.plan_prep_minutes as number)
+              : null;
+          const prepMinutes = existingPrep ?? planPrep ?? 30;
+          if (existingPrep == null) {
+            updatePayload.prep_minutes = prepMinutes;
+          }
+          updatePayload.expected_ready_at = new Date(
+            prepStartedAt.getTime() + prepMinutes * 60_000
+          ).toISOString();
+        } catch (e) {
+          console.warn('[meal-order-status] could not compute expected_ready_at:', e);
+        }
       } else if (status === 'ready_for_pickup') {
         updatePayload.ready_at = new Date().toISOString();
       } else if (status === 'picked_up') {
@@ -2981,17 +3183,54 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, updatePayload);
         console.log(`[meal-order-status] Order status updated to: ${status}`);
       } catch (updateError: any) {
-        // If update fails due to missing columns, try updating just status
+        // If update fails due to missing columns, retry without the new prep/expected fields, then
+        // fall back to status-only as a last resort.
         if (updateError.message?.includes('does not exist')) {
-          console.log(`[meal-order-status] Some columns don't exist, updating only status...`);
-          await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status });
-          console.log(`[meal-order-status] Order status updated to: ${status} (without timestamp fields)`);
+          console.log(`[meal-order-status] Some columns don't exist, retrying with smaller payload...`);
+          const fallback: Record<string, any> = { ...updatePayload };
+          delete fallback.prep_minutes;
+          delete fallback.expected_ready_at;
+          try {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, fallback);
+            console.log(`[meal-order-status] Order status updated to: ${status} (without prep/expected fields)`);
+          } catch (e2: any) {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status: actualStatus });
+            console.log(`[meal-order-status] Order status updated to: ${status} (status-only fallback)`);
+          }
         } else {
           throw updateError;
         }
       }
 
-      return c.json({ success: true, message: 'Order status updated' });
+      // Schedule a Pidge rider as soon as the vendor starts preparing so the rider arrives by the
+      // time the meal is ready. Java delivery-service is the canonical Pidge writer (single source
+      // of truth) — Lambda only POSTs the snapshot. Failures are non-fatal: the existing
+      // "Notify Logistics" / "Dispatched" buttons remain a manual fallback.
+      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
+      if (actualStatus === 'preparing') {
+        dispatch = await dispatchMealLogistics(orderId).catch((e) => {
+          console.warn('[meal-order-status] dispatchMealLogistics threw:', e);
+          return { ok: false, error: String(e) } as Awaited<
+            ReturnType<typeof dispatchMealLogistics>
+          >;
+        });
+      }
+
+      // Idempotent vendor settlement on delivered (parity with the meal-plans.ts
+      // POST /meal/orders/:orderId/update-status path).
+      if (actualStatus === 'delivered') {
+        try {
+          await ensureMealOrderSettlementOnDelivered(orderId);
+        } catch (e) {
+          console.warn('[meal-order-status] settlement insert failed:', e);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Order status updated',
+        ...(dispatch ? { dispatch } : {}),
+      });
     } catch (error: any) {
       console.error('Error updating meal order status:', error);
       return c.json({ error: error.message }, 500);

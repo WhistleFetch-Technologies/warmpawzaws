@@ -80,3 +80,45 @@ variable "uat_jwt_secret_ssm_parameter" {
   type        = string
   default     = ""
 }
+
+variable "enable_delivery_stack" {
+  description = "When true and delivery_service_image is set, provisions ECS Fargate + internal ALB for delivery-service and splits API Gateway routes (/delivery, /logistics/pidge/*, /webhooks/pidge, …) to Java via VPC link."
+  type        = bool
+  default     = false
+}
+
+variable "delivery_service_image" {
+  description = "Full ECR URI for delivery-service (push from scripts/deploy-delivery-service.sh). Ignored unless enable_delivery_stack is true."
+  type        = string
+  default     = ""
+}
+
+variable "delivery_hibernate_ddl_auto" {
+  description = "spring.jpa.hibernate.ddl-auto for ECS tasks (validate recommended on shared RDS)"
+  type        = string
+  default     = "validate"
+}
+
+variable "delivery_codebuild_github_url" {
+  description = "HTTPS Git URL for this monorepo (e.g. https://github.com/org/warmpawzaws.git). When set with delivery stack enabled, provisions CodeBuild to build/push delivery-service and rollout ECS."
+  type        = string
+  default     = ""
+}
+
+variable "delivery_codebuild_branch_ref" {
+  description = "Git ref for CodeBuild source_version (examples: refs/heads/main, refs/heads/develop)"
+  type        = string
+  default     = "refs/heads/main"
+}
+
+variable "delivery_codebuild_codestar_connection_arn" {
+  description = "Existing CodeConnections (GitHub) ARN. Leave empty to create 'warmpawz-dev-delivery-github'; then complete Pending connection in AWS Console (Developer Tools → Connections)."
+  type        = string
+  default     = ""
+}
+
+variable "delivery_codebuild_use_github_codeconnection" {
+  description = "If true, CodeBuild clones via CodeStar connection (typical for private GitHub). If false, no connection (works for public repos; avoids CreateProject OAuth issues with some accounts)."
+  type        = bool
+  default     = false
+}

@@ -7,12 +7,17 @@ import {
   AlertCircle, Loader2, X
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  MealPlanOrderTrackingUI,
+  formatMealOrderDisplayId,
+} from '@/components/customer/tracking/MealPlanOrderTrackingUI';
 
 interface DeliveryPerson {
   name: string;
   phone: string;
   photo?: string;
   vehicle_number?: string;
+  vehicleNumber?: string;
 }
 
 interface TrackingData {
@@ -136,6 +141,266 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           Go Back
         </button>
       </div>
+    );
+  }
+
+  if (orderType === 'meal') {
+    const logisticsStatus = tracking?.status ?? null;
+    const riderStatuses = [
+      'assigned',
+      'heading_to_pickup',
+      'at_pickup',
+      'picked_up',
+      'on_the_way',
+      'nearby',
+    ];
+    const riderActive =
+      !!logisticsStatus &&
+      logisticsStatus !== 'pending_assignment' &&
+      riderStatuses.includes(logisticsStatus);
+    const isDelivered =
+      order.status === 'delivered' || logisticsStatus === 'delivered';
+    const otp = tracking?.deliveryOtp;
+    const totalAmt =
+      order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
+
+    return (
+      <>
+        <MealPlanOrderTrackingUI
+          orderDisplayId={formatMealOrderDisplayId(order)}
+          orderStatus={order.status}
+          logisticsStatus={logisticsStatus}
+          totalAmount={typeof totalAmt === 'number' ? totalAmt : undefined}
+          backSlot={
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-2 rounded-full hover:bg-white/15 transition text-white"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+          }
+          deliveryOtpBanner={
+            otp && riderActive && !isDelivered ? (
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 -mt-2 shadow-sm">
+                <p className="text-sm font-medium text-amber-800 mb-2">
+                  Handover OTP – share with delivery partner
+                </p>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">
+                    {otp}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => otp && navigator.clipboard?.writeText(String(otp))}
+                    className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+          deliveryPartnerCard={
+            tracking?.deliveryPerson && !isDelivered ? (
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center text-teal-700 text-xl font-bold shrink-0">
+                    {tracking.deliveryPerson.photo ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={tracking.deliveryPerson.photo}
+                        alt=""
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      tracking.deliveryPerson.name?.charAt(0) || 'D'
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900">{tracking.deliveryPerson.name}</p>
+                    <p className="text-sm text-gray-500">
+                      {(tracking.deliveryPerson as { vehicle_number?: string }).vehicle_number ||
+                        tracking.deliveryPerson.vehicleNumber ||
+                        'Delivery partner'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <a
+                      href={`tel:${tracking.deliveryPerson.phone}`}
+                      className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"
+                      aria-label="Call delivery partner"
+                    >
+                      <Phone className="w-5 h-5 text-green-600" />
+                    </a>
+                    <button
+                      type="button"
+                      className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center"
+                      aria-label="Message"
+                    >
+                      <MessageCircle className="w-5 h-5 text-blue-600" />
+                    </button>
+                  </div>
+                </div>
+                {(tracking?.eta ?? tracking?.etaMinutes) ? (
+                  <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
+                    <Clock className="w-5 h-5 text-teal-600 shrink-0" />
+                    <p className="text-sm font-medium text-teal-900">
+                      ETA: {formatETA(tracking!.eta ?? tracking!.etaMinutes ?? 0)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : undefined
+          }
+          deliveredBanner={
+            isDelivered ? (
+              <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white text-center shadow-sm border border-white/20">
+                <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
+                <h2 className="text-xl font-bold mb-1">Order Delivered!</h2>
+                <p className="text-sm text-white/90 mb-4">
+                  Delivered at{' '}
+                  {order.delivered_at
+                    ? new Date(order.delivered_at).toLocaleTimeString('en-IN')
+                    : 'N/A'}
+                </p>
+                {!order.rating && !reviewSubmitted ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(true)}
+                    className="bg-white text-green-600 px-6 py-2 rounded-full font-medium inline-flex items-center gap-2"
+                  >
+                    <Star className="w-4 h-4" />
+                    Rate Your Experience
+                  </button>
+                ) : order.rating || reviewSubmitted ? (
+                  <p className="text-sm text-white/90 flex items-center justify-center gap-1">
+                    <Star className="w-4 h-4 fill-current" /> Thank you for your review!
+                  </p>
+                ) : null}
+              </div>
+            ) : undefined
+          }
+          orderDetailsCollapsible={
+            <div className="w-full">
+              <button
+                type="button"
+                onClick={() => setShowDetails(!showDetails)}
+                className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex items-center justify-between"
+              >
+                <span className="font-semibold text-gray-900">Order Details</span>
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+              </button>
+              {showDetails ? (
+                <div className="bg-white rounded-b-2xl shadow-sm px-4 pb-4 -mt-2 pt-2 border border-t-0 border-slate-100">
+                  <div className="space-y-2 mb-4">
+                    {(() => {
+                      let items: any[] = [];
+                      try {
+                        const raw =
+                          typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                        items = Array.isArray(raw) ? raw : [];
+                      } catch {
+                        items = [];
+                      }
+                      return items.map((item: any, idx: number) => (
+                        <div key={idx} className="flex justify-between text-sm">
+                          <span className="text-gray-600">
+                            {item.medicine_name || item.name} x{item.quantity}
+                          </span>
+                          <span className="text-gray-900">₹{item.quantity * item.unit_price}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  <div className="border-t pt-3 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal</span>
+                      <span>₹{order.subtotal}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Delivery Fee</span>
+                      <span>₹{order.delivery_fee}</span>
+                    </div>
+                    {order.platform_fee > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Platform Fee</span>
+                        <span>₹{order.platform_fee}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold border-t pt-2">
+                      <span>Total</span>
+                      <span className="text-green-600">₹{order.total_amount}</span>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Delivery Address</p>
+                        <p className="text-sm text-gray-600">
+                          {typeof order.delivery_address === 'string'
+                            ? JSON.parse(order.delivery_address).address
+                            : order.delivery_address?.address}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          }
+          floatingChatButton={
+            <button
+              type="button"
+              className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100"
+              aria-label="Chat"
+            >
+              <MessageCircle className="w-7 h-7 text-gray-600" />
+            </button>
+          }
+        />
+        {showReviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-gray-900">Rate Your Experience</h3>
+                <button onClick={() => setShowReviewModal(false)} className="p-1 rounded-full hover:bg-gray-100">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="flex gap-2 justify-center mb-4">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setReviewRating(n)}
+                    className={`p-2 rounded-full ${reviewRating >= n ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-400'}`}
+                  >
+                    <Star className={`w-6 h-6 ${reviewRating >= n ? 'fill-current' : ''}`} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                placeholder="Optional: share your experience..."
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none h-24 mb-4"
+                maxLength={500}
+              />
+              <button
+                onClick={submitReview}
+                disabled={reviewSubmitting || reviewRating < 1}
+                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {reviewSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                Submit Review
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

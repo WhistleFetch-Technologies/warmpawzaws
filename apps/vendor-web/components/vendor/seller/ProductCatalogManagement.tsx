@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
-  Check, AlertCircle, Image as ImageIcon, MapPin
+  Check, AlertCircle, Image as ImageIcon, MapPin,   RefreshCcw,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -23,6 +25,22 @@ function stripAwsPresignFromProductImageUrl(url: string): string {
   return url;
 }
 
+/**
+ * Badge label for vendor catalog.
+ * When admin sets status to active, treat as live unless is_active is explicitly false
+ * (avoids showing "pending" forever when is_active is null/undefined in older rows).
+ */
+function getVendorDisplayStatus(product: Pick<Product, 'status' | 'is_active'>): string {
+  const s = String(product.status ?? '').trim().toLowerCase();
+  if (s === 'rejected') return 'rejected';
+  if (s === 'draft') return 'draft';
+  if (s === 'active' && product.is_active !== false) return 'active';
+  if (s === 'active' && product.is_active === false) return 'pending';
+  if (!s) return 'pending';
+  if (s === 'pending_approval' || s === 'submit_for_approval' || s === 'submitted') return 'pending';
+  return s;
+}
+
 interface ProductCatalogManagementProps {
   sellerId: string;
 }
@@ -36,20 +54,42 @@ interface Product {
   stock: number;
   sku: string;
   category_id: string;
+  /** Legacy / free-text category (API may filter with category_id OR category) */
+  category?: string;
   status: string;
   images?: string[];
   emoji?: string;
   is_active: boolean;
 }
 
+function productMatchesCategory(product: Product, selectedCategory: string): boolean {
+  if (selectedCategory === 'all') return true;
+  const sel = String(selectedCategory);
+  if (product.category_id != null && String(product.category_id) === sel) return true;
+  if (product.category != null && String(product.category) === sel) return true;
+  return false;
+}
+
+function productMatchesStatusFilter(product: Product, selectedStatus: string): boolean {
+  if (selectedStatus === 'all') return true;
+  const displayStatus = getVendorDisplayStatus(product);
+  if (selectedStatus === 'out_of_stock') {
+    const stock = Number(product.stock);
+    return displayStatus === 'out_of_stock' || (!Number.isNaN(stock) && stock <= 0);
+  }
+  return displayStatus === selectedStatus;
+}
+
 export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
@@ -81,6 +121,15 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([loadProducts(), loadCategories()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('Are you sure you want to delete this product?')) return;
     
@@ -93,12 +142,25 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
   };
 
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || product.status === selectedStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+  const trimmedSearch = searchQuery.trim();
+  const deferredSearch = useDeferredValue(trimmedSearch);
+  const deferredSearchLower = deferredSearch.toLowerCase();
+
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      if (!productMatchesCategory(product, selectedCategory)) return false;
+      if (!productMatchesStatusFilter(product, selectedStatus)) return false;
+      if (!deferredSearchLower) return true;
+      const name = product.name?.toLowerCase() ?? '';
+      const desc = product.description?.toLowerCase() ?? '';
+      const sku = product.sku?.toLowerCase() ?? '';
+      return (
+        name.includes(deferredSearchLower) ||
+        desc.includes(deferredSearchLower) ||
+        sku.includes(deferredSearchLower)
+      );
+    });
+  }, [products, deferredSearchLower, selectedCategory, selectedStatus]);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -121,16 +183,40 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3 mr-1 sm:mr-3">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2 px-5 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingProduct(null);
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            Add Product
+          </button>
+        </div>
+        <span
+          className="hidden sm:block h-9 w-px shrink-0 bg-slate-200 self-center"
+          aria-hidden
+        />
         <button
-          onClick={() => {
-            setEditingProduct(null);
-            setShowAddModal(true);
-          }}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 transition-all"
+          type="button"
+          onClick={() => setShowBulkUpload(true)}
+          className="flex items-center gap-2 px-5 py-3 border border-orange-500 text-orange-600 rounded-xl font-semibold hover:bg-orange-50 transition-all"
         >
-          <Plus className="w-5 h-5" />
-          Add Product
+          <FileSpreadsheet className="w-5 h-5" />
+          Bulk Upload
         </button>
       </div>
 
@@ -170,6 +256,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="pending">Pending Approval</option>
+            <option value="rejected">Rejected</option>
             <option value="draft">Draft</option>
             <option value="out_of_stock">Out of Stock</option>
           </select>
@@ -285,7 +372,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                       {product.stock}
                     </span>
                   </td>
-                  <td className="p-4 text-center">{getStatusBadge(product.status)}</td>
+                  <td className="p-4 text-center">{getStatusBadge(getVendorDisplayStatus(product))}</td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button 
@@ -329,6 +416,16 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           }}
         />
       )}
+
+      <BulkProductUpload
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        vendorId={sellerId}
+        onSuccess={() => {
+          setShowBulkUpload(false);
+          loadProducts();
+        }}
+      />
     </div>
   );
 }
@@ -343,7 +440,7 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
           <span>{product.emoji || '📦'}</span>
         )}
         <div className="absolute top-3 right-3">
-          {getStatusBadge(product.status)}
+          {getStatusBadge(getVendorDisplayStatus(product))}
         </div>
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
       </div>
@@ -396,7 +493,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     stock: product?.stock || '',
     sku: product?.sku || `SKU-${Date.now()}`,
     emoji: product?.emoji || '📦',
-    status: product?.status || 'draft'
+    status: product?.status || 'pending'
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);

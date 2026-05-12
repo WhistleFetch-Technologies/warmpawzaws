@@ -50,6 +50,13 @@ export function VendorBookingCard({
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'vet']);
   const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
                       booking.serviceName?.toLowerCase().includes('walking');
+  const packagePurchaseId = String(
+    booking.packagePurchaseId || booking.package_purchase_id || ''
+  ).trim();
+  const isPackageSessionRow = Boolean(
+    booking.isPackageSession || booking.is_package_session
+  );
+  const isPackageParentRow = Boolean(packagePurchaseId && !isPackageSessionRow);
   
   // ✅ Handle Open Chat - Use parent callback or fallback to alert
   const handleOpenChat = async () => {
@@ -137,7 +144,7 @@ export function VendorBookingCard({
       </div>
       
       {/* Action buttons based on status */}
-      {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
+      {booking.status !== 'completed' && booking.status !== 'cancelled' && !isPackageParentRow && (() => {
         if (isDogWalking) {
           // DOG WALKING: Show Start/End Session buttons
           if (booking.status === 'in_progress') {

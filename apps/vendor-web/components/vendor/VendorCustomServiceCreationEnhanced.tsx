@@ -44,6 +44,20 @@ import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  normalizeSessionPackageDetails,
+  packagePeriodLabel,
+  sessionFrequencyLabel,
+  SESSION_PACKAGE_TYPE_LABEL,
+  type SessionPackageType,
+} from '@/lib/session-package-normalize';
 
 const SpecializationSelector = lazy(() =>
   import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
@@ -67,7 +81,12 @@ interface CustomService {
     // Session-based (trainers/walkers)
     sessionsPerDay?: number;
     sessionDuration?: number;
-    packageDuration?: number; // days
+    packageDuration?: number; // days (validity)
+    sessionType?: SessionPackageType;
+    sessionFrequency?: number;
+    packagePeriodCount?: number;
+    validityDays?: number;
+    sessionIntervalDays?: number;
     totalSessions?: number;
     pricingBySize?: {
       small: number;
@@ -269,9 +288,10 @@ export function VendorCustomServiceCreationEnhanced({
   );
   
   // Session package fields (trainers/walkers)
-  const [sessionsPerDay, setSessionsPerDay] = useState(1);
+  const [sessionPackageType, setSessionPackageType] = useState<SessionPackageType>('day');
+  const [packagePeriodCount, setPackagePeriodCount] = useState(1);
+  const [sessionFrequency, setSessionFrequency] = useState(1);
   const [sessionDuration, setSessionDuration] = useState(60);
-  const [packageDuration, setPackageDuration] = useState(7);
   const [smallPrice, setSmallPrice] = useState(0);
   const [mediumPrice, setMediumPrice] = useState(0);
   const [largePrice, setLargePrice] = useState(0);
@@ -308,6 +328,16 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
+
+  const derivedSessionPackage = useMemo(
+    () =>
+      normalizeSessionPackageDetails({
+        sessionType: sessionPackageType,
+        sessionFrequency,
+        packagePeriodCount,
+      }),
+    [sessionPackageType, sessionFrequency, packagePeriodCount]
+  );
 
   /** Catalogue category UUID for specialization_master filter (strict with selected category). */
   const catalogCategoryIdForSpecs = useMemo(() => {
@@ -592,8 +622,16 @@ export function VendorCustomServiceCreationEnhanced({
           toast.error('Package price must be greater than 0');
           return false;
         }
-        if (packageDuration <= 0) {
-          toast.error('Package duration must be greater than 0');
+        if (derivedSessionPackage.totalSessions <= 0 || derivedSessionPackage.validityDays <= 0) {
+          toast.error('Invalid session package configuration');
+          return false;
+        }
+        if (sessionFrequency < 1) {
+          toast.error('Session frequency must be at least 1');
+          return false;
+        }
+        if (packagePeriodCount < 1) {
+          toast.error(`${packagePeriodLabel(sessionPackageType)} must be at least 1`);
           return false;
         }
       } else {
@@ -676,15 +714,21 @@ export function VendorCustomServiceCreationEnhanced({
 
   const buildPackageDetails = () => {
     if (packageType === 'session') {
+      const d = derivedSessionPackage;
       return {
-        sessionsPerDay,
+        sessionType: d.sessionType,
+        sessionFrequency: d.sessionFrequency,
+        packagePeriodCount: d.packagePeriodCount,
+        validityDays: d.validityDays,
+        sessionsPerDay: d.sessionsPerDay,
         sessionDuration,
-        packageDuration,
-        totalSessions: sessionsPerDay * packageDuration,
-        price: packagePrice
+        packageDuration: d.packageDuration,
+        sessionIntervalDays: d.sessionIntervalDays,
+        totalSessions: d.totalSessions,
+        price: packagePrice,
       };
     }
-    
+
     return {
       includedServices: packageType === 'combo' ? includedServices : undefined,
       subscriptionBillingCycle: packageType === 'subscription' ? billingCycle : undefined,
@@ -695,7 +739,6 @@ export function VendorCustomServiceCreationEnhanced({
       usageInterval,
       packagePrice,
       sessionDuration: sessionDuration || undefined,
-      sessionsPerDay: sessionsPerDay || undefined,
     };
   };
 
@@ -786,9 +829,10 @@ export function VendorCustomServiceCreationEnhanced({
     setSubCategoryName('');
     setIsPackage(false);
     setPackageType('session');
-    setSessionsPerDay(1);
+    setSessionPackageType('day');
+    setPackagePeriodCount(1);
+    setSessionFrequency(1);
     setSessionDuration(60);
-    setPackageDuration(7);
     setSmallPrice(0);
     setMediumPrice(0);
     setLargePrice(0);
@@ -948,13 +992,32 @@ export function VendorCustomServiceCreationEnhanced({
               {/* Package Details */}
               {service.isPackage && service.packageDetails && (
                 <div className="bg-orange-50 rounded-lg p-3 mb-3 text-sm">
-                  {service.packageType === 'session' && service.packageDetails.pricingBySize && (
+                  {service.packageType === 'session' && (
                     <>
                       <div className="text-gray-700">
-                        <div>Price: ₹{service.packageDetails.price ?? service.packageDetails.packagePrice ?? service.packageDetails.pricingBySize?.small ?? service.price ?? 0}</div>
+                        <div>
+                          Price: ₹
+                          {service.packageDetails.price ??
+                            service.packageDetails.packagePrice ??
+                            service.packageDetails.pricingBySize?.small ??
+                            service.price ??
+                            0}
+                        </div>
                       </div>
                       <p className="text-xs text-gray-600 mt-2">
-                        {service.packageDetails.totalSessions} sessions over {service.packageDetails.packageDuration} days
+                        {service.packageDetails.totalSessions != null && (
+                          <>{service.packageDetails.totalSessions} sessions</>
+                        )}
+                        {service.packageDetails.packageDuration != null && (
+                          <> · package duration {service.packageDetails.packageDuration} days</>
+                        )}
+                        {(() => {
+                          const st = service.packageDetails?.sessionType as
+                            | SessionPackageType
+                            | undefined;
+                          const label = st && SESSION_PACKAGE_TYPE_LABEL[st];
+                          return label ? <> · {label}</> : null;
+                        })()}
                       </p>
                     </>
                   )}
@@ -1321,28 +1384,69 @@ export function VendorCustomServiceCreationEnhanced({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="sessionsPerDay">Sessions/Day *</Label>
-                    <Input
-                      id="sessionsPerDay"
-                      type="number"
-                      value={sessionsPerDay}
-                      onChange={(e) => setSessionsPerDay(parseInt(e.target.value) || 0)}
-                      min="1"
-                    />
+                    <Label htmlFor="sessionPackageType">Session Type *</Label>
+                    <Select
+                      value={sessionPackageType}
+                      onValueChange={(v) => setSessionPackageType(v as SessionPackageType)}
+                    >
+                      <SelectTrigger id="sessionPackageType" className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="day">{SESSION_PACKAGE_TYPE_LABEL.day}</SelectItem>
+                        <SelectItem value="weekly">{SESSION_PACKAGE_TYPE_LABEL.weekly}</SelectItem>
+                        <SelectItem value="monthly">{SESSION_PACKAGE_TYPE_LABEL.monthly}</SelectItem>
+                        <SelectItem value="yearly">{SESSION_PACKAGE_TYPE_LABEL.yearly}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="packageDuration">Package Duration (days) *</Label>
+                  <Label htmlFor="packagePeriodCount">{packagePeriodLabel(sessionPackageType)} *</Label>
                   <Input
-                    id="packageDuration"
+                    id="packagePeriodCount"
                     type="number"
-                    value={packageDuration}
-                    onChange={(e) => setPackageDuration(parseInt(e.target.value) || 0)}
-                    min="1"
+                    value={packagePeriodCount}
+                    onChange={(e) => {
+                      const raw = parseInt(e.target.value, 10);
+                      setPackagePeriodCount(Number.isFinite(raw) ? Math.max(1, raw) : 1);
+                    }}
+                    min={1}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sessionFrequency">{sessionFrequencyLabel(sessionPackageType)} *</Label>
+                  <Input
+                    id="sessionFrequency"
+                    type="number"
+                    value={sessionFrequency}
+                    onChange={(e) => {
+                      const raw = parseInt(e.target.value, 10);
+                      const n = Number.isFinite(raw) ? Math.max(1, raw) : 1;
+                      setSessionFrequency(
+                        sessionPackageType === 'day' ? Math.min(24, n) : n
+                      );
+                    }}
+                    min={1}
+                    max={sessionPackageType === 'day' ? 24 : undefined}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="packageDurationPreview">Package Duration (days)</Label>
+                  <Input
+                    id="packageDurationPreview"
+                    type="number"
+                    readOnly
+                    disabled
+                    value={derivedSessionPackage.validityDays}
+                    className="bg-gray-50 text-gray-700"
                   />
                   <p className="text-xs text-gray-500">
-                    Total: {sessionsPerDay * packageDuration} sessions
+                    Total: {derivedSessionPackage.totalSessions} sessions · computed from session type, period, and
+                    frequency
                   </p>
                 </div>
 

@@ -11,9 +11,12 @@ import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
-import { serviceTypes, MEAL_PLANS_COMING_SOON } from './constants';
+import { serviceTypes } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import {
+  NutritionVendorDetailsCard,
+  nutritionVendorFromDiscoveryRow,
+} from './NutritionVendorDetailsCard';
 
 
 
@@ -104,11 +107,13 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   const handleBookNow = (data?: any) => {
-    // Navigate to diet consultation services page (shows all services from all vendors)
     try {
-      onNavigate?.('diet-consultation-services', {
-        serviceType: data?.serviceType || 'Diet Consultation'
-      });
+      const serviceType = data?.serviceType || 'Diet Consultation';
+      if (serviceType === 'Meal Plans') {
+        onNavigate?.('nutrition-meal-plans');
+        return;
+      }
+      onNavigate?.('diet-consultation-services', { serviceType });
     } catch (err: any) {
       console.error('Navigation error:', err);
       toast.error('Failed to navigate. Please try again.');
@@ -300,31 +305,10 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Our Services</h2>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypes.map((service, idx) => {
-                if (MEAL_PLANS_COMING_SOON && service.comingSoon) {
-                  return (
-                    <div
-                      key={idx}
-                      className="relative cursor-not-allowed select-none bg-slate-50/90 p-4 rounded-2xl border border-slate-200/80 text-left"
-                      role="status"
-                      aria-label={`${service.label} — coming soon`}
-                    >
-                      <span className="absolute right-2 top-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">
-                        Soon
-                      </span>
-                      <div
-                        className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 opacity-70`}
-                      >
-                        <service.icon className={`w-5 h-5 ${service.color.split(' ')[1]}`} />
-                      </div>
-                      <h3 className="font-semibold text-slate-800 text-sm mb-0.5">{service.label}</h3>
-                      <p className="text-xs text-slate-500 line-clamp-2">{service.desc}</p>
-                    </div>
-                  );
-                }
-                return (
+              {serviceTypes.map((service, idx) => (
                 <button
                   key={idx}
+                  type="button"
                   onClick={() => handleBookNow({ serviceType: service.label })}
                   className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
@@ -334,8 +318,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                   <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.label}</h3>
                   <p className="text-xs text-slate-500">{service.desc}</p>
                 </button>
-                );
-              })}
+              ))}
             </div>
           </div>
 
@@ -359,33 +342,26 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                   <p className="text-gray-500 text-sm">Check back soon for expert pet nutrition consultants!</p>
                 </Card>
               ) : (
-                (nutritionists.slice(0, 5).map((nutritionist: any, index) => (
-                  <div
-                    key={index}
-                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                    onClick={() => handleNutritionistSelect(nutritionist)}
-                  >
-                    <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                      {nutritionist.businessName ? nutritionist.businessName.charAt(0) : nutritionist.name ? nutritionist.name.charAt(0) : 'N'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-900 truncate">{nutritionist.businessName || nutritionist.name || `Nutritionist ${index}`}</h3>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-                        <StarRating
-                          rating={nutritionist.rating}
-                          reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
-                          starsClassName="w-3 h-3"
-                          textClassName="text-xs text-slate-500"
-                        />
-                        <span className="hidden sm:inline">•</span>
-                        <span>Certified Expert</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    </div>
-                  </div>
-                )))
+                nutritionists.slice(0, 5).map((nutritionist: any, index: number) => {
+                  const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
+                  const snapshot = nutritionVendorFromDiscoveryRow(nutritionist as Record<string, unknown>);
+                  return (
+                    <NutritionVendorDetailsCard
+                      key={vendorId || index}
+                      vendor={snapshot}
+                      showViewMealPlans
+                      onViewMealPlans={() => {
+                        if (!vendorId) return;
+                        onNavigate?.('nutrition-meal-plans', {
+                          vendorId,
+                          vendorSnapshot: snapshot,
+                        });
+                      }}
+                      showBookConsultation
+                      onBookConsultation={() => handleNutritionistSelect(nutritionist)}
+                    />
+                  );
+                })
               )}
             </div>
           </div>

@@ -45,14 +45,10 @@ function useShouldUseCapawesomePicker(): boolean {
 }
 
 /** When Capawesome FilePicker is not linked, Android WebView + `<input type="file">` is often broken; use @capacitor/camera for image accepts. */
-function useShouldUseAndroidCameraPath(accept: string, useCapawesomePath: boolean): boolean {
+function useShouldUseAndroidCameraPath(accept: string): boolean {
   const [ok, setOk] = React.useState(false);
   React.useLayoutEffect(() => {
     try {
-      if (useCapawesomePath) {
-        setOk(false);
-        return;
-      }
       if (Capacitor.getPlatform() !== 'android' || !Capacitor.isNativePlatform()) {
         setOk(false);
         return;
@@ -65,7 +61,7 @@ function useShouldUseAndroidCameraPath(accept: string, useCapawesomePath: boolea
     } catch {
       setOk(false);
     }
-  }, [accept, useCapawesomePath]);
+  }, [accept]);
   return ok;
 }
 
@@ -151,8 +147,9 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
 
     const capawesomeAvailable = useShouldUseCapawesomePicker();
     const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
-    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed;
-    const useAndroidCameraPath = useShouldUseAndroidCameraPath(accept, useCapawesomePath);
+    const useAndroidCameraPath = useShouldUseAndroidCameraPath(accept);
+    // On Android image-only accepts, prefer Camera/gallery plugin path first.
+    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed && !useAndroidCameraPath;
 
     const picking = React.useRef(false);
 
@@ -170,6 +167,31 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
         }
       },
       [onFileChange]
+    );
+
+    const dispatchPickedFiles = React.useCallback(
+      (files: File[]) => {
+        if (files.length === 0) return;
+        try {
+          if (typeof DataTransfer !== 'undefined') {
+            const dt = new DataTransfer();
+            for (const f of files) {
+              dt.items.add(f);
+            }
+            runChangeWithFiles(dt.files);
+            return;
+          }
+        } catch (dtErr) {
+          console.warn('[TouchFilePicker] DataTransfer failed; using file-list fallback.', dtErr);
+        }
+
+        console.log(`[TouchFilePicker] Using file-list fallback, count=${files.length}`);
+        // Fallback for WebViews where DataTransfer is missing/unreliable.
+        const fallback = files as unknown as FileList & File[];
+        (fallback as any).item = (index: number) => fallback[index] || null;
+        runChangeWithFiles(fallback);
+      },
+      [runChangeWithFiles]
     );
 
     const handleCapacitorPick = React.useCallback(
@@ -192,11 +214,8 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
           if (files.length === 0) {
             return;
           }
-          const dt = new DataTransfer();
-          for (const f of files) {
-            dt.items.add(f);
-          }
-          runChangeWithFiles(dt.files);
+          console.log(`[TouchFilePicker] Capawesome picked files=${files.length}`);
+          dispatchPickedFiles(files);
         } catch (err) {
           console.error('[TouchFilePicker] Capawesome file pick failed.', err);
           if (
@@ -215,11 +234,8 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
                 return;
               }
               if (files.length > 0) {
-                const dt = new DataTransfer();
-                for (const f of files) {
-                  dt.items.add(f);
-                }
-                runChangeWithFiles(dt.files);
+                console.log(`[TouchFilePicker] Camera fallback picked files=${files.length}`);
+                dispatchPickedFiles(files);
                 return;
               }
             } catch (camErr) {
@@ -255,11 +271,8 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
           if (files.length === 0) {
             return;
           }
-          const dt = new DataTransfer();
-          for (const f of files) {
-            dt.items.add(f);
-          }
-          runChangeWithFiles(dt.files);
+          console.log(`[TouchFilePicker] Android camera picked files=${files.length}`);
+          dispatchPickedFiles(files);
         } catch (err) {
           console.error('[TouchFilePicker] Android Camera pick failed; falling back to file input if possible.', err);
           toast.error('Could not open the photo picker. Try again or update the app.');
@@ -267,7 +280,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
           picking.current = false;
         }
       },
-      [accept, disabled, multiple, runChangeWithFiles]
+      [accept, disabled, dispatchPickedFiles, multiple]
     );
 
     const visual = (

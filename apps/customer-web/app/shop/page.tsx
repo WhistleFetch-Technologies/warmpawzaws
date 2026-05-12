@@ -13,6 +13,7 @@ import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
 import { formatAverageForDisplay } from '@/lib/rating-display';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 // ============================================================================
 // TYPES
@@ -345,6 +346,36 @@ export default function ShopPage() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-200/90 md:py-5 md:px-4 flex flex-col items-center">
+        <div className="w-full max-w-md min-h-[100dvh] md:min-h-0 md:h-[min(100dvh-2.5rem,56rem)] md:rounded-[2rem] bg-white md:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.18)] md:ring-1 md:ring-slate-200/80 overflow-hidden flex flex-col">
+          <header className="px-5 pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-3 md:pt-4 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => handleShopPageBack(router)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-600 ring-1 ring-slate-200/90 active:scale-95 transition-transform"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          </header>
+          <main className="flex-1 flex items-center justify-center px-6 text-center">
+            <div>
+              <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-orange-50 flex items-center justify-center">
+                <ShoppingCart className="w-10 h-10 text-orange-500" />
+              </div>
+              <h1 className="text-xl font-bold text-slate-900">Shop coming soon</h1>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                We&apos;re preparing the Warmpawz marketplace for customers. Please check back later.
+              </p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-slate-200/90 md:py-5 md:px-4 flex flex-col items-center">

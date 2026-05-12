@@ -44,6 +44,32 @@ function parseServiceMetadata(m: unknown): Record<string, unknown> {
   return {};
 }
 
+/** GET /vendor/services/:vendorId returns `allServices` plus `services` grouped by style — flatten for browse. */
+function flattenVendorServicesPayload(res: Record<string, unknown> | null | undefined): unknown[] {
+  if (!res || typeof res !== 'object') return [];
+  const out: unknown[] = [];
+  const pushArr = (v: unknown) => {
+    if (Array.isArray(v)) out.push(...v);
+  };
+  pushArr(res.allServices);
+  pushArr(res.services);
+  const nested = res.services;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    for (const key of Object.keys(nested)) {
+      const bucket = (nested as Record<string, unknown>)[key];
+      if (bucket && typeof bucket === 'object' && !Array.isArray(bucket)) {
+        pushArr((bucket as Record<string, unknown>).services);
+      }
+    }
+  }
+  pushArr(res.disallowedLegacy);
+  return out;
+}
+
+function vendorServicesRowPk(s: Record<string, unknown>): string {
+  return String(s.id ?? s.vendorServiceId ?? s.vendor_service_id ?? '').trim();
+}
+
 function isPublishedVendorService(pub: string): boolean {
   // Backward compatibility: many older vendor_services rows are usable with null/empty status.
   return (
@@ -365,6 +391,11 @@ export function PackageBookingPage({
     try {
       setLoading(true);
       const itemMap = new Map<string, PackageItem>();
+      const intent = vendorPackageIntent;
+      const intentVendorId = String(intent?.vendorId ?? '').trim();
+      const intentVsId = String(intent?.vendorServiceId ?? '').trim();
+      const strictDedicatedIntent = Boolean(intentVendorId && intentVsId);
+
       const upsertItem = (item: PackageItem) => {
         const key = item.vendorServiceId
           ? `vs:${item.vendorServiceId}`
@@ -374,173 +405,19 @@ export function PackageBookingPage({
         if (!itemMap.has(key)) itemMap.set(key, item);
       };
 
-      if (vendorPackageIntent?.vendorId) {
-        try {
-          const res = (await apiClient.get(
-            `/vendor/${encodeURIComponent(vendorPackageIntent.vendorId)}/packages`
-          )) as any;
-          const rows = Array.isArray(res?.packages) ? res.packages : [];
-          for (const p of rows) {
-            const sc = Number(p.session_count ?? p.total_sessions ?? p.sessions_included);
-            const ts =
-              !Number.isFinite(sc) || sc <= 0 ? 1 : sc < 0 ? 1 : Math.min(365, Math.floor(sc));
-            const price = Number(p.price ?? 0);
-            const meta =
-              p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
-                ? (p.metadata as Record<string, unknown>)
-                : undefined;
-            const pd = (p.packageDetails ??
-              p.package_details ??
-              meta?.packageDetails) as Record<string, unknown> | undefined;
-            const spd = Math.max(
-              1,
-              Math.min(
-                24,
-                Number(
-                  p.sessions_per_day ??
-                    p.sessionsPerDay ??
-                    pd?.sessions_per_day ??
-                    pd?.sessionsPerDay ??
-                    meta?.sessions_per_day ??
-                    meta?.sessionsPerDay
-                ) || 1
-              )
-            );
-            const intv = Math.max(
-              1,
-              Math.min(
-                366,
-                Number(
-                  p.session_interval_days ??
-                    p.sessionIntervalDays ??
-                    pd?.session_interval_days ??
-                    pd?.sessionIntervalDays ??
-                    pd?.frequencyDays ??
-                    meta?.session_interval_days ??
-                    meta?.sessionIntervalDays ??
-                    meta?.frequencyDays
-                ) || 7
-              )
-            );
-            upsertItem({
-              id: String(p.id),
-              vendorId: String(p.vendor_id ?? vendorPackageIntent.vendorId),
-              name: String(p.name ?? p.package_name ?? 'Package'),
-              description: String(p.description ?? ''),
-              vendorName: String(vendorPackageIntent.vendorName || 'Vendor'),
-              totalSessions: ts,
-              pricePerSession: ts > 0 ? Math.round(price / ts) : price,
-              totalPrice: price,
-              duration: Number(
-                p.duration_minutes ?? p.duration ?? vendorPackageIntent.duration ?? 60
-              ),
-              category: String(p.service_type ?? 'walking'),
-              popular: false,
-              sessionsPerDay: spd,
-              sessionIntervalDays: intv,
-            });
-          }
-        } catch (e) {
-          console.warn('[PackageBookingPage] vendor packages:', e);
-        }
-
-        // Custom Services / vendor_services rows marked as packages (not service_packages table)
-        try {
-          const vsRes = (await apiClient.get(
-            `/vendor/services/${encodeURIComponent(vendorPackageIntent.vendorId)}`
-          )) as any;
-          const all: unknown[] = [
-            ...(Array.isArray(vsRes?.allServices) ? vsRes.allServices : []),
-            ...(Array.isArray(vsRes?.services) ? vsRes.services : []),
-            ...(Array.isArray(vsRes?.disallowedLegacy) ? vsRes.disallowedLegacy : []),
-          ];
-          for (const raw of all) {
-            const s = raw as Record<string, unknown>;
-            const pub = String(s.publishStatus ?? s.publish_status ?? '').toLowerCase();
-            if (!isPublishedVendorService(pub)) continue;
-            if (s.isEnabled === false || s.is_enabled === false) continue;
-            const meta = parseServiceMetadata(s.metadata);
-            const rowForCheck: Record<string, unknown> = {
-              ...s,
-              isPackage: s.isPackage ?? meta.isPackage,
-              packageDetails: s.packageDetails ?? meta.packageDetails,
-              metadata: meta,
-            };
-            if (!isVendorServicePackageRow(rowForCheck)) continue;
-            const vsid = String(s.id ?? '').trim();
-            if (!vsid) continue;
-            if (
-              vendorPackageIntent.vendorServiceId &&
-              vsid === String(vendorPackageIntent.vendorServiceId)
-            ) {
-              continue;
-            }
-            const pd = (s.packageDetails ?? meta.packageDetails) as Record<string, unknown> | undefined;
-            const ts = Math.max(
-              1,
-              Number(pd?.totalSessions ?? pd?.total_sessions ?? meta.totalSessions ?? 1) || 1
-            );
-            const price = Number(
-              pd?.packagePrice ?? pd?.price ?? s.price ?? s.custom_price ?? 0
-            ) || 0;
-            const spd = Math.max(
-              1,
-              Math.min(
-                24,
-                Number(
-                  pd?.sessionsPerDay ?? pd?.sessions_per_day ?? meta.sessionsPerDay ?? 1
-                ) || 1
-              )
-            );
-            const intv = Math.max(
-              1,
-              Math.min(
-                366,
-                Number(
-                  pd?.sessionIntervalDays ??
-                    pd?.session_interval_days ??
-                    meta.sessionIntervalDays ??
-                    7
-                ) || 7
-              )
-            );
-            const name = String(s.serviceName ?? s.name ?? s.service_name ?? 'Package');
-            const desc = String(s.description ?? '');
-            const duration =
-              Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 60) || 60;
-            const category = String(s.category ?? s.categoryName ?? s.subCategory ?? 'walking');
-            upsertItem({
-              id: `vs-${vsid}`,
-              vendorServiceId: vsid,
-              vendorId: String(vendorPackageIntent.vendorId),
-              name,
-              description: desc,
-              vendorName: String(vendorPackageIntent.vendorName || 'Vendor'),
-              totalSessions: ts,
-              pricePerSession: ts > 0 ? Math.round(price / ts) : price,
-              totalPrice: price,
-              duration,
-              category,
-              popular: false,
-              sessionsPerDay: spd,
-              sessionIntervalDays: intv,
-            });
-          }
-        } catch (e) {
-          console.warn('[PackageBookingPage] vendor_services package offerings:', e);
-        }
-      }
-
-      if (vendorPackageIntent?.vendorServiceId) {
-        const p = vendorPackageIntent;
+      /** Single browse card from navigation intent when API row is missing or unusable (strict dedicated only). */
+      const upsertDedicatedPackageFromNavigationIntent = (p: VendorPackageIntent & { vendorServiceId: string }) => {
+        const sid = String(p.vendorServiceId || '').trim();
+        const vid = String(p.vendorId || '').trim();
+        if (!sid || !vid) return;
         const ts = Math.max(1, Number(p.totalSessions ?? 1));
         const price = Number(p.price ?? 0);
         const spd = Math.max(1, Math.min(24, Number(p.sessionsPerDay) || 1));
         const intv = Math.max(1, Math.min(366, Number(p.sessionIntervalDays) || 7));
         upsertItem({
-          id: `vs-${p.vendorServiceId}`,
-          vendorServiceId: p.vendorServiceId,
-          vendorId: p.vendorId,
+          id: `vs-${sid}`,
+          vendorServiceId: sid,
+          vendorId: vid,
           name: p.serviceName ?? 'Package',
           description: p.description ?? '',
           vendorName: p.vendorName || 'Your provider',
@@ -553,8 +430,281 @@ export function PackageBookingPage({
           sessionsPerDay: spd,
           sessionIntervalDays: intv,
         });
+      };
+
+      let dedicatedRowMatchedApi = false;
+      const skippedBroadEndpoints = strictDedicatedIntent;
+
+      console.info('[PackageBookingPage] loadPackages', {
+        strictDedicatedIntent,
+        vendorId: intentVendorId || undefined,
+        vendorServiceId: intentVsId || undefined,
+        skippedBroadEndpoints,
+      });
+
+      if (intentVendorId) {
+        if (strictDedicatedIntent && intentVsId && intent) {
+          try {
+            const vsRes = (await apiClient.get(
+              `/vendor/services/${encodeURIComponent(intentVendorId)}`
+            )) as any;
+            const all: unknown[] = flattenVendorServicesPayload(vsRes as Record<string, unknown>);
+            const matched = all.find((raw) => vendorServicesRowPk(raw as Record<string, unknown>) === intentVsId) as
+              | Record<string, unknown>
+              | undefined;
+
+            if (matched) {
+              dedicatedRowMatchedApi = true;
+              const pub = String(matched.publishStatus ?? matched.publish_status ?? '').toLowerCase();
+              if (isPublishedVendorService(pub) && matched.isEnabled !== false && matched.is_enabled !== false) {
+                const meta = parseServiceMetadata(matched.metadata);
+                const pd = (matched.packageDetails ?? meta.packageDetails) as Record<string, unknown> | undefined;
+                const ts = Math.max(
+                  1,
+                  Number(
+                    pd?.totalSessions ??
+                      pd?.total_sessions ??
+                      meta.totalSessions ??
+                      intent.totalSessions ??
+                      1
+                  ) || 1
+                );
+                const price =
+                  Number(
+                    pd?.packagePrice ??
+                      pd?.price ??
+                      matched.price ??
+                      matched.custom_price ??
+                      intent.price ??
+                      0
+                  ) || 0;
+                const spd = Math.max(
+                  1,
+                  Math.min(
+                    24,
+                    Number(
+                      pd?.sessionsPerDay ??
+                        pd?.sessions_per_day ??
+                        meta.sessionsPerDay ??
+                        intent.sessionsPerDay ??
+                        1
+                    ) || 1
+                  )
+                );
+                const intv = Math.max(
+                  1,
+                  Math.min(
+                    366,
+                    Number(
+                      pd?.sessionIntervalDays ??
+                        pd?.session_interval_days ??
+                        meta.sessionIntervalDays ??
+                        intent.sessionIntervalDays ??
+                        7
+                    ) || 7
+                  )
+                );
+                const name = String(
+                  matched.serviceName ?? matched.name ?? matched.service_name ?? intent.serviceName ?? 'Package'
+                );
+                const desc = String(matched.description ?? intent.description ?? '');
+                const duration =
+                  Number(
+                    matched.duration ??
+                      matched.duration_minutes ??
+                      matched.custom_duration ??
+                      intent.duration ??
+                      60
+                  ) || 60;
+                const category = String(
+                  matched.category ?? matched.categoryName ?? matched.subCategory ?? intent.serviceType ?? 'walking'
+                );
+                upsertItem({
+                  id: `vs-${intentVsId}`,
+                  vendorServiceId: intentVsId,
+                  vendorId: intentVendorId,
+                  name,
+                  description: desc,
+                  vendorName: String(intent.vendorName || 'Vendor'),
+                  totalSessions: ts,
+                  pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+                  totalPrice: price,
+                  duration,
+                  category,
+                  popular: true,
+                  sessionsPerDay: spd,
+                  sessionIntervalDays: intv,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[PackageBookingPage] dedicated vendor_services lookup:', e);
+          }
+
+          const dedicatedKey = `vs:${intentVsId}`;
+          if (!itemMap.has(dedicatedKey)) {
+            console.info('[PackageBookingPage] loadPackages strict_fallback=intent_payload (no usable API row)');
+            upsertDedicatedPackageFromNavigationIntent(intent as VendorPackageIntent & { vendorServiceId: string });
+          }
+
+          console.info('[PackageBookingPage] loadPackages strictDedicated summary', {
+            dedicatedRowMatchedApi,
+            skippedBroadEndpoints,
+          });
+        } else {
+          try {
+            const res = (await apiClient.get(`/vendor/${encodeURIComponent(intentVendorId)}/packages`)) as any;
+            const rows = Array.isArray(res?.packages) ? res.packages : [];
+            for (const p of rows) {
+              const sc = Number(p.session_count ?? p.total_sessions ?? p.sessions_included);
+              const ts =
+                !Number.isFinite(sc) || sc <= 0 ? 1 : sc < 0 ? 1 : Math.min(365, Math.floor(sc));
+              const price = Number(p.price ?? 0);
+              const meta =
+                p.metadata && typeof p.metadata === 'object' && !Array.isArray(p.metadata)
+                  ? (p.metadata as Record<string, unknown>)
+                  : undefined;
+              const pd = (p.packageDetails ??
+                p.package_details ??
+                meta?.packageDetails) as Record<string, unknown> | undefined;
+              const spd = Math.max(
+                1,
+                Math.min(
+                  24,
+                  Number(
+                    p.sessions_per_day ??
+                      p.sessionsPerDay ??
+                      pd?.sessions_per_day ??
+                      pd?.sessionsPerDay ??
+                      meta?.sessions_per_day ??
+                      meta?.sessionsPerDay
+                  ) || 1
+                )
+              );
+              const intv = Math.max(
+                1,
+                Math.min(
+                  366,
+                  Number(
+                    p.session_interval_days ??
+                      p.sessionIntervalDays ??
+                      pd?.session_interval_days ??
+                      pd?.sessionIntervalDays ??
+                      pd?.frequencyDays ??
+                      meta?.session_interval_days ??
+                      meta?.sessionIntervalDays ??
+                      meta?.frequencyDays
+                  ) || 7
+                )
+              );
+              upsertItem({
+                id: String(p.id),
+                vendorId: String(p.vendor_id ?? intentVendorId),
+                name: String(p.name ?? p.package_name ?? 'Package'),
+                description: String(p.description ?? ''),
+                vendorName: String(intent?.vendorName || 'Vendor'),
+                totalSessions: ts,
+                pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+                totalPrice: price,
+                duration: Number(p.duration_minutes ?? p.duration ?? intent?.duration ?? 60),
+                category: String(p.service_type ?? 'walking'),
+                popular: false,
+                sessionsPerDay: spd,
+                sessionIntervalDays: intv,
+              });
+            }
+          } catch (e) {
+            console.warn('[PackageBookingPage] vendor packages:', e);
+          }
+
+          try {
+            const vsRes = (await apiClient.get(
+              `/vendor/services/${encodeURIComponent(intentVendorId)}`
+            )) as any;
+            const all: unknown[] = flattenVendorServicesPayload(vsRes as Record<string, unknown>);
+            for (const raw of all) {
+              const s = raw as Record<string, unknown>;
+              const pub = String(s.publishStatus ?? s.publish_status ?? '').toLowerCase();
+              if (!isPublishedVendorService(pub)) continue;
+              if (s.isEnabled === false || s.is_enabled === false) continue;
+              const meta = parseServiceMetadata(s.metadata);
+              const rowForCheck: Record<string, unknown> = {
+                ...s,
+                isPackage: s.isPackage ?? meta.isPackage,
+                packageDetails: s.packageDetails ?? meta.packageDetails,
+                metadata: meta,
+              };
+              if (!isVendorServicePackageRow(rowForCheck)) continue;
+              const vsid = vendorServicesRowPk(s);
+              if (!vsid) continue;
+              const pd = (s.packageDetails ?? meta.packageDetails) as Record<string, unknown> | undefined;
+              const ts = Math.max(
+                1,
+                Number(pd?.totalSessions ?? pd?.total_sessions ?? meta.totalSessions ?? 1) || 1
+              );
+              const price = Number(
+                pd?.packagePrice ?? pd?.price ?? s.price ?? s.custom_price ?? 0
+              ) || 0;
+              const spd = Math.max(
+                1,
+                Math.min(
+                  24,
+                  Number(
+                    pd?.sessionsPerDay ?? pd?.sessions_per_day ?? meta.sessionsPerDay ?? 1
+                  ) || 1
+                )
+              );
+              const intv = Math.max(
+                1,
+                Math.min(
+                  366,
+                  Number(
+                    pd?.sessionIntervalDays ??
+                      pd?.session_interval_days ??
+                      meta.sessionIntervalDays ??
+                      7
+                  ) || 7
+                )
+              );
+              const name = String(s.serviceName ?? s.name ?? s.service_name ?? 'Package');
+              const desc = String(s.description ?? '');
+              const duration =
+                Number(s.duration ?? s.duration_minutes ?? s.custom_duration ?? 60) || 60;
+              const category = String(s.category ?? s.categoryName ?? s.subCategory ?? 'walking');
+              upsertItem({
+                id: `vs-${vsid}`,
+                vendorServiceId: vsid,
+                vendorId: String(intentVendorId),
+                name,
+                description: desc,
+                vendorName: String(intent?.vendorName || 'Vendor'),
+                totalSessions: ts,
+                pricePerSession: ts > 0 ? Math.round(price / ts) : price,
+                totalPrice: price,
+                duration,
+                category,
+                popular: false,
+                sessionsPerDay: spd,
+                sessionIntervalDays: intv,
+              });
+            }
+          } catch (e) {
+            console.warn('[PackageBookingPage] vendor_services package offerings:', e);
+          }
+
+          console.info('[PackageBookingPage] loadPackages vendor browse (broad)', {
+            vendorId: intentVendorId,
+          });
+        }
       }
-      const items = Array.from(itemMap.values());
+
+      let items = Array.from(itemMap.values());
+      if (strictDedicatedIntent && intentVsId) {
+        items = items.filter(
+          (it) =>
+            String(it.vendorServiceId || '').trim() === intentVsId || it.id === `vs-${intentVsId}`
+        );
+      }
       items.sort((a, b) => {
         if (a.popular !== b.popular) return a.popular ? -1 : 1;
         return a.totalPrice - b.totalPrice;

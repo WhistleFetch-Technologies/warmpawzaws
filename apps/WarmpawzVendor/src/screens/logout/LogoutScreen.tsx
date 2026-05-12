@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearVendorSession } from '../../services/auth-session';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 
 interface LogoutScreenProps {
@@ -37,14 +37,12 @@ export function LogoutScreen({ onBack, onLogout }: LogoutScreenProps) {
           onPress: async () => {
             setLoggingOut(true);
             try {
-              // Clear all stored data
-              await AsyncStorage.multiRemove([
-                'warmpawz_vendor_session_token',
-                'warmpawz_vendor_profile',
-                'warmpawz_vendor_id',
-              ]);
-              
-              // Call logout callback
+              // Full session wipe via the centralized session manager (new +
+              // legacy keys). This is the ONLY path that should clear the
+              // 90-day session — every other auth error keeps the user
+              // signed in and silently refreshes.
+              await clearVendorSession();
+
               if (onLogout) {
                 onLogout();
               }

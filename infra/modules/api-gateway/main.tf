@@ -93,6 +93,22 @@ locals {
   api_gateway_id = var.existing_api_gateway_id != null ? data.aws_apigatewayv2_api.existing[0].id : aws_apigatewayv2_api.main[0].id
   api_gateway_execution_arn = var.existing_api_gateway_id != null ? data.aws_apigatewayv2_api.existing[0].execution_arn : aws_apigatewayv2_api.main[0].execution_arn
   api_gateway_api_endpoint = var.existing_api_gateway_id != null ? data.aws_apigatewayv2_api.existing[0].api_endpoint : aws_apigatewayv2_api.main[0].api_endpoint
+
+  delivery_java_route_defaults = [
+    "ANY /delivery/{proxy+}",
+    "ANY /logistics/pidge/{proxy+}",
+    # Meal Pidge dispatch (Lambda → Java or direct smoke via API Gateway when split is on)
+    "ANY /logistics/meal/dispatch",
+    "ANY /webhooks/pidge",
+    "ANY /admin/logistics/pidge/{proxy+}",
+    # Smoke / docs (narrower than Lambda catch-all when split is enabled)
+    "ANY /swagger-ui",
+    "ANY /swagger-ui/{proxy+}",
+    "ANY /swagger-ui.html",
+    "ANY /v3/api-docs",
+    "ANY /v3/api-docs/{proxy+}",
+    "ANY /v3/api-docs.yaml",
+  ]
 }
 
 # CloudWatch Log Group for API Gateway
@@ -205,6 +221,63 @@ resource "aws_apigatewayv2_route" "routes" {
   # Authorization temporarily disabled until Cognito authorizer is added
   authorization_type = "NONE"
   authorizer_id      = null
+}
+
+# ---------------------------------------------------------------------------
+# Java delivery-service (HTTP_PROXY + VPC_LINK → internal ALB)
+# Routes are more specific than ANY /{proxy+} → Lambda when present.
+# ---------------------------------------------------------------------------
+resource "aws_apigatewayv2_vpc_link" "delivery_java" {
+  count = var.delivery_java_integration != null ? 1 : 0
+
+  name               = "warmpawz-${var.environment}-delivery-java"
+  security_group_ids = var.delivery_java_integration.vpc_link_security_group_ids
+  subnet_ids         = var.delivery_java_integration.vpc_link_subnet_ids
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-delivery-vpc-link"
+    Environment = var.environment
+  }
+}
+
+resource "aws_apigatewayv2_integration" "delivery_java" {
+  count = var.delivery_java_integration != null ? 1 : 0
+
+  api_id             = local.api_gateway_id
+  integration_type   = "HTTP_PROXY"
+  integration_uri    = var.delivery_java_integration.alb_listener_arn
+  integration_method = "ANY"
+  connection_type    = "VPC_LINK"
+  connection_id      = aws_apigatewayv2_vpc_link.delivery_java[0].id
+
+  timeout_milliseconds = var.delivery_java_integration.timeout_ms
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+locals {
+  delivery_java_route_sel = var.delivery_java_integration == null ? [] : coalesce(var.delivery_java_integration.route_keys, [])
+  delivery_java_route_keys = var.delivery_java_integration == null ? toset([]) : (
+    length(local.delivery_java_route_sel) > 0 ? toset(local.delivery_java_route_sel) : toset(local.delivery_java_route_defaults)
+  )
+}
+
+resource "aws_apigatewayv2_route" "delivery_java" {
+  for_each = local.delivery_java_route_keys
+
+  api_id    = local.api_gateway_id
+  route_key = each.value
+  target    = "integrations/${aws_apigatewayv2_integration.delivery_java[0].id}"
+
+  authorization_type = "NONE"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [aws_apigatewayv2_integration.delivery_java]
 }
 
 # Custom Domain (optional)

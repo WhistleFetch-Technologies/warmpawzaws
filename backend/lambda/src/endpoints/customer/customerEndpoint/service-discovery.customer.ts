@@ -20,7 +20,7 @@ import { Hono } from 'hono';
 import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { getDiscoveryRules } from '../../../lib/rule-engine';
+import { getDiscoveryRules, type DiscoveryRuleSet } from '../../../lib/rule-engine';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../vendor/endpoints/vendorProfile.vendor';
 import { taxCalculationService } from '../../../lib/services/tax-calculation-service';
 import { discountCalculationService } from '../../../lib/services/discount-calculation-service';
@@ -46,6 +46,36 @@ export { getCustomerCoordinates, resolveCustomerIdFromPhone };
  */
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   return haversineKm(lat1, lon1, lat2, lon2);
+}
+
+function parsePositiveKm(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : parseFloat(String(raw));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * at_home discovery: travel radius (solo / Advanced Availability) or business coverage from center (service_distance_km).
+ */
+function vendorHomeServiceRadiusKm(row: {
+  service_radius?: unknown;
+  service_distance_km?: unknown;
+}): number | null {
+  return parsePositiveKm(row.service_radius) ?? parsePositiveKm(row.service_distance_km);
+}
+
+function discoveryCustomerRadiusKm(opts: {
+  rules: DiscoveryRuleSet;
+  serviceStyleNorm: string;
+  radiusFromQuery?: string | null;
+}): number | null {
+  if (opts.radiusFromQuery) {
+    const n = parseInt(opts.radiusFromQuery, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (opts.serviceStyleNorm === 'at_home') return null;
+  if (opts.serviceStyleNorm === 'tele') return opts.rules.discovery_radius_km_tele ?? 0;
+  return opts.rules.discovery_radius_km ?? 50;
 }
 
 /**
@@ -1039,6 +1069,18 @@ function deduplicateServices(services: any[]): any[] {
     if (key && !seen.has(key)) {
       seen.set(key, service);
     } else if (key && seen.has(key)) {
+      const prev = seen.get(key)!;
+      const pkgScore = (s: any) =>
+        (s?.isPackage ? 2 : 0) +
+        (s?.metadata &&
+        typeof s.metadata === 'object' &&
+        (s.metadata.isPackage || s.metadata.packageDetails || s.metadata.type === 'package')
+          ? 1
+          : 0);
+      if (pkgScore(service) > pkgScore(prev)) {
+        seen.set(key, service);
+        continue;
+      }
       // Duplicate found - log warning but keep first occurrence
       console.warn(`[Deduplication] Duplicate service detected: ${key} (ID: ${service.id || service.serviceId || 'unknown'}). Keeping first occurrence.`);
     } else if (!key) {
@@ -1115,11 +1157,11 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
     serviceStyleNorm as string,
     category || undefined
   );
-  const radiusDefault =
-    serviceStyleNorm === 'tele'
-      ? (rules.discovery_radius_km_tele ?? 0)
-      : (rules.discovery_radius_km ?? 50);
-  const radius = opts.radiusQ ? parseInt(opts.radiusQ, 10) : radiusDefault;
+  const radius = discoveryCustomerRadiusKm({
+    rules,
+    serviceStyleNorm,
+    radiusFromQuery: opts.radiusQ,
+  });
   const maxDistanceKm = opts.maxDistanceQ ? parseFloat(opts.maxDistanceQ) : null;
   const minRatingVal = opts.minRatingQ ? parseFloat(opts.minRatingQ) : null;
 
@@ -1317,6 +1359,7 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
   const vendorListSql = `
         SELECT v.id AS vendor_id,
                v.latitude, v.longitude,
+               v.service_radius, v.service_distance_km,
                COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0)::float AS avg_rating
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
@@ -1348,6 +1391,8 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
     vendor_id: string;
     latitude: unknown;
     longitude: unknown;
+    service_radius?: unknown;
+    service_distance_km?: unknown;
     avg_rating: unknown;
   }[];
 
@@ -1355,21 +1400,45 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
     candidates = candidates.filter((row) => parseFloat(String(row.avg_rating ?? 0)) >= minRatingVal);
   }
 
-  const effectiveMaxKm =
-    maxDistanceKm ?? (customerLat != null && customerLng != null && radius > 0 ? radius : null);
-
-  if (effectiveMaxKm != null && customerLat != null && customerLng != null) {
-    const withinRadius = candidates.filter((row) => {
-      const lat = row.latitude != null ? parseFloat(String(row.latitude)) : null;
-      const lng = row.longitude != null ? parseFloat(String(row.longitude)) : null;
-      if (lat == null || lng == null) return true;
-      const dist = calculateDistance(customerLat, customerLng, lat, lng);
-      return dist <= effectiveMaxKm;
-    });
-    if (withinRadius.length > 0) {
-      candidates = withinRadius;
-    } else if (!sittingDiscoveryRelaxed) {
-      candidates = withinRadius;
+  if (customerLat != null && customerLng != null) {
+    const platformHome = rules.discovery_radius_km_home ?? 10;
+    if (serviceStyleNorm === 'at_home') {
+      const withinRadius = candidates.filter((row) => {
+        const lat = row.latitude != null ? parseFloat(String(row.latitude)) : null;
+        const lng = row.longitude != null ? parseFloat(String(row.longitude)) : null;
+        if (lat == null || lng == null) return true;
+        const dist = calculateDistance(customerLat, customerLng, lat, lng);
+        const vendorCap = vendorHomeServiceRadiusKm(row) ?? platformHome;
+        const cap =
+          maxDistanceKm != null && Number.isFinite(maxDistanceKm)
+            ? Math.min(maxDistanceKm, vendorCap)
+            : radius != null && radius > 0
+              ? Math.min(radius, vendorCap)
+              : vendorCap;
+        return dist <= cap;
+      });
+      if (withinRadius.length > 0) {
+        candidates = withinRadius;
+      } else if (!sittingDiscoveryRelaxed) {
+        candidates = withinRadius;
+      }
+    } else {
+      const effectiveMaxKm =
+        maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
+      if (effectiveMaxKm != null) {
+        const withinRadius = candidates.filter((row) => {
+          const lat = row.latitude != null ? parseFloat(String(row.latitude)) : null;
+          const lng = row.longitude != null ? parseFloat(String(row.longitude)) : null;
+          if (lat == null || lng == null) return true;
+          const dist = calculateDistance(customerLat, customerLng, lat, lng);
+          return dist <= effectiveMaxKm;
+        });
+        if (withinRadius.length > 0) {
+          candidates = withinRadius;
+        } else if (!sittingDiscoveryRelaxed) {
+          candidates = withinRadius;
+        }
+      }
     }
   }
 
@@ -1905,6 +1974,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }, 400);
       }
 
+      const serviceStyleNormDiscover = normalizeServiceStyle(serviceStyle) || serviceStyle;
+
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
@@ -1929,10 +2000,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         roleId || category || 'all', 'discover', serviceStyle as string, category || undefined
       );
       const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
-      const radiusDefault = serviceStyle === 'tele'
-        ? (rules.discovery_radius_km_tele ?? 0)
-        : (rules.discovery_radius_km ?? 50);
-      const radius = c.req.query('radius') ? parseInt(c.req.query('radius')!, 10) : radiusDefault;
+      const radius = discoveryCustomerRadiusKm({
+        rules,
+        serviceStyleNorm: serviceStyleNormDiscover,
+        radiusFromQuery: c.req.query('radius') || undefined,
+      });
       const maxDistanceKm = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : null;
       const minRatingVal = c.req.query('minRating') ? parseFloat(c.req.query('minRating')!) : null;
       const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance';
@@ -2420,6 +2492,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
+          v.service_radius, v.service_distance_km,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -2455,6 +2528,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           : [acceptableStyles];
 
       const vendorRows = await query(vendorSql, vendorParams);
+      const vendorRadiusLookupDiscover = new Map<
+        string,
+        { service_radius?: unknown; service_distance_km?: unknown }
+      >();
+      for (const row of vendorRows.rows) {
+        vendorRadiusLookupDiscover.set(row.vendor_id, {
+          service_radius: row.service_radius,
+          service_distance_km: row.service_distance_km,
+        });
+      }
       console.log('vendorRows', vendorRows.rows, acceptableStyles, catTextExact, catTextLike, catUUIDs);
       // 6) Enrich and filter
       const seen = new Set<string>();
@@ -2475,17 +2558,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         results = results.filter((p) => p.rating >= minRatingVal);
       }
 
-      const effectiveMaxKm =
-        maxDistanceKm ?? (customerLat && customerLng && radius > 0 ? radius : null);
-
-      if (effectiveMaxKm != null && customerLat && customerLng) {
-        const withinRadius = results.filter(
-          (p) => p.distance === null || p.distance <= effectiveMaxKm
-        );
-        if (withinRadius.length > 0) {
-          results = withinRadius;
-        } else if (!sittingDiscoveryRelaxed) {
-          results = withinRadius;
+      const platformHomeDiscover = rules.discovery_radius_km_home ?? 10;
+      if (customerLat && customerLng) {
+        if (serviceStyleNormDiscover === 'at_home') {
+          const withinRadius = results.filter((p) => {
+            const row = vendorRadiusLookupDiscover.get(p.vendorId);
+            const vendorCap = vendorHomeServiceRadiusKm(row || {}) ?? platformHomeDiscover;
+            const cap =
+              maxDistanceKm != null && Number.isFinite(maxDistanceKm)
+                ? Math.min(maxDistanceKm, vendorCap)
+                : radius != null && radius > 0
+                  ? Math.min(radius, vendorCap)
+                  : vendorCap;
+            return p.distance === null || p.distance <= cap;
+          });
+          if (withinRadius.length > 0) {
+            results = withinRadius;
+          } else if (!sittingDiscoveryRelaxed) {
+            results = withinRadius;
+          }
+        } else {
+          const effectiveMaxKm =
+            maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
+          if (effectiveMaxKm != null) {
+            const withinRadius = results.filter(
+              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            );
+            if (withinRadius.length > 0) {
+              results = withinRadius;
+            } else if (!sittingDiscoveryRelaxed) {
+              results = withinRadius;
+            }
+          }
         }
         /* Pet sitting: keep full list when radius would hide every sitter (far away or missing vendor geocode). */
       }
@@ -2522,7 +2626,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         total: results.length,
         appliedFilters: {
           minRating: minRatingVal,
-          maxDistance: maxDistanceKm ?? (customerLat && customerLng ? effectiveMaxKm : undefined),
+          /** For at_home, distance uses each vendor's service_radius / service_distance_km with fallback homeDiscoveryFallbackKm. */
+          maxDistance:
+            maxDistanceKm ??
+            (customerLat != null &&
+            customerLng != null &&
+            radius != null &&
+            radius > 0
+              ? radius
+              : undefined),
+          homeDiscoveryFallbackKm:
+            serviceStyleNormDiscover === 'at_home' ? platformHomeDiscover : undefined,
           sortBy,
         },
       });
@@ -5649,6 +5763,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }, 400);
       }
 
+      const serviceStyleNormByStyle = normalizeServiceStyle(serviceStyle) || serviceStyle;
+
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
@@ -5675,12 +5791,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       //get the max results, default radius, radius, max distance, min rating, sort by from the rules
       const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
-      //Use discovery_radius_km_tele for tele services, discovery_radius_km for others
-      const defaultRadius = serviceStyle === 'tele'
-        ? (rules.discovery_radius_km_tele ?? 0)  // 0 = no distance limit for tele
-        : (rules.discovery_radius_km ?? 50);
-
-      const radius = c.req.query('radius') ? parseInt(c.req.query('radius')!, 10) : defaultRadius;
+      const radius = discoveryCustomerRadiusKm({
+        rules,
+        serviceStyleNorm: serviceStyleNormByStyle,
+        radiusFromQuery: c.req.query('radius') || undefined,
+      });
       const maxDistanceKm = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : null;
       const minRatingVal = c.req.query('minRating') ? parseFloat(c.req.query('minRating')!) : null;
       const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance';
@@ -6058,6 +6173,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
+          v.service_radius, v.service_distance_km,
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -6106,6 +6222,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       vendorSql += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}`;
 
       const vendorRows = await query(vendorSql, vendorParams);
+      const vendorRadiusLookupByStyle = new Map<
+        string,
+        { service_radius?: unknown; service_distance_km?: unknown }
+      >();
+      for (const row of vendorRows.rows) {
+        vendorRadiusLookupByStyle.set(row.vendor_id, {
+          service_radius: row.service_radius,
+          service_distance_km: row.service_distance_km,
+        });
+      }
       console.log('providers_______________________________>', acceptableStyles, catTextExact, catTextLike, catUUIDs, vendorRows.rows);
 
 
@@ -6132,15 +6258,43 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         results = results.filter((p) => p.rating >= minRatingVal);
       }
 
-      // ✅ FIX: For tele services, radius = 0 means "no distance limit"
-      // Only apply distance filter if radius > 0 (or maxDistanceKm is explicitly set)
-      const effectiveMaxKm =
-        maxDistanceKm ?? (customerLat && customerLng && radius > 0 ? radius : null);
-
-      if (effectiveMaxKm != null && customerLat && customerLng) {
-        results = results.filter(
-          (p) => p.distance === null || p.distance <= effectiveMaxKm
-        );
+      const platformHomeByStyle = rules.discovery_radius_km_home ?? 10;
+      if (customerLat && customerLng) {
+        if (serviceStyleNormByStyle === 'at_home') {
+          const sittingRelaxedByStyle = Boolean(
+            catTextExact.some((c) =>
+              ['sitting', 'pet_sitter', 'sitter', 'sitter_solo'].includes(c)
+            ) ||
+              (Boolean(roleId) &&
+                ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
+                  String(roleId).toLowerCase().replace(/-/g, '_')
+                ))
+          );
+          const withinRadius = results.filter((p) => {
+            const row = vendorRadiusLookupByStyle.get(p.vendorId);
+            const vendorCap = vendorHomeServiceRadiusKm(row || {}) ?? platformHomeByStyle;
+            const cap =
+              maxDistanceKm != null && Number.isFinite(maxDistanceKm)
+                ? Math.min(maxDistanceKm, vendorCap)
+                : radius != null && radius > 0
+                  ? Math.min(radius, vendorCap)
+                  : vendorCap;
+            return p.distance === null || p.distance <= cap;
+          });
+          if (withinRadius.length > 0) {
+            results = withinRadius;
+          } else if (!sittingRelaxedByStyle) {
+            results = withinRadius;
+          }
+        } else {
+          const effectiveMaxKm =
+            maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
+          if (effectiveMaxKm != null) {
+            results = results.filter(
+              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            );
+          }
+        }
       }
 
       // ────────────────────────────────────────────────────────
@@ -6182,7 +6336,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         total: results.length,
         appliedFilters: {
           minRating: minRatingVal,
-          maxDistance: maxDistanceKm ?? (customerLat && customerLng ? effectiveMaxKm : undefined),
+          maxDistance:
+            maxDistanceKm ??
+            (customerLat != null &&
+            customerLng != null &&
+            radius != null &&
+            radius > 0
+              ? radius
+              : undefined),
+          homeDiscoveryFallbackKm:
+            serviceStyleNormByStyle === 'at_home' ? platformHomeByStyle : undefined,
           sortBy,
         },
       });

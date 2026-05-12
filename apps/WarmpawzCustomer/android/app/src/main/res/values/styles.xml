@@ -9,12 +9,12 @@
     <!--
       Razorpay CheckoutActivity (com.razorpay.CheckoutActivity): native WebView toolbar, not RN safe area.
 
-      Goal: with `theme.hide_topbar=true` (passed from JS via applyWarmpawzCustomerToRazorpayOptions),
-      Razorpay's WebView starts directly below the status bar with a WHITE background. We therefore make
-      the system status bar WHITE with DARK icons (windowLightStatusBar=true) so it blends cleanly into
-      the WebView. If a future Razorpay SDK ignores `hide_topbar` and re-renders the orange merchant
-      toolbar, this still keeps the system status bar visually distinct from the toolbar (no longer one
-      tall orange band) and the WebView back button stays inside an easy tap zone below the status bar.
+      Goal: keep the system status bar WHITE with DARK icons so the orange Razorpay merchant
+      toolbar (back button + "Warmpawz") starts cleanly BELOW the status bar — matching the
+      reference design (Razorpay Trusted Business / BHIVE layout). Razorpay's CheckoutActivity
+      will runtime-override the status bar color from `theme.color`; the lifecycle callback
+      `RazorpayCheckoutWindowInsetsCallback` in MainApplication.kt re-applies these values after
+      Razorpay's onCreate so we win the last write.
 
       windowLayoutInDisplayCutoutMode=never: keeps the window out of the notch region so the WebView
       content lays out below status icons on notched phones (pairs with non-translucent status bar).

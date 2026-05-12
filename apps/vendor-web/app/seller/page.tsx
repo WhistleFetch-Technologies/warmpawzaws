@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   SellerHubSidebar,
@@ -10,11 +10,23 @@ import {
 } from '@/components/vendor/seller/SellerHub';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { SellerSettingsHandle } from '@/components/vendor/seller/SellerSettings';
 import type { InventoryManagementHandle } from '@/components/vendor/seller/InventoryManagement';
+import { VendorNotificationModal } from '@/components/vendor/modals/VendorNotificationModal';
+import { VendorSupportDashboard } from '@/components/vendor/VendorSupportDashboard';
+import { vendorNotificationUnreadCount } from '@/components/vendor/dashboard/helpers';
 import { apiClient } from '@/lib/api-client';
 import { isSellerStrict } from '@/components/vendor/landingPage/constants/helpers';
 import { Bell, HelpCircle, RefreshCcw } from 'lucide-react';
+
+const NOTIFICATION_POLL_MS = 60_000;
 
 export default function SellerPage() {
   const router = useRouter();
@@ -22,9 +34,28 @@ export default function SellerPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SellerHubTab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [notifications] = useState(0);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const settingsRef = useRef<SellerSettingsHandle | null>(null);
   const inventoryRef = useRef<InventoryManagementHandle | null>(null);
+
+  const vendorId = vendorData?.id || vendorData?.vendorId || '';
+
+  const refreshNotificationUnreadCount = useCallback(async () => {
+    if (!vendorId) {
+      setNotificationUnreadCount(0);
+      return;
+    }
+    try {
+      const res = await apiClient
+        .get(`/vendor/notifications/${vendorId}?limit=10`)
+        .catch(() => ({ success: false }));
+      setNotificationUnreadCount(vendorNotificationUnreadCount(res));
+    } catch {
+      setNotificationUnreadCount(0);
+    }
+  }, [vendorId]);
 
   useEffect(() => {
     loadVendorData();
@@ -37,13 +68,31 @@ export default function SellerPage() {
     }
   }, [loading, vendorData, router]);
 
+  useEffect(() => {
+    if (!vendorId) {
+      setNotificationUnreadCount(0);
+      return;
+    }
+    void refreshNotificationUnreadCount();
+    const intervalId = window.setInterval(() => void refreshNotificationUnreadCount(), NOTIFICATION_POLL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [vendorId, refreshNotificationUnreadCount]);
+
   const loadVendorData = async () => {
     try {
+      const persistVendorId = (v: Record<string, unknown> | null | undefined) => {
+        const id = v && (v.id ?? v.vendorId);
+        if (id != null && String(id).trim() !== '') {
+          localStorage.setItem('vendorId', String(id).trim());
+        }
+      };
+
       // Get vendor data from localStorage (set during login)
       const stored = localStorage.getItem('vendorData');
       if (stored) {
         const parsed = JSON.parse(stored);
         setVendorData(parsed);
+        persistVendorId(parsed);
         setLoading(false);
         return;
       }
@@ -55,6 +104,7 @@ export default function SellerPage() {
         if (data?.vendor) {
           setVendorData(data.vendor);
           localStorage.setItem('vendorData', JSON.stringify(data.vendor));
+          persistVendorId(data.vendor);
         }
       }
     } catch (error) {
@@ -111,9 +161,12 @@ export default function SellerPage() {
         type="button"
         className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
         aria-label="Notifications"
+        title="Notifications"
+        disabled={!vendorId}
+        onClick={() => vendorId && setNotificationModalOpen(true)}
       >
         <Bell className="h-5 w-5 text-slate-600" />
-        {notifications > 0 && (
+        {notificationUnreadCount > 0 && (
           <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
         )}
       </button>,
@@ -121,13 +174,16 @@ export default function SellerPage() {
         key="help"
         type="button"
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-gray-100"
-        aria-label="Help"
+        aria-label="Help and support"
+        title="Help and support"
+        disabled={!vendorId}
+        onClick={() => vendorId && setHelpOpen(true)}
       >
         <HelpCircle className="h-5 w-5 text-slate-600" />
       </button>
     );
     return actions;
-  }, [activeTab, notifications]);
+  }, [activeTab, notificationUnreadCount, vendorId]);
 
   if (loading) {
     return (
@@ -201,6 +257,30 @@ export default function SellerPage() {
           </div>
         </main>
       </div>
+
+      {vendorId ? (
+        <>
+          <VendorNotificationModal
+            vendorId={vendorId}
+            open={notificationModalOpen}
+            onClose={() => setNotificationModalOpen(false)}
+            onNotificationsRead={() => void refreshNotificationUnreadCount()}
+          />
+          <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+            <DialogContent className="flex max-h-[min(90dvh,calc(100dvh-2rem))] w-[min(56rem,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+              <DialogHeader className="shrink-0 border-b border-gray-100 px-6 py-4 text-left">
+                <DialogTitle>Help & support</DialogTitle>
+                <DialogDescription>
+                  View support tickets or create a new request for the Warmpawz team.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 sm:px-6">
+                <VendorSupportDashboard vendorId={vendorId} />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
     </div>
   );
 }
