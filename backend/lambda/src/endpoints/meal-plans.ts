@@ -45,6 +45,11 @@ import {
 } from '../utils/meal-subscription-schedule-utils';
 import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import {
+  assertMealOrderHasPidgeForPickup,
+  dispatchMealLogistics,
+  isMealDispatchStrict,
+} from '../utils/meal-dispatch';
 
 async function mealOrdersTableColumns(): Promise<Set<string>> {
   try {
@@ -1335,6 +1340,29 @@ export function registerMealPlanEndpoints(app: Hono) {
       if (status === 'cancelled') {
         updateData.cancelled_at = new Date().toISOString();
         updateData.cancellation_reason = notes;
+      }
+
+      if (status === 'preparing' && isMealDispatchStrict()) {
+        const dispatchResult = await dispatchMealLogistics(orderId);
+        if (!dispatchResult.ok) {
+          return c.json(
+            {
+              success: false,
+              error:
+                dispatchResult.error ||
+                'Could not schedule delivery partner. Fix the issue, then try Start preparing again.',
+              dispatch: dispatchResult,
+            },
+            422
+          );
+        }
+      }
+
+      if (status === 'ready_for_pickup' && isMealDispatchStrict()) {
+        const pidgeCheck = await assertMealOrderHasPidgeForPickup(orderId);
+        if (!pidgeCheck.ok) {
+          return c.json({ success: false, error: pidgeCheck.error }, 422);
+        }
       }
 
       await update('meal_orders', { id: orderId }, updateData);

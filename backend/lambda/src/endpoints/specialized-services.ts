@@ -36,7 +36,11 @@ import {
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
 import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
-import { dispatchMealLogistics } from '../utils/meal-dispatch';
+import {
+  assertMealOrderHasPidgeForPickup,
+  dispatchMealLogistics,
+  isMealDispatchStrict,
+} from '../utils/meal-dispatch';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import {
   mealProductParsedToDietaryJson,
@@ -3176,7 +3180,33 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       } else if (status === 'cancelled') {
         updatePayload.cancelled_at = new Date().toISOString();
       }
-      
+
+      // Pidge must succeed before we persist `preparing` (default): avoids vendor/customer seeing
+      // "preparing" + manual logistics buttons when no rider was ever booked.
+      let dispatchStrictResult: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
+      if (actualStatus === 'preparing' && isMealDispatchStrict()) {
+        dispatchStrictResult = await dispatchMealLogistics(orderId);
+        if (!dispatchStrictResult.ok) {
+          return c.json(
+            {
+              success: false,
+              error:
+                dispatchStrictResult.error ||
+                'Could not schedule delivery partner. Fix the issue, then try Start preparing again.',
+              dispatch: dispatchStrictResult,
+            },
+            422
+          );
+        }
+      }
+
+      if (actualStatus === 'ready_for_pickup' && isMealDispatchStrict()) {
+        const pidgeCheck = await assertMealOrderHasPidgeForPickup(orderId);
+        if (!pidgeCheck.ok) {
+          return c.json({ success: false, error: pidgeCheck.error }, 422);
+        }
+      }
+
       // Update using the order's actual vendor_id
       // Use raw query to handle potential missing columns gracefully
       try {
@@ -3202,12 +3232,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
       }
 
-      // Schedule a Pidge rider as soon as the vendor starts preparing so the rider arrives by the
-      // time the meal is ready. Java delivery-service is the canonical Pidge writer (single source
-      // of truth) — Lambda only POSTs the snapshot. Failures are non-fatal: the existing
-      // "Notify Logistics" / "Dispatched" buttons remain a manual fallback.
-      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
-      if (actualStatus === 'preparing') {
+      // When not strict (MEAL_DISPATCH_REQUIRED=false), keep best-effort dispatch after DB update for local dev.
+      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null =
+        dispatchStrictResult;
+      if (actualStatus === 'preparing' && !isMealDispatchStrict()) {
         dispatch = await dispatchMealLogistics(orderId).catch((e) => {
           console.warn('[meal-order-status] dispatchMealLogistics threw:', e);
           return { ok: false, error: String(e) } as Awaited<

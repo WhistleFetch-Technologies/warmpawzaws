@@ -352,15 +352,25 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
       }
       
-      await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, { status });
-      
+      const res = (await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, {
+        status,
+      })) as { dispatch?: { ok?: boolean; idempotent?: boolean } };
+
       // ✅ BUSINESS LOGIC: Track vendor acceptance locally
       if (status === 'accepted') {
         toast.success('Order accepted successfully!');
       } else if (status === 'preparing') {
         // When vendor starts preparing, they've implicitly accepted
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
-        toast.success('Order status updated');
+        if (res?.dispatch?.ok) {
+          toast.success(
+            res.dispatch.idempotent
+              ? 'Preparing — delivery partner already scheduled'
+              : 'Preparing started — delivery partner scheduled'
+          );
+        } else {
+          toast.success('Order status updated');
+        }
       } else {
         toast.success('Order status updated');
       }
