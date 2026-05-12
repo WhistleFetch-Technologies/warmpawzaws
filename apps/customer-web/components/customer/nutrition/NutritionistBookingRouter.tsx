@@ -4,6 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
@@ -13,7 +17,7 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
-import { defaultServiceTypeOptions, MEAL_PLANS_COMING_SOON } from './constants';
+import { defaultServiceTypeOptions } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 
@@ -151,16 +155,8 @@ export function NutritionistBookingRouter({
   };
 
   // Use actual vendor services or fallback to defaults (only when API hasn't loaded yet)
-  const serviceOptions = (vendorServices.length > 0
-    ? mapVendorServices()
-    : defaultServiceTypeOptions
-  ).filter(
-    (s) =>
-      !(
-        MEAL_PLANS_COMING_SOON &&
-        (s as { id?: string; name?: string }).id === 'meal_plans'
-      )
-  );
+  const serviceOptions =
+    vendorServices.length > 0 ? mapVendorServices() : defaultServiceTypeOptions;
 
   const generateDates = () => {
     const dates = [];
@@ -298,7 +294,7 @@ export function NutritionistBookingRouter({
   const loadCustomerData = async () => {
     try {
       // Load pets from API
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -310,7 +306,7 @@ export function NutritionistBookingRouter({
 
       // Load customer addresses from API
       try {
-        const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+        const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
         if (addressResponse.addresses && addressResponse.addresses.length > 0) {
           setAddresses(addressResponse.addresses);
         }
@@ -338,7 +334,7 @@ export function NutritionistBookingRouter({
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -360,7 +356,7 @@ export function NutritionistBookingRouter({
   // Refresh addresses after adding new one
   const refreshAddresses = async () => {
     try {
-      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       if (addressResponse.addresses && addressResponse.addresses.length > 0) {
         setAddresses(addressResponse.addresses);
         // Auto-select newly added address
@@ -1312,7 +1308,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     setLoading(true);
     try {
       // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData)) {
         existingPets = getPetsData;
@@ -1604,7 +1600,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     setLoading(true);
     try {
       // Get existing addresses
-      const getAddressData = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const getAddressData = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       let existingAddresses = [];
       if (Array.isArray(getAddressData)) {
         existingAddresses = getAddressData;

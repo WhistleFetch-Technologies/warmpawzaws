@@ -242,6 +242,14 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     ...(e164 && email ? { method: 'upi' as const } : {}),
     theme: {
       color: '#FF8C42',
+      // The orange "W Warmpawz" merchant toolbar that Razorpay renders above
+      // its Standard Checkout sheet stacks under the device status bar on
+      // phones and makes the header look unnecessarily tall. checkout.js
+      // honors `hide_topbar` (web-only) and starts the sheet directly with
+      // Price Summary / payment options — matching the cleaner BHIVE / "trusted
+      // business" look. Native (react-native-razorpay) handles the equivalent
+      // via WindowInsets in MainApplication.kt and ignores this flag.
+      hide_topbar: true,
     },
     modal: {
       ondismiss: options.onDismiss || (() => { }),

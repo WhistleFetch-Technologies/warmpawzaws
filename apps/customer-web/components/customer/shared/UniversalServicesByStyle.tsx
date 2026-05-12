@@ -1647,8 +1647,8 @@ export function UniversalServicesByStyle({
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    );})}
+                      );
+                    })}
                   </div>
                 )}
 

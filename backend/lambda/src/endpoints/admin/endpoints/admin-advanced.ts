@@ -32,6 +32,7 @@ import {
   upsertFeeSetting,
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
+import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
@@ -5018,6 +5019,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle') || 'all';
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
+      const distanceKm = parseFloat(c.req.query('distanceKm') || c.req.query('distance') || '0');
+      const weekend = c.req.query('weekend') === 'true';
+      const festival = c.req.query('festival') === 'true';
+      const rain = c.req.query('rain') === 'true';
 
       const settingsMap = await getFeeGlobalsMap();
 
@@ -5046,10 +5051,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Delivery fee (only for home services and orders)
       let deliveryFee = 0;
       if (serviceStyle === 'at_home' || type === 'order') {
-        const freeDeliveryThreshold = parseFloat(settingsMap['free_delivery_threshold'] || '500');
-        if (amount < freeDeliveryThreshold || freeDeliveryThreshold === 0) {
-          deliveryFee = parseFloat(settingsMap['delivery_fee_base'] || '30');
-        }
+        const quote = await computePolicyDeliveryFeeForOrder({
+          orderSubtotalInr: amount,
+          distanceKm: Number.isFinite(distanceKm) ? distanceKm : 0,
+          logisticsType: 'warmpawz',
+          weekend,
+          festival,
+          rain,
+        });
+        deliveryFee = quote.deliveryFeeInr;
       }
 
       // Packaging fee (only for orders)
@@ -8858,6 +8868,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const partners = (partnersResult.rows || []).map((p: any) => {
         const config = p.config || {};
+        const hasSecret =
+          !!p.apiKey &&
+          String(p.apiKey).trim() !== '' &&
+          String(p.apiKey).trim() !== '••••••••';
         return {
           id: p.id,
           name: p.name,
@@ -8865,7 +8879,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           enabled: p.enabled !== false,
           baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
           apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
-          apiKey: p.apiKey ? '••••••••' : null,
+          apiKey: '',
+          apiKeySet: hasSecret,
           categories: config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []),
           pricing: config.pricing || (typeof p.pricing === 'string' ? JSON.parse(p.pricing) : {}),
           regions: config.regions || (typeof p.regions === 'string' ? JSON.parse(p.regions) : []),
@@ -8929,16 +8944,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         partnerRecord.base_url =
           baseUrl != null && String(baseUrl).trim() ? String(baseUrl).trim() : null;
       }
-      if (apiKey && String(apiKey) !== '••••••••') {
-        partnerRecord.api_key = String(apiKey);
+      const apiKeyStr = apiKey != null ? String(apiKey).trim() : '';
+      const isMaskedPlaceholder =
+        apiKeyStr === '' ||
+        apiKeyStr === '••••••••' ||
+        /^[•\u2022*]{4,}$/.test(apiKeyStr);
+      if (apiKeyStr && !isMaskedPlaceholder) {
+        partnerRecord.api_key = apiKeyStr;
       }
 
       await upsert('logistics_partners', partnerRecord, 'partner_id');
 
+      if (String(partner_type) === 'pidge') {
+        try {
+          const { clearPidgeTokenCache } = await import('../../../lib/services/pidge-logistics');
+          clearPidgeTokenCache();
+        } catch {
+          // non-fatal
+        }
+      }
+
+      const partnerResponse = { ...partnerRecord };
+      delete partnerResponse.api_key;
+
       return c.json({
         success: true,
         message: 'Logistics partner saved',
-        partner: partnerRecord,
+        partner: partnerResponse,
+        apiKeyUpdated: Boolean(partnerRecord.api_key),
       });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);

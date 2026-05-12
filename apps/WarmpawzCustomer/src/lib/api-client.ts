@@ -19,6 +19,11 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  CUSTOMER_SERVICE_LIST_MAX_PAGE_SIZE,
+  withCustomerServiceListPagination,
+  type CustomerServiceListPaginationParams,
+} from '@warmpawz/shared-types';
+import {
   resilientFetch,
   networkMonitor,
   offlineQueue,
@@ -358,8 +363,19 @@ class ApiClient {
   // PET METHODS
   // ============================================================================
 
-  async getPets(customerId: string): Promise<{ pets: Pet[] }> {
-    return this.get(`/pets/customer/${customerId}`);
+  async getPets(
+    customerId: string,
+    pagination?: CustomerServiceListPaginationParams
+  ): Promise<{ pets: Pet[] }> {
+    const opts = pagination ?? {
+      page: 0,
+      size: CUSTOMER_SERVICE_LIST_MAX_PAGE_SIZE,
+    };
+    const path = withCustomerServiceListPagination(
+      `/pets/customer/${customerId}`,
+      opts
+    );
+    return this.get(path);
   }
 
   async addPet(customerId: string, pet: Omit<Pet, 'id'>): Promise<Pet> {

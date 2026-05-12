@@ -140,6 +140,8 @@ import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } f
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
+import { registerMealCanonicalSubscriptionEndpoints } from '../endpoints/meal-canonical-subscriptions';
+import { registerMealSubscriptionVendorOperationalEndpoints } from '../endpoints/meal-subscription-vendor-endpoints';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
@@ -175,6 +177,7 @@ import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor/endpoints
 import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/customerEndpoint/customer-enhanced';
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
+import { registerCustomerDeliveryFeePolicyEndpoints } from '../endpoints/customer-delivery-fee-policy-endpoints';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
@@ -599,6 +602,7 @@ registerNotificationEndpoints(app); // /customer/notifications - before /custome
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
+registerCustomerDeliveryFeePolicyEndpoints(app); // /customer/delivery-fee-policy, /customer/delivery-fee/calculate, /admin/delivery-fee-policy
 // ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
@@ -642,6 +646,8 @@ registerPharmacyOrderEndpoints(app);
 registerAdditionalPharmacyEndpoints(app); // ✅ FIX: Register additional pharmacy endpoints (invoice, logistics, tracking)
 registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
+registerMealCanonicalSubscriptionEndpoints(app);
+registerMealSubscriptionVendorOperationalEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
 registerVendorBankAccountEndpoints(app);
@@ -685,7 +691,7 @@ registerAdminVendorDailyAccrualEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
-registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo (Pidge → Java delivery-service /webhooks/pidge), /logistics/auto-create-shipment, …
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);

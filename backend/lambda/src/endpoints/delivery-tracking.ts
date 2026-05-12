@@ -16,6 +16,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
 
 export function registerDeliveryTrackingEndpoints(app: Hono) {
 
@@ -143,8 +145,18 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
         // Update order status
         if (tracking.pharmacy_order_id) {
           await update('pharmacy_orders', { id: tracking.pharmacy_order_id }, { status: normalizedStatus });
-        } else if (tracking.meal_order_id) {
-          await update('meal_orders', { id: tracking.meal_order_id }, { status: normalizedStatus });
+        } else {
+          let mealId = tracking.meal_order_id;
+          if (!mealId && tracking.subscription_delivery_id) {
+            mealId =
+              (await resolveMealOrderIdForSubscriptionDelivery(String(tracking.subscription_delivery_id))) || null;
+          }
+          if (mealId) {
+            await update('meal_orders', { id: mealId }, { status: normalizedStatus });
+            if (normalizedStatus === 'delivered') {
+              await ensureMealOrderSettlementOnDelivered(String(mealId));
+            }
+          }
         }
       }
 
@@ -236,11 +248,19 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
           delivered_at: new Date().toISOString(),
         });
         // Settlement will be triggered by order completion
-      } else if (tracking.meal_order_id) {
-        await update('meal_orders', { id: tracking.meal_order_id }, {
-          status: 'delivered',
-          delivered_at: new Date().toISOString(),
-        });
+      } else {
+        let mealId = tracking.meal_order_id;
+        if (!mealId && tracking.subscription_delivery_id) {
+          mealId =
+            (await resolveMealOrderIdForSubscriptionDelivery(String(tracking.subscription_delivery_id))) || null;
+        }
+        if (mealId) {
+          await update('meal_orders', { id: mealId }, {
+            status: 'delivered',
+            delivered_at: new Date().toISOString(),
+          });
+          await ensureMealOrderSettlementOnDelivered(String(mealId));
+        }
       }
 
       return c.json({

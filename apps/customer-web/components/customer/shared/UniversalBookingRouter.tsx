@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
@@ -520,7 +521,7 @@ export function UniversalBookingRouter({
       // PERFORMANCE: Load pets and profile in parallel instead of sequentially
       // This saves ~200-500ms on initial load
       const [petsResult, profileResult] = await Promise.allSettled([
-        apiClient.get(`/customer/pets/${phone}`),
+        apiClient.get(urlCustomerPetsByPhonePath(phone)),
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
       ]);
       
@@ -570,7 +571,7 @@ export function UniversalBookingRouter({
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -1788,7 +1789,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     setLoading(true);
     try {
       // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData)) {
         existingPets = getPetsData;

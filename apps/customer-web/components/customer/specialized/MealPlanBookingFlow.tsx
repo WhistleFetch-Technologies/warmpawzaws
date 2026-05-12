@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { urlPetsCustomerByCustomerId } from '@/lib/customer-service-list-urls';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -9,9 +10,6 @@ import {
 import { Utensils, Calendar, MapPin, Package, ArrowLeft, Key, Eye, EyeOff, Copy, Check, Phone, User, Truck, AlertCircle, CheckCircle } from 'lucide-react';
 import { PolicyDisplay } from '../shared/PolicyDisplay';
 import { toast } from 'sonner';
-import { MEAL_PLANS_COMING_SOON } from '../nutrition/constants';
-import { MealPlansComingSoon } from '../nutrition/MealPlansComingSoon';
-
 interface MealPlanBookingFlowProps {
   vendorId: string;
   customerPhone: string;
@@ -71,10 +69,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   const [deliveryPartner, setDeliveryPartner] = useState<{ name?: string; phone?: string } | null>(null);
 
   useEffect(() => {
-    if (MEAL_PLANS_COMING_SOON) {
-      setLoading(false);
-      return;
-    }
     loadData();
   }, [vendorId, customerPhone]);
 
@@ -83,7 +77,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]); // ✅ FIX GAP-9.2: Meal plan filters
 
   useEffect(() => {
-    if (MEAL_PLANS_COMING_SOON) return;
     // Get customer location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -101,10 +94,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   }, []);
 
   const loadData = async () => {
-    if (MEAL_PLANS_COMING_SOON) {
-      setLoading(false);
-      return;
-    }
     try {
       setLoading(true);
       
@@ -134,7 +123,7 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
       if (customerRes.customer) {
         const customerId = customerRes.customer.id;
         const [petsRes, addressesRes] = await Promise.all([
-          apiClient.get<any>(`/pets/customer/${customerId}`),
+          apiClient.get<any>(urlPetsCustomerByCustomerId(customerId)),
           apiClient.get<any>(`/addresses/customer/${customerId}`),
         ]);
 
@@ -190,7 +179,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
 
   // Poll for order status updates when tracking is shown
   useEffect(() => {
-    if (MEAL_PLANS_COMING_SOON) return;
     if (showTracking && orderId) {
       loadOrderTracking(orderId);
       const interval = setInterval(() => loadOrderTracking(orderId), 15000); // Poll every 15 seconds
@@ -356,14 +344,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
       setProcessing(false);
     }
   };
-
-  if (MEAL_PLANS_COMING_SOON) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-6">
-        <MealPlansComingSoon onDismiss={onCancel} />
-      </div>
-    );
-  }
 
   if (loading) {
     return (

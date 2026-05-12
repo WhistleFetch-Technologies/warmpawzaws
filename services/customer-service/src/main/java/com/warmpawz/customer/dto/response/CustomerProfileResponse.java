@@ -14,6 +14,14 @@ public class CustomerProfileResponse {
     private String email;
 
     private String address;
+    private String addressLine1;
+    private String addressLine2;
+    private String houseNo;
+    private String flatNo;
+    private String floor;
+    private String streetName;
+    private String apartmentName;
+    private String landmark;
     private String city;
     private String state;
     private String pincode;

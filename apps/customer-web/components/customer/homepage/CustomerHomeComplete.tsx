@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { fetchCustomerMessageUnreadBreakdown } from '@/lib/customer-message-unread';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
@@ -662,7 +666,7 @@ export function CustomerHomeComplete({
     let state = '';
     try {
       const addressesResponse = (await apiClient
-        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+        .get(urlCustomerAddressesByPhone(phone))
         .catch(() => null)) as any;
       const addresses = addressesResponse?.addresses || [];
       const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
@@ -971,7 +975,7 @@ export function CustomerHomeComplete({
         // Default address is the most reliable source for customer's current location
         try {
           const addressesResponse = (await apiClient
-            .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
+            .get(urlCustomerAddressesByPhone(phone))
             .catch(() => null)) as any;
           
           const addresses = addressesResponse?.addresses || [];
@@ -1633,7 +1637,7 @@ export function CustomerHomeComplete({
       // Load profile and pets in parallel using phone-based endpoints with better error handling
       const [profileResult, petsResult] = await Promise.allSettled([
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
-        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`)
+        apiClient.get(urlCustomerPetsByPhonePath(phone))
       ]);
 
       // Handle profile response
@@ -1824,11 +1828,11 @@ export function CustomerHomeComplete({
       {!hideHeaderFooter && (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
           {/* Top Row - User Info & Actions */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 onClick={() => onProfileClick && onProfileClick()}
-                className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
+                className="w-11 h-11 shrink-0 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
               >
                 {userProfilePhoto ? (
                   <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
@@ -1838,15 +1842,19 @@ export function CustomerHomeComplete({
                   </div>
                 )}
               </button>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1">
-                  <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
-                  <span className="text-base" role="img" aria-label="wave">👋</span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-center gap-1">
+                  <h1 className="min-w-0 truncate text-white text-lg font-bold tracking-tight">
+                    Hi, {userData.name}!
+                  </h1>
+                  <span className="shrink-0 text-base" role="img" aria-label="wave">👋</span>
                 </div>
-                <p className="text-white/65 text-xs font-normal tracking-wide">Explore Warmpawz Services</p>
+                <p className="truncate text-white/65 text-xs font-normal tracking-wide">
+                  Explore Warmpawz Services
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 items-center gap-1.5">
               {/* Wallet Icon - Gold coin style with balance */}
               <WalletIcon
                 customerPhone={phone}

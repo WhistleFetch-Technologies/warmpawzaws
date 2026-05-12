@@ -27,6 +27,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
 import { regeneratePresignedUrl } from '../../constants/helper';
+import { getCustomerByPhoneFromMicroservice } from '../../../lib/services/customer-microservice-client';
 /**
  * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
  * presignS3GetUrlIfApplicable returns any string that already contains X-Amz-* unchanged,
@@ -407,6 +408,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         // Continue with empty addresses
       }
 
+      // Fetch Pets with better error handling
+      let pets: any = { rows: [] };
+      try {
+        pets = await query(
+          'SELECT id, name, species, breed, age_years, age_months, gender, weight_kg, profile_photo_url, medical_history, created_at FROM pets WHERE customer_id = $1 ORDER BY created_at ASC',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching pets (using empty):', error.message);
+      }
+
       // Fetch Bookings with better error handling
       let bookings: any = { rows: [] };
       try {
@@ -466,11 +478,28 @@ export function registerCustomerProfileEndpoints(app: Hono) {
 
       console.log('[profile/unified] Successfully fetched profile for customer:', customerId);
       const hasPassword = hasMeaningfulStoredPassword(customer.password_hash);
+      const petsRows = (pets.rows || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        type: p.species,
+        species: p.species,
+        breed: p.breed || '',
+        age: p.age_years != null ? String(p.age_years) : (p.age_months != null ? String(p.age_months) : ''),
+        ageUnit: p.age_years != null ? 'years' : 'months',
+        gender: p.gender || '',
+        weight: p.weight_kg != null ? String(p.weight_kg) : '',
+        photo: p.profile_photo_url || '',
+        profile_photo_url: p.profile_photo_url || '',
+        medicalHistory: p.medical_history || '',
+      }));
       return c.json({
         success: true,
         profile: {
           id: customer.id,
           name: customer.full_name,
+          full_name: customer.full_name,
+          firstName: (customer.full_name || '').split(' ')[0] || '',
+          lastName: (customer.full_name || '').split(' ').slice(1).join(' ') || '',
           email: customer.email,
           phone: customer.phone,
           username: customer.username || null,
@@ -480,6 +509,15 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           onboarding_status: onboardingStatus,
           profile_completed: profileCompleted,
           onboardingComplete: onboardingStatus === 'COMPLETED',
+          profile_photo_url: customer.profile_photo_url || null,
+          photo: customer.profile_photo_url || null,
+          address: customer.address || null,
+          city: customer.city || null,
+          state: customer.state || null,
+          pincode: customer.pincode || null,
+          house_no: customer.house_no || null,
+          houseNo: customer.house_no || null,
+          floor: customer.floor || null,
           wallet: {
             balance: parseFloat(wallet.balance || '0'),
             currency: wallet.currency || 'INR',
@@ -498,6 +536,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             landmark: addr.landmark,
             isDefault: addr.is_default,
           })),
+          pets: petsRows,
           orders: {
             all: ordersRows,
             total: ordersRows.length,
@@ -1295,6 +1334,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const phone = c.req.query('phone');
       if (!phone) {
         return c.json({ error: 'Phone number is required' }, 400);
+      }
+
+      const ms = await getCustomerByPhoneFromMicroservice(phone);
+      if (ms.kind === 'hit') {
+        return c.json(ms.body);
       }
 
       const customerId = await resolveCustomerId(phone);

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
@@ -118,7 +119,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const loadPets = async () => {
     try {
-      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       const petsList = petsData?.pets || [];
       setPets(petsList);
       setHasPets(petsList.length > 0);

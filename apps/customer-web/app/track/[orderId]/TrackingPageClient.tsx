@@ -1,20 +1,27 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
-  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw
+  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle
 } from 'lucide-react';
+import {
+  MealPlanOrderTrackingUI,
+  formatMealOrderDisplayId,
+} from '@/components/customer/tracking/MealPlanOrderTrackingUI';
 
 interface TrackingData {
   success: boolean;
   orderType: 'ecommerce' | 'pharmacy' | 'meal';
   order: {
-    id: string;
+    id?: string;
+    order_number?: string;
     orderNumber: string;
     status: string;
     total: number;
+    total_amount?: number;
     createdAt: string;
   };
   tracking: {
@@ -40,6 +47,7 @@ interface TrackingData {
       photo?: string;
       vehicleNumber?: string;
     };
+    deliveryOtp?: string | null;
     eta?: number;
     distanceRemaining?: number;
     locationHistory?: Array<{ lat: number; lng: number; time: string }>;
@@ -65,6 +73,32 @@ const deliveryStatusSteps = [
 ];
 
 export function TrackingPageClient({ orderId }: { orderId: string }) {
+  const searchParams = useSearchParams();
+  const routeParams = useParams();
+  const pathname = usePathname();
+  const phone = searchParams.get('phone')?.trim() || undefined;
+  const from = searchParams.get('from')?.trim() || undefined;
+
+  /** Static export only pre-renders `/track/placeholder`; real id must come from the client route or URL. */
+  const resolvedOrderId = useMemo(() => {
+    const fromDynamicSegment =
+      typeof routeParams?.orderId === 'string'
+        ? routeParams.orderId
+        : Array.isArray(routeParams?.orderId)
+          ? routeParams.orderId[0] ?? ''
+          : '';
+    const pathSeg =
+      typeof pathname === 'string' ? pathname.match(/^\/track\/([^/?#]+)/)?.[1] : undefined;
+    const decodedPath = pathSeg ? decodeURIComponent(pathSeg) : '';
+
+    const candidates = [fromDynamicSegment, decodedPath, orderId];
+    for (const c of candidates) {
+      const s = String(c || '').trim();
+      if (s && s !== 'placeholder') return s;
+    }
+    return String(orderId || '').trim();
+  }, [orderId, routeParams, pathname]);
+
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,14 +115,18 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [orderId]);
+  }, [resolvedOrderId, phone]);
 
   const loadTracking = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
       
-      const result = await apiClient.get<TrackingData>(`/customer/tracking/${orderId}`);
+      const qs =
+        phone && phone.trim()
+          ? `?phone=${encodeURIComponent(phone.trim())}`
+          : '';
+      const result = await apiClient.get<TrackingData>(`/customer/tracking/${resolvedOrderId}${qs}`);
       setTracking(result);
       setError(null);
     } catch (err: any) {
@@ -162,18 +200,162 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
 
   const isHyperlocal = tracking.orderType === 'pharmacy' || tracking.orderType === 'meal';
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
-  // ✅ FIX: Use tracking status if available, otherwise fallback to order status
-  // If no delivery_tracking exists yet, show "Finding Rider" (pending_assignment)
   const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
   const currentStepIndex = getStatusIndex(trackingStatus, steps);
   const isDelivered = tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
+
+  const mealBackHref =
+    from === 'meal-plans'
+      ? phone
+        ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+        : '/orders/meal-plans'
+      : '/';
+
+  const orderTotal = tracking.order.total ?? tracking.order.total_amount;
+
+  if (tracking.orderType === 'meal') {
+    const logisticsStatus = tracking.tracking?.status ?? null;
+    const otp = tracking.tracking?.deliveryOtp;
+    const riderActive =
+      logisticsStatus &&
+      logisticsStatus !== 'pending_assignment' &&
+      ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'on_the_way', 'nearby'].includes(
+        logisticsStatus
+      );
+
+    return (
+      <MealPlanOrderTrackingUI
+        orderDisplayId={formatMealOrderDisplayId(tracking.order)}
+        orderStatus={tracking.order.status}
+        logisticsStatus={logisticsStatus}
+        totalAmount={orderTotal}
+        backSlot={
+          <a
+            href={mealBackHref}
+            className="p-2 rounded-full hover:bg-white/15 transition text-white"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </a>
+        }
+        headerActions={
+          <button
+            type="button"
+            onClick={() => loadTracking(true)}
+            disabled={refreshing}
+            className="p-2 rounded-full hover:bg-white/15 text-white transition disabled:opacity-50"
+            aria-label="Refresh"
+          >
+            <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+        }
+        deliveryOtpBanner={
+          otp &&
+          riderActive &&
+          !isDelivered ? (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 -mt-2 shadow-sm">
+              <p className="text-sm font-medium text-amber-800 mb-2">
+                Handover OTP — share with delivery partner
+              </p>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">{otp}</span>
+                <button
+                  type="button"
+                  onClick={() => otp && navigator.clipboard?.writeText(String(otp))}
+                  className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          ) : undefined
+        }
+        deliveryPartnerCard={
+          tracking.tracking?.deliveryPerson ? (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0">
+                  {tracking.tracking.deliveryPerson.photo ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={tracking.tracking.deliveryPerson.photo}
+                      alt=""
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <Truck className="w-7 h-7 text-teal-600" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900">{tracking.tracking.deliveryPerson.name}</p>
+                  <p className="text-sm text-gray-500">
+                    {tracking.tracking.deliveryPerson.vehicleNumber || 'Delivery partner'}
+                  </p>
+                </div>
+                <a
+                  href={`tel:${tracking.tracking.deliveryPerson.phone}`}
+                  className="p-3 bg-green-100 text-green-600 rounded-xl hover:bg-green-200 transition shrink-0"
+                  aria-label="Call delivery partner"
+                >
+                  <Phone className="w-5 h-5" />
+                </a>
+              </div>
+              {tracking.tracking.eta ? (
+                <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
+                  <Clock className="w-5 h-5 text-teal-600 shrink-0" />
+                  <p className="text-sm font-medium text-teal-900">
+                    Arriving in ~{tracking.tracking.eta} minutes
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+        deliveredBanner={
+          isDelivered ? (
+            <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white text-center shadow-sm border border-white/20">
+              <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
+              <h2 className="text-xl font-bold mb-1">Delivered!</h2>
+              <p className="text-sm text-white/90">
+                {tracking.tracking?.deliveredAt
+                  ? `Delivered ${formatDate(tracking.tracking.deliveredAt)}`
+                  : 'Your meal plan order has been delivered.'}
+              </p>
+              <a
+                href="/support"
+                className="inline-block mt-4 text-sm font-semibold text-white underline underline-offset-2 hover:text-white/90"
+              >
+                Need help?
+              </a>
+            </div>
+          ) : undefined
+        }
+        floatingChatButton={
+          <a
+            href="/support"
+            className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
+            aria-label="Help"
+          >
+            <MessageCircle className="w-7 h-7 text-slate-600" />
+          </a>
+        }
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <a href="/" className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition">
+          <a
+            href={
+              from === 'meal-plans' && phone
+                ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+                : '/'
+            }
+            className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition"
+          >
             <ArrowLeft className="w-6 h-6 text-gray-700" />
           </a>
           <h1 className="text-lg font-bold text-gray-900">Track Order</h1>

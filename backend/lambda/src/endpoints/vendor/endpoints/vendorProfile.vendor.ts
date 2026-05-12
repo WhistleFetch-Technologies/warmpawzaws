@@ -31,6 +31,7 @@ import {
   inferVendorKindFromServiceCategory,
   type VendorKind,
 } from './vendor-profile.vendor';
+import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -1011,6 +1012,64 @@ export function registerVendorProfileEndpoints(app: Hono) {
         console.log(`⚠️ [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(', ')}`);
       }
 
+      const ADDRESS_GEO_FIELDS = ['address', 'city', 'state', 'pincode'] as const;
+      let addressChanged = false;
+      for (const f of ADDRESS_GEO_FIELDS) {
+        if (updates[f] !== undefined && updates[f] !== vendor[f]) {
+          addressChanged = true;
+          break;
+        }
+      }
+
+      const parseCoord = (v: unknown): number | null => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = typeof v === 'number' ? v : parseFloat(String(v));
+        return Number.isFinite(n) ? n : null;
+      };
+      const hasValidCoords = (lat: unknown, lng: unknown): boolean =>
+        parseCoord(lat) !== null && parseCoord(lng) !== null;
+
+      const reqLat = parseCoord(updates.latitude);
+      const reqLng = parseCoord(updates.longitude);
+      const clientSuppliedBothCoords = reqLat !== null && reqLng !== null;
+
+      const mergedForGeo = {
+        address: updateData.address !== undefined ? updateData.address : vendor.address,
+        city: updateData.city !== undefined ? updateData.city : vendor.city,
+        state: updateData.state !== undefined ? updateData.state : vendor.state,
+        pincode: updateData.pincode !== undefined ? updateData.pincode : vendor.pincode,
+      };
+      const mergedLat = updateData.latitude !== undefined ? updateData.latitude : vendor.latitude;
+      const mergedLng = updateData.longitude !== undefined ? updateData.longitude : vendor.longitude;
+
+      if (
+        !clientSuppliedBothCoords &&
+        existingColumns.has('latitude') &&
+        existingColumns.has('longitude')
+      ) {
+        const pinDigits = String(mergedForGeo.pincode ?? '').replace(/\D/g, '');
+        const pinOk = pinDigits.length === 6;
+        const textOk =
+          [mergedForGeo.address, mergedForGeo.city, mergedForGeo.state].some(
+            (s) => String(s ?? '').trim().length > 0
+          ) || pinOk;
+        const invalidCoords = !hasValidCoords(mergedLat, mergedLng);
+        const shouldGeocode = textOk && (invalidCoords || addressChanged);
+
+        if (shouldGeocode) {
+          try {
+            const geo = await geocodeVendorAddressFields(mergedForGeo);
+            if (geo) {
+              updateData.latitude = geo.latitude;
+              updateData.longitude = geo.longitude;
+              console.log(`📍 [PROFILE-UPDATE] Geocoded vendor ${vendor.id} → ${geo.latitude}, ${geo.longitude}`);
+            }
+          } catch (geoErr: any) {
+            console.warn('[PROFILE-UPDATE] Geocode failed (non-fatal):', geoErr?.message);
+          }
+        }
+      }
+
       // ✅ DEBUG: Log what's in updateData
       console.log(`📊 [PROFILE-UPDATE] updateData keys:`, Object.keys(updateData));
       console.log(`📊 [PROFILE-UPDATE] updateData:`, updateData);
@@ -1130,6 +1189,67 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
   app.put("/vendor/:vendorId/profile", profileUpdateHandler);
   app.post("/vendor/:vendorId/profile", profileUpdateHandler);
+
+  /**
+   * POST /vendor/:vendorId/profile/sync-address-coordinates
+   * Backfill latitude/longitude from the vendor's stored address (no other fields changed).
+   */
+  app.post("/vendor/:vendorId/profile/sync-address-coordinates", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const schemaResult = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'vendors'
+      `);
+      const existingColumns = new Set(schemaResult.rows.map((r: any) => r.column_name));
+      if (!existingColumns.has('latitude') || !existingColumns.has('longitude')) {
+        return c.json({ error: 'vendors.latitude / vendors.longitude columns not found' }, 500);
+      }
+
+      const geo = await geocodeVendorAddressFields({
+        address: vendor.address,
+        city: vendor.city,
+        state: vendor.state,
+        pincode: vendor.pincode,
+      });
+
+      if (!geo) {
+        return c.json({
+          success: false,
+          message: 'Could not geocode address. Check GOOGLE_MAPS_API_KEY or address/pincode.',
+          vendor_id: vendor.id,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+        });
+      }
+
+      const updated = await update(
+        'vendors',
+        { id: vendor.id },
+        {
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          updated_at: new Date().toISOString(),
+        }
+      );
+
+      return c.json({
+        success: true,
+        message: 'Coordinates updated from address',
+        latitude: geo.latitude,
+        longitude: geo.longitude,
+        vendor: updated[0],
+      });
+    } catch (error: any) {
+      console.error('❌ [PROFILE-SYNC-GEO] Error:', error);
+      return c.json({ error: error.message || 'Failed to sync coordinates' }, 500);
+    }
+  });
 
   /**
    * GET /vendor/:vendorId/profile/edit-check

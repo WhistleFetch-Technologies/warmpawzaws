@@ -6,6 +6,7 @@ import { InstantTeleQueue } from '@/components/customer/InstantTele/InstantTeleQ
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByCustomerId } from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 
@@ -242,7 +243,7 @@ function TeleConsultationContent() {
     setSelectedPet(null);
     (async () => {
       try {
-        const response = await apiClient.get<any>(`/customer/${customerId}/pets`);
+        const response = await apiClient.get<any>(urlCustomerPetsByCustomerId(customerId));
         const list = normalizeTelePets(response);
         if (cancelled) return;
         setPets(list);

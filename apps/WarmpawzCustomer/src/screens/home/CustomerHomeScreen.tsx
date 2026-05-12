@@ -356,12 +356,18 @@ export function CustomerHomeScreen({
             )}
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.greeting}>Hi, {userData.name}!</Text>
+            <Text style={styles.greeting} numberOfLines={1}>
+              Hi, {userData.name}!
+            </Text>
             {selectedPet && (
-              <Text style={styles.subtitle}>How's {selectedPet.name} today?</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                How's {selectedPet.name} today?
+              </Text>
             )}
             {!selectedPet && (
-              <Text style={styles.subtitle}>Explore Warmpawz Services</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                Explore Warmpawz Services
+              </Text>
             )}
           </View>
           <View style={styles.headerActions}>
@@ -655,6 +661,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    minWidth: 0,
   },
   greeting: {
     fontSize: typography.fontSizes.lg,

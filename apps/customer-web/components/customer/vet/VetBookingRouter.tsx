@@ -4,6 +4,10 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
@@ -572,7 +576,7 @@ export function VetBookingRouter({
   const loadCustomerData = async () => {
     try {
       // Load pets from API with retry logic for intermittent 500/503 errors
-      const petsResponse = await fetchWithRetry(`/customer/pets/${phone}`, 3, 1000) as any;
+      const petsResponse = await fetchWithRetry(urlCustomerPetsByPhonePath(phone), 3, 1000) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -613,7 +617,7 @@ export function VetBookingRouter({
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -637,7 +641,7 @@ export function VetBookingRouter({
   const refreshAddresses = async () => {
     if (selectedServiceType !== 'at_home') return;
     try {
-      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
         setAddresses(addressResponse.addresses);
         const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);
@@ -1916,7 +1920,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     setLoading(true);
     try {
       // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData)) {
         existingPets = getPetsData;

@@ -4,6 +4,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { applyUnifiedProfileToCustomerLocalStorage } from '@/lib/customer-flow-guards';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
@@ -630,7 +631,7 @@ function AuthPageContent() {
             persistCustomerDatabaseId(profile);
 
             try {
-              const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+              const petsResponse = await apiClient.get<any>(urlCustomerPetsByPhonePath(phone));
               if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
                 localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
               }

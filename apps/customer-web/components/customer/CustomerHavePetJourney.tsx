@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, PawPrint, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 import { toast } from 'sonner';
 
@@ -136,7 +137,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
   
   const loadPets = async () => {
     try {
-      const response = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+      const response = await apiClient.get(urlCustomerPetsByPhonePath(session.phone)) as any;
       if (response.pets) {
         setData(prev => ({ ...prev, pets: response.pets }));
       }

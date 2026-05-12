@@ -5,6 +5,10 @@ import { Plane, Truck, Shield, Calendar, Clock, MapPin, User, CreditCard, CheckC
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByPhonePath,
+} from '@/lib/customer-service-list-urls';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
@@ -267,7 +271,7 @@ export function RelocationBookingRouter({
   const loadCustomerData = async () => {
     try {
       // Load pets from API
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -279,7 +283,7 @@ export function RelocationBookingRouter({
       
       // Load customer addresses from API
       try {
-        const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+        const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
         if (addressResponse.addresses && addressResponse.addresses.length > 0) {
           setAddresses(addressResponse.addresses);
         }
@@ -307,7 +311,7 @@ export function RelocationBookingRouter({
   // Refresh pets after adding new one
   const refreshPets = async () => {
     try {
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -329,7 +333,7 @@ export function RelocationBookingRouter({
   // Refresh addresses after adding new one
   const refreshAddresses = async () => {
     try {
-      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const addressResponse = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       if (addressResponse.addresses && addressResponse.addresses.length > 0) {
         setAddresses(addressResponse.addresses);
         // Auto-select newly added address
@@ -1101,7 +1105,7 @@ function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClo
     setLoading(true);
     try {
       // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
       let existingPets = [];
       if (Array.isArray(getPetsData)) {
         existingPets = getPetsData;
@@ -1394,7 +1398,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     setLoading(true);
     try {
       // Get existing addresses
-      const getAddressData = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      const getAddressData = await apiClient.get(urlCustomerAddressesByPhone(phone)) as any;
       let existingAddresses = [];
       if (Array.isArray(getAddressData)) {
         existingAddresses = getAddressData;

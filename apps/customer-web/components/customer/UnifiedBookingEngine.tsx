@@ -28,6 +28,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByCustomerId } from '@/lib/customer-service-list-urls';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
@@ -174,7 +175,7 @@ export function UnifiedBookingEngine({
       const customer = customerResponse.customer || customerResponse;
       if (customer && customer.id) {
         // Load pets
-        const petsResponse: any = await apiClient.get(`/customer/${customer.id}/pets`);
+        const petsResponse: any = await apiClient.get(urlCustomerPetsByCustomerId(customer.id));
         const petsData = petsResponse.pets || petsResponse || [];
         setPets(Array.isArray(petsData) ? petsData : []);
 

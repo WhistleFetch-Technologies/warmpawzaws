@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByCustomerId } from '@/lib/customer-service-list-urls';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
@@ -141,7 +142,7 @@ export default function MedicalRecordsPage() {
       }
 
       const petsPromise = resolvedCustomerId
-        ? apiClient.get<any>(`/customer/${resolvedCustomerId}/pets`)
+        ? apiClient.get<any>(urlCustomerPetsByCustomerId(resolvedCustomerId))
         : Promise.resolve({ pets: [] });
 
       const params = new URLSearchParams();

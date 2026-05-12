@@ -72,6 +72,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
@@ -134,6 +135,7 @@ import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { MealPlansList } from '../nutrition/MealPlansList';
 import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
+import { MealPlanOrdersPanel } from '../meal-plans/MealPlanOrdersPanel';
 import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
 import { NutritionistBookingRouter } from '../nutrition/NutritionistBookingRouter';
 import { DietConsultationVendors } from '../nutrition/DietConsultationVendors';
@@ -299,6 +301,7 @@ type ScreenType =
   | 'nutrition-meal-plans'
   | 'meal-order-checkout'
   | 'meal-order-tracking'
+  | 'meal-plan-orders'
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'diet-consultation-services'
@@ -399,6 +402,9 @@ export function CustomerHomeWrapper({
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [mealOrderTrackingBackScreen, setMealOrderTrackingBackScreen] = useState<
+    'nutrition-meal-plans' | 'meal-plan-orders'
+  >('nutrition-meal-plans');
   const [selectedProblem, setSelectedProblem] = useState<{
     id: string;
     title: string;
@@ -426,6 +432,11 @@ export function CustomerHomeWrapper({
   /** `vet` → Diagnostic Labs: header back should return here, not home (set only from `handleVetNavigate` lab path). */
   const [labDiagnosticsReturnScreen, setLabDiagnosticsReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  /** Meal plans drill-down: vendor catalog (`GET /meal-plans/vendor/:id`) */
+  const [mealPlanVendorFocus, setMealPlanVendorFocus] = useState<{
+    vendorId: string;
+    vendorSnapshot?: Record<string, unknown>;
+  } | null>(null);
   /** Home Services hub → {@link UniversalHomeServiceRouter} (training, walker, grooming at home, etc.). */
   const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<
     'walker' | 'grooming' | 'training' | 'veterinary' | 'behaviourist' | 'sitter' | 'diagnostics'
@@ -550,7 +561,7 @@ export function CustomerHomeWrapper({
         }
         
         // Also load pets for header pet selector
-        const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+        const petsResponse = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
         if (petsResponse?.pets) {
           setPets(petsResponse.pets);
           if (petsResponse.pets.length > 0 && !selectedPet) {
@@ -2906,6 +2917,17 @@ export function CustomerHomeWrapper({
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
               setCurrentScreen('nutrition-meal-plans');
             } else if (screen === 'diet-consultation-services') {
               setPreviousScreen('nutritionist');
@@ -2992,6 +3014,8 @@ export function CustomerHomeWrapper({
         <MealPlansList 
           phone={phone} 
           onBack={() => setCurrentScreen('nutritionist')} 
+          vendorFocus={mealPlanVendorFocus}
+          onExitVendorFocus={() => setMealPlanVendorFocus(null)}
           onNavigate={(screen, data) => {
             if (screen === 'meal-order-checkout') {
               setSelectedVendorId(data?.vendorId);
@@ -3003,6 +3027,19 @@ export function CustomerHomeWrapper({
               setCurrentScreen('create-booking');
             } else if (screen === 'pets') {
               navigateToPets();
+            } else if (screen === 'nutrition-meal-plans') {
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
+              setCurrentScreen('nutrition-meal-plans');
             } else {
               setCurrentScreen(screen as any);
             }
@@ -3021,6 +3058,7 @@ export function CustomerHomeWrapper({
         onSuccess={(orderId) => {
           toast.success('Order placed successfully');
           setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('nutrition-meal-plans');
           setCurrentScreen('meal-order-tracking');
         }}
       />
@@ -3031,7 +3069,20 @@ export function CustomerHomeWrapper({
       <OrderTrackingScreen
         orderId={selectedBookingId}
         orderType="meal"
-        onBack={() => setCurrentScreen('nutrition-meal-plans')}
+        onBack={() => setCurrentScreen(mealOrderTrackingBackScreen)}
+      />
+    );
+  }
+  if (currentScreen === 'meal-plan-orders') {
+    return (
+      <MealPlanOrdersPanel
+        fixedCustomerPhone={phone}
+        onBack={() => setCurrentScreen('my-bookings')}
+        onTrackOrder={(orderId) => {
+          setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('meal-plan-orders');
+          setCurrentScreen('meal-order-tracking');
+        }}
       />
     );
   }

@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  urlCustomerAddressesByPhone,
+  urlCustomerPetsByCustomerId,
+} from '@/lib/customer-service-list-urls';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
@@ -96,7 +100,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
         const cust = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
         const customerId = cust.customer?.id;
         if (!customerId) return;
-        const petsRes = await apiClient.get<any>(`/customer/${customerId}/pets`);
+        const petsRes = await apiClient.get<any>(urlCustomerPetsByCustomerId(customerId));
         const list = (petsRes.pets ?? petsRes.data ?? []).filter(Boolean);
         if (!cancelled) setCustomerPets(list.map((p: any) => ({ id: p.id, name: p.name || p.pet_name, species: p.species || p.type, breed: p.breed, age: (p.age || p.age_years?.[0]) ?? p.age_years })));
       } catch {
@@ -112,7 +116,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     let cancelled = false;
     (async () => {
       try {
-        const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+        const addressResponse = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
         if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
           if (!cancelled) {
             setAddresses(addressResponse.addresses);
@@ -1035,7 +1039,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             // Refresh addresses list
             (async () => {
               try {
-                const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+                const addressResponse = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
                 if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
                   setAddresses(addressResponse.addresses);
                 }

@@ -64,6 +64,8 @@ interface LogisticsPartner {
 	baseUrl?: string;
 	apiEndpoint: string;
 	apiKey: string;
+	/** True when api_key is stored in DB but not returned in GET (edit: leave password blank to keep). */
+	apiKeySet?: boolean;
 	regions: string[];
 	categories: string[];
 	pricing: PricingRule;
@@ -77,6 +79,7 @@ const DEFAULT_PARTNER: LogisticsPartner = {
 	baseUrl: "",
 	apiEndpoint: "",
 	apiKey: "",
+	apiKeySet: false,
 	regions: [],
 	categories: [],
 	pricing: {
@@ -133,6 +136,8 @@ export function LogisticsSettings() {
 					...DEFAULT_PARTNER,
 					...p,
 					baseUrl: p.baseUrl ?? "",
+					apiKeySet: p.apiKeySet === true,
+					apiKey: "", // never pre-fill; secrets are not returned from API
 					pricing: { ...DEFAULT_PARTNER.pricing, ...(p.pricing || {}) },
 				}));
 				setPartners(migratedPartners);
@@ -148,6 +153,16 @@ export function LogisticsSettings() {
 		if (!currentPartner.name || !currentPartner.id) {
 			toast.error("Please fill in partner name and ID");
 			return;
+		}
+
+		const isEdit = partners.some((p) => p.id === currentPartner.id);
+		if (currentPartner.type === "pidge") {
+			const pw = (currentPartner.apiKey || "").trim();
+			const needPassword = !isEdit || !currentPartner.apiKeySet;
+			if (!pw && needPassword) {
+				toast.error("Vendor password is required (or save once with password, then edits can leave it blank to keep the saved value)");
+				return;
+			}
 		}
 
 		try {
@@ -377,12 +392,28 @@ export function LogisticsSettings() {
 									})
 								}
 								className="font-mono text-sm"
-								placeholder="••••••••••••••••"
+								placeholder={
+									currentPartner.type === "pidge" &&
+									currentPartner.apiKeySet &&
+									!currentPartner.apiKey
+										? "Leave blank to keep saved password"
+										: "••••••••••••••••"
+								}
 							/>
+							{currentPartner.type === "pidge" && currentPartner.apiKeySet ? (
+								<p className="text-xs text-muted-foreground">
+									A password is already stored for this partner. Leave the field empty to keep it, or
+									enter a new one to rotate.
+								</p>
+							) : null}
 						</div>
 
 						<div className="space-y-2">
 							<Label>Supported Categories</Label>
+							<p className="text-xs text-muted-foreground -mt-1">
+								Routing hints: <strong>Pet Food</strong> and <strong>Restaurant Food</strong> align with
+								nutritionist / meal flows; <strong>Medicines</strong> with pharmacy.
+							</p>
 							<div className="grid grid-cols-2 gap-2 p-4 border rounded-lg">
 								{PRODUCT_CATEGORIES.map((cat) => (
 									<div

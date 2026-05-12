@@ -5,6 +5,7 @@ import { ArrowLeft, MapPin, CreditCard, Edit2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -35,7 +36,9 @@ export function CheckoutView({ phone, onBack, onSuccess, onNavigate }: CheckoutV
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<{ addresses?: any[] }>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+      const data = await apiClient.get<{ addresses?: any[] }>(
+        urlCustomerAddressesByPhone(phone)
+      );
       const addressList = data.addresses || [];
       setAddresses(addressList);
       

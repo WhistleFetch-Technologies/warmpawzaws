@@ -1177,8 +1177,8 @@ export function VetServicesByStyle({
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

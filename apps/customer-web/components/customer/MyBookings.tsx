@@ -9,7 +9,7 @@ import {
   Navigation, MessageSquare
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isCustomerWebDevMealPlanOrdersEnabled } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
@@ -25,8 +25,6 @@ import { RateServiceModal } from './RateServiceModal';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
 
-/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
-export const MEAL_PLAN_ORDERS_ENABLED = false;
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
 
@@ -121,8 +119,13 @@ interface MyBookingsProps {
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
 
+  const [mealPlanOrdersEnabled, setMealPlanOrdersEnabled] = useState(false);
+  useEffect(() => {
+    setMealPlanOrdersEnabled(isCustomerWebDevMealPlanOrdersEnabled());
+  }, []);
+
   const navigateToMealPlanOrders = () => {
-    if (!MEAL_PLAN_ORDERS_ENABLED) return;
+    if (!mealPlanOrdersEnabled) return;
     router.push(mealPlanOrdersUrl(phone));
   };
 
@@ -508,27 +511,27 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       />
 
       <div className="-mt-1 max-w-customer mx-auto">
-        {/* Meal Plan Orders; navigation gated by MEAL_PLAN_ORDERS_ENABLED (mirrors booking/MyBookings.tsx) */}
+        {/* Meal Plan Orders — opens /orders/meal-plans; Track Order uses /track/:id + booking phone */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
             type="button"
-            disabled={!MEAL_PLAN_ORDERS_ENABLED}
+            disabled={!mealPlanOrdersEnabled}
             onClick={navigateToMealPlanOrders}
             aria-label={
-              MEAL_PLAN_ORDERS_ENABLED
+              mealPlanOrdersEnabled
                 ? 'Open meal plan orders and tracking'
                 : 'Meal plan orders and tracking — coming soon'
             }
             className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
-              MEAL_PLAN_ORDERS_ENABLED
+              mealPlanOrdersEnabled
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                 : 'bg-emerald-50/55 border-emerald-200/50 text-emerald-700/65 cursor-not-allowed hover:bg-emerald-50/55'
             }`}
           >
-            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!MEAL_PLAN_ORDERS_ENABLED ? 'text-emerald-600/55' : ''}`} />
+            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!mealPlanOrdersEnabled ? 'text-emerald-600/55' : ''}`} />
             <span className="inline-flex items-center justify-center gap-2 flex-wrap">
               Meal Plan Orders & Tracking
-              {!MEAL_PLAN_ORDERS_ENABLED && (
+              {!mealPlanOrdersEnabled && (
                 <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
                   Soon
                 </span>
@@ -537,10 +540,10 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
           </button>
           <p
             className={`text-xs mt-1.5 text-center ${
-              MEAL_PLAN_ORDERS_ENABLED ? 'text-gray-500' : 'text-emerald-800/55'
+              mealPlanOrdersEnabled ? 'text-gray-500' : 'text-emerald-800/55'
             }`}
           >
-            {MEAL_PLAN_ORDERS_ENABLED
+            {mealPlanOrdersEnabled
               ? 'Track your meal plan deliveries and access order status'
               : 'Coming soon — track meal plan deliveries and order status here.'}
           </p>

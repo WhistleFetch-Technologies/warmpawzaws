@@ -78,6 +78,10 @@ coverage/
 test-reports/
 test-results/
 
+# Database dumps (local; may contain PII)
+db-dumps/
+*.dump
+
 # =============================================================================
 # SERVERLESS & DEPLOYMENT
 # =============================================================================
@@ -143,9 +147,6 @@ scripts/migration-542-prod-runs.log
 # Local DB dumps (do not commit)
 db-dumps/
 
-# Local/untracked Maven service tree (not in repo; keeps working copy off branch)
-services/delivery-service/
-
 # =============================================================================
 # SCREENSHOTS & IMAGES IN ROOT
 # =============================================================================
@@ -163,6 +164,12 @@ reports/
 test-data/
 misc/
 docs/
+!services/customer-service/docs/
+services/customer-service/docs/*
+!services/customer-service/docs/sql/
+services/customer-service/docs/sql/*
+!services/customer-service/docs/sql/canary-hardening.sql
+!services/customer-service/docs/sql/customer-deactivation-reason.sql
 
 # =============================================================================
 # BUILD BACKUP DIRECTORIES
@@ -174,6 +181,8 @@ dist_backup/
 # =============================================================================
 $null
 **/undefined/
+
+.deploy-customer-service-tmp-*/
 
 # =============================================================================
 # CDK COMPILED OUTPUT (keep .ts source, ignore compiled output)

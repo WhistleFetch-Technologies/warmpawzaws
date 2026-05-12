@@ -28,6 +28,10 @@ public class AddressResponse {
     private Boolean isDefault;
 
     private Map<String, Object> coordinates;
+    private String placeId;
+    private String formattedAddress;
+    private Double latitude;
+    private Double longitude;
 
     private String flatNo;
     private String houseNo;

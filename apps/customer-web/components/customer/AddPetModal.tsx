@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Camera, Upload } from 'lucide-react';
 // Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
+import { urlCustomerPetsByPhonePath } from '@/lib/customer-service-list-urls';
 import { PetHealthVaccinationFormBody } from '@/components/customer/PetHealthVaccinationFormBody';
 
 interface Pet {
@@ -46,6 +47,8 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Photo is uploaded after save so S3 path uses the real pets.id (UUID), not a temporary `pet_*` id. */
+  const pendingPetPhotoFileRef = useRef<File | null>(null);
   
   const [petData, setPetData] = useState<Pet>({
     id: `pet_${Date.now()}`,
@@ -75,7 +78,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   
   const [photoPreview, setPhotoPreview] = useState<string>('');
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    if (!isOpen) {
+      pendingPetPhotoFileRef.current = null;
+      setPhotoPreview('');
+    }
+  }, [isOpen]);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // Check file size (max 5MB)
@@ -83,42 +93,16 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         alert('Image size should be less than 5MB');
         return;
       }
-      
-      // Show preview immediately
+
+      pendingPetPhotoFileRef.current = file;
+      setPetData((prev) => ({ ...prev, photo: '' }));
+
+      // Preview only; upload runs after save when we have the real pet UUID from the API.
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
-      
-      // Upload to S3 with progress tracking
-      try {
-        setUploadingPhoto(true);
-        setUploadProgress(0);
-        const { uploadPetPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
-        const result = await uploadPetPhotoWithProgress(file, petData.id, phone, {
-          onProgress: (progress) => {
-            setUploadProgress(progress);
-          },
-          verifyUpload: true,
-          maxRetries: 3,
-        });
-        
-        if (result.success && result.publicUrl) {
-          setPetData({ ...petData, photo: result.publicUrl });
-          console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
-        } else {
-          alert(result.error || 'Failed to upload photo. Please try again.');
-          setPhotoPreview('');
-        }
-      } catch (error: any) {
-        console.error('Photo upload error:', error);
-        alert(error.message || 'Failed to upload photo. Please try again.');
-        setPhotoPreview('');
-      } finally {
-        setUploadingPhoto(false);
-        setUploadProgress(0);
-      }
     }
   };
 
@@ -128,52 +112,99 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       alert('Please fill in all required fields (Name, Type, Breed, Age)');
       return;
     }
-    
+
     setLoading(true);
-    
+
+    const parsePetsList = (raw: any): any[] => {
+      if (!raw || typeof raw !== 'object') return [];
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.pets)) return raw.pets;
+      if (raw.pets?.pets && Array.isArray(raw.pets.pets)) return raw.pets.pets;
+      return [];
+    };
+
+    const extractSavedPetsFromPost = (raw: unknown): any[] => {
+      if (!raw || typeof raw !== 'object') return [];
+      const r = raw as Record<string, unknown>;
+      if (Array.isArray(r.pets)) return r.pets as any[];
+      const d = r.data as Record<string, unknown> | undefined;
+      if (d && Array.isArray(d.pets)) return d.pets as any[];
+      return [];
+    };
+
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
     try {
       console.log('=== SAVING PET ===');
       console.log('Phone:', phone);
       console.log('Pet Data:', petData);
-      
-      // First, get existing pets - AWS Serverless compatible
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
-      
-      // ✅ Robust response parsing (handles { pets: [...] } and { pets: { pets: [...] } })
-      let existingPets = [];
-      const petsData = getPetsData as any;
-      if (Array.isArray(petsData)) {
-        existingPets = petsData;
-      } else if (Array.isArray(petsData.pets)) {
-        existingPets = petsData.pets;
-      } else if (petsData.pets?.pets && Array.isArray(petsData.pets.pets)) {
-        existingPets = petsData.pets.pets;
-      }
-      
+
+      const getPetsData = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
+      const existingPets = parsePetsList(getPetsData);
+
       console.log('Existing pets:', existingPets);
-      
-      // Add new pet to the list
-      const updatedPets = [...existingPets, petData];
-      
+
+      const pendingFile = pendingPetPhotoFileRef.current;
+      const petToSave = pendingFile ? { ...petData, photo: '' } : petData;
+      const updatedPets = [...existingPets, petToSave];
+
       console.log('Updated pets list (total:', updatedPets.length, '):', updatedPets);
-      
-      // Save updated pets list - AWS Serverless compatible
-      await apiClient.post('/customer/pets', {
+
+      const saveResult = await apiClient.post('/customer/pets', {
         phone: phone,
-        pets: updatedPets
+        pets: updatedPets,
       });
-      
-      // Success
+
+      let newPetId = '';
+      const savedArr = extractSavedPetsFromPost(saveResult);
+      if (savedArr.length > 0) {
+        const cand = String((savedArr[savedArr.length - 1] as any)?.id || '');
+        if (uuidRe.test(cand)) newPetId = cand;
+      }
+      if (!newPetId && pendingFile) {
+        const refetch = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
+        const list = parsePetsList(refetch);
+        const match = list.find(
+          (p: any) =>
+            String(p?.name || '').trim() === String(petData.name || '').trim() && uuidRe.test(String(p?.id || ''))
+        );
+        if (match?.id) newPetId = String(match.id);
+      }
+
+      if (pendingFile && newPetId) {
+        setUploadingPhoto(true);
+        setUploadProgress(0);
+        try {
+          const { uploadPetPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
+          const result = await uploadPetPhotoWithProgress(pendingFile, newPetId, phone, {
+            onProgress: (progress) => setUploadProgress(progress),
+            verifyUpload: true,
+            maxRetries: 3,
+          });
+          if (result.success && result.publicUrl) {
+            const getAfter = await apiClient.get(urlCustomerPetsByPhonePath(phone)) as any;
+            const listAfter = parsePetsList(getAfter).map((p: any) =>
+              String(p?.id) === newPetId ? { ...p, photo: result.publicUrl } : p
+            );
+            await apiClient.post('/customer/pets', { phone, pets: listAfter });
+            pendingPetPhotoFileRef.current = null;
+          } else if (result.error) {
+            console.warn('Pet photo upload after save failed:', result.error);
+          }
+        } finally {
+          setUploadingPhoto(false);
+          setUploadProgress(0);
+        }
+      }
+
       console.log('Pet saved successfully');
       console.log('=== SAVE COMPLETE ===');
-      
-      // Show success message
+
       alert(`${petData.name} added successfully! 🎉`);
-      
-      // Call success callback to refresh data
+
       onSuccess();
       onClose();
-      
     } catch (error) {
       console.error('Error saving pet:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Failed to save pet. Please try again.'}`);

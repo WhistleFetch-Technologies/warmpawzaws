@@ -38,6 +38,7 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { inferVendorKindFromServiceCategory } from './vendor-profile.vendor';
+import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY
@@ -1606,6 +1607,23 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
               payload.serviceCategory ?? payload.service_category
             ) || 'business';
 
+      let activationGeo: { latitude: number; longitude: number } | null = null;
+      try {
+        activationGeo = await geocodeVendorAddressFields({
+          address: payload.address || '',
+          city: payload.city || '',
+          state: payload.state || '',
+          pincode: pincodeValue || '',
+        });
+        if (activationGeo) {
+          console.log(
+            `📍 [VENDOR-ACTIVATION] Geocoded new vendor → ${activationGeo.latitude}, ${activationGeo.longitude}`
+          );
+        }
+      } catch (e: any) {
+        console.warn('[VENDOR-ACTIVATION] Geocode failed (non-fatal):', e?.message);
+      }
+
       const vendors = await insert('vendors', {
         id: finalVendorId, // ✅ CRITICAL: Explicitly set new unique ID
         phone: identity.phone,
@@ -1628,6 +1646,9 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
         profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding
         service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
         metadata: Object.keys(cleanMetadata).length > 0 ? cleanMetadata : {}, // ✅ Use cleaned metadata
+        ...(activationGeo
+          ? { latitude: activationGeo.latitude, longitude: activationGeo.longitude }
+          : {}),
       });
       
       const createdVendor = vendors[0];

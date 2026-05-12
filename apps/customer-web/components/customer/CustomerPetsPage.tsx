@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,9 @@ import {
   Plus,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
+import { petsAndPaginationFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
+import { myPetsListParams, urlCustomerPetsByPhoneQuery } from '@/lib/customer-service-list-urls';
+import type { CustomerServicePaginationMeta } from '@warmpawz/shared-types';
 
 interface Pet {
   id: string;
@@ -37,40 +39,73 @@ export function CustomerPetsPage({ phone, onBack, onAddPet }: CustomerPetsPagePr
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listPagination, setListPagination] = useState<
+    CustomerServicePaginationMeta | undefined
+  >();
 
-  useEffect(() => {
-    fetchPets();
-  }, [phone]);
+  const mapPets = useCallback(
+    (normalized: PetUi[]) =>
+      normalized.map((p) => ({
+        id: p.id,
+        name: p.name,
+        type: p.species,
+        breed: p.breed || undefined,
+        age: p.age || undefined,
+        gender:
+          p.gender === 'male' || p.gender === 'female'
+            ? (p.gender as Pet['gender'])
+            : undefined,
+        weight: p.weight || undefined,
+        image: p.photo_url,
+      })),
+    []
+  );
 
-  const fetchPets = async () => {
+  const fetchPets = useCallback(async (append: boolean, page = 0) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!append) {
+        setLoading(true);
+        setError(null);
+      } else {
+        setLoadingMore(true);
+      }
 
-      const data = await apiClient.get<unknown>(
-        `/customer/pets?phone=${encodeURIComponent(phone)}`
-      );
+      const params = myPetsListParams(page);
+      const data = await apiClient.get<unknown>(urlCustomerPetsByPhoneQuery(phone, params));
 
-      const normalized = petsFromApiResponse(data);
-      setPets(
-        normalized.map((p) => ({
-          id: p.id,
-          name: p.name,
-          type: p.species,
-          breed: p.breed || undefined,
-          age: p.age || undefined,
-          gender: p.gender === 'male' || p.gender === 'female' ? p.gender : undefined,
-          weight: p.weight || undefined,
-          image: p.photo_url,
-        }))
-      );
+      const { pets: batch, pagination } = petsAndPaginationFromApiResponse(data);
+      setListPagination(pagination);
+      setPets((prev) => {
+        const mapped = mapPets(batch);
+        if (!append) return mapped;
+        const seen = new Set(prev.map((p) => p.id));
+        const merged = [...prev];
+        for (const p of mapped) {
+          if (!seen.has(p.id)) {
+            seen.add(p.id);
+            merged.push(p);
+          }
+        }
+        return merged;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pets');
       console.error('Error fetching pets:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  }, [phone, mapPets]);
+
+  useEffect(() => {
+    void fetchPets(false);
+  }, [fetchPets]);
+
+  const loadMore = () => {
+    if (!listPagination?.hasNext || loadingMore) return;
+    void fetchPets(true, listPagination.page + 1);
   };
 
   const contentPadding =
@@ -130,7 +165,7 @@ export function CustomerPetsPage({ phone, onBack, onAddPet }: CustomerPetsPagePr
             <p className="mb-3 font-medium">{error}</p>
             <Button
               type="button"
-              onClick={fetchPets}
+              onClick={() => void fetchPets(false)}
               variant="outline"
               className="border-red-300 text-red-700 hover:bg-red-100"
             >
@@ -162,6 +197,18 @@ export function CustomerPetsPage({ phone, onBack, onAddPet }: CustomerPetsPagePr
             ))}
           </ul>
         )}
+        {!loading && !error && listPagination?.hasNext ? (
+          <div className="mt-4 flex justify-center pb-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading…' : 'Load more pets'}
+            </Button>
+          </div>
+        ) : null}
       </div>
       {!loading ? addFab : null}
     </div>
