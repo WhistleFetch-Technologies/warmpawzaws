@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.warmpawz.delivery.config.PidgeProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 /**
  * Builds Pidge create-order JSON from the compact Warmpawz-style body
@@ -60,6 +61,19 @@ public class PidgeOrderPayloadBuilder {
 			packagesFromItems = defaultPackages();
 		}
 
+		coerceAddressForPidge((ObjectNode) senderDetail.get("address"));
+		coerceAddressForPidge((ObjectNode) receiverDetail.get("address"));
+		String receiverEmail = textOrEmpty(receiverDetail.get("email"));
+		String senderEmail = textOrEmpty(senderDetail.get("email"));
+		String sharedFallback = firstNonEmpty(senderEmail, receiverEmail, "delivery-placeholder@warmpawz.app");
+		ensureNonEmptyEmail(senderDetail, sharedFallback);
+		ensureNonEmptyEmail(receiverDetail, firstNonEmpty(receiverEmail, sharedFallback));
+		ensureNonEmptyEmail(pocDetail, firstNonEmpty(
+				textOrEmpty(pocDetail.get("email")),
+				textOrEmpty(senderDetail.get("email")),
+				textOrEmpty(receiverDetail.get("email")),
+				"delivery-placeholder@warmpawz.app"));
+
 		ObjectNode trip = objectMapper.createObjectNode();
 		trip.set("receiver_detail", receiverDetail);
 		trip.set("packages", packagesFromItems);
@@ -94,15 +108,20 @@ public class PidgeOrderPayloadBuilder {
 							: input.get("deliverySlot").asText()));
 		}
 
+		// Store/vendor logins: omit brand when omitBrand or when codes are unset (Pidge rejects empty brand.code).
 		ObjectNode brand = null;
 		if (!omitBrand) {
 			if (input.has("brand") && input.get("brand").isObject()) {
 				JsonNode b = input.get("brand");
-				brand = objectMapper.createObjectNode();
-				brand.put("code", textOr(b, "code", defaults.brandCode()));
-				brand.put("location_code", textOr(b, "location_code", defaults.brandLocationCode()));
-				brand.put("name", textOr(b, "name", defaults.brandName()));
-			} else {
+				String code = textOr(b, "code", defaults.brandCode());
+				String loc = textOr(b, "location_code", defaults.brandLocationCode());
+				if (StringUtils.hasText(code) && StringUtils.hasText(loc)) {
+					brand = objectMapper.createObjectNode();
+					brand.put("code", code);
+					brand.put("location_code", loc);
+					brand.put("name", textOr(b, "name", defaults.brandName()));
+				}
+			} else if (StringUtils.hasText(defaults.brandCode()) && StringUtils.hasText(defaults.brandLocationCode())) {
 				brand = objectMapper.createObjectNode();
 				brand.put("code", defaults.brandCode());
 				brand.put("location_code", defaults.brandLocationCode());
@@ -356,6 +375,50 @@ public class PidgeOrderPayloadBuilder {
 			}
 		}
 		return null;
+	}
+
+	private static String textOrEmpty(JsonNode n) {
+		if (n == null || n.isNull()) {
+			return "";
+		}
+		return n.asText("").trim();
+	}
+
+	private void coerceAddressForPidge(ObjectNode addr) {
+		if (addr == null) {
+			return;
+		}
+		String line1 = addr.path("address_line_1").asText("").trim();
+		String city = addr.path("city").asText("").trim();
+		if (!StringUtils.hasText(city)) {
+			String state = addr.path("state").asText("").trim();
+			String pin = addr.path("pincode").asText("").trim();
+			String subLine = line1.length() > 0 ? line1.substring(0, Math.min(40, line1.length())) : null;
+			String filled = firstNonEmpty(state, pin, subLine, "NA");
+			addr.put("city", filled != null ? filled : "NA");
+		}
+		String stateVal = addr.path("state").asText("").trim();
+		if (!StringUtils.hasText(stateVal)) {
+			String cityNow = addr.path("city").asText("").trim();
+			String pin = addr.path("pincode").asText("").trim();
+			String filledSt = firstNonEmpty(cityNow, pin, "NA");
+			addr.put("state", filledSt != null ? filledSt : "NA");
+		}
+		String lm = addr.has("landmark") ? addr.get("landmark").asText("").trim() : "";
+		if (!StringUtils.hasText(lm)) {
+			String fallbackLm = line1.length() > 0 ? line1.substring(0, Math.min(120, line1.length())) : "Location";
+			addr.put("landmark", fallbackLm);
+		}
+	}
+
+	private static void ensureNonEmptyEmail(ObjectNode detail, String fallback) {
+		if (detail == null) {
+			return;
+		}
+		String e = detail.path("email").asText("").trim();
+		if (!StringUtils.hasText(e) && StringUtils.hasText(fallback)) {
+			detail.put("email", fallback);
+		}
 	}
 
 	public record BrandDefaults(
