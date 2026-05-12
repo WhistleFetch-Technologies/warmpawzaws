@@ -1327,6 +1327,15 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: 'Invalid status' }, 400);
       }
 
+      const existingRows = await select('meal_orders', { id: orderId });
+      const existing = existingRows[0] as { status?: string } | undefined;
+      if (existing?.status === 'paused') {
+        return c.json(
+          { error: 'This order is paused until the customer resumes their meal subscription' },
+          400,
+        );
+      }
+
       const updateData: Record<string, any> = { status };
 
       if (status === 'accepted') updateData.accepted_at = new Date().toISOString();

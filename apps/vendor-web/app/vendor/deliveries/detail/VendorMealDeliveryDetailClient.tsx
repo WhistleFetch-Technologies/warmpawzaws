@@ -76,6 +76,9 @@ export default function VendorMealDeliveryDetailClient() {
   const slot = row.delivery_time_slot as { start?: string; end?: string } | undefined;
   const addr = row.delivery_address as Record<string, unknown> | undefined;
   const status = String(row.status || '');
+  const subLife = String(row.lifecycle_status || '');
+
+  const sessionOpsDisabled = status === 'paused' || subLife === 'paused';
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -131,7 +134,13 @@ export default function VendorMealDeliveryDetailClient() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        {sessionOpsDisabled && (
+          <div className="rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-sm p-3">
+            Customer paused this subscription. Ops are disabled until they resume in the customer app.
+          </div>
+        )}
+
+        <div className={`grid grid-cols-2 gap-2 ${sessionOpsDisabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <Button
             type="button"
             variant="outline"

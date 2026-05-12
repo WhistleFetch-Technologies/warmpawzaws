@@ -15,17 +15,15 @@ import {
 } from '@/hooks/useMealSubscriptions';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  pauseMealSubscription,
-  resumeMealSubscription,
-  skipMealDelivery,
-  rescheduleMealDelivery,
-} from '@/lib/meal-subscriptions-api';
+import { pauseMealSubscription, resumeMealSubscription, rescheduleMealDelivery } from '@/lib/meal-subscriptions-api';
+import { formatMealSubscriptionDateOnly, formatMealSubscriptionSessionLine } from '@/lib/meal-subscription-display';
+import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
 
 function sessionStatusClass(status: string) {
   const s = status?.toLowerCase() || '';
   if (s === 'delivered') return 'bg-emerald-100 text-emerald-900';
   if (s === 'skipped' || s === 'cancelled') return 'bg-slate-200 text-slate-800';
+  if (s === 'paused') return 'bg-violet-100 text-violet-900';
   if (s === 'out_for_delivery' || s === 'assigned') return 'bg-blue-100 text-blue-900';
   return 'bg-orange-50 text-orange-900';
 }
@@ -69,6 +67,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
       toast.success('Subscription paused');
       invalidate(customerId);
       subQ.refetch();
+      delQ.refetch();
     } catch (e: any) {
       toast.error(e?.message || 'Pause failed');
     }
@@ -107,6 +106,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
   const lifecycle = String(sub.lifecycle_status || sub.status || '');
   const planName = String(sub.meal_plan_name || 'Meal subscription');
   const vendorName = String(sub.vendor_name || 'Vendor');
+  const planImage = sanitizeDisplayImageUrl(sub.meal_plan_image_url);
 
   return (
     <div className="min-h-[100dvh] bg-orange-50/90 pb-24">
@@ -114,15 +114,25 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
         <div className="flex items-center gap-2 px-4 py-3">
           <button
             type="button"
-            onClick={() => router.push('/subscriptions')}
+            onClick={() => router.push('/orders/meal-plans')}
             className="flex h-11 w-11 items-center justify-center rounded-full active:bg-white/80"
-            aria-label="Back"
+            aria-label="Back to meal tracking"
           >
             <ArrowLeft className="h-6 w-6 text-slate-800" />
           </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold text-slate-900 truncate">{planName}</h1>
-            <p className="text-xs text-slate-500 truncate">{vendorName}</p>
+          <div className="min-w-0 flex-1 flex items-center gap-2">
+            {planImage ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={planImage}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-lg object-cover ring-1 ring-orange-100"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-bold text-slate-900 truncate">{planName}</h1>
+              <p className="text-xs text-slate-500 truncate">{vendorName}</p>
+            </div>
           </div>
           <Button
             type="button"
@@ -150,7 +160,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">Next delivery</p>
             <p className="font-semibold text-slate-900">
-              {sub.next_delivery_date ? String(sub.next_delivery_date) : '—'}
+              {formatMealSubscriptionDateOnly(sub.next_delivery_date)}
             </p>
           </div>
           <div className="space-y-2">
@@ -199,28 +209,12 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
                       </span>
                     </div>
                     <p className="text-sm text-slate-600">
-                      {String(d.delivery_date)} · {slot?.start || '—'} – {slot?.end || '—'}
+                      {formatMealSubscriptionSessionLine(d.delivery_date, slot)}
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {['scheduled', 'preparing'].includes(st) && customerId && (
-                        <>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                await skipMealDelivery(id, customerId);
-                                toast.success('Delivery skipped');
-                                delQ.refetch();
-                                subQ.refetch();
-                              } catch (e: any) {
-                                toast.error(e?.message || 'Skip failed');
-                              }
-                            }}
-                          >
-                            Skip
-                          </Button>
+                      {lifecycle === 'active' &&
+                        ['scheduled', 'preparing', 'rescheduled'].includes(st) &&
+                        customerId && (
                           <Button
                             type="button"
                             variant="outline"
@@ -230,8 +224,9 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
                               if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return;
                               try {
                                 await rescheduleMealDelivery(id, customerId, raw.trim());
-                                toast.success('Rescheduled');
+                                toast.success('Rescheduled — your vendor has been notified');
                                 delQ.refetch();
+                                subQ.refetch();
                               } catch (e: any) {
                                 toast.error(e?.message || 'Reschedule failed');
                               }
@@ -239,8 +234,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
                           >
                             Reschedule
                           </Button>
-                        </>
-                      )}
+                        )}
                     </div>
                   </li>
                 );

@@ -6,8 +6,28 @@ import { ArrowLeft, UtensilsCrossed } from 'lucide-react';
 import { useMealSubscriptionsList } from '@/hooks/useMealSubscriptions';
 import type { MealLifecycleFilter } from '@/lib/meal-subscriptions-api';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { formatMealSubscriptionDateOnly } from '@/lib/meal-subscription-display';
 import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
+
+function SubscriptionPlanThumb({ imageUrl }: { imageUrl: string | undefined }) {
+  const [broken, setBroken] = React.useState(false);
+  if (!imageUrl || broken) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <UtensilsCrossed className="h-7 w-7 text-orange-500" />
+      </div>
+    );
+  }
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      src={imageUrl}
+      alt=""
+      className="h-full w-full object-cover"
+      onError={() => setBroken(true)}
+    />
+  );
+}
 
 const MEAL_FILTERS: { id: MealLifecycleFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -44,9 +64,9 @@ export default function SubscriptionsPage() {
         <div className="flex items-start gap-2 px-4 pb-3 pt-1">
           <button
             type="button"
-            onClick={() => goBackOrHome(router)}
+            onClick={() => router.push('/orders/meal-plans')}
             className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-800 transition active:bg-white/70 active:scale-[0.97]"
-            aria-label="Go back"
+            aria-label="Back to meal plan orders and tracking"
           >
             <ArrowLeft className="h-6 w-6" strokeWidth={2.25} />
           </button>
@@ -111,14 +131,7 @@ export default function SubscriptionsPage() {
                   >
                     <div className="flex gap-3">
                       <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-orange-50 ring-1 ring-orange-100">
-                        {img ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={img} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <UtensilsCrossed className="h-7 w-7 text-orange-500" />
-                          </div>
-                        )}
+                        <SubscriptionPlanThumb imageUrl={img} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex justify-between gap-2">
@@ -131,7 +144,7 @@ export default function SubscriptionsPage() {
                         </div>
                         <p className="text-sm text-slate-500 truncate">{String(sub.vendor_name || '')}</p>
                         <p className="text-xs text-slate-400 mt-1">
-                          Next: {sub.next_delivery_date ? String(sub.next_delivery_date) : '—'} ·{' '}
+                          Next: {formatMealSubscriptionDateOnly(sub.next_delivery_date)} ·{' '}
                           {String(sub.purchase_type || '').replace(/_/g, ' ')}
                         </p>
                       </div>

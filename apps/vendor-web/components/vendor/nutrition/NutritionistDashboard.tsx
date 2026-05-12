@@ -207,6 +207,9 @@ function canStartPreparingForSchedule(o: MealOrder): boolean {
 
 type VendorMealOrderBucket = 'past' | 'today' | 'upcoming';
 
+/** Active slice when viewing the Orders tab (stat cards act as filters). */
+type OrdersTabBucketFilter = VendorMealOrderBucket;
+
 function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
   const st = String(o.status || '').toLowerCase();
   if (st === 'delivered' || st === 'cancelled') return 'past';
@@ -244,6 +247,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     return new Set();
   };
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
+  /** Which bucket’s order list is shown under the stats on the Orders tab. */
+  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('today');
   
   // Helper to update both state and localStorage
   const updateAcceptedOrderIds = useCallback((updater: (prev: Set<string>) => Set<string>) => {
@@ -506,6 +511,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       case 'confirmed': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'accepted': return 'bg-teal-50 text-teal-700 border-teal-200';
       case 'preparing': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'paused': return 'bg-violet-50 text-violet-800 border-violet-200';
       case 'ready':
       case 'ready_for_pickup': return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'dispatched':
@@ -556,6 +562,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {order.status === 'paused' && (
+              <p className="text-sm text-violet-800 w-full py-2 px-3 rounded-lg bg-violet-50 border border-violet-200">
+                Customer paused this subscription — resume on their app before preparing or dispatching.
+              </p>
+            )}
             {order.status === 'pending' && (
               <>
                 <button
@@ -718,9 +729,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-gradient-to-br from-orange-50 via-white to-amber-50">
       {/* Frame UI: Orange header (vet service dashboard style) */}
-      <header className="bg-gradient-to-r from-[#FF8C42] to-orange-500 border-b border-orange-200 sticky top-0 z-40 shadow-md">
+      <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] to-orange-500 border-b border-orange-200 shadow-md z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -793,8 +804,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         </div>
       </header>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      {/* Content — scrolls under fixed header (works inside shells that use overflow-hidden). */}
+      <main className="max-w-7xl mx-auto w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-6 overscroll-contain">
         {/* Products Tab */}
         {activeTab === 'products' && (
           <div className="space-y-4">
@@ -893,33 +904,76 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             ) : (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('past')}
+                    aria-pressed={ordersBucketFilter === 'past'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'past'
+                        ? 'bg-white border-orange-400 ring-2 ring-orange-300'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Previous / completed</p>
                     <p className="mt-1 text-2xl font-bold text-slate-800">{pastOrders.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white border border-orange-100 p-4 shadow-sm ring-1 ring-orange-100">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('today')}
+                    aria-pressed={ordersBucketFilter === 'today'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'today'
+                        ? 'bg-white border-orange-500 ring-2 ring-orange-400'
+                        : 'bg-white border-orange-100 ring-1 ring-orange-100 hover:border-orange-200'
+                    }`}
+                  >
                     <p className="text-xs font-medium uppercase tracking-wide text-orange-800/90">Today&apos;s orders</p>
                     <p className="mt-1 text-2xl font-bold text-orange-700">{todayOrders.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('upcoming')}
+                    aria-pressed={ordersBucketFilter === 'upcoming'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'upcoming'
+                        ? 'bg-white border-orange-400 ring-2 ring-orange-300'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Upcoming</p>
                     <p className="mt-1 text-2xl font-bold text-slate-800">{upcomingOrders.length}</p>
-                  </div>
+                  </button>
                 </div>
-                {[
-                  { title: 'Previous / completed', list: pastOrders, empty: 'No completed or cancelled orders in this view.' },
-                  { title: "Today's orders", list: todayOrders, empty: 'No orders for today (includes overdue items awaiting action).' },
-                  { title: 'Upcoming orders', list: upcomingOrders, empty: 'No future scheduled drops.' },
-                ].map((section) => (
-                  <div key={section.title} className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-800 px-1 pt-2">{section.title}</h3>
-                    {section.list.length === 0 ? (
-                      <p className="text-sm text-slate-400 px-1 py-1">{section.empty}</p>
-                    ) : (
-                      section.list.map((order) => renderMealOrderCard(order))
-                    )}
-                  </div>
-                ))}
+                {(() => {
+                  const section =
+                    ordersBucketFilter === 'past'
+                      ? {
+                          title: 'Previous / completed',
+                          list: pastOrders,
+                          empty: 'No completed or cancelled orders in this view.',
+                        }
+                      : ordersBucketFilter === 'today'
+                        ? {
+                            title: "Today's orders",
+                            list: todayOrders,
+                            empty: 'No orders for today (includes overdue items awaiting action).',
+                          }
+                        : {
+                            title: 'Upcoming orders',
+                            list: upcomingOrders,
+                            empty: 'No future scheduled drops.',
+                          };
+                  return (
+                    <div className="space-y-3 pt-2">
+                      <h3 className="text-sm font-semibold text-slate-800 px-1">{section.title}</h3>
+                      {section.list.length === 0 ? (
+                        <p className="text-sm text-slate-400 px-1 py-1">{section.empty}</p>
+                      ) : (
+                        section.list.map((order) => renderMealOrderCard(order))
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>

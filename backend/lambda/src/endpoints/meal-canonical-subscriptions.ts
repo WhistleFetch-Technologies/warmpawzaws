@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import {
   createCanonicalSubscription,
   findSubscriptionByClientRequestKey,
-  getCanonicalSubscriptionForCustomer,
   listCanonicalDeliveriesForCustomer,
   runRollingSessionGenerationJob,
   type CreateCanonicalSubscriptionInput,
@@ -15,6 +14,8 @@ import {
 } from '../services/meal-subscription/meal-subscription-canonical-service';
 import {
   activateCanonicalSubscriptionAfterPayment,
+  enrichSubscriptionRowsWithPresignedMealImages,
+  getCanonicalSubscriptionDetailForCustomer,
   listCanonicalSubscriptionsForCustomer,
   pauseCanonicalSubscription,
   rescheduleCanonicalDeliverySession,
@@ -157,6 +158,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     }
     const lifecycle = (c.req.query('lifecycle') || 'all') as MealSubscriptionLifecycleFilter;
     const rows = await listCanonicalSubscriptionsForCustomer(customerId, lifecycle);
+    await enrichSubscriptionRowsWithPresignedMealImages(rows);
     return c.json({ success: true, subscriptions: rows });
   });
 
@@ -169,7 +171,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     if (!customerId) {
       return c.json({ success: false, error: 'customerId query parameter is required' }, 400);
     }
-    const row = await getCanonicalSubscriptionForCustomer(id, customerId);
+    const row = await getCanonicalSubscriptionDetailForCustomer(id, customerId);
     if (!row) {
       return c.json({ success: false, error: 'Subscription not found' }, 404);
     }
