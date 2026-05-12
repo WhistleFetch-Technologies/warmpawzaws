@@ -13,6 +13,7 @@
  */
 
 import { query } from '../database/rds-connection';
+import { geocodeVendorAddressFields } from './vendor-address-geocode';
 
 export interface DispatchResult {
   ok: boolean;
@@ -39,6 +40,9 @@ interface MealOrderRow {
 
 const DEFAULT_DELIVERY_BUFFER_MIN = 30;
 
+/** Lambda runs in VPC; Java ECS + TLS/handshake + cold start can exceed a short client timeout. */
+const DISPATCH_FETCH_TIMEOUT_MS = 28_000;
+
 function plusMinutesIso(base: Date, minutes: number): string {
   return new Date(base.getTime() + minutes * 60_000).toISOString();
 }
@@ -46,6 +50,13 @@ function plusMinutesIso(base: Date, minutes: number): string {
 function safeJsonParse<T = unknown>(s: unknown): T | null {
   if (typeof s !== 'string' || s.trim() === '') return null;
   try { return JSON.parse(s) as T; } catch { return null; }
+}
+
+/** JSONB columns may be already parsed as an object by node-pg. */
+function deliveryAddressRecord(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return safeJsonParse<Record<string, unknown>>(raw) ?? {};
 }
 
 function pickString(...vals: unknown[]): string {
@@ -65,6 +76,21 @@ function pickNumber(...vals: unknown[]): number | null {
     }
   }
   return null;
+}
+
+/** Undici/Node fetch often sets `error.cause` (syscall errno) — log-friendly for SG/DNS issues. */
+function formatFetchFailure(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const parts = [e.message];
+  const c = e.cause;
+  if (c instanceof Error) {
+    parts.push(c.message);
+    const code = (c as NodeJS.ErrnoException).code;
+    if (code) parts.push(`code=${code}`);
+  } else if (c != null && typeof c === 'object' && 'code' in c) {
+    parts.push(`code=${String((c as { code: unknown }).code)}`);
+  }
+  return parts.join(' | ');
 }
 
 /**
@@ -118,7 +144,7 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       DEFAULT_DELIVERY_BUFFER_MIN
     );
 
-    const addr = safeJsonParse<Record<string, unknown>>(row.delivery_address) ?? {};
+    const addr = deliveryAddressRecord(row.delivery_address);
     const customerLat = pickNumber(row.customer_lat, addr.lat, addr.latitude);
     const customerLng = pickNumber(row.customer_lng, addr.lng, addr.longitude);
 
@@ -127,10 +153,32 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     const vendorState = pickString((row as Record<string, unknown>).vendor_state);
     const vendorPincode = pickString((row as Record<string, unknown>).vendor_pincode);
     const vendorLandmark = pickString((row as Record<string, unknown>).vendor_landmark);
-    const vendorLat = pickNumber((row as Record<string, unknown>).vendor_lat);
-    const vendorLng = pickNumber((row as Record<string, unknown>).vendor_lng);
+    let vendorLat = pickNumber((row as Record<string, unknown>).vendor_lat);
+    let vendorLng = pickNumber((row as Record<string, unknown>).vendor_lng);
+
+    // DB coords still null (stale JOIN, legacy row, or coords added after first "preparing" click)
+    if (vendorLine1 && (vendorLat == null || vendorLng == null)) {
+      try {
+        const g = await geocodeVendorAddressFields({
+          address: vendorLine1,
+          city: vendorCity,
+          state: vendorState,
+          pincode: vendorPincode,
+        });
+        if (g) {
+          vendorLat = g.latitude;
+          vendorLng = g.longitude;
+          console.log(`[meal-dispatch] geocode fallback for vendor pickup mealOrderId=${mealOrderId}`);
+        }
+      } catch (e: unknown) {
+        console.warn('[meal-dispatch] geocode fallback failed:', e instanceof Error ? e.message : e);
+      }
+    }
 
     if (!vendorLine1 || vendorLat == null || vendorLng == null) {
+      console.warn(
+        `[meal-dispatch] vendor pickup incomplete mealOrderId=${mealOrderId} hasLine1=${Boolean(vendorLine1)} vendorLat=${vendorLat ?? 'n/a'} vendorLng=${vendorLng ?? 'n/a'}`
+      );
       return { ok: false, error: 'vendor pickup address (line1 + lat/lng) missing — cannot dispatch' };
     }
     if (customerLat == null || customerLng == null) {
@@ -196,8 +244,16 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       pidgePayload,
     });
 
+    console.log(
+      `[meal-dispatch] POST ${baseUrl}/logistics/meal/dispatch mealOrderId=${mealOrderId} pickup=${vendorLine1.slice(0, 40)}…`
+    );
+
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, DISPATCH_FETCH_TIMEOUT_MS);
     let resp: Response;
     try {
       resp = await fetch(`${baseUrl}/logistics/meal/dispatch`, {
@@ -208,8 +264,21 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      console.warn('[meal-dispatch] HTTP call failed:', message);
-      return { ok: false, error: `delivery-service unreachable: ${message}` };
+      const name = e instanceof Error ? e.name : '';
+      if (timedOut || name === 'AbortError' || /aborted/i.test(message)) {
+        console.warn(
+          `[meal-dispatch] delivery-service no response within ${DISPATCH_FETCH_TIMEOUT_MS}ms (mealOrderId=${mealOrderId})`
+        );
+        return {
+          ok: false,
+          error: `delivery-service timed out after ${DISPATCH_FETCH_TIMEOUT_MS / 1000}s — check ECS delivery-service is healthy, ELB target group, and Lambda VPC/security groups allow egress to the internal load balancer`,
+        };
+      }
+      console.warn('[meal-dispatch] HTTP call failed:', formatFetchFailure(e), e);
+      return {
+        ok: false,
+        error: `delivery-service unreachable: ${formatFetchFailure(e)} — if this persists, ensure the internal delivery ALB security group allows TCP 80 from the API Lambda security group (Pidge/JWT not used on this hop)`,
+      };
     } finally {
       clearTimeout(timer);
     }
@@ -218,8 +287,10 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     let parsed: Record<string, unknown> = {};
     try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { raw: text }; }
     if (!resp.ok) {
-      console.warn('[meal-dispatch] delivery-service returned', resp.status, text);
-      return { ok: false, error: `HTTP ${resp.status}: ${text || 'no body'}` };
+      const apiErr = typeof parsed.error === 'string' ? parsed.error : null;
+      const detail = apiErr || text || 'no body';
+      console.warn('[meal-dispatch] delivery-service returned', resp.status, detail.slice(0, 500));
+      return { ok: false, error: `HTTP ${resp.status}: ${detail}` };
     }
     const pidgeOrderId = typeof parsed.pidgeOrderId === 'string' ? parsed.pidgeOrderId : undefined;
     const deliveryTrackingId =

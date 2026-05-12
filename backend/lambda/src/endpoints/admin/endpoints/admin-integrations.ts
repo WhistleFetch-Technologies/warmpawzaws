@@ -481,6 +481,10 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
           regions = [];
         }
 
+        const hasSecret =
+          !!p.apiKey &&
+          String(p.apiKey).trim() !== '' &&
+          String(p.apiKey).trim() !== '••••••••';
         return {
           id: p.id,
           name: p.name,
@@ -488,7 +492,9 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
           enabled: p.enabled !== false,
           baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
           apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
-          apiKey: p.apiKey ? '••••••••' : null,
+          /** Never echo real api_key / Pidge password; use apiKeySet + empty apiKey for edit UX. */
+          apiKey: '',
+          apiKeySet: hasSecret,
           categories: categories,
           pricing: pricing,
           regions: regions,

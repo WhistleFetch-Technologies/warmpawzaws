@@ -17,6 +17,7 @@ import { select, insert, update, query } from '../../../database/rds-connection'
 import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 import { resolveVendorById } from './vendorProfile.vendor';
+import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 
 /** Normalize DB boolean (pg usually returns boolean; some paths may return 't'/'f' strings). */
 function isDbTruthy(v: unknown): boolean {
@@ -150,6 +151,17 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 email: payload.email,
                 businessName: payload.businessName || payload.business_name,
               });
+              let bankCreateGeo: { latitude: number; longitude: number } | null = null;
+              try {
+                bankCreateGeo = await geocodeVendorAddressFields({
+                  address: payload.address || 'Not specified',
+                  city: payload.city || 'Not specified',
+                  state: payload.state || 'Not specified',
+                  pincode: pincodeValue,
+                });
+              } catch (e: any) {
+                console.warn('[BankAccount] Geocode failed (non-fatal):', e?.message);
+              }
               const newVendor = await insert('vendors', {
                 id: vendorId,
                 phone: identity.phone,
@@ -171,6 +183,9 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 commission_percentage: tr.commission_percentage,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                ...(bankCreateGeo
+                  ? { latitude: bankCreateGeo.latitude, longitude: bankCreateGeo.longitude }
+                  : {}),
               });
               console.log(`[BankAccount] Created vendor record for ${vendorId}`);
             }

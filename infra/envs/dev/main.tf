@@ -361,6 +361,20 @@ resource "aws_security_group_rule" "rds_postgres_from_delivery_ecs" {
   description              = "delivery-service Fargate to shared dev Postgres (Terraform rule)"
 }
 
+# api-handler (VPC Lambda) POSTs meal dispatch to the internal ALB. The ALB SG otherwise only allows
+# API Gateway VPC link ENIs — without this rule, Node fetch fails with a generic "fetch failed".
+resource "aws_security_group_rule" "delivery_internal_alb_ingress_from_lambda" {
+  count = local.delivery_stack_live ? 1 : 0
+
+  type                     = "ingress"
+  security_group_id        = module.delivery_service_ecs[0].alb_security_group_id
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = module.lambda.lambda_security_group_id
+  description              = "HTTP from API Lambda to internal delivery ALB (meal-dispatch)"
+}
+
 # Interface VPC endpoint for Secrets Manager uses a tight SG; Fargate task ENIs must be allowed (private DNS -> VPCE).
 data "aws_vpc_endpoint" "secretsmanager" {
   vpc_id       = module.vpc.vpc_id
