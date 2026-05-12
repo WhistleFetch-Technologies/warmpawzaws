@@ -80,6 +80,13 @@ interface TeleConsultationRouterProps {
   onNavigate: (screen: string, data?: any) => void;
   /** When true (e.g. `?service=tele` or Book Now from tele promos), skip mode selection and open instant vet list. */
   skipModeSelection?: boolean;
+  /**
+   * When true (e.g. Home → Veterinary Care → "Tele Consult" tile), skip mode selection and
+   * open the SCHEDULED consultation provider list directly. Back from the provider list
+   * returns to the parent (home) instead of the mode-selection screen.
+   * `skipModeSelection` (instant) takes precedence if both are true.
+   */
+  skipToScheduled?: boolean;
 }
 
 type FlowStep =
@@ -794,8 +801,10 @@ function CallingVendorScreen({
 // MAIN COMPONENT
 // ============================================================================
 
-export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection }: TeleConsultationRouterProps) {
-  const [step, setStep] = useState<FlowStep>(skipModeSelection ? 'instant-vendor-list' : 'mode-selection');
+export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection, skipToScheduled }: TeleConsultationRouterProps) {
+  const [step, setStep] = useState<FlowStep>(
+    skipModeSelection ? 'instant-vendor-list' : skipToScheduled ? 'provider-list' : 'mode-selection'
+  );
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -1089,7 +1098,11 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
         onBack();
         break;
       case 'provider-list':
-        setStep('mode-selection');
+        if (skipToScheduled) {
+          onBack();
+        } else {
+          setStep('mode-selection');
+        }
         break;
       case 'provider-profile':
         setSelectedProvider(null);

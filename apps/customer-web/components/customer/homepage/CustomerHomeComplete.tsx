@@ -244,6 +244,12 @@ export function CustomerHomeComplete({
   const [vetServicesData, setVetServicesData] = useState<any[]>([]);
   const [hotDeals, setHotDeals] = useState<any[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
+  /** Live min price across vendors offering tele consultation (for the home Tele Consult tile). */
+  const [teleMinPrice, setTeleMinPrice] = useState<number | null>(null);
+  /** Live min price across vendors offering at-home vet visits (for the home Vet at Home tile). */
+  const [vetHomeMinPrice, setVetHomeMinPrice] = useState<number | null>(null);
+  /** Live min price across vendors offering clinic visits (for the home Clinic Visit tile). */
+  const [clinicMinPrice, setClinicMinPrice] = useState<number | null>(null);
   const [activeBookings, setActiveBookings] = useState<any[]>([]); // For "Attention" section
 
   // ✅ Live Tracking & Review State
@@ -319,6 +325,45 @@ export function CustomerHomeComplete({
       vv?.removeEventListener('resize', reclamp);
       vv?.removeEventListener('scroll', reclamp);
     };
+  }, []);
+
+  /**
+   * Live min price for the Veterinary Care home tiles (Tele Consult / Vet at Home / Clinic Visit).
+   * Reuses the same endpoint as VetServicesByStyle so we don't introduce a new backend.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMinPrice = async (style: 'tele' | 'at_home' | 'at_center'): Promise<number | null> => {
+      try {
+        const res = await apiClient.get<any>(
+          `/customer/services/by-style?style=${style}&category=vet`
+        );
+        const providers = res?.providers || res?.vendors || [];
+        const prices: number[] = [];
+        for (const p of providers) {
+          for (const s of (p?.services || [])) {
+            const n = Number(s?.price ?? s?.custom_price);
+            if (Number.isFinite(n) && n > 0) prices.push(n);
+          }
+        }
+        return prices.length > 0 ? Math.min(...prices) : null;
+      } catch (e) {
+        console.warn(`[CustomerHomeComplete] vet ${style} min price fetch failed`, e);
+        return null;
+      }
+    };
+    (async () => {
+      const [tele, atHome, atCenter] = await Promise.all([
+        fetchMinPrice('tele'),
+        fetchMinPrice('at_home'),
+        fetchMinPrice('at_center'),
+      ]);
+      if (cancelled) return;
+      if (tele != null) setTeleMinPrice(tele);
+      if (atHome != null) setVetHomeMinPrice(atHome);
+      if (atCenter != null) setClinicMinPrice(atCenter);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const persistAiFabOffset = useCallback(
@@ -2458,9 +2503,7 @@ export function CustomerHomeComplete({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const url = buildTeleInstantAutoPayBookingUrl();
-                console.log('[CustomerHomeComplete] Tele Consult CTA →', url);
-                router.push(url);
+                handleNavigation('vet-tele-consultation', { startStep: 'scheduled' });
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -2475,27 +2518,27 @@ export function CustomerHomeComplete({
                 <Video className="w-5 h-5 text-blue-600" />
               </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1 pointer-events-none">Tele Consult</h3>
-              <p className="text-blue-600 font-medium text-sm pointer-events-none">₹299</p>
+              <p className="text-blue-600 font-medium text-sm pointer-events-none">₹{teleMinPrice ?? 299}</p>
             </button>
             <button
-              onClick={() => handleNavigation('vet')}
+              onClick={() => handleNavigation('vet-home-visit', { startStep: 'home' })}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
                 <HomeIcon className="w-5 h-5 text-green-600" />
               </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
-              <p className="text-blue-600 font-medium text-sm">₹599</p>
+              <p className="text-blue-600 font-medium text-sm">₹{vetHomeMinPrice ?? 599}</p>
             </button>
             <button
-              onClick={() => handleNavigation('vet')}
+              onClick={() => handleNavigation('vet-clinic-list', { startStep: 'home' })}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Building2 className="w-5 h-5 text-purple-600" />
               </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Clinic Visit</h3>
-              <p className="text-blue-600 font-medium text-sm">₹399</p>
+              <p className="text-blue-600 font-medium text-sm">₹{clinicMinPrice ?? 399}</p>
             </button>
           </div>
         </div>
