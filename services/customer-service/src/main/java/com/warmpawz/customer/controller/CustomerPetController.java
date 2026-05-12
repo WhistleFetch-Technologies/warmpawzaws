@@ -186,13 +186,17 @@ public class CustomerPetController {
         return updatedPetResponse(petService.updatePet(petId, request));
     }
 
-    @PutMapping("/customer/{phone}/pets/{petId}")
-    public ResponseEntity<CommonResponse<PetResponse>> updatePetByPhone(
-            @PathVariable String phone,
+    @PutMapping("/customer/{segment}/pets/{petId}")
+    public ResponseEntity<CommonResponse<PetResponse>> updatePetByPhoneOrCustomerId(
+            @PathVariable String segment,
             @PathVariable UUID petId,
             @RequestBody AddPetRequest request
     ) {
-        return updatedPetResponse(petService.updatePetByPhone(requireValidPhone(phone), petId, request));
+        if (segment != null && UUID_SEGMENT.matcher(segment.trim()).matches()) {
+            return updatedPetResponse(
+                    petService.updatePetByCustomerId(UUID.fromString(segment.trim()), petId, request));
+        }
+        return updatedPetResponse(petService.updatePetByPhone(requireValidPhone(segment), petId, request));
     }
 
     // =========================

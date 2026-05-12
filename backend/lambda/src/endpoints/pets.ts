@@ -107,7 +107,7 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      const customer = await findCustomerForCustomerPetPathSegment(phone);
+      const customer = await findCustomerForCustomerPetPathSegment(phone, petId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
@@ -464,7 +464,7 @@ export function registerPetEndpoints(app: Hono) {
       const { phone, petId } = c.req.param();
       const petData = await c.req.json();
 
-      const customer = await findCustomerForCustomerPetPathSegment(phone);
+      const customer = await findCustomerForCustomerPetPathSegment(phone, petId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
@@ -484,6 +484,10 @@ export function registerPetEndpoints(app: Hono) {
         profile_photo_url: petData.photo || petData.photos?.[0] || undefined,
         medical_history: petData.healthRecords || petData.medicalHistory || petData.medical_history || {},
       };
+
+      if (petData.vaccinations != null && typeof petData.vaccinations === 'object') {
+        updateData.vaccination_records = petData.vaccinations;
+      }
 
       if (petData.age) {
         if (petData.ageUnit === 'years' || petData.ageUnit === 'year') {
@@ -557,7 +561,7 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      const customer = await findCustomerForCustomerPetPathSegment(phone);
+      const customer = await findCustomerForCustomerPetPathSegment(phone, petId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
@@ -610,7 +614,7 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { phone, petId } = c.req.param();
 
-      const customer = await findCustomerForCustomerPetPathSegment(phone);
+      const customer = await findCustomerForCustomerPetPathSegment(phone, petId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }

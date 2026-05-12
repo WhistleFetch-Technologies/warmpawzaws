@@ -74,14 +74,31 @@ export async function findCustomerByPhone(phone: string): Promise<any | null> {
 /**
  * First path segment of {@code /customer/:segment/pets/...} may be a DB customer UUID or a phone string.
  * Matches customer-service behaviour for pet routes (UUID id vs flexible phone).
+ *
+ * When {@code petId} is set and the segment is a UUID, falls back to verifying ownership via
+ * {@code pets.customer_id} if there is no {@code customers} row (e.g. UAT partial data, or reads that used
+ * {@code GET /customer/pets/:petId} without a customer record).
  */
-export async function findCustomerForCustomerPetPathSegment(segment: string): Promise<any | null> {
+export async function findCustomerForCustomerPetPathSegment(
+  segment: string,
+  petId?: string
+): Promise<any | null> {
   const s = String(segment || '').trim();
   if (!s) return null;
   if (isValidUUID(s)) {
     const byId = await select('customers', { id: s });
     if (byId.length > 0) return byId[0];
-    return null;
+
+    const pid = String(petId || '').trim();
+    if (!isValidUUID(pid)) return null;
+
+    const pets = await select('pets', { id: pid });
+    if (pets.length === 0) return null;
+    const row = pets[0] as Record<string, unknown>;
+    const ownerId = String(row.customer_id ?? row.customerId ?? '').trim();
+    if (!ownerId || ownerId.toLowerCase() !== s.toLowerCase()) return null;
+
+    return { id: ownerId };
   }
   return findCustomerByPhone(s);
 }

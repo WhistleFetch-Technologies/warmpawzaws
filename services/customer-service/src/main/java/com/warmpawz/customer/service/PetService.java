@@ -27,6 +27,9 @@ public interface PetService {
 
     PetResponse updatePetByPhone(String phone, UUID petId, AddPetRequest request);
 
+    /** When the path segment is the DB customer id (UUID), same ownership rules as {@link #updatePetByPhone}. */
+    PetResponse updatePetByCustomerId(UUID customerId, UUID petId, AddPetRequest request);
+
     void deletePet(UUID petId);
 
     void deletePetByPhone(String phone, UUID petId);

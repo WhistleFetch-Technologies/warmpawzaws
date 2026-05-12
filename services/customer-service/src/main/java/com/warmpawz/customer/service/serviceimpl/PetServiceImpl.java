@@ -186,6 +186,16 @@ public class PetServiceImpl implements PetService {
         return updatePetEntity(pet, request);
     }
 
+    @Override
+    @Transactional
+    public PetResponse updatePetByCustomerId(UUID customerId, UUID petId, AddPetRequest request) {
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Customer not found"));
+        Pet pet = petRepository.findByIdAndCustomer_Id(petId, customer.getId())
+                .orElseThrow(() -> new NotFoundException("Pet not found"));
+        return updatePetEntity(pet, request);
+    }
+
     // =========================
     // DELETE PET
     // =========================
