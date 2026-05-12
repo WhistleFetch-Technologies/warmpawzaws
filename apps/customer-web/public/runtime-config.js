@@ -32,8 +32,7 @@
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
       // Intentionally NOT setting apiBaseUrl - let env var (http://localhost:3000) be used
       uatMode: true,
-      environment: 'development',
-      customerEcommerceEnabled: true
+      environment: 'development'
     };
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -53,8 +52,7 @@
     'dev.customer.warmpawz.com': {
       apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
       uatMode: true,
-      environment: 'development',
-      customerEcommerceEnabled: true
+      environment: 'development'
     },
     // You can extend mappings here if needed, e.g. stage.customer.warmpawz.com
   };
@@ -64,16 +62,14 @@
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
       apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
       uatMode: mapped.uatMode,
-      environment: mapped.environment,
-      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false
+      environment: mapped.environment
     };
   } else {
     // Fallback to production
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
-      environment: 'production',
-      customerEcommerceEnabled: true
+      environment: 'production'
     };
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);

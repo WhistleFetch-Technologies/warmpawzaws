@@ -88,9 +88,9 @@ else
 fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
-# Customer marketplace toggle (default on). Resolve here so the build picks it
+# Customer marketplace toggle (default off). Resolve here so the build picks it
 # up from the env, and the deploy-time runtime-config.js stays consistent.
-CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-true}"
+CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
 if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
   CEE_JS="true"
 else

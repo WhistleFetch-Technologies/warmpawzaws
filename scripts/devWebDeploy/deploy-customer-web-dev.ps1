@@ -14,8 +14,8 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Default on; pass -CustomerEcommerceDisabled to bake "Soon" shop tiles for this deploy.
-    [switch]$CustomerEcommerceDisabled
+    # Set to show home shop category row + open marketplace by category (still uses same API).
+    [switch]$CustomerEcommerceEnabled
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,7 +131,7 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
-$customerEcommerceJs = if ($CustomerEcommerceDisabled) { 'false' } else { 'true' }
+$customerEcommerceJs = if ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint
