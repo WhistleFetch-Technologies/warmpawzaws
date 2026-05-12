@@ -113,83 +113,107 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       products.forEach((product: any, index: number) => {
         const rowNum = index + 1;
         const rowErrors: ValidationError[] = [];
+        const push = (field: string, message: string, value?: unknown) =>
+          rowErrors.push({ row: rowNum, field, message, value });
 
-        // Required field validations
-        if (!product.name || typeof product.name !== 'string' || product.name.trim().length === 0) {
-          rowErrors.push({ row: rowNum, field: 'name', message: 'Name is required', value: product.name });
-        } else if (product.name.length > 255) {
-          rowErrors.push({ row: rowNum, field: 'name', message: 'Name must be less than 255 characters', value: product.name.length });
+        // ── Required ────────────────────────────────────────────────────
+        // 1. Title*
+        const title = typeof product.name === 'string' ? product.name.trim() : '';
+        if (!title) push('name', 'Title is required', product.name);
+        else if (title.length > 255) push('name', 'Title must be ≤ 255 characters', title.length);
+
+        // 2. SP* (price)
+        const priceNum = Number(product.price);
+        if (product.price === undefined || product.price === null || product.price === '' || isNaN(priceNum)) {
+          push('price', 'SP (selling price) is required', product.price);
+        } else if (priceNum <= 0) {
+          push('price', 'SP must be greater than 0', priceNum);
         }
 
-        if (product.price === undefined || product.price === null || isNaN(Number(product.price))) {
-          rowErrors.push({ row: rowNum, field: 'price', message: 'Valid price is required', value: product.price });
-        } else if (Number(product.price) < 0) {
-          rowErrors.push({ row: rowNum, field: 'price', message: 'Price cannot be negative', value: product.price });
+        // 3. Quantity*
+        const stockNum = Number(product.stock_quantity);
+        if (product.stock_quantity === undefined || product.stock_quantity === null || product.stock_quantity === '') {
+          push('stock_quantity', 'Quantity is required', product.stock_quantity);
+        } else if (isNaN(stockNum) || stockNum < 0) {
+          push('stock_quantity', 'Quantity must be a number ≥ 0', product.stock_quantity);
+        } else if (!Number.isInteger(stockNum)) {
+          push('stock_quantity', 'Quantity must be a whole number', product.stock_quantity);
         }
 
-        if (product.stock_quantity === undefined || isNaN(Number(product.stock_quantity))) {
-          rowErrors.push({ row: rowNum, field: 'stock_quantity', message: 'Stock quantity is required', value: product.stock_quantity });
-        } else if (Number(product.stock_quantity) < 0) {
-          rowErrors.push({ row: rowNum, field: 'stock_quantity', message: 'Stock cannot be negative', value: product.stock_quantity });
+        // 4. Category* — required AND must match an active catalog name
+        const categoryStr = product.category ? String(product.category).trim() : '';
+        if (!categoryStr) {
+          push('category', 'Category is required (pick from the dropdown)', product.category);
+        } else if (!validCategories.has(categoryStr.toLowerCase())) {
+          push(
+            'category',
+            `Category must match an active catalog: ${[...validCategories].join(', ') || 'no active categories'}`,
+            categoryStr
+          );
         }
 
-        // Optional field validations
-        if (product.sku) {
-          if (existingSkus.has(product.sku.toLowerCase())) {
-            rowErrors.push({ row: rowNum, field: 'sku', message: 'SKU already exists', value: product.sku });
-          }
+        // 5. HSN* — 4–8 digit numeric (Indian HSN/SAC range)
+        const hsnStr = product.hsn_code ? String(product.hsn_code).trim() : '';
+        if (!hsnStr) push('hsn_code', 'HSN is required for invoicing', product.hsn_code);
+        else if (!/^\d{4,8}$/.test(hsnStr)) push('hsn_code', 'HSN must be 4–8 digits (numbers only)', hsnStr);
+
+        // 6. Tax* / GST rate — required, must be one of the 5 GST slabs
+        const gstNum = Number(product.gst_rate);
+        if (product.gst_rate === undefined || product.gst_rate === null || product.gst_rate === '') {
+          push('gst_rate', 'Tax (GST %) is required', product.gst_rate);
+        } else if (isNaN(gstNum) || ![0, 5, 12, 18, 28].includes(gstNum)) {
+          push('gst_rate', 'Tax must be 0, 5, 12, 18 or 28', product.gst_rate);
         }
 
-        if (product.compare_at_price !== undefined && product.compare_at_price !== null) {
-          if (isNaN(Number(product.compare_at_price))) {
-            rowErrors.push({ row: rowNum, field: 'compare_at_price', message: 'Invalid compare at price', value: product.compare_at_price });
-          } else if (Number(product.compare_at_price) < Number(product.price)) {
-            rowErrors.push({ row: rowNum, field: 'compare_at_price', message: 'Compare at price should be greater than price', value: product.compare_at_price });
-          }
+        // 7. Image* — at least one URL
+        const imageUrls = parseImageList(product.images ?? product.image_urls);
+        if (imageUrls.length === 0) {
+          push('images', 'At least one product image URL is required', product.images);
+        } else if (!imageUrls.every(isLikelyUrl)) {
+          push('images', 'Image must be an http(s) URL (1000×1000 px recommended)', product.images);
         }
 
-        if (product.gst_rate !== undefined && product.gst_rate !== null) {
-          const rate = Number(product.gst_rate);
-          if (isNaN(rate) || ![0, 5, 12, 18, 28].includes(rate)) {
-            rowErrors.push({ row: rowNum, field: 'gst_rate', message: 'GST rate must be 0, 5, 12, 18, or 28', value: product.gst_rate });
-          }
+        // ── Optional ────────────────────────────────────────────────────
+        if (product.sku && existingSkus.has(String(product.sku).toLowerCase())) {
+          push('sku', 'SKU already exists for this vendor', product.sku);
         }
 
-        if (product.weight !== undefined && product.weight !== null) {
-          if (isNaN(Number(product.weight)) || Number(product.weight) < 0) {
-            rowErrors.push({ row: rowNum, field: 'weight', message: 'Invalid weight', value: product.weight });
-          }
+        if (product.compare_at_price !== undefined && product.compare_at_price !== null && product.compare_at_price !== '') {
+          const mrp = Number(product.compare_at_price);
+          if (isNaN(mrp)) push('compare_at_price', 'MRP must be a number', product.compare_at_price);
+          else if (!isNaN(priceNum) && mrp < priceNum)
+            push('compare_at_price', 'MRP must be ≥ SP', product.compare_at_price);
         }
 
-        if (product.category && String(product.category).trim()) {
-          const cn = String(product.category).trim().toLowerCase();
-          if (!validCategories.has(cn)) {
-            rowErrors.push({
-              row: rowNum,
-              field: 'category',
-              message: 'Category must match an active catalog category',
-              value: product.category,
-            });
-          }
+        if (product.weight !== undefined && product.weight !== null && product.weight !== '') {
+          const w = Number(product.weight);
+          if (isNaN(w) || w < 0) push('weight', 'Weight must be a number ≥ 0', product.weight);
         }
 
+        // ── Build the cleaned product if no errors ──────────────────────
         if (rowErrors.length === 0) {
           validProducts.push({
-            name: product.name.trim(),
+            name: title,
             description: product.description?.trim() || null,
-            category: product.category?.trim() || null,
+            category: categoryStr || null,
             sku: product.sku?.trim() || null,
-            price: Number(product.price),
-            compare_at_price: product.compare_at_price ? Number(product.compare_at_price) : null,
-            stock_quantity: Number(product.stock_quantity),
-            hsn_code: product.hsn_code?.trim() || null,
-            gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
-            weight: product.weight ? Number(product.weight) : null,
+            price: priceNum,
+            compare_at_price:
+              product.compare_at_price !== undefined && product.compare_at_price !== null && product.compare_at_price !== ''
+                ? Number(product.compare_at_price)
+                : null,
+            stock_quantity: stockNum,
+            hsn_code: hsnStr,
+            gst_rate: gstNum,
+            weight:
+              product.weight !== undefined && product.weight !== null && product.weight !== ''
+                ? Number(product.weight)
+                : null,
             dimensions: product.dimensions?.trim() || null,
             material: product.material?.trim() || null,
             brand: product.brand?.trim() || null,
             tags: product.tags?.trim() || null,
-            images: product.images || product.image_urls || null,
+            images: imageUrls.join(', '),
             is_active: false,
             status: 'pending',
           });
@@ -391,13 +415,22 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         return c.json({ success: false, error: 'File must contain header row and at least one data row' }, 400);
       }
 
-      // Parse header
+      // Parse header. Normalize the same way as the XLSX path so a vendor can
+      // copy any header from the Excel template (incl. `Image (1000X1000px)`,
+      // `Type (Category)`, `Title*`) into a CSV without breaking the mapping.
       const headerLine = lines[0];
-      const headers = parseCSVLine(headerLine).map((h: string) => 
-        h.toLowerCase().replace(/[*\s]/g, '').replace(/_/g, '')
+      const headers = parseCSVLine(headerLine).map((h: string) =>
+        h
+          .replace(/\u00a0/g, ' ')
+          .toLowerCase()
+          .replace(/\*/g, '')
+          .replace(/\s+/g, '')
+          .replace(/_/g, '')
+          .replace(/[()]/g, '')
       );
 
-      // Map headers to standard field names
+      // Map CSV headers → internal field names. Aliases mirror the XLSX header
+      // map so vendors can use the same column names in either format.
       const fieldMap: Record<string, string> = {
         'name': 'name',
         'productname': 'name',
@@ -406,8 +439,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'desc': 'description',
         'category': 'category',
         'categoryname': 'category',
+        'typecategory': 'category',
         'sku': 'sku',
         'productsku': 'sku',
+        'barcodeean': 'sku',
+        'vendorproductid': 'sku',
         'price': 'price',
         'sellingprice': 'price',
         'sp': 'price',
@@ -429,6 +465,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'size': 'dimensions',
         'material': 'material',
         'materials': 'material',
+        'ingredients': 'material',
         'brand': 'brand',
         'brandname': 'brand',
         'tags': 'tags',
@@ -436,6 +473,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'images': 'images',
         'imageurls': 'images',
         'image': 'images',
+        'image1000x1000px': 'images',
         'isactive': 'is_active',
         'active': 'is_active',
         'status': 'is_active',
@@ -580,6 +618,23 @@ function parseCSVLine(line: string): string[] {
   
   result.push(current.trim());
   return result;
+}
+
+/** Split images cell (string | string[]) into a deduped, trimmed list. */
+function parseImageList(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((u) => String(u ?? '').trim()).filter(Boolean);
+  }
+  return String(raw)
+    .split(/[,\n]/)
+    .map((u) => u.trim())
+    .filter(Boolean);
+}
+
+/** Lightweight URL sniff — accept http(s):// and data:image/*;base64 (manual flow). */
+function isLikelyUrl(s: string): boolean {
+  return /^https?:\/\/\S+/i.test(s) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(s);
 }
 
 function escapeCsvValue(value: any): string {

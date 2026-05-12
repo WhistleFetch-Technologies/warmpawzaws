@@ -2,14 +2,19 @@
  * Map Warmpawz customer identity into Razorpay Standard Checkout options for react-native-razorpay.
  *
  * - Prefill E.164 `contact`, `email` (with placeholder if missing), and `name` when available —
- *   Razorpay may hide UPI collect when `prefill.email` is absent.
- * - `config.display.blocks.upi` with `flows: ['collect','intent','qr']` + `method: { upi: true }` so UPI ID
- *   (collect) is preferred where supported, with intent and QR as fallbacks.
- * - `theme.hide_topbar: true` removes the orange Razorpay merchant toolbar (the tall "W Warmpawz"
- *   header) at the top of `com.razorpay.CheckoutActivity`. On phones the merchant toolbar +
- *   system status bar were stacking into one tall band that pushed the WebView back button into
- *   the status-bar tap zone. Hiding it lets Razorpay's UI start right below the status bar; the
- *   Android system back button still dismisses checkout.
+ *   Razorpay needs `prefill.email` for UPI Collect (UPI ID) to surface on the Standard Checkout.
+ * - We let Razorpay render its **default Standard Checkout layout** (Recommended UPI apps + the
+ *   "All Payment Options" section) instead of forcing a single custom `display.blocks.upi` block.
+ *   That custom block was collapsing to nothing on Android (no UPI section visible at all) when
+ *   the intent flow could not enumerate installed PSP apps — see the `<queries>` declaration in
+ *   `android/app/src/main/AndroidManifest.xml` for the package-visibility fix that pairs with
+ *   this. Removing the override matches the reference (BHIVE / Razorpay Trusted Business)
+ *   layout and keeps iOS — which already worked — visually identical.
+ * - System chrome around `com.razorpay.CheckoutActivity` (status bar / merchant toolbar
+ *   alignment) is handled in `MainApplication.RazorpayCheckoutWindowInsetsCallback` so the
+ *   `← Warmpawz` header lays out cleanly below the system status bar. We do NOT set
+ *   `theme.hide_topbar` here: that option is only honored by `checkout.js` on the web SDK and
+ *   has no effect on react-native-razorpay's native Android checkout.
  */
 
 const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
@@ -46,8 +51,10 @@ export function profileEmailAndName(profile: any): { email?: string; name?: stri
 }
 
 /**
- * Merges customer prefill + UPI-friendly `config.display` into options passed to `RazorpayCheckout.open`.
- * Mutates a shallow copy; safe to call right before open().
+ * Merges customer prefill (E.164 contact, email, name) into the options passed to
+ * `RazorpayCheckout.open`. UPI surface configuration is intentionally NOT overridden — Razorpay's
+ * default Standard Checkout layout is used so UPI Apps + UPI ID + QR all appear (matching iOS and
+ * the Razorpay reference design). Returns a shallow copy; safe to call right before `open()`.
  */
 export function applyWarmpawzCustomerToRazorpayOptions(
   options: Record<string, any>,
@@ -67,35 +74,13 @@ export function applyWarmpawzCustomerToRazorpayOptions(
   if (emailForPrefill) prefill.email = emailForPrefill;
   if (name) prefill.name = name;
 
-  const display = {
-    preferences: { show_default_blocks: true },
-    blocks: {
-      upi: {
-        name: 'Pay using UPI',
-        instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
-      },
-    },
-    sequence: ['block.upi'],
-  };
-
-  const existingConfig =
-    typeof options.config === 'object' && options.config !== null ? options.config : {};
-
   const existingTheme =
     typeof options.theme === 'object' && options.theme !== null ? options.theme : {};
 
   const out: Record<string, any> = {
     ...options,
     prefill,
-    config: {
-      ...existingConfig,
-      display,
-    },
-    method: { upi: true },
-    theme: {
-      ...existingTheme,
-      hide_topbar: true,
-    },
+    theme: { ...existingTheme },
   };
 
   console.log('Razorpay options:', out);

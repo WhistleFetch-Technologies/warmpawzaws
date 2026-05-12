@@ -1117,49 +1117,61 @@ export function VetServicesByStyle({
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
                       Available Services ({provider.services.length})
                     </h4>
-                    {provider.services.map((service) => (
-                      <div 
-                        key={service.id}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                      >
-                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="font-medium text-gray-900 break-words">{service.name}</h5>
-                              {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                    {provider.services.map((service) => {
+                      const isPackage =
+                        isVendorServicePackageRow(service as any) || (service as any).isPackage;
+                      const descTrim = service.description?.trim() ?? '';
+                      return (
+                        <div
+                          key={service.id}
+                          className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                        >
+                          {/* Row 1: name + package badge (left) | price (right) */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                {service.name}
+                              </h5>
+                              {isPackage && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                  Package
+                                </span>
                               )}
                             </div>
-                            {service.description?.trim() && (
-                              <ServiceDescriptionInline
-                                description={service.description}
-                                title={service.name}
-                                className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                            <div className="shrink-0 text-right">
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice || service.price}
+                                vendorDiscount={service.vendorDiscount}
                               />
-                            )}
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="text-xs">
+                              <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                            </div>
+                          </div>
+
+                          {/* Row 2: description full width */}
+                          {descTrim && (
+                            <ServiceDescriptionInline
+                              description={descTrim}
+                              title={service.name}
+                              className="m-0 text-sm leading-5 text-gray-500"
+                            />
+                          )}
+
+                          {/* Row 3: badges (left) | Book Now (right) */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="text-xs shrink-0">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {service.duration} mins
                               </Badge>
                               {service.category && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
                                   {service.category}
                                 </Badge>
                               )}
                             </div>
-                          </div>
-                          <div className="ml-2 flex w-[7.5rem] shrink-0 flex-col items-end text-right">
-                            {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
-                            <ServicePricingDisplay
-                              basePrice={service.originalPrice || service.price}
-                              vendorDiscount={service.vendorDiscount}
-                              className="mb-1"
-                            />
-                            <p className="mt-0.5 w-full text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                             <Button
                               size="sm"
-                              className="mt-2 h-9 w-full bg-[#FF8C42] px-2 text-white hover:bg-[#E67A35]"
+                              className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);
@@ -1169,8 +1181,8 @@ export function VetServicesByStyle({
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

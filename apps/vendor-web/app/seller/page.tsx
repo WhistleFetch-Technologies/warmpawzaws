@@ -80,11 +80,19 @@ export default function SellerPage() {
 
   const loadVendorData = async () => {
     try {
+      const persistVendorId = (v: Record<string, unknown> | null | undefined) => {
+        const id = v && (v.id ?? v.vendorId);
+        if (id != null && String(id).trim() !== '') {
+          localStorage.setItem('vendorId', String(id).trim());
+        }
+      };
+
       // Get vendor data from localStorage (set during login)
       const stored = localStorage.getItem('vendorData');
       if (stored) {
         const parsed = JSON.parse(stored);
         setVendorData(parsed);
+        persistVendorId(parsed);
         setLoading(false);
         return;
       }
@@ -96,6 +104,7 @@ export default function SellerPage() {
         if (data?.vendor) {
           setVendorData(data.vendor);
           localStorage.setItem('vendorData', JSON.stringify(data.vendor));
+          persistVendorId(data.vendor);
         }
       }
     } catch (error) {
