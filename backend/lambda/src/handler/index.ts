@@ -691,7 +691,7 @@ registerAdminVendorDailyAccrualEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
-registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo (Pidge → Java delivery-service /webhooks/pidge), /logistics/auto-create-shipment, …
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);

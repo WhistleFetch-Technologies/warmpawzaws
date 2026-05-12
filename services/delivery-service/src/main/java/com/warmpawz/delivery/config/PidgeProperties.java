@@ -35,11 +35,6 @@ public class PidgeProperties {
 
 	private String webhookBearerToken = "";
 
-	/**
-	 * If set, POST /webhooks/pidge forwards the body to this URL (e.g. monolith API).
-	 */
-	private String webhookForwardUrl = "";
-
 	public String resolvedApiBase() {
 		if (apiBase == null || apiBase.isBlank()) {
 			return "https://api.pidge.in";

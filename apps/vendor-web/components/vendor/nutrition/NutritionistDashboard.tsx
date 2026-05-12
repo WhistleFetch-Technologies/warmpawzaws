@@ -381,17 +381,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
-  const handleSetPreparationEta = async (orderId: string, minutes: number) => {
-    try {
-      await apiClient.post(`/meal-orders/${orderId}/update-preparation-eta`, { preparationEtaMinutes: minutes });
-      toast.success(`ETA set: ${minutes} min`);
-      await fetchOrders();
-    } catch (error: any) {
-      console.error('Error setting ETA:', error);
-      toast.error(error?.message || 'Failed to set ETA');
-    }
-  };
-
   const handleNotifyLogistics = async (orderId: string) => {
     try {
       await apiClient.post(`/meal/orders/${orderId}/notify-logistics`);
@@ -749,39 +738,17 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         </>
                       )}
                       
-                      {/* Confirmed orders where vendor has accepted (prep_started_at is null but vendor clicked Accept) */}
-                      {/* This case is handled by the condition above - if prep_started_at is null, show Accept */}
-                      {/* After vendor clicks Accept, status stays 'confirmed', prep_started_at stays null until "Start Preparing" */}
-                      {/* So we need to track acceptance differently - for now, allow "Start Preparing" which implicitly accepts */}
-                      {/* ETA buttons: Show for preparing orders only (vendor has started) */}
+                      {/* "Preparing" → vendor only marks ready for pickup. Pidge is auto-dispatched
+                          when status flips to preparing using catalog prep_time_minutes; the rider
+                          arrival is targeted to expected_ready_at on the order. */}
                       {order.status === 'preparing' && (
-                        <>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 30)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 30m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 45)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 45m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 60)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 60m
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
-                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.package}
-                            <span className="text-sm">Ready for Pickup</span>
-                          </button>
-                        </>
+                        <button
+                          onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                        >
+                          {Icons.package}
+                          <span className="text-sm">Ready for Pickup</span>
+                        </button>
                       )}
                       {order.status === 'ready_for_pickup' && (
                         <>

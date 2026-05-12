@@ -28,6 +28,9 @@ public class DeliveryTracking {
 	@Column(name = "meal_order_id")
 	private UUID mealOrderId;
 
+	@Column(name = "subscription_delivery_id")
+	private UUID subscriptionDeliveryId;
+
 	@Column(name = "logistics_partner_id")
 	private UUID logisticsPartnerId;
 

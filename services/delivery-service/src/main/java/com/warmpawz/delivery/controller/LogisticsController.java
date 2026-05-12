@@ -7,6 +7,7 @@ import com.warmpawz.delivery.mapper.ShiprocketAdhocMapper;
 import com.warmpawz.delivery.service.ExternalPartnerLogisticsService;
 import com.warmpawz.delivery.service.PidgeIntegrationService;
 import com.warmpawz.delivery.service.ShipmentService;
+import com.warmpawz.delivery.service.serviceimpl.MealLogisticsDispatchService;
 import com.warmpawz.delivery.util.PidgeOrderIdMap;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class LogisticsController {
 	private final ExternalPartnerLogisticsService partners;
 	private final PidgeIntegrationService pidge;
 	private final ShipmentService shipmentService;
+	private final MealLogisticsDispatchService mealLogisticsDispatchService;
 	private final ObjectMapper objectMapper;
 	private final JdbcTemplate jdbc;
 
@@ -70,6 +72,29 @@ public class LogisticsController {
 			out.put("pidgeOrderId", firstPidgeId);
 		}
 		return ResponseEntity.ok(out);
+	}
+
+	/**
+	 * Schedule a Pidge rider for a meal order while the vendor is still preparing. Idempotent: returns the
+	 * existing {@code delivery_tracking} row (and Pidge id) if one was already created for this meal order.
+	 *
+	 * <p>Body:
+	 * <pre>
+	 * {
+	 *   "mealOrderId": "uuid",
+	 *   "prepMinutes": 30,
+	 *   "expectedReadyAt": "2026-05-12T14:00:00Z",
+	 *   "pidgePayload": { sourceOrderId, sender, receiver, items, billAmount, promised_prep_time, promised_delivery_time, ... }
+	 * }
+	 * </pre>
+	 */
+	@PostMapping("/logistics/meal/dispatch")
+	public ResponseEntity<Map<String, Object>> mealDispatch(@RequestBody JsonNode body) {
+		Map<String, Object> result = mealLogisticsDispatchService.dispatch(body);
+		if (result.containsKey("error")) {
+			return ResponseEntity.badRequest().body(result);
+		}
+		return ResponseEntity.ok(result);
 	}
 
 	@GetMapping("/logistics/pidge/order/{id}")

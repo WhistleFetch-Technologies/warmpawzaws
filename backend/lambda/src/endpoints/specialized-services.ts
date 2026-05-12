@@ -36,6 +36,8 @@ import {
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
 import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+import { dispatchMealLogistics } from '../utils/meal-dispatch';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import {
   mealProductParsedToDietaryJson,
   mealsPerDayColumnFromPreset,
@@ -3133,7 +3135,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         // Direct status update to 'confirmed' (not via 'accepted')
         updatePayload.confirmed_at = new Date().toISOString();
       } else if (actualStatus === 'preparing') {
-        updatePayload.prep_started_at = new Date().toISOString();
+        const prepStartedAt = new Date();
+        updatePayload.prep_started_at = prepStartedAt.toISOString();
+
+        // Snapshot prep_time_minutes from the meal plan if meal_orders.prep_minutes is null,
+        // and compute expected_ready_at = prep_started_at + prep_minutes. New columns added in
+        // migration 1010 — guarded so older deployments don't fail when columns are missing.
+        try {
+          const moInfo = await query(
+            `SELECT mo.prep_minutes, mp.prep_time_minutes AS plan_prep_minutes
+               FROM meal_orders mo
+               LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
+              WHERE mo.id = $1`,
+            [orderId]
+          ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+          const moRow = (moInfo.rows && moInfo.rows[0]) as Record<string, unknown> | undefined;
+          const existingPrep =
+            moRow && typeof moRow.prep_minutes === 'number' ? (moRow.prep_minutes as number) : null;
+          const planPrep =
+            moRow && typeof moRow.plan_prep_minutes === 'number'
+              ? (moRow.plan_prep_minutes as number)
+              : null;
+          const prepMinutes = existingPrep ?? planPrep ?? 30;
+          if (existingPrep == null) {
+            updatePayload.prep_minutes = prepMinutes;
+          }
+          updatePayload.expected_ready_at = new Date(
+            prepStartedAt.getTime() + prepMinutes * 60_000
+          ).toISOString();
+        } catch (e) {
+          console.warn('[meal-order-status] could not compute expected_ready_at:', e);
+        }
       } else if (status === 'ready_for_pickup') {
         updatePayload.ready_at = new Date().toISOString();
       } else if (status === 'picked_up') {
@@ -3151,17 +3183,54 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, updatePayload);
         console.log(`[meal-order-status] Order status updated to: ${status}`);
       } catch (updateError: any) {
-        // If update fails due to missing columns, try updating just status
+        // If update fails due to missing columns, retry without the new prep/expected fields, then
+        // fall back to status-only as a last resort.
         if (updateError.message?.includes('does not exist')) {
-          console.log(`[meal-order-status] Some columns don't exist, updating only status...`);
-          await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status });
-          console.log(`[meal-order-status] Order status updated to: ${status} (without timestamp fields)`);
+          console.log(`[meal-order-status] Some columns don't exist, retrying with smaller payload...`);
+          const fallback: Record<string, any> = { ...updatePayload };
+          delete fallback.prep_minutes;
+          delete fallback.expected_ready_at;
+          try {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, fallback);
+            console.log(`[meal-order-status] Order status updated to: ${status} (without prep/expected fields)`);
+          } catch (e2: any) {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status: actualStatus });
+            console.log(`[meal-order-status] Order status updated to: ${status} (status-only fallback)`);
+          }
         } else {
           throw updateError;
         }
       }
 
-      return c.json({ success: true, message: 'Order status updated' });
+      // Schedule a Pidge rider as soon as the vendor starts preparing so the rider arrives by the
+      // time the meal is ready. Java delivery-service is the canonical Pidge writer (single source
+      // of truth) — Lambda only POSTs the snapshot. Failures are non-fatal: the existing
+      // "Notify Logistics" / "Dispatched" buttons remain a manual fallback.
+      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
+      if (actualStatus === 'preparing') {
+        dispatch = await dispatchMealLogistics(orderId).catch((e) => {
+          console.warn('[meal-order-status] dispatchMealLogistics threw:', e);
+          return { ok: false, error: String(e) } as Awaited<
+            ReturnType<typeof dispatchMealLogistics>
+          >;
+        });
+      }
+
+      // Idempotent vendor settlement on delivered (parity with the meal-plans.ts
+      // POST /meal/orders/:orderId/update-status path).
+      if (actualStatus === 'delivered') {
+        try {
+          await ensureMealOrderSettlementOnDelivered(orderId);
+        } catch (e) {
+          console.warn('[meal-order-status] settlement insert failed:', e);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Order status updated',
+        ...(dispatch ? { dispatch } : {}),
+      });
     } catch (error: any) {
       console.error('Error updating meal order status:', error);
       return c.json({ error: error.message }, 500);

@@ -1,7 +1,6 @@
 package com.warmpawz.delivery.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.warmpawz.delivery.config.PidgeProperties;
 import com.warmpawz.delivery.service.serviceimpl.PidgeWebhookProcessingService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,15 +9,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * Webhooks: GET/POST /webhooks/pidge (Lambda {@code logistics-webhooks.ts} subset).
- * Other partner webhooks can be added here; full Shiprocket/Delhivery payload handling is legacy-sized.
+ * Webhooks: GET/POST /webhooks/pidge — canonical Pidge ingress (register this URL in Pidge; monolith no longer handles Pidge).
  */
 @RestController
 @RequiredArgsConstructor
@@ -27,8 +22,6 @@ public class LogisticsWebhookController {
 
 	private final PidgeProperties pidgeProperties;
 	private final PidgeWebhookProcessingService pidgeWebhookProcessingService;
-	private final ObjectMapper objectMapper;
-	private final RestClient restClient = RestClient.create();
 
 	@GetMapping("/webhooks/pidge")
 	public ResponseEntity<Map<String, Object>> pidgeWebhookInfo() {
@@ -39,7 +32,7 @@ public class LogisticsWebhookController {
 		return ResponseEntity.ok(Map.of(
 				"ok", true,
 				"message",
-				"Register clientUrl in Pidge (Channel integration → Webhook URL). For local dev use ngrok/cloudflared.",
+				"Register clientUrl in Pidge (Channel integration → Webhook URL). Point PUBLIC_API_BASE_URL at this delivery-service. Local dev: ngrok/cloudflared.",
 				"clientUrl", clientUrl,
 				"method", "POST",
 				"note",
@@ -55,32 +48,6 @@ public class LogisticsWebhookController {
 			String expected = "Bearer " + secret.trim();
 			if (authorization == null || !expected.equals(authorization)) {
 				return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-			}
-		}
-		String forward = pidgeProperties.getWebhookForwardUrl();
-		if (forward != null && !forward.isBlank()) {
-			String raw;
-			try {
-				raw = objectMapper.writeValueAsString(payload);
-			} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-				return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
-			}
-			try {
-				String resp = restClient.post()
-						.uri(forward.trim())
-						.contentType(MediaType.APPLICATION_JSON)
-						.headers(h -> {
-							if (authorization != null) {
-								h.set("Authorization", authorization);
-							}
-						})
-						.body(raw)
-						.retrieve()
-						.body(String.class);
-				return ResponseEntity.ok(Map.of("forwarded", true, "forwardBody", resp != null ? resp : ""));
-			} catch (RestClientResponseException e) {
-				return ResponseEntity.status(e.getStatusCode()).body(Map.of(
-						"error", e.getResponseBodyAsString(StandardCharsets.UTF_8)));
 			}
 		}
 		Map<String, Object> result = pidgeWebhookProcessingService.handlePidgePayload(payload);

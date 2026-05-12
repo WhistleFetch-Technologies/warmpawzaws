@@ -1075,6 +1075,15 @@ export function registerMealPlanEndpoints(app: Hono) {
       };
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
+      // Snapshot meal_plans.prep_time_minutes so the vendor "Start Preparing" status update can
+      // align Pidge promised_prep_time with the catalog declared prep time without a join.
+      if (moCols.has('prep_minutes')) {
+        const planPrep = (plan as { prep_time_minutes?: unknown }).prep_time_minutes;
+        const planPrepNum = typeof planPrep === 'number' ? planPrep : Number(planPrep);
+        if (Number.isFinite(planPrepNum) && planPrepNum > 0) {
+          mealOrderRow.prep_minutes = Math.floor(planPrepNum);
+        }
+      }
 
       // Create order with all fee components (meal_orders has platform_fee only; store combined fee there)
       const result = await insert('meal_orders', mealOrderRow);

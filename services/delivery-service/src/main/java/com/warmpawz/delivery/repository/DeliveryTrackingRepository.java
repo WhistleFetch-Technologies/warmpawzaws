@@ -16,4 +16,8 @@ public interface DeliveryTrackingRepository extends JpaRepository<DeliveryTracki
 	Optional<DeliveryTracking> findFirstByExternalTaskIdAndLogisticsPartner(String externalTaskId, String logisticsPartner);
 
 	List<DeliveryTracking> findByLogisticsPartnerAndExternalTaskId(String logisticsPartner, String externalTaskId);
+
+	/** Same ordering as Lambda logistics-webhooks (latest row wins). */
+	Optional<DeliveryTracking> findFirstByLogisticsPartnerAndExternalTaskIdOrderByCreatedAtDesc(
+			String logisticsPartner, String externalTaskId);
 }
