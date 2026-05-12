@@ -110,7 +110,7 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
               mo.delivery_address, mo.customer_lat, mo.customer_lng, mo.scheduled_delivery_date,
               mo.meal_plan_id, mo.prep_minutes, mo.prep_started_at, mo.expected_ready_at,
               mp.prep_time_minutes AS plan_prep_minutes, mp.name AS plan_name, mp.price_per_meal AS plan_price,
-              v.business_name AS vendor_name, v.phone AS vendor_phone,
+              v.business_name AS vendor_name, v.phone AS vendor_phone, v.email AS vendor_email,
               v.address AS vendor_address, v.city AS vendor_city, v.state AS vendor_state,
               v.pincode AS vendor_pincode, v.landmark AS vendor_landmark,
               v.latitude AS vendor_lat, v.longitude AS vendor_lng,
@@ -190,18 +190,28 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     const planName = pickString((row as Record<string, unknown>).plan_name) || 'Meal Order';
     const planPrice = pickNumber((row as Record<string, unknown>).plan_price) ?? billAmount;
 
+    const vendorEmail = pickString((row as Record<string, unknown>).vendor_email);
+    const customerEmail = pickString((row as Record<string, unknown>).customer_email);
+    const contactEmail =
+      vendorEmail ||
+      customerEmail ||
+      `meal-order+${String(row.id).slice(0, 8)}@notifications.warmpawz.local`;
+
     const pidgePayload: Record<string, unknown> = {
+      /** Meal dispatch uses store/vendor Pidge login — omit brand (no brand.code / location_code). */
+      omit_brand: true,
       sourceOrderId,
       sender: {
         name: pickString((row as Record<string, unknown>).vendor_name) || 'Vendor',
         mobile: pickString((row as Record<string, unknown>).vendor_phone),
+        email: contactEmail,
         address: {
           address_line_1: vendorLine1,
-          city: vendorCity,
-          state: vendorState,
+          city: vendorCity || vendorState || vendorPincode || vendorLine1.slice(0, 40) || 'NA',
+          state: vendorState || vendorCity || vendorPincode || 'NA',
           country: 'India',
           pincode: vendorPincode,
-          landmark: vendorLandmark,
+          landmark: vendorLandmark || vendorLine1.slice(0, 120),
           lat: vendorLat,
           lng: vendorLng,
         },
@@ -209,16 +219,30 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       receiver: {
         name: pickString((row as Record<string, unknown>).customer_name) || 'Customer',
         mobile: pickString((row as Record<string, unknown>).customer_phone),
-        email: pickString((row as Record<string, unknown>).customer_email),
+        email: customerEmail || contactEmail,
         address: {
           address_line_1: pickString(addr.address, addr.address_line_1, addr.line1),
-          city: pickString(addr.city),
-          state: pickString(addr.state),
+          city:
+            pickString(addr.city) ||
+            pickString(addr.state) ||
+            pickString(addr.pincode) ||
+            vendorCity ||
+            'NA',
+          state:
+            pickString(addr.state) ||
+            pickString(addr.city) ||
+            vendorState ||
+            vendorCity ||
+            pickString(addr.pincode) ||
+            'NA',
           country: 'India',
           pincode: pickString(addr.pincode),
           lat: customerLat,
           lng: customerLng,
-          landmark: pickString(addr.landmark),
+          landmark:
+            pickString(addr.landmark) ||
+            pickString(addr.address, addr.address_line_1, addr.line1).slice(0, 120) ||
+            'Drop location',
         },
       },
       items: [
