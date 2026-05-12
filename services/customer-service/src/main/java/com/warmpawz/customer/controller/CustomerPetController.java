@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping
@@ -26,6 +27,8 @@ import java.util.UUID;
 public class CustomerPetController {
 
     private static final String UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+
+    private static final Pattern UUID_SEGMENT = Pattern.compile("^" + UUID_PATTERN + "$");
 
     private final PetService petService;
     private final IdempotencyService idempotencyService;
@@ -203,12 +206,16 @@ public class CustomerPetController {
         return ResponseEntity.ok(CommonResponse.message("Pet deleted successfully"));
     }
 
-    @DeleteMapping("/customer/{phone}/pets/{petId}")
-    public ResponseEntity<CommonResponse<Void>> deletePetByPhone(
-            @PathVariable String phone,
+    @DeleteMapping("/customer/{segment}/pets/{petId}")
+    public ResponseEntity<CommonResponse<Void>> deletePetByPhoneOrCustomerId(
+            @PathVariable String segment,
             @PathVariable UUID petId
     ) {
-        petService.deletePetByPhone(requireValidPhone(phone), petId);
+        if (segment != null && UUID_SEGMENT.matcher(segment.trim()).matches()) {
+            petService.deletePetByCustomerId(UUID.fromString(segment.trim()), petId);
+        } else {
+            petService.deletePetByPhone(requireValidPhone(segment), petId);
+        }
         return ResponseEntity.ok(CommonResponse.message("Pet deleted successfully"));
     }
 

@@ -30,4 +30,7 @@ public interface PetService {
     void deletePet(UUID petId);
 
     void deletePetByPhone(String phone, UUID petId);
+
+    /** Same rules as {@link #deletePetByPhone} when the first path segment is the DB customer id (UUID). */
+    void deletePetByCustomerId(UUID customerId, UUID petId);
 }

@@ -7,6 +7,7 @@ import {
   AlertCircle, ChevronRight, ArrowLeft
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { ApiError } from '@/lib/error-handling';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { fetchPetById } from '@/lib/fetch-customer-pet';
@@ -139,6 +140,12 @@ function extractBookingsList(payload: any): any[] {
   return [];
 }
 
+/** Prefer DB customer UUID for `/customer/:id/pets/*` when storage has it; else login phone. */
+function segmentForCustomerPetRoutes(phone: string): string {
+  if (typeof window === 'undefined') return phone;
+  return getResolvedCustomerId() ?? phone;
+}
+
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
   const [pet, setPet] = useState<Pet | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -172,9 +179,10 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       setLoading(true);
       let raw: any = null;
+      const pathSeg = segmentForCustomerPetRoutes(phone);
 
       try {
-        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}`)) as any;
+        const data = (await apiClient.get(`/customer/${pathSeg}/pets/${petId}`)) as any;
         if (data?.success && data.pet) raw = data.pet;
       } catch {
         /* fallback below */
@@ -213,7 +221,8 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       // Primary endpoint: pet-scoped history route.
       try {
-        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
+        const pathSeg = segmentForCustomerPetRoutes(phone);
+        const data = (await apiClient.get(`/customer/${pathSeg}/pets/${petId}/bookings`)) as any;
         const rows = extractBookingsList(data);
         normalizeAndSet(rows);
         return;
@@ -298,7 +307,8 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     setSaving(true);
     try {
       // Update pet directly
-      const data = await apiClient.put(`/customer/${phone}/pets/${petId}`, pet) as any;
+      const pathSeg = segmentForCustomerPetRoutes(phone);
+      const data = await apiClient.put(`/customer/${pathSeg}/pets/${petId}`, pet) as any;
 
       if (data && data.success) {
         setEditMode(false);
@@ -331,7 +341,8 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       console.log(`=== DELETING PET ${petId} ===`);
 
-      const deleteData = (await apiClient.delete(`/customer/${phone}/pets/${petId}`)) as any;
+      const pathSeg = segmentForCustomerPetRoutes(phone);
+      const deleteData = (await apiClient.delete(`/customer/${pathSeg}/pets/${petId}`)) as any;
 
       if (!deleteData || !deleteData.success) {
         throw new Error(deleteData?.error || 'Failed to delete pet');

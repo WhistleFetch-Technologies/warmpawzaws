@@ -597,6 +597,7 @@ export function UserAccountSidebar({
         const houseNo = String(raw.houseNo ?? raw.house_no ?? '').trim();
         const floor = String(raw.floor ?? '').trim();
         const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
+        const rawState = (ist ?? base.state ?? '').trim();
         const next: UserProfile = {
           firstName: base.firstName,
           lastName: base.lastName,
@@ -607,7 +608,7 @@ export function UserAccountSidebar({
           houseNo,
           floor,
           city: ic ?? base.city,
-          state: ist ?? base.state,
+          state: stripDuplicatePincodeFromState(rawState, base.pincode),
           photo: base.photo,
         };
         setProfile(next);
@@ -1506,8 +1507,9 @@ export function UserAccountSidebar({
                                 if (components?.city) {
                                   updated.city = components.city;
                                 }
+                                const pin = updated.pincode;
                                 if (components?.state) {
-                                  updated.state = components.state;
+                                  updated.state = stripDuplicatePincodeFromState(components.state, pin);
                                 }
                                 return updated;
                               });

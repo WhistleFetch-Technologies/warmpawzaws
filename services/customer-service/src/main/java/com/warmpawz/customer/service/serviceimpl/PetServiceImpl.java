@@ -206,6 +206,16 @@ public class PetServiceImpl implements PetService {
         deletePetEntity(pet, true);
     }
 
+    @Override
+    @Transactional
+    public void deletePetByCustomerId(UUID customerId, UUID petId) {
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Customer not found"));
+        Pet pet = petRepository.findByIdAndCustomer_Id(petId, customer.getId())
+                .orElseThrow(() -> new NotFoundException("Pet not found"));
+        deletePetEntity(pet, true);
+    }
+
     private Pet findOwnedPet(String phone, UUID petId) {
         Customer customer = findCustomerByFlexiblePhone(phone)
                 .orElseThrow(() -> new NotFoundException("Customer not found"));
