@@ -13,6 +13,7 @@ import {
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
+import { stripDuplicatePincodeFromState } from '@/lib/address-field-sanitize';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
@@ -2489,7 +2490,7 @@ function AddressForm({ address, onSave, onCancel }: {
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
     city: address?.city || '',
-    state: address?.state || '',
+    state: stripDuplicatePincodeFromState(address?.state, address?.pincode) || '',
     pincode: address?.pincode || '',
     houseNo: address?.houseNo || '',
     floor: address?.floor || '',
@@ -2556,7 +2557,7 @@ function AddressForm({ address, onSave, onCancel }: {
               ...prev,
               addressLine1: street.trim() || locality,
               city: city,
-              state: state,
+              state: stripDuplicatePincodeFromState(state, pincode),
               pincode: pincode
             }));
 
@@ -2681,25 +2682,24 @@ function AddressForm({ address, onSave, onCancel }: {
         <EnhancedAddressAutocomplete
           value={formData.addressLine1}
           onChange={(address: string, components?: AddressComponents) => {
-            setFormData(prev => ({ ...prev, addressLine1: address }));
-            
-            // Auto-populate city, state, pincode from Google Maps
-            if (components) {
-              const updates: any = {};
-              if (components.city && !formData.city) {
-                updates.city = components.city;
+            setFormData((prev) => {
+              const next = { ...prev, addressLine1: address };
+              if (!components) return next;
+              if (components.city && !prev.city) {
+                next.city = components.city;
               }
-              if (components.state && !formData.state) {
-                updates.state = components.state;
+              if (components.state && !prev.state) {
+                next.state = components.state;
               }
-              if (components.pincode && !formData.pincode) {
-                updates.pincode = components.pincode;
+              if (components.pincode && !prev.pincode) {
+                next.pincode = components.pincode;
               }
-
-              if (Object.keys(updates).length > 0) {
-                setFormData(prev => ({ ...prev, ...updates }));
+              const pin = next.pincode || components.pincode;
+              if (next.state && pin) {
+                next.state = stripDuplicatePincodeFromState(next.state, pin);
               }
-            }
+              return next;
+            });
           }}
           placeholder="Search address, landmark, city..."
           className="w-full"

@@ -132,11 +132,14 @@ public class GoogleMapsServiceImpl implements GoogleMapsService {
         String formatted = string(result.get("formatted_address"));
         if (!hasText(line1)) line1 = formatted;
 
+        String rawState = components.get("administrative_area_level_1");
+        String rawPin = components.get("postal_code");
+
         return GoogleAddressResult.builder()
                 .addressLine1(line1)
                 .city(firstNonBlank(components.get("locality"), components.get("administrative_area_level_3")))
-                .state(components.get("administrative_area_level_1"))
-                .pincode(components.get("postal_code"))
+                .state(stripDuplicatePincodeFromState(rawState, rawPin))
+                .pincode(rawPin)
                 .formattedAddress(formatted)
                 .placeId(string(result.get("place_id")))
                 .latitude(number(location.get("lat")))
@@ -197,6 +200,33 @@ public class GoogleMapsServiceImpl implements GoogleMapsService {
 
     private static String firstNonBlank(String first, String second) {
         return hasText(first) ? first : second;
+    }
+
+    /** When Google echoes postal digits on {@code administrative_area_level_1}, keep pincode in its own field only. */
+    private static String stripDuplicatePincodeFromState(String state, String pincode) {
+        if (!hasText(state)) {
+            return state;
+        }
+        String s = state.trim();
+        if (!hasText(pincode)) {
+            return s;
+        }
+        String pc = pincode.replaceAll("\\D", "");
+        if (pc.length() < 4) {
+            return s;
+        }
+        if (!s.endsWith(pc)) {
+            return s;
+        }
+        String prefix = s.substring(0, s.length() - pc.length());
+        if (!hasText(prefix)) {
+            return s;
+        }
+        char last = prefix.charAt(prefix.length() - 1);
+        if (!Character.isWhitespace(last) && last != ',' && last != ';' && last != '-') {
+            return s;
+        }
+        return prefix.replaceAll("[\\s,;-]+$", "").trim();
     }
 
     private static String blankToNull(String value) {
