@@ -3,6 +3,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
+  setupFiles: ['<rootDir>/jest.pg-env.cjs'],
   testMatch: ['**/__tests__/**/*.test.ts'],
   testPathIgnorePatterns: [
     '/node_modules/',

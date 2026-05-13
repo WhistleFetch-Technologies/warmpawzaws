@@ -447,6 +447,12 @@ export function CustomerHomeWrapper({
   const [instantConnectingBookingId, setInstantConnectingBookingId] = useState<string | null>(null); // Instant tele: after payment, show connecting then video
   /** `?service=tele` / Book Now: skip TeleConsultationRouter mode selection → instant vet list */
   const [teleSkipModeSelection, setTeleSkipModeSelection] = useState(false);
+  /** Home → Veterinary Care → "Tele Consult" tile: skip mode selection → scheduled provider list (back returns to home) */
+  const [teleSkipToScheduled, setTeleSkipToScheduled] = useState(false);
+  /** Home → Veterinary Care → "Vet at Home" tile: deep link into HomeVisitRouter (back returns to home, not vet hub) */
+  const [vetHomeFromHome, setVetHomeFromHome] = useState(false);
+  /** Home → Veterinary Care → "Clinic Visit" tile: deep link into ClinicListView (back returns to home, not vet hub) */
+  const [vetClinicFromHome, setVetClinicFromHome] = useState(false);
   /** Grooming/training style lists: chevron opens embedded vendor profile (`vendorId` on *ServicesByStyle / Universal). */
   const [groomingCenterProfileVendorId, setGroomingCenterProfileVendorId] = useState<string | null>(null);
   const [groomingHomeProfileVendorId, setGroomingHomeProfileVendorId] = useState<string | null>(null);
@@ -594,7 +600,14 @@ export function CustomerHomeWrapper({
     const prev = prevScreenForTeleRef.current;
     if (prev === 'vet-tele-consultation' && currentScreen !== 'vet-tele-consultation') {
       setTeleSkipModeSelection(false);
+      setTeleSkipToScheduled(false);
       syncTeleConsultUrl(false);
+    }
+    if (prev === 'vet-home-visit' && currentScreen !== 'vet-home-visit') {
+      setVetHomeFromHome(false);
+    }
+    if (prev === 'vet-clinic-list' && currentScreen !== 'vet-clinic-list') {
+      setVetClinicFromHome(false);
     }
     prevScreenForTeleRef.current = currentScreen;
   }, [currentScreen, syncTeleConsultUrl]);
@@ -763,7 +776,23 @@ export function CustomerHomeWrapper({
     }
     else if (service === 'vet-tele-consultation') {
       setVetServiceData(_data);
+      if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
+      else setTeleSkipToScheduled(false);
       setCurrentScreen('vet-tele-consultation');
+      return;
+    }
+    else if (service === 'vet-home-visit') {
+      setVetServiceData(_data);
+      if ((data as any)?.startStep === 'home') setVetHomeFromHome(true);
+      else setVetHomeFromHome(false);
+      setCurrentScreen('vet-home-visit');
+      return;
+    }
+    else if (service === 'vet-clinic-list') {
+      setVetServiceData(_data);
+      if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
+      else setVetClinicFromHome(false);
+      setCurrentScreen('vet-clinic-list');
       return;
     }
     else if (service === 'grooming') {
@@ -932,13 +961,23 @@ export function CustomerHomeWrapper({
     setVetServiceData(data);
     // ✅ FIX: Handle all navigation screens including pharmacy, lab, etc.
     if (screen === 'vet-booking') setCurrentScreen('vet-booking');
-    else if (screen === 'vet-clinic-list') setCurrentScreen('vet-clinic-list');
+    else if (screen === 'vet-clinic-list') {
+      if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
+      else setVetClinicFromHome(false);
+      setCurrentScreen('vet-clinic-list');
+    }
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
+      if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
+      else setTeleSkipToScheduled(false);
       setCurrentScreen('vet-tele-consultation');
       return;
     }
-    else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');
+    else if (screen === 'vet-home-visit') {
+      if ((data as any)?.startStep === 'home') setVetHomeFromHome(true);
+      else setVetHomeFromHome(false);
+      setCurrentScreen('vet-home-visit');
+    }
     else if (screen === 'pharmacy') {
       console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
       setCurrentScreen('pharmacy');
@@ -1934,7 +1973,7 @@ export function CustomerHomeWrapper({
         onNavigate={handleVetNavigate}
       />
     );
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => {
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen(vetClinicFromHome ? 'home' : 'vet')} onNavigate={(screen, data) => {
     if (screen === 'vet-services-by-style') {
       setVetServiceData({
         ...(data || {}),
@@ -2154,7 +2193,8 @@ export function CustomerHomeWrapper({
       <TeleConsultationRouter 
         phone={phone} 
         skipModeSelection={teleSkipModeSelection}
-        onBack={() => setCurrentScreen('vet')} 
+        skipToScheduled={teleSkipToScheduled}
+        onBack={() => setCurrentScreen(teleSkipToScheduled ? 'home' : 'vet')} 
         onNavigate={(screen, data) => {
           // Handle navigation from TeleConsultationRouter
           if (screen === 'video-call') {
@@ -2188,7 +2228,7 @@ export function CustomerHomeWrapper({
     return renderScreenWithLayout('vet-home-visit',
       <HomeVisitRouter 
         phone={phone} 
-        onBack={() => setCurrentScreen('vet')} 
+        onBack={() => setCurrentScreen(vetHomeFromHome ? 'home' : 'vet')} 
         onNavigate={(screen, data) => {
           // Handle navigation from HomeVisitRouter
           if (screen === 'payment') {

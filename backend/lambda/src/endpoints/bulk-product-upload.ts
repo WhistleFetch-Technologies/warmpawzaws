@@ -130,14 +130,15 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           push('price', 'SP must be greater than 0', priceNum);
         }
 
-        // 3. Quantity*
-        const stockNum = Number(product.stock_quantity);
-        if (product.stock_quantity === undefined || product.stock_quantity === null || product.stock_quantity === '') {
+        // 3. Quantity* (CSV field stock_quantity; alias stock)
+        const qtyRaw = product.stock_quantity ?? product.stock;
+        const stockNum = Number(qtyRaw);
+        if (qtyRaw === undefined || qtyRaw === null || qtyRaw === '') {
           push('stock_quantity', 'Quantity is required', product.stock_quantity);
         } else if (isNaN(stockNum) || stockNum < 0) {
-          push('stock_quantity', 'Quantity must be a number ≥ 0', product.stock_quantity);
+          push('stock_quantity', 'Quantity must be a number ≥ 0', qtyRaw);
         } else if (!Number.isInteger(stockNum)) {
-          push('stock_quantity', 'Quantity must be a whole number', product.stock_quantity);
+          push('stock_quantity', 'Quantity must be a whole number', qtyRaw);
         }
 
         // 4. Category* — required AND must match an active catalog name
@@ -306,6 +307,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             }
           }
 
+          const stockValue =
+            Number(product.stock_quantity ?? product.stock ?? product.stockQuantity) || 0;
+
           const productData = {
             vendor_id: vendorId,
             name: product.name?.trim(),
@@ -314,8 +318,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             sku: product.sku?.trim() || null,
             price: Number(product.price),
             compare_at_price: product.compare_at_price ? Number(product.compare_at_price) : null,
-            stock_quantity: Number(product.stock_quantity) || 0,
-            stock: Number(product.stock_quantity) || 0,
+            stock: stockValue,
             hsn_code: product.hsn_code?.trim() || null,
             gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
             weight: product.weight ? Number(product.weight) : null,
