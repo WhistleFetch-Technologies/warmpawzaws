@@ -16,6 +16,8 @@ import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/sha
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
+import { clearWarmpawzCartStorage, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface CartItem {
   id: string;
@@ -26,6 +28,42 @@ interface CartItem {
   image?: string;
   vendorId: string;
   vendorName?: string;
+}
+
+/** `warmpawz_cart` stores `{ product_id, product, quantity }` lines from `/shop`. */
+function normalizeStoredCartLines(raw: unknown[]): CartItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry: unknown, idx: number) => {
+    const row = entry as Record<string, unknown>;
+    const nested = row?.product as Record<string, unknown> | undefined;
+    if (nested && typeof nested === 'object') {
+      const productId = String(row.product_id || nested.id || '');
+      const price = Number(nested.price) || 0;
+      const qty = Math.max(1, Number(row.quantity) || 1);
+      const images = nested.images as string[] | undefined;
+      const image = Array.isArray(images) && images[0] ? String(images[0]) : undefined;
+      return {
+        id: productId || `cart-${idx}`,
+        productId,
+        name: String(nested.name ?? ''),
+        price,
+        quantity: qty,
+        image,
+        vendorId: String(nested.vendor_id ?? ''),
+        vendorName: nested.vendor_name != null ? String(nested.vendor_name) : undefined,
+      };
+    }
+    return {
+      id: String(row.id ?? row.productId ?? `cart-${idx}`),
+      productId: String(row.productId ?? row.id ?? ''),
+      name: String(row.name ?? ''),
+      price: Number(row.price) || 0,
+      quantity: Math.max(1, Number(row.quantity) || 1),
+      image: row.image != null ? String(row.image) : undefined,
+      vendorId: String(row.vendorId ?? ''),
+      vendorName: row.vendorName != null ? String(row.vendorName) : undefined,
+    };
+  });
 }
 
 interface Address {
@@ -102,11 +140,13 @@ export default function CheckoutPage() {
       const customerId = getResolvedCustomerId();
       
       // Load cart from localStorage
-      const savedCart = localStorage.getItem('warmpawz_cart');
+      const savedCart = localStorage.getItem(WARMPAWZ_CART_KEY);
       if (savedCart) {
-        const items = JSON.parse(savedCart);
+        const parsed = JSON.parse(savedCart) as unknown;
+        const raw = Array.isArray(parsed) ? parsed : [];
+        const items = normalizeStoredCartLines(raw);
         setCartItems(items);
-        
+
         // Calculate totals
         const sub = items.reduce((sum: number, item: CartItem) => sum + item.price * item.quantity, 0);
         setSubtotal(sub);
@@ -242,7 +282,7 @@ export default function CheckoutPage() {
           setCurrentStep('confirmation');
           
           // Clear cart
-          localStorage.removeItem('warmpawz_cart');
+          clearWarmpawzCartStorage();
           setCartItems([]);
         }
       }
@@ -300,7 +340,7 @@ export default function CheckoutPage() {
             // Payment successful
             setOrderId(orderId);
             setCurrentStep('confirmation');
-            localStorage.removeItem('warmpawz_cart');
+            clearWarmpawzCartStorage();
             setCartItems([]);
           } catch (err: any) {
             console.error('Payment verification failed:', err);
@@ -343,6 +383,25 @@ export default function CheckoutPage() {
     { id: 'review', label: 'Review', icon: ShoppingCart },
     { id: 'confirmation', label: 'Done', icon: CheckCircle },
   ];
+
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-300" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="mb-6 text-gray-500">Online checkout is not available yet.</p>
+          <button
+            type="button"
+            onClick={() => goBackOrHome(router)}
+            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-semibold text-white"
+          >
+            Go back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

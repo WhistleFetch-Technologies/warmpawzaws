@@ -2,6 +2,7 @@
 
 import { Home, ShoppingCart, Calendar, User } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface BottomNavigationProps {
   currentScreen: string;
@@ -11,6 +12,7 @@ interface BottomNavigationProps {
 
 export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: BottomNavigationProps) {
   const { itemCount } = useCart();
+  const commerceEnabled = isCustomerEcommerceEnabled();
 
   const isActive = (screen: string) => {
     // Map screen names to navigation tabs - only highlight when exactly on that screen
@@ -57,21 +59,24 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
           </span>
         </button>
 
-        {/* Cart Tab */}
-        <button 
-          onClick={() => handleNavClick('cart')}
-          className="flex flex-col items-center gap-1 relative"
+        {/* Cart Tab — disabled until customer marketplace is enabled */}
+        <button
+          type="button"
+          disabled={!commerceEnabled}
+          onClick={() => commerceEnabled && handleNavClick('cart')}
+          className={`relative flex flex-col items-center gap-1 ${!commerceEnabled ? 'cursor-not-allowed opacity-60' : ''}`}
+          aria-disabled={!commerceEnabled}
         >
           <div className="relative">
             <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-            {itemCount > 0 && (
+            {commerceEnabled && itemCount > 0 && (
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                 {itemCount}
               </span>
             )}
           </div>
           <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-            Cart
+            {commerceEnabled ? 'Cart' : 'Soon'}
           </span>
         </button>
 

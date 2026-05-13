@@ -15,6 +15,7 @@ type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
   environment?: string;
+  customerEcommerceEnabled?: boolean;
 };
 
 declare global {

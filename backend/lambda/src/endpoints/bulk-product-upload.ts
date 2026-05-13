@@ -15,6 +15,10 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import {
+  loadActiveEcommerceCategoryMap,
+  resolveEcommerceCategoryByName,
+} from '../utils/ecommerce-category-resolve';
 import { buildBulkProductTemplateBuffer, parseBulkProductXlsxBuffer } from './bulk-product-xlsx';
 
 interface BulkProductRow {
@@ -268,12 +272,24 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         errors: [] as Array<{ row: number; error: string }>,
       };
 
+      const categoryMap = await loadActiveEcommerceCategoryMap();
+
       // Process each product
       for (let i = 0; i < products.length; i++) {
         const product = products[i];
         const rowNum = i + 1;
 
         try {
+          const categoryTrim = product.category ? String(product.category).trim() : '';
+          const resolvedCategory = resolveEcommerceCategoryByName(categoryMap, categoryTrim);
+          if (!resolvedCategory) {
+            throw new Error(
+              categoryTrim
+                ? `Unknown or inactive category: "${categoryTrim}". Use an exact name from the template category list.`
+                : 'Category is required (must match an active catalog name).'
+            );
+          }
+
           // Check if SKU exists for update
           let existingProduct = null;
           if (product.sku) {
@@ -314,7 +330,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             vendor_id: vendorId,
             name: product.name?.trim(),
             description: product.description?.trim() || null,
-            category: product.category?.trim() || null,
+            category_id: resolvedCategory.id,
+            category: resolvedCategory.name,
             sku: product.sku?.trim() || null,
             price: Number(product.price),
             compare_at_price: product.compare_at_price ? Number(product.compare_at_price) : null,

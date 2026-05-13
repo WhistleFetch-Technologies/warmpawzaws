@@ -5,6 +5,9 @@
  */
 export const WARMPAWZ_CART_KEY = 'warmpawz_cart';
 
+/** Dispatched after any same-tab write to `WARMPAWZ_CART_KEY` (see `CartProvider`). */
+export const CART_UPDATED_EVENT = 'cart-updated';
+
 export type WarmpawzCartProductSnapshot = {
   id: string;
   name: string;
@@ -22,6 +25,33 @@ export type WarmpawzCartLine = {
   quantity: number;
   selected_variations?: Record<string, string>;
 };
+
+export function readWarmpawzCartLines(): WarmpawzCartLine[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(WARMPAWZ_CART_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as WarmpawzCartLine[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function emitWarmpawzCartUpdated(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(CART_UPDATED_EVENT));
+}
+
+export function clearWarmpawzCartStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(WARMPAWZ_CART_KEY);
+  } catch {
+    /* ignore */
+  }
+  emitWarmpawzCartUpdated();
+}
 
 export function mergeLineIntoWarmpawzCartStorage(params: {
   lineId: string;
@@ -53,7 +83,7 @@ export function mergeLineIntoWarmpawzCartStorage(params: {
     }
 
     localStorage.setItem(WARMPAWZ_CART_KEY, JSON.stringify(cart));
-    window.dispatchEvent(new CustomEvent('cart-updated'));
+    emitWarmpawzCartUpdated();
     return true;
   } catch (e) {
     console.error('[warmpawz_cart] merge failed', e);

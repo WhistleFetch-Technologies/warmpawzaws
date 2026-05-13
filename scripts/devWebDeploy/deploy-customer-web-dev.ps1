@@ -14,7 +14,7 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Set to show home shop category row + open marketplace by category (still uses same API).
+    # Set to bake shop/cart/wishlist on for this deploy (default off = "Soon" tiles).
     [switch]$CustomerEcommerceEnabled
 )
 

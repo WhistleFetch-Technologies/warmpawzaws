@@ -12,8 +12,10 @@ import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPay
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { readWishlistIds, setWishlistIds, WISHLIST_UPDATED_EVENT } from '@/lib/warmpawz-wishlist-local';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 
 // ============================================================================
 // TYPES
@@ -188,7 +190,7 @@ export default function ShopPage() {
 
   const loadCart = () => {
     if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('warmpawz_cart');
+      const savedCart = localStorage.getItem(WARMPAWZ_CART_KEY);
       if (savedCart) {
         try {
           setCart(JSON.parse(savedCart));
@@ -202,7 +204,8 @@ export default function ShopPage() {
   const saveCart = (newCart: CartItem[]) => {
     setCart(newCart);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('warmpawz_cart', JSON.stringify(newCart));
+      localStorage.setItem(WARMPAWZ_CART_KEY, JSON.stringify(newCart));
+      emitWarmpawzCartUpdated();
     }
   };
 
@@ -1106,8 +1109,12 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
   }, [product.id, product.images?.[0]]);
 
   React.useEffect(() => {
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    setIsWishlisted(wishlist.some((id: string) => String(id) === String(wishlistPid)));
+    const sync = () => {
+      setIsWishlisted(readWishlistIds().some((id: string) => String(id) === String(wishlistPid)));
+    };
+    sync();
+    window.addEventListener(WISHLIST_UPDATED_EVENT, sync);
+    return () => window.removeEventListener(WISHLIST_UPDATED_EVENT, sync);
   }, [wishlistPid]);
 
   const toggleWishlist = async (e: React.MouseEvent) => {
@@ -1117,23 +1124,21 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
       console.warn('[wishlist] shop card: missing product id', { product });
       return;
     }
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    const wishlist = readWishlistIds();
     const customerId = getResolvedCustomerId();
     const wasInList = isWishlisted;
 
     console.log('[wishlist] shop card toggle', { productId: pid, customerId, wasInList });
 
     if (wasInList) {
-      localStorage.setItem(
-        'warmpawz_wishlist',
-        JSON.stringify(wishlist.filter((id: string) => String(id) !== String(pid)))
-      );
+      setWishlistIds(wishlist.filter((id: string) => String(id) !== String(pid)));
       setIsWishlisted(false);
     } else {
-      if (!wishlist.some((id: string) => String(id) === String(pid))) {
-        wishlist.push(pid);
+      const next = [...wishlist];
+      if (!next.some((id: string) => String(id) === String(pid))) {
+        next.push(pid);
       }
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
+      setWishlistIds(next);
       setIsWishlisted(true);
     }
 

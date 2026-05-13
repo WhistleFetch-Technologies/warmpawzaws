@@ -7,7 +7,7 @@ import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
-import { CustomerPetProfile } from '../CustomerPetProfile';
+import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { WalkerService } from '../WalkerService';
 import { WalkerDashboard } from '../walker/WalkerDashboard';
 import { WalkerBookingRouter } from '../walker/WalkerBookingRouter';
@@ -1789,7 +1789,20 @@ export function CustomerHomeWrapper({
         }}
       />
     );
-  if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
+  if (currentScreen === 'add-pet')
+    return (
+      <EnhancedAddPetModal
+        key="screen-add-pet"
+        variant="fullscreen"
+        phone={phone}
+        isOpen
+        onBack={handleBack}
+        onClose={handleBack}
+        onSuccess={() => {
+          void handlePetProfileComplete([]);
+        }}
+      />
+    );
   
   // Core Services
   // ✅ FIX: Walker with Frame UI (ServiceDashboardHeader only – skipHeader to avoid double header)
