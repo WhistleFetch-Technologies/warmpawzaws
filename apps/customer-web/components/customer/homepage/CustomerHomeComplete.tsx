@@ -2158,6 +2158,7 @@ export function CustomerHomeComplete({
                 problemId,
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
                 roleId: (problem as any)?.roleId || (problem as any)?.vendorType,
+                category: (problem as any)?.category,
                 problem: problem,
               });
             }}

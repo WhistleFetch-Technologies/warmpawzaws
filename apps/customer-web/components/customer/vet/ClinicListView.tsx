@@ -32,6 +32,10 @@ interface ClinicListViewProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** Problem tile / specialization id for GET /customer/services/by-style */
+  specialization?: string;
+  /** `returnScreen` when opening vet-services-by-style from Details (default: vet-clinic-list). */
+  vetStyleProfileReturnScreen?: string;
 }
 
 /** One bookable row — stable identity for keys + booking */
@@ -184,7 +188,13 @@ function cleanProviderName(name: string): string {
   return String(name || 'Clinic').replace(/\s*-\s*[a-f0-9-]{8,}\s*$/i, '').trim();
 }
 
-export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
+export function ClinicListView({
+  phone,
+  onBack,
+  onNavigate,
+  specialization,
+  vetStyleProfileReturnScreen = 'vet-clinic-list',
+}: ClinicListViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -245,11 +255,14 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
   useEffect(() => {
     loadClinics();
-  }, []);
+  }, [specialization]);
 
   const loadDiscoverFallback = async (locationParams: string) => {
+    const specParam = specialization
+      ? `&specialization=${encodeURIComponent(specialization)}`
+      : '';
     const response = (await apiClient.get(
-      `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`
+      `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${specParam}`
     )) as any;
     const servicesData = response.vendors || response.services || [];
     if (servicesData.length === 0) return [];
@@ -336,8 +349,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
       let mapped: ClinicProvider[] = [];
       const loadByStyle = async (roleId: string) => {
+        const specParam = specialization
+          ? `&specialization=${encodeURIComponent(specialization)}`
+          : '';
         const response = (await apiClient.get(
-          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}`
+          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
         )) as any;
         if (!response.success) return [];
         const providerData = response.providers || response.vendors || [];
@@ -360,7 +376,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         }
       }
 
-      if (mapped.length === 0) {
+      // Only use the unfiltered /vendors fallback when there is no specialization filter.
+      // If specialization is active, an empty list is correct — do not widen to all vets.
+      if (mapped.length === 0 && !specialization) {
         try {
           const fallbackResponse = (await apiClient.get('/vendors?role=veterinarian')) as any;
           if (fallbackResponse?.vendors?.length > 0) {
@@ -467,7 +485,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       serviceStyle: 'at_center',
       serviceTypeName: 'Vet Clinic',
       category: 'vet',
-      returnScreen: 'vet-clinic-list',
+      returnScreen: vetStyleProfileReturnScreen,
     });
   };
 
@@ -568,7 +586,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               🏥
             </div>
             <p className="text-gray-800 font-semibold">No clinics found</p>
-            <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {specialization
+                ? 'No clinics offering this specialization are available in your area'
+                : 'Try adjusting your search or filters'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">

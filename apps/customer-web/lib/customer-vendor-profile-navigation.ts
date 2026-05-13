@@ -102,11 +102,17 @@ export function getWebVetDiscoveryChevronNavTarget(input: {
   provider: Record<string, unknown>;
   /** e.g. `vet` when opened from main vet hub vs style browser */
   doctorProfileBackScreen?: string;
+  /**
+   * When set (e.g. `problem_grid_flow`), used as doctor back, clinic profile back,
+   * and `returnScreen` on vet-services-by-style drill-in so nested screens return correctly.
+   */
+  profileBackScreen?: string;
 }): { screen: string; data: Record<string, unknown> } {
   const pt = String(input.provider.providerType ?? input.provider.type ?? 'vendor').toLowerCase();
   const row = { ...input.provider, type: pt === 'staff' ? 'staff' : pt === 'individual' ? 'individual' : 'vendor' };
   const accountId = pickCustomerVendorAccountId(row);
-  const doctorBack = input.doctorProfileBackScreen ?? 'vet-services-by-style';
+  const embedBack = input.profileBackScreen;
+  const doctorBack = embedBack ?? input.doctorProfileBackScreen ?? 'vet-services-by-style';
 
   if (pt === 'staff' || pt === 'individual') {
     const doctorId = pickVetPractitionerProfileEntityId(input.provider);
@@ -125,7 +131,7 @@ export function getWebVetDiscoveryChevronNavTarget(input: {
       screen: 'vet-clinic-profile',
       data: {
         id: accountId,
-        clinicProfileBackScreen: 'vet-services-by-style',
+        clinicProfileBackScreen: embedBack ?? 'vet-services-by-style',
       },
     };
   }
@@ -140,6 +146,7 @@ export function getWebVetDiscoveryChevronNavTarget(input: {
       serviceStyle: String(input.serviceStyle),
       serviceTypeName: input.serviceTypeName || 'Veterinary Services',
       category: input.category || 'vet',
+      ...(embedBack ? { returnScreen: embedBack } : {}),
     },
   };
 }

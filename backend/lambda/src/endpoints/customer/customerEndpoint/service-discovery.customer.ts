@@ -78,6 +78,254 @@ function discoveryCustomerRadiusKm(opts: {
   return opts.rules.discovery_radius_km ?? 50;
 }
 
+/** Align with problem-grid specialization keys (slug, spaced label, normalized). */
+function normalizeSpecializationDiscoveryKey(value: string): string {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+/**
+ * All synonym clusters: tile slug → every slug/display variant that
+ * `specialization_master` might store, plus spaced variants.
+ * Add new clusters whenever a new tile ID is added to the customer app.
+ */
+const SPECIALIZATION_SYNONYM_CLUSTERS: string[][] = [
+  // ── Behavioral ──────────────────────────────────────────────────────────
+  ['barking', 'excessive_barking', 'excessive barking', 'vocalization'],
+  ['separation_anxiety', 'separation anxiety'],
+  ['fear_phobia', 'fear_phobias', 'fear & phobias', 'fear and phobias', 'fear phobia', 'fear phobias'],
+  ['destructive', 'destructive_behavior', 'destructive behavior'],
+  ['resource_guarding', 'resource guarding', 'possessive', 'possessive_behavior', 'possessive behavior'],
+  // ── Nutrition ────────────────────────────────────────────────────────────
+  ['diet_plan', 'diet plan', 'custom_diet', 'custom diet', 'custom_diet_plans', 'custom diet plans', 'diet_planning', 'diet planning'],
+  ['weight_management', 'weight management'],
+  ['allergies', 'allergy_diet', 'allergy diet', 'food_allergies', 'food allergies', 'allergy'],
+  ['puppy_nutrition', 'puppy nutrition'],
+  ['senior_nutrition', 'senior nutrition', 'senior_pet_nutrition', 'senior pet nutrition'],
+  ['special_diet', 'special diet', 'prescription_diet', 'prescription diet', 'medical_diet', 'medical diet'],
+  // ── Training ─────────────────────────────────────────────────────────────
+  ['potty_training', 'potty training', 'house_training', 'house training'],
+  ['basic_obedience', 'basic obedience', 'obedience'],
+  ['socialization', 'socialisation'],
+  ['aggression', 'aggression_management', 'aggression management'],
+  // ── Vet ──────────────────────────────────────────────────────────────────
+  ['dermatology', 'skin_care', 'skin care'],
+  ['cardiology', 'heart_care', 'heart care'],
+  ['ophthalmology', 'eye_care', 'eye care'],
+  ['dentistry', 'dental', 'dental_care', 'dental care'],
+  ['surgery', 'surgical'],
+];
+
+/** Normalise a slug by replacing any non-alphanumeric run with a single underscore. */
+function aggressiveNormalizeSlug(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function collectSpecializationDiscoveryKeys(raw: string | null | undefined): string[] {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return [];
+  const out = new Set<string>();
+  out.add(trimmed.toLowerCase());
+  const underscored = normalizeSpecializationDiscoveryKey(trimmed); // spaces/dashes → _
+  if (underscored) out.add(underscored);
+  const spaced = underscored.replace(/_/g, ' ');
+  if (spaced) out.add(spaced);
+  const aggressive = aggressiveNormalizeSlug(trimmed);
+  if (aggressive) out.add(aggressive);
+
+  // Expand via synonym clusters
+  for (const cluster of SPECIALIZATION_SYNONYM_CLUSTERS) {
+    const normCluster = cluster.map(aggressiveNormalizeSlug);
+    if (normCluster.includes(aggressive) || cluster.map(s => s.toLowerCase()).includes(trimmed.toLowerCase())) {
+      for (const s of cluster) {
+        out.add(s.toLowerCase());
+        out.add(aggressiveNormalizeSlug(s));
+        out.add(aggressiveNormalizeSlug(s).replace(/_/g, ' '));
+      }
+      break;
+    }
+  }
+  return Array.from(out).filter(Boolean);
+}
+
+/**
+ * Expand a single specialization filter value into every form a vendor row
+ * might have stored: UUID (specialization_master.id), slug
+ * (specialization_master.specialization_id), display name, and
+ * underscore/space variants.
+ *
+ * Vendors save the value emitted by the SpecializationSelector, which is the
+ * UUID for newer rows but historically has been the slug or display name. The
+ * customer side meanwhile may pass any of these forms. To keep
+ * specialisation discovery symmetrical, we always look up the canonical
+ * record in specialization_master and merge every variant into the key list.
+ */
+async function resolveSpecializationDiscoveryKeys(raw: string | null | undefined): Promise<string[]> {
+  const baseKeys = collectSpecializationDiscoveryKeys(raw);
+  if (baseKeys.length === 0) return baseKeys;
+
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return baseKeys;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isUuid = UUID_RE.test(trimmed);
+
+  try {
+    /**
+     * Query specialization_master using ALL synonym keys (not just the raw input).
+     * This is the critical fix: when the tile slug is `barking` but the DB row has
+     * `specialization_id='excessive_barking'` (or `display_name='Excessive Barking'`),
+     * the old query missed it — the UUID was never added → vendor not found.
+     *
+     * We now query using:
+     *   $1 = array of all synonym keys (exact lower-trim match)
+     *   $2 = same array (regexp_replace normalization: 'Excessive Barking' → 'excessive_barking')
+     * Plus UUID lookup when input is a UUID.
+     */
+    const smRes = await query(
+      `SELECT id::text AS id, specialization_id, name, display_name
+       FROM specialization_master
+       WHERE is_active = true
+         AND (
+           ${isUuid ? `id::text = $3 OR ` : ''}
+           LOWER(TRIM(COALESCE(specialization_id, ''))) = ANY($1::text[])
+           OR LOWER(TRIM(COALESCE(name, ''))) = ANY($1::text[])
+           OR LOWER(TRIM(COALESCE(display_name, ''))) = ANY($1::text[])
+           OR regexp_replace(LOWER(TRIM(COALESCE(specialization_id, ''))), '[^a-z0-9]+', '_', 'g') = ANY($2::text[])
+           OR regexp_replace(LOWER(TRIM(COALESCE(name, ''))), '[^a-z0-9]+', '_', 'g') = ANY($2::text[])
+           OR regexp_replace(LOWER(TRIM(COALESCE(display_name, ''))), '[^a-z0-9]+', '_', 'g') = ANY($2::text[])
+         )
+       LIMIT 20`,
+      isUuid
+        ? [baseKeys, baseKeys, trimmed]
+        : [baseKeys, baseKeys]
+    );
+    const merged = new Set<string>(baseKeys);
+    for (const row of smRes?.rows || []) {
+      for (const val of [row.id, row.specialization_id, row.name, row.display_name]) {
+        if (!val) continue;
+        const v = String(val).trim();
+        if (!v) continue;
+        merged.add(v.toLowerCase());
+        const norm = normalizeSpecializationDiscoveryKey(v);
+        if (norm) {
+          merged.add(norm);
+          merged.add(norm.replace(/_/g, ' '));
+        }
+        const aggr = aggressiveNormalizeSlug(v);
+        if (aggr) {
+          merged.add(aggr);
+          merged.add(aggr.replace(/_/g, ' '));
+        }
+      }
+    }
+    return Array.from(merged).filter(Boolean);
+  } catch {
+    return baseKeys;
+  }
+}
+
+/** ILIKE patterns for specialization keys; escape % and _ so slugs like bath_brush match literally. */
+function specializationDiscoveryIlikePatterns(keys: string[]): string[] {
+  const patterns = new Set<string>();
+  for (const k of keys) {
+    const esc = k.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    patterns.add(`%${esc}%`);
+  }
+  return Array.from(patterns);
+}
+
+/**
+ * Restrict vendors to those who EXPLICITLY declared the specialization
+ * (vendor_specializations row, vendors.specializations JSON, or metadata.specializations).
+ * Strict mode: vendors without any matching declaration are filtered OUT — the previous
+ * "default-open" branch leaked unrelated vendors into a specialization tile (e.g. lab test
+ * tile showed clinics that never listed lab test). Per requirement: only show vendors who
+ * added this specialization in their profile.
+ * Appends two params: text[] exact (lower trim), text[] ILIKE patterns.
+ */
+function sqlVendorMatchesDeclaredSpecialization(paramBase: number): string {
+  const a = paramBase;       // text[] exact keys (lower-trimmed)
+  const b = paramBase + 1;   // text[] ILIKE patterns
+  return `
+          AND (
+            /* ── 1. vendor_specializations: stored value is in exact key list ── */
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vsp
+              WHERE vsp.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(vsp.specialization)) = ANY($${a}::text[])
+                  OR vsp.specialization ILIKE ANY($${b}::text[])
+                )
+            )
+            /* ── 2. vendor_specializations stores UUID → look up in specialization_master ──
+             *  The SpecializationSelector saves spec.id (UUID).  The customer tile slug won't
+             *  literally appear in the stored UUID, so we JOIN to specialization_master and
+             *  match on the master row's slug/name against the customer's query keys.
+             */
+            OR EXISTS (
+              SELECT 1 FROM vendor_specializations vsp2
+              JOIN specialization_master sm
+                ON sm.is_active = true
+                   AND (
+                     sm.id::text = vsp2.specialization
+                     OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.name))              = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.display_name))      = LOWER(TRIM(vsp2.specialization))
+                   )
+              WHERE vsp2.vendor_id = v.id
+                AND (
+                  sm.id::text = ANY($${a}::text[])
+                  OR LOWER(TRIM(sm.specialization_id)) = ANY($${a}::text[])
+                  OR LOWER(TRIM(sm.name))              = ANY($${a}::text[])
+                  OR LOWER(TRIM(sm.display_name))      = ANY($${a}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.name)),              '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                )
+            )
+            /* ── 3. vendors.specializations JSONB stores UUID or slug ── */
+            OR (
+              v.specializations IS NOT NULL
+              AND v.specializations::text NOT IN ('[]', 'null', '')
+              AND (
+                v.specializations::text ILIKE ANY($${b}::text[])
+                OR EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements_text(
+                    CASE
+                      WHEN jsonb_typeof(v.specializations) = 'array' THEN v.specializations
+                      ELSE '[]'::jsonb
+                    END
+                  ) elem(val)
+                  JOIN specialization_master sm2
+                    ON sm2.is_active = true
+                       AND (
+                         sm2.id::text = elem.val
+                         OR LOWER(TRIM(sm2.specialization_id)) = LOWER(TRIM(elem.val))
+                         OR LOWER(TRIM(sm2.name))              = LOWER(TRIM(elem.val))
+                         OR LOWER(TRIM(sm2.display_name))      = LOWER(TRIM(elem.val))
+                       )
+                  WHERE (
+                    sm2.id::text = ANY($${a}::text[])
+                    OR LOWER(TRIM(sm2.specialization_id)) = ANY($${a}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${a}::text[])
+                  )
+                )
+              )
+            )
+            /* ── 4. vendors.metadata.specializations (legacy string/JSON) ── */
+            OR (
+              v.metadata IS NOT NULL
+              AND v.metadata->'specializations' IS NOT NULL
+              AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
+              AND (v.metadata->'specializations')::text ILIKE ANY($${b}::text[])
+            )
+          )`;
+}
+
 /**
  * Safely parse operating_hours from the vendors table.
  * Returns the parsed object if valid JSON, or null if it's plain text / malformed.
@@ -253,6 +501,47 @@ const TRAINING_HUB_ROLE_SQL_IN_LIST = TRAINING_HUB_ROLE_NAMES_LOWER.map((n) => `
 function vendorRoleIsTrainingHub(name: string | null | undefined): boolean {
   if (!name) return false;
   return TRAINING_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
+}
+
+/**
+ * Customer **Behavioral** hub only (`?category=behaviourist`). Narrower than {@link TRAINING_HUB_ROLE_NAMES_LOWER}
+ * so empty-category / training-category shortcuts do not surface every obedience trainer.
+ */
+const BEHAVIOR_HUB_ROLE_NAMES_LOWER: readonly string[] = [
+  'behaviorist',
+  'behaviorist_solo',
+  'behaviorist_center',
+  'behaviourist',
+  'behaviourist_solo',
+  'behaviourist_center',
+  'pet_behaviourist',
+  'dog_behaviourist',
+  'pet_behaviorist',
+];
+
+const BEHAVIOR_HUB_ROLE_SQL_IN_LIST = BEHAVIOR_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(', ');
+
+function vendorRoleIsBehaviorHub(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return BEHAVIOR_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
+}
+
+/** True when discovery `catTextExact` is the Behavioral hub (distinct from general `training`). */
+function catTextRequestsBehaviorHub(catTextExact: string[]): boolean {
+  return catTextExact.some((c) => {
+    const x = String(c).toLowerCase().trim();
+    return (
+      x === 'behaviourist' ||
+      x === 'behaviorist' ||
+      x === 'behavior' ||
+      x === 'behavioral' ||
+      x === 'behaviour' ||
+      x === 'behavioural' ||
+      x === 'pet_behaviourist' ||
+      x === 'dog_behaviourist' ||
+      x.includes('behaviou')
+    );
+  });
 }
 
 /** SQL: `vs.category` text that should match customer ?category=training (e.g. Behavioral). */
@@ -505,6 +794,18 @@ async function columnExists(tableName: string, columnName: string): Promise<bool
   }
 }
 
+/**
+ * Migration 737 adds vendors.service_distance_km. Many environments (dev / not-yet-migrated)
+ * still miss it, so reference it through this helper which falls back to NULL when absent.
+ * Returns a SELECT fragment that always exposes `service_radius` + `service_distance_km`.
+ */
+async function vendorDistanceSelectColumnsSql(vAlias = 'v'): Promise<string> {
+  const hasServiceDistanceKm = await columnExists('vendors', 'service_distance_km');
+  return hasServiceDistanceKm
+    ? `${vAlias}.service_radius, ${vAlias}.service_distance_km`
+    : `${vAlias}.service_radius, NULL::numeric AS service_distance_km`;
+}
+
 const STYLE_ALIASES: Record<string, string> = {
   at_clinic: 'at_center',
   at_vendor: 'at_center',
@@ -693,7 +994,15 @@ function getCategoryFromRole(roleId: string): string {
     'sunset': 'sunset', 'pet_sunset_services': 'sunset',
     'event_organizer': 'events', 'pet_event_organizer': 'events',
     // Behaviourist, sitting
-    'behaviourist': 'behaviourist', 'pet_behaviourist': 'behaviourist', 'behaviourist_solo': 'behaviourist',
+    'behaviourist': 'behaviourist',
+    'pet_behaviourist': 'behaviourist',
+    'behaviourist_solo': 'behaviourist',
+    'behaviourist_center': 'behaviourist',
+    'behaviorist': 'behaviourist',
+    'behaviorist_solo': 'behaviourist',
+    'behaviorist_center': 'behaviourist',
+    'dog_behaviourist': 'behaviourist',
+    'pet_behaviorist': 'behaviourist',
     'pet_sitter': 'sitting', 'sitter': 'sitting', 'sitter_solo': 'sitting',
   };
   return roleCategoryMap[roleId] || roleCategoryMap[roleId?.toLowerCase?.()] || 'other';
@@ -751,7 +1060,17 @@ const CATEGORY_ROLE_NAMES: Record<string, string[]> = {
   holiday: ['holiday'],
   sunset: ['sunset', 'pet_sunset_services'],
   events: ['event_organizer', 'pet_event_organizer'],
-  behaviourist: ['behaviourist', 'behaviourist_solo', 'pet_behaviourist'],
+  behaviourist: [
+    'behaviourist',
+    'behaviourist_solo',
+    'behaviourist_center',
+    'pet_behaviourist',
+    'behaviorist',
+    'behaviorist_solo',
+    'behaviorist_center',
+    'dog_behaviourist',
+    'pet_behaviorist',
+  ],
   sitting: ['pet_sitter', 'sitter_solo', 'sitter'],
 };
 
@@ -1126,6 +1445,7 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
   radiusQ?: string;
   maxDistanceQ?: string;
   minRatingQ?: string;
+  specialization?: string | null;
 }): Promise<number> {
   const serviceStyleNorm = normalizeServiceStyle(opts.serviceStyleRaw) || opts.serviceStyleRaw;
   const category = opts.category;
@@ -1191,6 +1511,39 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
       ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
         String(roleId).toLowerCase().replace(/-/g, '_')
       ));
+
+  /** Must match GET /customer/discover-services (see trainingRoleUncategorizedOr in that handler). */
+  const trainingDiscoverySearchCount =
+    !sittingDiscoveryRelaxed && catTextExact.some((c) => c === 'training' || c.includes('training'));
+
+  const behaviorHubDiscoverySearchCount =
+    !sittingDiscoveryRelaxed && catTextRequestsBehaviorHub(catTextExact);
+
+  const trainingRoleUncategorizedOrCount =
+    trainingDiscoverySearchCount
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  const trainingCategoryAliasVendorOrCount = trainingDiscoverySearchCount
+    ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+    : '';
+
+  const behaviorRoleUncategorizedOrCount =
+    behaviorHubDiscoverySearchCount
+      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
+      : '';
+
+  const behaviorCategoryAliasVendorOrCount = behaviorHubDiscoverySearchCount
+    ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+    : '';
+
+  const behaviorTrainingCategoryVendorOrCount =
+    behaviorHubDiscoverySearchCount
+      ? ` OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
+              AND LOWER(TRIM(COALESCE(r.name, ''))) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
+            )`
+      : '';
 
   const walkerCategoryDiscoveryOr =
     !sittingDiscoveryRelaxed &&
@@ -1325,6 +1678,11 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
                 ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
                 ${boardingRoleUncategorizedOr}
                 ${nutritionRoleUncategorizedOr}
+                ${trainingRoleUncategorizedOrCount}
+                ${trainingCategoryAliasVendorOrCount}
+                ${behaviorRoleUncategorizedOrCount}
+                ${behaviorCategoryAliasVendorOrCount}
+                ${behaviorTrainingCategoryVendorOrCount}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
@@ -1336,16 +1694,38 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
     ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
     : 'vs.service_style = ANY($1::text[])';
 
+  const vendorParams: any[] =
+    catTextExact.length + catUUIDs.length > 0
+      ? catTextExact.length > 0
+        ? catUUIDs.length > 0
+          ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
+          : [acceptableStyles, catTextExact, catTextLike]
+        : [acceptableStyles, [], [], catUUIDs]
+      : [acceptableStyles];
+
+  const specKeysCount = await resolveSpecializationDiscoveryKeys((opts.specialization || '').trim());
+  let specializationCountFragment = '';
+  if (specKeysCount.length > 0) {
+    const p0 = vendorParams.length + 1;
+    specializationCountFragment = sqlVendorMatchesDeclaredSpecialization(p0);
+    vendorParams.push(
+      specKeysCount.map((k) => k.trim().toLowerCase()),
+      specializationDiscoveryIlikePatterns(specKeysCount)
+    );
+  }
+
+  const vendorDistanceColsCount = await vendorDistanceSelectColumnsSql('v');
   const vendorListSql = `
         SELECT v.id AS vendor_id,
                v.latitude, v.longitude,
-               v.service_radius, v.service_distance_km,
+               ${vendorDistanceColsCount},
                COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0)::float AS avg_rating
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
+          ${specializationCountFragment}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
@@ -1356,15 +1736,6 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
           )
           ${availabilityRequiredSql}
       `;
-
-  const vendorParams: any[] =
-    catTextExact.length + catUUIDs.length > 0
-      ? catTextExact.length > 0
-        ? catUUIDs.length > 0
-          ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
-          : [acceptableStyles, catTextExact, catTextLike]
-        : [acceptableStyles, [], [], catUUIDs]
-      : [acceptableStyles];
 
   const vendorRows = await query(vendorListSql, vendorParams);
   let candidates = vendorRows.rows as {
@@ -1520,6 +1891,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         radiusQ: c.req.query('radius') || undefined,
         maxDistanceQ: c.req.query('maxDistance') || undefined,
         minRatingQ: c.req.query('minRating') || undefined,
+        specialization:
+          (c.req.query('specialization') || c.req.query('specializationId') || '').trim() || undefined,
       });
       return c.json({ success: true, count });
     } catch (error: any) {
@@ -1957,8 +2330,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
-      let latitude = c.req.query('latitude');
-      let longitude = c.req.query('longitude');
+      const specializationFilterDiscover = (
+        c.req.query('specialization') ||
+        c.req.query('specializationId') ||
+        ''
+      ).trim();
+      // Accept lat/lon and latitude/longitude aliases (different parts of the
+      // app use different spellings — keep them all working).
+      let latitude = c.req.query('latitude') || c.req.query('lat');
+      let longitude =
+        c.req.query('longitude') || c.req.query('lng') || c.req.query('lon');
 
       // If coordinates not provided, fetch from customer address (with pincode fallback)
       let customerApproximateDiscover = false;
@@ -2048,6 +2429,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const trainingDiscoverySearch =
         !sittingDiscoveryRelaxed &&
         catTextExact.some((c) => c === 'training' || c.includes('training'));
+
+      /**
+       * Behavioral hub (`?category=behaviourist`): services are usually tagged `training` / `behavioral` / blank
+       * (same as the training hub). The literal `behaviourist` category on `vendor_services` is rare, so without
+       * these OR branches behaviorists disappear from UniversalServicesByStyle / home flow.
+       */
+      const behaviorHubDiscoverySearch =
+        !sittingDiscoveryRelaxed && catTextRequestsBehaviorHub(catTextExact);
 
       /** Dog walk add-on for non-walker accounts: category may be blank or still "vet" / "grooming". */
       const walkerCategoryDiscoveryOr =
@@ -2146,6 +2535,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : '';
         const trainingCategoryAliasFetchOr =
           !sitterRoleBypass && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
+        const behaviorUncatSql =
+          !sitterRoleBypass &&
+          behaviorHubDiscoverySearch &&
+          vendorRoleIsBehaviorHub(_vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
+        const behaviorCategoryAliasFetchOr =
+          !sitterRoleBypass && behaviorHubDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
+        const behaviorTrainingCategoryFetchOr =
+          !sitterRoleBypass &&
+          behaviorHubDiscoverySearch &&
+          vendorRoleIsBehaviorHub(_vendorRoleName)
+            ? ` OR LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'`
+            : '';
         const categoryFilterSql =
           !sitterRoleBypass && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -2157,6 +2560,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSql}
             ${trainingUncatSql}
             ${trainingCategoryAliasFetchOr}
+            ${behaviorUncatSql}
+            ${behaviorCategoryAliasFetchOr}
+            ${behaviorTrainingCategoryFetchOr}
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
@@ -2269,9 +2675,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const customerService = roleCfg?.customer_service || null;
 
         const distResult = await distResolverDiscover.resolve({
+          id: vendor.vendor_id,
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           pincode: vendor.pincode,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
         });
 
         let nextAvailable: any = null;
@@ -2353,7 +2763,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // 4) Vendor SQL: VA2 gate (sitting + training hubs skip — solo sitters/trainers often have published
       // services but empty or all-disabled calendars; booking still uses slots API.)
       const availabilityRequiredSql =
-        sittingDiscoveryRelaxed || trainingDiscoverySearch
+        sittingDiscoveryRelaxed || trainingDiscoverySearch || behaviorHubDiscoverySearch
           ? ''
           : `
           AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
@@ -2427,6 +2837,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           : '';
       const trainingCategoryAliasVendorOr =
         !sittingDiscoveryRelaxed && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
+      const behaviorRoleUncategorizedOr =
+        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch
+          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+      const behaviorCategoryAliasVendorOr =
+        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
+      const behaviorTrainingCategoryVendorOr =
+        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch
+          ? ` OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
+              AND LOWER(TRIM(COALESCE(r.name, ''))) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
+            )`
+          : '';
       const vetCategoryEmptyOr =
         !sittingDiscoveryRelaxed && isVetCategoryDiscovery
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
@@ -2455,6 +2878,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOr}
                 ${trainingRoleUncategorizedOr}
                 ${trainingCategoryAliasVendorOr}
+                ${behaviorRoleUncategorizedOr}
+                ${behaviorCategoryAliasVendorOr}
+                ${behaviorTrainingCategoryVendorOr}
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
@@ -2466,11 +2892,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
         : 'vs.service_style = ANY($1::text[])';
 
-      let vendorSql = `
+      const vendorParamsDiscover: any[] =
+        (catTextExact.length + catUUIDs.length > 0)
+          ? (catTextExact.length > 0
+            ? (catUUIDs.length > 0
+              ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
+              : [acceptableStyles, catTextExact, catTextLike])
+            : [acceptableStyles, [], [], catUUIDs])
+          : [acceptableStyles];
+
+      const specKeysDiscover = await resolveSpecializationDiscoveryKeys(specializationFilterDiscover);
+      let specializationDiscoverFragment = '';
+      if (specKeysDiscover.length > 0) {
+        const p0 = vendorParamsDiscover.length + 1;
+        specializationDiscoverFragment = sqlVendorMatchesDeclaredSpecialization(p0);
+        vendorParamsDiscover.push(
+          specKeysDiscover.map((k) => k.trim().toLowerCase()),
+          specializationDiscoveryIlikePatterns(specKeysDiscover)
+        );
+      }
+
+      const vendorDistanceColsDiscover = await vendorDistanceSelectColumnsSql('v');
+      const vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
-          v.service_radius, v.service_distance_km,
+          v.address, v.city, v.state, v.latitude, v.longitude, v.pincode, v.metadata,
+          ${vendorDistanceColsDiscover},
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -2483,6 +2930,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
+          ${specializationDiscoverFragment}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
@@ -2496,16 +2944,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LIMIT ${maxResults}
       `;
 
-      const vendorParams: any[] =
-        (catTextExact.length + catUUIDs.length > 0)
-          ? (catTextExact.length > 0
-            ? (catUUIDs.length > 0
-              ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
-              : [acceptableStyles, catTextExact, catTextLike])
-            : [acceptableStyles, [], [], catUUIDs])
-          : [acceptableStyles];
-
-      const vendorRows = await query(vendorSql, vendorParams);
+      const vendorRows = await query(vendorSql, vendorParamsDiscover);
       const vendorRadiusLookupDiscover = new Map<
         string,
         { service_radius?: unknown; service_distance_km?: unknown }
@@ -4118,13 +4557,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'pet_walker';
         const boardingBookingCategoryRequest =
           catLower === 'boarding' || catLower === 'pet_boarding';
-        /** Training / behavior: same category rules as discover-services (null category + behaviorist role, Behavioral label). */
-        const trainingBookingCategoryRequest =
+        /** Training tile: empty `vs.category` may list any training-hub role. */
+        const trainingOnlyBookingCategoryRequest =
           catLower === 'training' ||
           catLower === 'pet_training' ||
-          catLower === 'dog_training' ||
-          catLower === 'behaviorist' ||
-          catLower === 'behaviourist';
+          catLower === 'dog_training';
+        /** Behavioral hub: same aliases as discover-services, but empty/`training` category only for behavior roles. */
+        const behaviorBookingCategoryRequest =
+          catLower === 'behaviorist' || catLower === 'behaviourist';
+        const trainingBookingCategoryRequest =
+          trainingOnlyBookingCategoryRequest || behaviorBookingCategoryRequest;
         queryParams.push(category);
         const catParam = queryParams.length;
         if (sittingBookingCategoryRequest) {
@@ -4217,6 +4659,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${boardingCatIdOr}
           )`;
         } else if (trainingBookingCategoryRequest) {
+          const emptyCatRoleSqlList = behaviorBookingCategoryRequest
+            ? BEHAVIOR_HUB_ROLE_SQL_IN_LIST
+            : TRAINING_HUB_ROLE_SQL_IN_LIST;
+          const trainingLabeledServicesForBehaviorOnly =
+            behaviorBookingCategoryRequest && !trainingOnlyBookingCategoryRequest
+              ? ` OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
+              AND EXISTS (
+                SELECT 1 FROM vendors v_tr
+                LEFT JOIN roles r_tr ON v_tr.role_id = r_tr.id
+                WHERE v_tr.id = vs.vendor_id
+                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
+              )
+            )`
+              : '';
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR ${sqlTrainingCategoryAliasOrVs('vs')}
@@ -4226,9 +4683,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 SELECT 1 FROM vendors v_tr
                 LEFT JOIN roles r_tr ON v_tr.role_id = r_tr.id
                 WHERE v_tr.id = vs.vendor_id
-                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+                  AND LOWER(COALESCE(TRIM(r_tr.name), '')) IN (${emptyCatRoleSqlList})
               )
             )
+            ${trainingLabeledServicesForBehaviorOnly}
           )`;
         } else {
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
@@ -4511,12 +4969,35 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const roleId = c.req.query('roleId');
       const searchQuery = c.req.query('query');
       const location = c.req.query('location');
-      const latitude = c.req.query('latitude');
-      const longitude = c.req.query('longitude');
+      // Accept both lat/lon and latitude/longitude — frontend code uses both spellings.
+      let latitude = c.req.query('latitude') || c.req.query('lat');
+      let longitude = c.req.query('longitude') || c.req.query('lon') || c.req.query('lng');
       const serviceStyle = c.req.query('serviceStyle');
       const customerPhone = c.req.query('customerPhone') || c.req.query('phone');
       const limit = parseInt(c.req.query('limit') || '20', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // If coordinates not provided, fall back to the customer's default address
+      // (with pincode-centroid geocoding when the address has no saved pin).
+      let customerApproximate = false;
+      if ((!latitude || !longitude) && customerPhone) {
+        try {
+          const coords = await getCustomerCoordinates(customerPhone);
+          if (coords) {
+            latitude = String(coords.latitude);
+            longitude = String(coords.longitude);
+            customerApproximate = !!coords.approximate;
+            console.log(
+              `[vendors/search] Resolved customer coords from default address: ${latitude}, ${longitude}, approx=${customerApproximate}`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            '[vendors/search] getCustomerCoordinates fallback failed:',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }
 
       // Build vendor query
       let vendorQuery = `
@@ -4609,6 +5090,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } catch (_) { }
       }
 
+      // Build a per-request distance resolver that handles vendors without
+      // explicit lat/lng by geocoding their address (and persists the coords
+      // back so the next search/discovery call is fast).
+      const customerLatNum =
+        latitude != null && latitude !== '' ? parseFloat(String(latitude)) : NaN;
+      const customerLngNum =
+        longitude != null && longitude !== '' ? parseFloat(String(longitude)) : NaN;
+      const distResolverSearch = new DistanceResolver(
+        Number.isFinite(customerLatNum) ? customerLatNum : null,
+        Number.isFinite(customerLngNum) ? customerLngNum : null,
+        customerApproximate
+      );
+
       // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
       const enrichedVendors = (await Promise.all(
         vendors.map(async (vendor: any) => {
@@ -4624,17 +5118,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const avgRating = reviews.rows[0]?.avg_rating || 0;
           const reviewCount = reviews.rows[0]?.review_count || 0;
 
-          let distance: number | null = null;
-          if (latitude && longitude && vendor.latitude && vendor.longitude) {
-            distance = calculateDistance(
-              parseFloat(latitude),
-              parseFloat(longitude),
-              parseFloat(vendor.latitude),
-              parseFloat(vendor.longitude)
-            );
-          }
-          const distanceKm = distance != null ? parseFloat(distance.toFixed(2)) : null;
-          const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
+          // Resolve distance through the shared resolver: explicit lat/lng,
+          // then full-address geocode, then pincode centroid. Returns null
+          // only when the customer has no usable reference point.
+          const distResult = await distResolverSearch.resolve({
+            id: vendor.id,
+            latitude: vendor.latitude,
+            longitude: vendor.longitude,
+            pincode: vendor.pincode,
+            address: vendor.address,
+            city: vendor.city,
+            state: vendor.state,
+          });
+          const distanceKm =
+            distResult?.km != null ? parseFloat(distResult.km.toFixed(2)) : null;
+          const distanceText = distResult?.distanceText ?? null;
 
           let specializations: string[] = [];
           try {
@@ -4882,15 +5380,45 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const problem = c.req.query('problem') || c.req.query('problemId');
       const roleId = c.req.query('roleId');
       const serviceStyle = c.req.query('serviceStyle');
-      const latitude = c.req.query('latitude');
-      const longitude = c.req.query('longitude');
+      // Accept both lat/lon and latitude/longitude — frontend code uses both.
+      let latitude = c.req.query('latitude') || c.req.query('lat');
+      let longitude = c.req.query('longitude') || c.req.query('lon') || c.req.query('lng');
+      const customerPhoneByProblem =
+        c.req.query('customerPhone') || c.req.query('phone');
 
       if (!problem) {
         return c.json({ error: 'problem or problemId is required' }, 400);
       }
 
-      // Get vendors that handle this problem (specialization_id): check vendors.specializations, metadata.specializations, vendor_specializations, or service name/description
+      // Fall back to the customer's saved default address (or pincode
+      // centroid) when the caller didn't pass coordinates. Without this
+      // every "discover by problem" hit on a freshly-loaded UI would
+      // render empty distances.
+      let customerApproximateByProblem = false;
+      if ((!latitude || !longitude) && customerPhoneByProblem) {
+        try {
+          const coords = await getCustomerCoordinates(customerPhoneByProblem);
+          if (coords) {
+            latitude = String(coords.latitude);
+            longitude = String(coords.longitude);
+            customerApproximateByProblem = !!coords.approximate;
+            console.log(
+              `[discover-by-problem] Resolved customer coords from default address: ${latitude}, ${longitude}, approx=${customerApproximateByProblem}`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            '[discover-by-problem] getCustomerCoordinates fallback failed:',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }
+
+      const specKeysByProblem = await resolveSpecializationDiscoveryKeys(String(problem).trim());
+      const exactKeysForProblem = [...new Set(specKeysByProblem.filter(Boolean))];
       const problemPattern = `%${problem}%`;
+
+      // Get vendors that handle this problem (specialization_id): check vendors.specializations, metadata.specializations, vendor_specializations, or service name/description
       let queryText = `
         SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config
         FROM vendors v
@@ -4900,12 +5428,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND (
             (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
             (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND (v.metadata->'specializations')::text ILIKE $2) OR
-            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = $1 OR vs.specialization ILIKE $2)) OR
+            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = ANY($1::text[]) OR vs.specialization ILIKE $2)) OR
             EXISTS (SELECT 1 FROM vendor_services s WHERE s.vendor_id = v.id AND s.is_enabled = true AND (s.service_name ILIKE $2 OR (s.custom_description IS NOT NULL AND s.custom_description::text ILIKE $2)))
           )
       `;
 
-      const params: any[] = [problem, problemPattern];
+      const params: any[] = [exactKeysForProblem.length > 0 ? exactKeysForProblem : [String(problem).trim()], problemPattern];
       let paramIdx = 3;
 
       if (roleId) {
@@ -4935,20 +5463,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         paramIdx++;
       }
 
-      // Add distance calculation if location provided
+      // Compute SQL-level distance only for vendors that already have lat/lng;
+      // vendors without coordinates remain in the result set and have their
+      // distance resolved later via the address/pincode fallback resolver
+      // (otherwise centers without a saved map pin would silently disappear).
       if (latitude && longitude) {
         const lat = parseFloat(latitude);
         const lng = parseFloat(longitude);
         queryText = `
-          SELECT *, 
-          (6371 * acos(
-            cos(radians($${paramIdx})) * cos(radians(CAST(latitude AS FLOAT))) *
-            cos(radians(CAST(longitude AS FLOAT)) - radians($${paramIdx + 1})) +
-            sin(radians($${paramIdx})) * sin(radians(CAST(latitude AS FLOAT)))
-          )) AS distance_km
+          SELECT subquery.*,
+            CASE
+              WHEN subquery.latitude IS NOT NULL AND subquery.longitude IS NOT NULL
+              THEN (6371 * acos(
+                cos(radians($${paramIdx})) * cos(radians(CAST(subquery.latitude AS FLOAT))) *
+                cos(radians(CAST(subquery.longitude AS FLOAT)) - radians($${paramIdx + 1})) +
+                sin(radians($${paramIdx})) * sin(radians(CAST(subquery.latitude AS FLOAT)))
+              ))
+              ELSE NULL
+            END AS distance_km
           FROM (${queryText}) subquery
-          WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-          ORDER BY distance_km ASC
+          ORDER BY distance_km ASC NULLS LAST
         `;
         params.push(lat, lng);
         paramIdx += 2;
@@ -4959,6 +5493,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       queryText += ` LIMIT 20`;
 
       const result = await query(queryText, params);
+
+      // Per-request resolver: backfills distance for rows whose vendor row had
+      // no lat/lng (using full-address or pincode-centroid geocoding).
+      const customerLatByProblem =
+        latitude != null && latitude !== '' ? parseFloat(String(latitude)) : NaN;
+      const customerLngByProblem =
+        longitude != null && longitude !== '' ? parseFloat(String(longitude)) : NaN;
+      const distResolverByProblem = new DistanceResolver(
+        Number.isFinite(customerLatByProblem) ? customerLatByProblem : null,
+        Number.isFinite(customerLngByProblem) ? customerLngByProblem : null,
+        customerApproximateByProblem
+      );
 
       // Enrich with unified card shape: photoUrl, rating, reviewCount, specializations, nextAvailable, distanceText
       const enriched = await Promise.all((result.rows || []).map(async (row: any) => {
@@ -5005,8 +5551,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             };
           }
         } catch (_) { }
-        const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
-        const distanceText = distanceKm != null ? formatDistanceKm(distanceKm, false) : null;
+        let distanceKm: number | null =
+          row.distance_km != null ? parseFloat(row.distance_km) : null;
+        let distanceText: string | null =
+          distanceKm != null
+            ? formatDistanceKm(distanceKm, customerApproximateByProblem)
+            : null;
+        // Vendors with no lat/lng on the row: backfill via address / pincode
+        // geocoding so every center / clinic surfaces a distance instead of
+        // a blank line under the rating.
+        if (
+          distanceKm == null &&
+          Number.isFinite(customerLatByProblem) &&
+          Number.isFinite(customerLngByProblem)
+        ) {
+          try {
+            const distResult = await distResolverByProblem.resolve({
+              id: vendorId,
+              latitude: row.latitude,
+              longitude: row.longitude,
+              pincode: row.pincode,
+              address: row.address,
+              city: row.city,
+              state: row.state,
+            });
+            if (distResult) {
+              distanceKm = parseFloat(distResult.km.toFixed(2));
+              distanceText = distResult.distanceText;
+            }
+          } catch {
+            /* non-fatal: leave null */
+          }
+        }
         const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
         return {
           id: vendorId,
@@ -5746,8 +6322,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId');
       const problemTitle = c.req.query('problemTitle');
-      let latitude = c.req.query('latitude');
-      let longitude = c.req.query('longitude');
+      const specializationFilterByStyle = (
+        c.req.query('specialization') ||
+        c.req.query('specializationId') ||
+        ''
+      ).trim();
+      // Accept lat/lon and latitude/longitude aliases (different parts of the
+      // app use different spellings — keep them all working).
+      let latitude = c.req.query('latitude') || c.req.query('lat');
+      let longitude =
+        c.req.query('longitude') || c.req.query('lng') || c.req.query('lon');
       let customerApproximateByStyle = false;
 
       // If coordinates not provided, fetch from customer's default address (with pincode fallback)
@@ -5916,6 +6500,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         (c) => c === 'training' || c.includes('training')
       );
 
+      const behaviorHubDiscoverySearchByStyle = catTextRequestsBehaviorHub(catTextExact);
+
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
@@ -5933,6 +6519,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
         ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+        : '';
+
+      const behaviorRoleUncategorizedOrByStyle = behaviorHubDiscoverySearchByStyle
+        ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
+        : '';
+      const behaviorCategoryAliasVendorOrByStyle = behaviorHubDiscoverySearchByStyle
+        ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+        : '';
+      const behaviorTrainingCategoryVendorOrByStyle = behaviorHubDiscoverySearchByStyle
+        ? ` OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
+              AND LOWER(TRIM(COALESCE(r.name, ''))) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
+            )`
         : '';
 
       const walkerCategoryDiscoveryOrByStyle =
@@ -5989,6 +6588,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const trainingCategoryAliasFetchOrByStyle = trainingDiscoverySearchByStyle
           ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
           : '';
+        const behaviorUncatSqlByStyle =
+          behaviorHubDiscoverySearchByStyle && vendorRoleIsBehaviorHub(vendorRoleName)
+            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            : '';
+        const behaviorCategoryAliasFetchOrByStyle = behaviorHubDiscoverySearchByStyle
+          ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
+          : '';
+        const behaviorTrainingCategoryFetchOrByStyle =
+          behaviorHubDiscoverySearchByStyle && vendorRoleIsBehaviorHub(vendorRoleName)
+            ? ` OR LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'`
+            : '';
         const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
           ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
           : '';
@@ -6001,6 +6611,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${nutritionUncatSqlByStyle}
             ${trainingUncatSqlByStyle}
             ${trainingCategoryAliasFetchOrByStyle}
+            ${behaviorUncatSqlByStyle}
+            ${behaviorCategoryAliasFetchOrByStyle}
+            ${behaviorTrainingCategoryFetchOrByStyle}
             ${walkerCategoryDiscoveryOrByStyle}
             ${vetCategoryEmptyForFetchByStyle}
             ${boardingCustomCategoryIdOrByStyleSql}
@@ -6068,9 +6681,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const customerService = roleCfg?.customer_service || null;
 
         const distResult = await distResolverByStyle.resolve({
+          id: vendor.vendor_id,
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           pincode: vendor.pincode,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
         });
         let nextAvailable: any = null;
         try {
@@ -6147,11 +6764,33 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ────────────────────────────────────────────────────────
       // 4. QUERY VENDORS FROM `vendors` TABLE (role-agnostic; eligibility via vendor_services)
       // ────────────────────────────────────────────────────────
-      let vendorSql = `
+      const vendorParamsByStyle: any[] =
+        (catTextExact.length + catUUIDs.length > 0)
+          ? (catTextExact.length > 0
+            ? (catUUIDs.length > 0
+              ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
+              : [acceptableStyles, catTextExact, catTextLike])
+            : [acceptableStyles, [], [], catUUIDs])
+          : [acceptableStyles];
+
+      const specKeysByStyle = await resolveSpecializationDiscoveryKeys(specializationFilterByStyle);
+      let specializationByStyleFragment = '';
+      if (specKeysByStyle.length > 0) {
+        const p0 = vendorParamsByStyle.length + 1;
+        specializationByStyleFragment = sqlVendorMatchesDeclaredSpecialization(p0);
+        vendorParamsByStyle.push(
+          specKeysByStyle.map((k) => k.trim().toLowerCase()),
+          specializationDiscoveryIlikePatterns(specKeysByStyle)
+        );
+      }
+      console.log(`[by-style] specialization filter: raw="${specializationFilterByStyle}" keys=${JSON.stringify(specKeysByStyle)} fragmentApplied=${specializationByStyleFragment.length > 0}`);
+
+      const vendorDistanceColsByStyle = await vendorDistanceSelectColumnsSql('v');
+      const vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
-          v.address, v.city, v.latitude, v.longitude, v.pincode, v.metadata,
-          v.service_radius, v.service_distance_km,
+          v.address, v.city, v.state, v.latitude, v.longitude, v.pincode, v.metadata,
+          ${vendorDistanceColsByStyle},
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
           r.id AS role_id,
@@ -6164,6 +6803,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
+          ${specializationByStyleFragment}
           AND EXISTS (
             SELECT 1
             FROM vendor_services vs
@@ -6179,27 +6819,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${nutritionRoleUncategorizedOrByStyle}
                 ${trainingRoleUncategorizedOrByStyle}
                 ${trainingCategoryAliasVendorOrByStyle}
+                ${behaviorRoleUncategorizedOrByStyle}
+                ${behaviorCategoryAliasVendorOrByStyle}
+                ${behaviorTrainingCategoryVendorOrByStyle}
                 ${walkerCategoryDiscoveryOrByStyle}
                 ${vetCategoryEmptyOrByStyle}
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
           )
-          ${trainingDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
+          ${trainingDiscoverySearchByStyle || behaviorHubDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
+        ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}
       `;
 
-      const vendorParams: any[] =
-        (catTextExact.length + catUUIDs.length > 0)
-          ? (catTextExact.length > 0
-            ? (catUUIDs.length > 0
-              ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
-              : [acceptableStyles, catTextExact, catTextLike])
-            : [acceptableStyles, [], [], catUUIDs])
-          : [acceptableStyles];
-
-      vendorSql += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}`;
-
-      const vendorRows = await query(vendorSql, vendorParams);
+      const vendorRows = await query(vendorSql, vendorParamsByStyle);
       const vendorRadiusLookupByStyle = new Map<
         string,
         { service_radius?: unknown; service_distance_km?: unknown }
@@ -6312,6 +6945,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         providers: results,
         vendors: results, // backward compatibility
         total: results.length,
+        specializationApplied: specializationByStyleFragment.length > 0 ? specializationFilterByStyle : null,
         appliedFilters: {
           minRating: minRatingVal,
           maxDistance:

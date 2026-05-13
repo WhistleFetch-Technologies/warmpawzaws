@@ -953,7 +953,7 @@ class ActivateVendorHandler extends BaseHandler {
         safePayload.metadata = Object.keys(cleanMetadata).length > 0 ? cleanMetadata : {};
       }
       
-      const vendorData = {
+      const vendorData: Record<string, any> = {
         phone: identity.phone,
         email: payload.email || identity.email || '',
         business_name: payload.businessName || '',
@@ -972,6 +972,44 @@ class ActivateVendorHandler extends BaseHandler {
         ...safePayload, // Include all other fields (excluding is_deleted, with cleaned metadata)
         is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors (after spread to ensure override)
       };
+
+      // Auto-geocode the business address at activation time when the vendor
+      // didn't provide an explicit lat/lng pair. This populates `vendors.latitude`
+      // and `vendors.longitude` so customer-side discovery shows distance for
+      // every clinic / center on day one (instead of waiting for a profile edit).
+      const hasManualCoords =
+        vendorData.latitude != null &&
+        vendorData.longitude != null &&
+        vendorData.latitude !== '' &&
+        vendorData.longitude !== '';
+      if (!hasManualCoords) {
+        try {
+          const { resolveVendorCoordinates } = await import(
+            '../../../lib/utils/vendor-coordinates'
+          );
+          const geocoded = await resolveVendorCoordinates(
+            {
+              address: vendorData.address,
+              city: vendorData.city,
+              state: vendorData.state,
+              pincode: vendorData.pincode,
+            },
+            { persist: false }
+          );
+          if (geocoded) {
+            vendorData.latitude = geocoded.latitude;
+            vendorData.longitude = geocoded.longitude;
+            console.log(
+              `📍 [vendor-activate] Auto-geocoded address for new vendor (${vendorData.business_name}): lat=${geocoded.latitude}, lng=${geocoded.longitude} (approximate=${geocoded.approximate})`
+            );
+          }
+        } catch (gErr: any) {
+          console.warn(
+            '[vendor-activate] Auto-geocode failed (non-fatal):',
+            gErr?.message || gErr
+          );
+        }
+      }
 
       const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
       const tierResolved = await resolveNewVendorOnboardingTier({
