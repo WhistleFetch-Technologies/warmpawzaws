@@ -1181,6 +1181,27 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const normalized = normalizeAdminProductLifecycleStatus(status);
+      const willBeActiveStorefront =
+        normalized.status === 'active' && normalized.is_active;
+
+      if (willBeActiveStorefront) {
+        const chk = await query('SELECT category_id FROM products WHERE id = $1', [productId]);
+        if (chk.rows.length === 0) {
+          return c.json({ success: false, error: 'Product not found' }, 404);
+        }
+        const cid = chk.rows[0]?.category_id;
+        if (cid == null || String(cid).trim() === '') {
+          return c.json(
+            {
+              success: false,
+              error:
+                'Cannot approve: product has no catalog category (category_id). Assign a category on the product before approving.',
+            },
+            400,
+          );
+        }
+      }
+
       const updated = await update(
         'products',
         { id: productId },

@@ -14,6 +14,8 @@ import {
   Package,
 } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface CartItem {
   product_id: string;
@@ -53,7 +55,7 @@ export default function CartPage() {
 
   const loadCart = () => {
     if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('warmpawz_cart');
+      const savedCart = localStorage.getItem(WARMPAWZ_CART_KEY);
       if (savedCart) {
         try {
           setCart(JSON.parse(savedCart));
@@ -70,7 +72,8 @@ export default function CartPage() {
   const saveCart = (newCart: CartItem[]) => {
     setCart(newCart);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('warmpawz_cart', JSON.stringify(newCart));
+      localStorage.setItem(WARMPAWZ_CART_KEY, JSON.stringify(newCart));
+      emitWarmpawzCartUpdated();
     }
   };
 
@@ -104,6 +107,27 @@ export default function CartPage() {
 
   const scrollPad =
     'pb-[calc(5.75rem+env(safe-area-inset-bottom,0px)+12px)]';
+
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-customer flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 px-4">
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-300" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="mb-6 text-gray-500">
+            Online cart and checkout will be available when the marketplace launches.
+          </p>
+          <button
+            type="button"
+            onClick={() => goBackOrReplace(router, '/')}
+            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-semibold text-white"
+          >
+            Go home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

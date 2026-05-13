@@ -1,6 +1,6 @@
 'use client';
 
-/** Matches AddPetModal / CustomerPetProfile health shape */
+/** Matches AddPetModal / EnhancedAddPetModal health shape */
 export type PetHealthRecordsForm = {
   lastCheckup?: string;
   allergies?: string;

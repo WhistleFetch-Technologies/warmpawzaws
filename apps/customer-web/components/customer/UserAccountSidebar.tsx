@@ -29,7 +29,6 @@ import {
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 
 function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
@@ -1225,7 +1224,14 @@ export function UserAccountSidebar({
     { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
     { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', action: 'addresses', isExternal: true },
     { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
-    { icon: ShoppingCart, label: 'My Cart', color: 'from-pink-100 to-pink-200 text-pink-600', view: 'cart' as const, badge: cartItems.length, comingSoon: true },
+    {
+      icon: ShoppingCart,
+      label: 'My Cart',
+      color: 'from-pink-100 to-pink-200 text-pink-600',
+      view: 'cart' as const,
+      badge: cartItems.length,
+      comingSoon: true,
+    },
     { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: true },
     { icon: CreditCard, label: 'Payment Settings', color: 'from-yellow-100 to-yellow-200 text-yellow-600', view: 'payments' as const },
     { icon: Bell, label: 'Notifications', color: 'from-indigo-100 to-indigo-200 text-indigo-600', view: 'notifications' as const },
