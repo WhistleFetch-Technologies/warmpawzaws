@@ -6,7 +6,12 @@ import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
-import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import {
+  mergeLineIntoWarmpawzCartStorage,
+  CART_UPDATED_EVENT,
+  WARMPAWZ_CART_KEY,
+} from '@/lib/warmpawz-cart-storage';
+import { readWishlistIds, setWishlistIds, WISHLIST_UPDATED_EVENT } from '@/lib/warmpawz-wishlist-local';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
@@ -124,14 +129,22 @@ export default function ProductDetailClient() {
 
   useEffect(() => {
     if (!wishlistProductId || typeof window === 'undefined') return;
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    setIsInWishlist(
-      wishlist.some((x: string) => String(x) === String(wishlistProductId))
-    );
-    const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-    setIsInCart(
-      cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
-    );
+    const sync = () => {
+      setIsInWishlist(
+        readWishlistIds().some((x: string) => String(x) === String(wishlistProductId))
+      );
+      const cart = JSON.parse(localStorage.getItem(WARMPAWZ_CART_KEY) || '[]');
+      setIsInCart(
+        cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
+      );
+    };
+    sync();
+    window.addEventListener(CART_UPDATED_EVENT, sync);
+    window.addEventListener(WISHLIST_UPDATED_EVENT, sync);
+    return () => {
+      window.removeEventListener(CART_UPDATED_EVENT, sync);
+      window.removeEventListener(WISHLIST_UPDATED_EVENT, sync);
+    };
   }, [wishlistProductId]);
 
   const loadProductData = async () => {
@@ -233,21 +246,21 @@ export default function ProductDetailClient() {
     if (typeof window === 'undefined' || !wishlistProductId) return;
 
     const pid = wishlistProductId;
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    const wishlist = readWishlistIds();
     const customerId = getResolvedCustomerId();
     const wasInList = isInWishlist;
 
     console.log('[wishlist] toggle start', { productId: pid, customerId, wasInList });
 
     if (wasInList) {
-      const newWishlist = wishlist.filter((id: string) => String(id) !== String(pid));
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(newWishlist));
+      setWishlistIds(wishlist.filter((id: string) => String(id) !== String(pid)));
       setIsInWishlist(false);
     } else {
-      if (!wishlist.some((id: string) => String(id) === String(pid))) {
-        wishlist.push(pid);
+      const next = [...wishlist];
+      if (!next.some((id: string) => String(id) === String(pid))) {
+        next.push(pid);
       }
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
+      setWishlistIds(next);
       setIsInWishlist(true);
     }
 

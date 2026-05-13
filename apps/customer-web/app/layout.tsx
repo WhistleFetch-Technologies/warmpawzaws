@@ -27,9 +27,8 @@ export default function RootLayout({
   const prodApiUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
-  // Customer marketplace tiles default off (build-time switch). Kept in sync
-  // with `apps/customer-web/lib/customer-ecommerce-flag.ts` and the deploy
-  // scripts so the inline config matches `/runtime-config.js`.
+  // Customer marketplace (build-time switch; runtime-config.js can override on client).
+  // Kept in sync with `lib/customer-ecommerce-flag.ts` and deploy scripts.
   const customerEcommerceEnabledRaw = (
     process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED || 'false'
   ).toLowerCase();
