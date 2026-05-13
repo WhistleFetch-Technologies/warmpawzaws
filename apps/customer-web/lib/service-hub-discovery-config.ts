@@ -18,6 +18,11 @@ export interface HubVendorDiscoveryConfig {
   /** Fallback: /customer/vendors/search */
   fallbackVendorSearch?: { roleId: string; limit?: number };
   phoneQueryParam?: HubPhoneQueryParam;
+  /**
+   * When the hub is opened from a problem-grid tile, pass the tile's specialization id/slug
+   * here so both discover-services and by-style fallback receive the same filter.
+   */
+  specialization?: string;
 }
 
 export const HUB_DISCOVERY_GROOMING: HubVendorDiscoveryConfig = {

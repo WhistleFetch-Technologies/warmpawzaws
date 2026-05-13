@@ -26,6 +26,7 @@ interface GroomingServicesByStyleProps {
   serviceTypeName?: string;
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
+  specialization?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -74,6 +75,7 @@ export function GroomingServicesByStyle({
   serviceTypeName,
   category = 'grooming',
   vendorId,
+  specialization,
   onBack, 
   onNavigate 
 }: GroomingServicesByStyleProps) {
@@ -108,12 +110,14 @@ export function GroomingServicesByStyle({
     phone,
     serviceStyle: 'at_center',
     category: 'grooming',
+    specialization: specialization,
     enabled: serviceStyle === 'at_center',
   });
   const salonHomeDiscovery = useDiscoveryCount({
     phone,
     serviceStyle: 'at_home',
     category: 'grooming',
+    specialization: specialization,
     enabled: serviceStyle === 'at_home',
   });
 
@@ -171,7 +175,7 @@ export function GroomingServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId]);
+  }, [serviceStyle, vendorId, specialization]);
 
   // ✅ NEW: Load active promotions for discount display
   useEffect(() => {
@@ -210,10 +214,13 @@ export function GroomingServicesByStyle({
 
       // Use by-style endpoint (primary)
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-        const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
-        ) as any;
-        console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
+      const specializationParam = specialization
+        ? `&specialization=${encodeURIComponent(specialization)}`
+        : '';
+      const byStyleUrl = `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`;
+      console.log(`🔵 [Grooming] specialization prop="${specialization}" url=${byStyleUrl}`);
+        const response = await apiClient.get(byStyleUrl) as any;
+        console.log(`🔵 [Grooming] by-style response: specializationApplied=${(response as any).specializationApplied ?? 'n/a'} total=${(response as any).total}`);
 
       if (response.success) {
         let byStyleProviders = response.providers || response.vendors || [];
@@ -415,7 +422,7 @@ export function GroomingServicesByStyle({
   const openGroomingProviderProfile = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
     const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
-    onNavigate('grooming_embed_vendor_profile', { vendorId: vid });
+    onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle });
   };
 
   const handleSelectService = (provider: Provider, service: any) => {

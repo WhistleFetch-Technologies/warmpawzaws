@@ -41,6 +41,7 @@ interface UniversalServicesByStyleProps {
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
   specialization?: string; // ✅ RULE 2 FIX: Specialization filter from problem grid
+  profileBackScreen?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
@@ -198,6 +199,7 @@ export function UniversalServicesByStyle({
   category,
   vendorId,
   specialization,
+  profileBackScreen,
   onBack, 
   onNavigate,
   bookingScreen = 'booking' // Default booking screen
@@ -334,8 +336,11 @@ export function UniversalServicesByStyle({
         // ✅ HOME/TELE FLOWS: Use discover-services endpoint (solo vendors and staff only)
         // ✅ FIX: Don't pass roleId - it causes filtering issues. Category is sufficient.
         const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
+        const specParam = specialization
+          ? `&specialization=${encodeURIComponent(specialization)}`
+          : '';
         const discoverResponse = await apiClient.get(
-          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}${phoneParam}`
+          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}${phoneParam}${specParam}`
         ) as any;
         
         // The endpoint returns providers array (solo vendors and staff)
@@ -609,6 +614,7 @@ export function UniversalServicesByStyle({
     if (roleId === 'trainer') {
       onNavigate('training_embed_vendor_profile', {
         vendorId: getWebGroomingTrainingEmbedVendorId(row),
+        serviceStyle: String(serviceStyle),
       });
       return;
     }
@@ -618,7 +624,9 @@ export function UniversalServicesByStyle({
         serviceTypeName,
         category,
         provider: row,
-        doctorProfileBackScreen: 'vet',
+        ...(profileBackScreen
+          ? { profileBackScreen }
+          : { doctorProfileBackScreen: 'vet' }),
       });
       onNavigate(screen, data);
       return;

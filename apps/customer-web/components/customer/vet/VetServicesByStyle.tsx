@@ -28,6 +28,12 @@ interface VetServicesByStyleProps {
   serviceTypeName?: string;
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
+  /** Passed as `specialization` on GET /customer/services/by-style (problem grid / hub filters). */
+  specialization?: string;
+  /**
+   * When embedded (e.g. problem grid), chevron/profile targets use this for doctor + clinic + style-browser return.
+   */
+  discoveryProfileBackScreen?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -72,6 +78,8 @@ export function VetServicesByStyle({
   serviceTypeName,
   category = 'vet',
   vendorId,
+  specialization,
+  discoveryProfileBackScreen,
   onBack, 
   onNavigate 
 }: VetServicesByStyleProps) {
@@ -101,7 +109,7 @@ export function VetServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId]);
+  }, [serviceStyle, vendorId, specialization]);
 
   const loadServicesByStyle = async () => {
     // Get customer location from localStorage for distance-based sorting
@@ -120,8 +128,11 @@ export function VetServicesByStyle({
       setLoading(true);
       
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const specializationParam = specialization
+        ? `&specialization=${encodeURIComponent(specialization)}`
+        : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
       ) as any;
 
       if (response.success) {
@@ -219,6 +230,7 @@ export function VetServicesByStyle({
       serviceTypeName,
       category,
       provider: provider as unknown as Record<string, unknown>,
+      profileBackScreen: discoveryProfileBackScreen,
     });
     onNavigate(screen, data);
   };
