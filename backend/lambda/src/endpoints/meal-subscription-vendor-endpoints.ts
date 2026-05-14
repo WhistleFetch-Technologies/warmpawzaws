@@ -77,11 +77,13 @@ export function registerMealSubscriptionVendorOperationalEndpoints(app: Hono) {
       if (!vendorId || !deliveryId || !status) {
         return c.json({ success: false, error: 'vendorId, deliveryId, and status required' }, 400);
       }
+      const cancelReason = body.cancelReason != null ? String(body.cancelReason).trim() : undefined;
       const row = await vendorUpdateMealSubscriptionDeliveryStatus({
         vendorIdFromPath: vendorId,
         headerVendorId: headerVendor,
         deliveryId,
         status,
+        cancelReason,
       });
       if (!row) return c.json({ success: false, error: 'Delivery not found' }, 404);
       return c.json({ success: true, delivery: row });

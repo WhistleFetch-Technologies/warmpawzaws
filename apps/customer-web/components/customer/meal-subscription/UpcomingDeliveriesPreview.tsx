@@ -139,7 +139,7 @@ export function UpcomingDeliveriesPreview({
       <ol className="space-y-2">
         {dates.map((d, idx) => (
           <li key={idx} className="flex justify-between text-sm text-slate-700">
-            <span className="text-slate-500">Session {idx + 1}</span>
+            <span className="text-slate-500">Meal Plan session {idx + 1}</span>
             <span className="font-medium">{format(d, 'EEE, d MMM yyyy')}</span>
           </li>
         ))}

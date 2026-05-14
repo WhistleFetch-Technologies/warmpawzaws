@@ -2,6 +2,8 @@
  * WebSocket client (vendor) — mirrors customer client for meal subscription session updates.
  */
 
+import { getWebSocketBaseUrl } from './api-client';
+
 type WebSocketMessage = {
   type:
     | 'order_status_update'
@@ -19,18 +21,28 @@ type MessageHandler = (message: WebSocketMessage) => void;
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
+  private readonly disabled: boolean;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
   private isConnecting = false;
 
-  constructor(apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
-    const wsUrl = apiBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-    this.url = `${wsUrl}/ws?userId=${userId}&userType=${userType}`;
+  constructor(_apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
+    const base = getWebSocketBaseUrl();
+    if (!base) {
+      this.disabled = true;
+      this.url = '';
+      return;
+    }
+    this.disabled = false;
+    const wsUrl = base.replace('https://', 'wss://').replace('http://', 'ws://');
+    const q = new URLSearchParams({ userId, userType });
+    this.url = `${wsUrl}/ws?${q.toString()}`;
   }
 
   connect(): Promise<void> {
+    if (this.disabled) return Promise.resolve();
     if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.isConnecting) return Promise.resolve();
     this.isConnecting = true;
@@ -102,6 +114,7 @@ class WebSocketClient {
   }
 
   private attemptReconnect(): void {
+    if (this.disabled) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);

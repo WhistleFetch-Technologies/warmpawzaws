@@ -22,6 +22,7 @@ import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-c
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
+import { getMealPlanGstRates } from '../utils/meal-plan-gst';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 import {
   computePolicyDeliveryFeeForOrder,
@@ -102,7 +103,7 @@ function recommendedSignupWeeksFromDiet(diet: Record<string, unknown>): number {
 function buildSubscriptionPreviewSchedule(
   diet: Record<string, unknown>,
   purchaseType: string,
-  q: { weekdays?: string; weeklyPattern?: string },
+  q: { weekdays?: string; weeklyPattern?: string; monthlyMode?: string },
 ): Record<string, unknown> {
   const pt = String(purchaseType || '').toUpperCase();
   if (pt === 'WEEKLY_PLAN') {
@@ -122,13 +123,19 @@ function buildSubscriptionPreviewSchedule(
     };
   }
   const mf = String(diet.deliveryFrequency || '').toUpperCase();
-  return mf ? { monthlyDeliveryFrequency: mf } : {};
+  if (!mf) return {};
+  const mm = String(q.monthlyMode || '').trim().toLowerCase();
+  const monthlyMode =
+    mm === 'fixed_sessions' || mm === 'recurring_monthly' ? mm : undefined;
+  return monthlyMode
+    ? { monthlyDeliveryFrequency: mf, monthlyMode }
+    : { monthlyDeliveryFrequency: mf };
 }
 
 function subscriptionCheckoutPreviewFields(
   plan: Record<string, unknown>,
   quantity: number,
-  q: { weekdays?: string; weeklyPattern?: string; totalSessions?: string },
+  q: { weekdays?: string; weeklyPattern?: string; totalSessions?: string; monthlyMode?: string },
 ): {
   subtotal: number;
   deliveriesPerBillingCycle: number;
@@ -683,6 +690,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         weekdays: c.req.query('weekdays') || undefined,
         weeklyPattern: c.req.query('weeklyPattern') || undefined,
         totalSessions: c.req.query('totalSessions') || undefined,
+        monthlyMode: c.req.query('monthlyMode') || undefined,
       };
       const subCheckout = subscriptionCheckoutPreviewFields(plan, quantity, previewQ);
       const subtotal = subCheckout?.subtotal ?? resolveMealPurchaseSubtotalInr(plan, quantity);
@@ -730,6 +738,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           convenienceFee: feeQuote.convenienceFeePerCycle,
           totalAmount: feeQuote.upfrontTotalAmount,
           leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          gst: await getMealPlanGstRates(plan as { tax_category_id?: string | null }),
           subscriptionCheckout: {
             ...subCheckout,
             packageTotalAmount,

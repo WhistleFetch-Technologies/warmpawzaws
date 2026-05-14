@@ -188,9 +188,9 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-base font-bold text-slate-900 px-1">Delivery sessions</h2>
+          <h2 className="text-base font-bold text-slate-900 px-1">Meal Plan sessions</h2>
           {deliveries.length === 0 ? (
-            <p className="text-sm text-slate-600 px-1">No sessions loaded yet. Pull to refresh.</p>
+            <p className="text-sm text-slate-600 px-1">No Meal Plan sessions loaded yet. Pull to refresh.</p>
           ) : (
             <ul className="space-y-3">
               {deliveries.map((d: Record<string, unknown>) => {
@@ -203,7 +203,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
                     className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/60 space-y-2"
                   >
                     <div className="flex justify-between gap-2">
-                      <span className="font-semibold text-slate-900">Session {String(d.session_number)}</span>
+                      <span className="font-semibold text-slate-900">Meal Plan session {String(d.session_number)}</span>
                       <span className={`text-xs font-bold px-2 py-1 rounded-full ${sessionStatusClass(st)}`}>
                         {st}
                       </span>

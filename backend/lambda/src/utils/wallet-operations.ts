@@ -196,3 +196,160 @@ export async function debitCustomerWalletForBookingInTransaction(
 
   return { debited: amount, balanceAfter };
 }
+
+const MEAL_SUB_WALLET_DESC = 'Meal subscription wallet debit';
+
+/**
+ * Debit wallet for a meal subscription checkout (no booking_id FK).
+ * Idempotent when {@link idempotencyKey} is set (matches wallet_transactions.description suffix).
+ */
+export async function debitCustomerWalletForMealSubscriptionInTransaction(
+  client: PoolClient,
+  params: {
+    customerId: string;
+    subscriptionId: string;
+    amount: number;
+    idempotencyKey?: string | null;
+  },
+): Promise<{ debited: number; balanceAfter: number }> {
+  const { customerId, subscriptionId, amount, idempotencyKey } = params;
+  if (!customerId || !subscriptionId || !Number.isFinite(amount) || amount <= 0) {
+    return { debited: 0, balanceAfter: 0 };
+  }
+
+  const cols = await walletTransactionsColumnSet(client);
+  const hasCustomerId = cols.has('customer_id');
+  const hasWalletId = cols.has('wallet_id');
+  const hasBookingId = cols.has('booking_id');
+
+  if (!hasWalletId && !hasCustomerId) {
+    throw new Error('wallet_transactions has neither wallet_id nor customer_id');
+  }
+
+  const cwCols = await customerWalletsColumnSet(client);
+  const cwHasCurrency = cwCols.has('currency');
+  const cwHasUpdatedAt = cwCols.has('updated_at');
+
+  const upsertCols = ['customer_id', 'balance'];
+  const upsertVals: unknown[] = [customerId, 0];
+  if (cwHasCurrency) {
+    upsertCols.push('currency');
+    upsertVals.push('INR');
+  }
+  const upsertPh = upsertVals.map((_, i) => `$${i + 1}`).join(', ');
+  await client.query(
+    `INSERT INTO customer_wallets (${upsertCols.join(', ')})
+     VALUES (${upsertPh})
+     ON CONFLICT (customer_id) DO NOTHING`,
+    upsertVals as any[],
+  );
+
+  const lockRes = await client.query(
+    `SELECT id, balance::text FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+    [customerId],
+  );
+  if (lockRes.rows.length === 0) {
+    throw new Error('Customer wallet row missing after upsert');
+  }
+  const walletRow = lockRes.rows[0] as { id: string; balance: string };
+
+  const desc = idempotencyKey
+    ? `${MEAL_SUB_WALLET_DESC} ${subscriptionId} ${idempotencyKey}`
+    : `${MEAL_SUB_WALLET_DESC} ${subscriptionId}`;
+
+  if (idempotencyKey) {
+    let existing: { rows: { balance_after?: string }[] };
+    if (hasWalletId) {
+      existing = await client.query(
+        `SELECT id, balance_after::text
+         FROM wallet_transactions
+         WHERE wallet_id = $1::uuid
+           AND transaction_type = 'debit'
+           AND description = $2
+         LIMIT 1`,
+        [walletRow.id, desc],
+      );
+    } else if (hasCustomerId) {
+      existing = await client.query(
+        `SELECT id, balance_after::text
+         FROM wallet_transactions
+         WHERE customer_id = $1::uuid
+           AND transaction_type = 'debit'
+           AND description = $2
+         LIMIT 1`,
+        [customerId, desc],
+      );
+    } else {
+      existing = { rows: [] };
+    }
+    if (existing.rows.length > 0) {
+      return {
+        debited: amount,
+        balanceAfter: parseFloat(String(existing.rows[0].balance_after ?? '0')) || 0,
+      };
+    }
+  }
+
+  const balanceBefore = parseFloat(String(walletRow.balance ?? '0')) || 0;
+  if (balanceBefore + 1e-9 < amount) {
+    throw new Error('Insufficient wallet balance');
+  }
+
+  const setBalance = cwHasUpdatedAt
+    ? 'SET balance = balance - $1::numeric, updated_at = NOW()'
+    : 'SET balance = balance - $1::numeric';
+  const upd = await client.query(
+    `UPDATE customer_wallets
+     ${setBalance}
+     WHERE customer_id = $2::uuid AND balance >= $1::numeric
+     RETURNING balance::text`,
+    [amount, customerId],
+  );
+  if (upd.rows.length === 0) {
+    throw new Error('Insufficient wallet balance (race)');
+  }
+  const balanceAfter = parseFloat(String(upd.rows[0]?.balance ?? '0')) || 0;
+
+  const insertCols: string[] = [];
+  const insertParams: unknown[] = [];
+
+  if (hasWalletId) {
+    insertCols.push('wallet_id');
+    insertParams.push(walletRow.id);
+  }
+  if (hasCustomerId) {
+    insertCols.push('customer_id');
+    insertParams.push(customerId);
+  }
+  insertCols.push('transaction_type');
+  insertParams.push('debit');
+  insertCols.push('amount');
+  insertParams.push(amount);
+  insertCols.push('balance_after');
+  insertParams.push(balanceAfter);
+  if (hasBookingId) {
+    insertCols.push('booking_id');
+    insertParams.push(null);
+  }
+  insertCols.push('description');
+  insertParams.push(desc);
+
+  const placeholders = insertCols.map((_, i) => `$${i + 1}`).join(', ');
+  await client.query(
+    `INSERT INTO wallet_transactions (${insertCols.join(', ')}) VALUES (${placeholders})`,
+    insertParams as any[],
+  );
+
+  await client.query('SAVEPOINT sp_sync_customer_wallet_balance_meal');
+  try {
+    await client.query(
+      `UPDATE customers SET wallet_balance = GREATEST(0, COALESCE(wallet_balance, 0) - $1::numeric) WHERE id = $2::uuid`,
+      [amount, customerId],
+    );
+    await client.query('RELEASE SAVEPOINT sp_sync_customer_wallet_balance_meal');
+  } catch {
+    await client.query('ROLLBACK TO SAVEPOINT sp_sync_customer_wallet_balance_meal');
+  }
+
+  return { debited: amount, balanceAfter };
+}

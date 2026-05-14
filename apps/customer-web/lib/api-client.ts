@@ -13,6 +13,8 @@ import { ApiError } from './error-handling';
 
 type RuntimeConfig = {
   apiBaseUrl?: string;
+  /** API Gateway WebSocket API base (https or wss). HTTP API base URLs must not be used for WS. */
+  websocketUrl?: string;
   uatMode?: boolean;
   environment?: string;
   customerEcommerceEnabled?: boolean;
@@ -212,6 +214,25 @@ export function getApiBaseUrl(): string {
   
   // For non-localhost, use fallback to API Gateway
   return result || getApiGatewayUrl();
+}
+
+/**
+ * WebSocket API base only. When unset, clients skip connecting (HTTP API Gateway cannot host `/ws`).
+ * Set `websocketUrl` in runtime-config.js or `NEXT_PUBLIC_WEBSOCKET_URL` at build time.
+ */
+export function getWebSocketBaseUrl(): string | null {
+  const cfg = getRuntimeConfig();
+  const fromRuntime =
+    typeof cfg.websocketUrl === 'string' && cfg.websocketUrl.trim().length > 0
+      ? cfg.websocketUrl.trim().replace(/\/+$/, '')
+      : '';
+  const fromEnv =
+    typeof process !== 'undefined' &&
+    typeof process.env.NEXT_PUBLIC_WEBSOCKET_URL === 'string' &&
+    process.env.NEXT_PUBLIC_WEBSOCKET_URL.trim().length > 0
+      ? process.env.NEXT_PUBLIC_WEBSOCKET_URL.trim().replace(/\/+$/, '')
+      : '';
+  return fromRuntime || fromEnv || null;
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

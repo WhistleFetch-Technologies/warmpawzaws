@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,11 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
-import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
 import { toast } from 'sonner';
 import { getMealPlanCatalogDisplay } from '@/lib/meal-plan-catalog-display';
 import {
@@ -47,15 +43,14 @@ export function SubscriptionCheckoutContainer({
   vendorId,
   purchaseType,
   onBack,
-  onSuccess,
 }: {
   phone: string;
   mealPlanId: string;
   vendorId: string;
   purchaseType: 'WEEKLY_PLAN' | 'MONTHLY_PLAN';
   onBack: () => void;
-  onSuccess: (subscriptionId: string) => void;
 }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [mealPlan, setMealPlan] = useState<Record<string, unknown> | null>(null);
@@ -125,6 +120,10 @@ export function SubscriptionCheckoutContainer({
   }, [mealPlan, purchaseType]);
 
   useEffect(() => {
+    sessionsManualRef.current = false;
+  }, [monthlyMode]);
+
+  useEffect(() => {
     if (!mealPlanId || !quantity) return;
     const selected = addresses.find((a) => a.id === addressId);
     const addrLat = selected?.coordinates?.lat ?? selected?.latitude ?? selected?.lat;
@@ -139,6 +138,9 @@ export function SubscriptionCheckoutContainer({
         'weeklyPattern',
         vendorConstrainsWeekly ? 'specific_weekdays' : weeklyPattern,
       );
+    }
+    if (purchaseType === 'MONTHLY_PLAN') {
+      q.set('monthlyMode', monthlyMode);
     }
     if (addrLat != null && addrLng != null) {
       q.set('customerLat', String(addrLat));
@@ -160,6 +162,7 @@ export function SubscriptionCheckoutContainer({
     weeklyPattern,
     purchaseType,
     vendorConstrainsWeekly,
+    monthlyMode,
   ]);
 
   useEffect(() => {
@@ -264,6 +267,14 @@ export function SubscriptionCheckoutContainer({
       toast.error('Pick at least one weekday the vendor offers');
       return;
     }
+    if (needsTwiceWeeklyDays && weekdays.length !== 2) {
+      toast.error('This plan delivers twice a week — please select exactly 2 weekdays');
+      return;
+    }
+    if (needsWeeklyDay && weekdays.length !== 1) {
+      toast.error('This plan delivers once a week — please select exactly 1 weekday');
+      return;
+    }
     if (pets.length > 0 && !petId) {
       toast.error('Select a pet');
       return;
@@ -272,14 +283,6 @@ export function SubscriptionCheckoutContainer({
     const clientRequestKey = newClientRequestKey();
     setSubmitting(true);
     try {
-      const razorpayRes = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
-        amountInRupees: estimatedTotal,
-        notes: { customerId, mealPlanId, vendorId, kind: 'meal_subscription' },
-      });
-      if (!razorpayRes?.razorpayOrderId) {
-        throw new Error(razorpayRes?.error || 'Failed to create payment order');
-      }
-
       const createRes = await apiClient.post<any>('/meal/subscriptions', {
         clientRequestKey,
         customerId,
@@ -299,7 +302,9 @@ export function SubscriptionCheckoutContainer({
             purchaseType === 'WEEKLY_PLAN' &&
             (weeklyPattern === 'specific_weekdays' || vendorConstrainsWeekly)
               ? weekdays
-              : undefined,
+              : (needsTwiceWeeklyDays || needsWeeklyDay)
+                ? weekdays
+                : undefined,
           customerInstructions: instructions || undefined,
           monthlyMode: purchaseType === 'MONTHLY_PLAN' ? monthlyMode : undefined,
         },
@@ -309,54 +314,20 @@ export function SubscriptionCheckoutContainer({
         quantity,
         petId: petId || null,
         initialPaymentAmount: estimatedTotal,
-        razorpayOrderId: razorpayRes.razorpayOrderId,
       });
 
       const subscription = createRes?.subscription;
       const subscriptionId = subscription?.id as string | undefined;
       if (!subscriptionId) throw new Error('Subscription not created');
 
-      const keyId = razorpayRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-      if (!keyId) {
-        toast.success('Subscription recorded. Complete payment from orders if needed.');
-        onSuccess(subscriptionId);
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      document.body.appendChild(script);
-      await new Promise<void>((resolve) => {
-        if ((window as any).Razorpay) return resolve();
-        script.onload = () => resolve();
+      const q = new URLSearchParams({
+        subscriptionId,
+        customerId,
+        phone,
+        vendorId,
       });
-
-      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
-        key: keyId,
-        amountPaise: Math.max(1, Math.round(Number(razorpayRes.amount))),
-        currency: razorpayRes.currency || 'INR',
-        name: 'Warmpawz',
-        description: `Meal subscription — ${(mealPlan as any).name || 'Plan'}`,
-        order_id: razorpayRes.razorpayOrderId,
-        customerPhone: phone,
-        customerEmail: checkoutEmail,
-        includeInstrumentBlocks: true,
-        handler: async (response: any) => {
-          try {
-            await confirmMealSubscriptionPayment(subscriptionId, customerId, response.razorpay_payment_id);
-            toast.success('Subscription payment confirmed!');
-            onSuccess(subscriptionId);
-          } catch (err: any) {
-            toast.error(err?.message || 'Payment confirmation failed');
-          }
-        },
-        theme: { color: '#FF8C42' },
-        modal: { ondismiss: () => setSubmitting(false) },
-      });
-      const razorpay = new (window as any).Razorpay(options);
-      razorpay.open();
+      toast.success('Subscription created — complete payment');
+      router.push(`/subscriptions/meal-pay?${q.toString()}`);
     } catch (err: any) {
       toast.error(err?.message || 'Checkout failed');
     } finally {
@@ -387,6 +358,9 @@ export function SubscriptionCheckoutContainer({
 
   const vendorMonthlyFreq =
     purchaseType === 'MONTHLY_PLAN' ? vendorMonthlyDeliveryFrequencyFromPlan(mealPlan) : null;
+  const monthlyFreqUpper = (vendorMonthlyFreq || '').toUpperCase();
+  const needsTwiceWeeklyDays = purchaseType === 'MONTHLY_PLAN' && monthlyFreqUpper === 'TWICE_WEEKLY';
+  const needsWeeklyDay = purchaseType === 'MONTHLY_PLAN' && monthlyFreqUpper === 'WEEKLY';
   const recurrenceLabel =
     purchaseType === 'MONTHLY_PLAN'
       ? vendorMonthlyFreq
@@ -481,6 +455,50 @@ export function SubscriptionCheckoutContainer({
           <div>
             <Label className="text-sm font-medium mb-2 block">Delivery weekdays</Label>
             <DeliveryDaysPicker selected={weekdays} onChange={setWeekdays} />
+          </div>
+        )}
+
+        {/* Monthly – Twice Weekly: must pick exactly 2 days */}
+        {needsTwiceWeeklyDays && (
+          <div className="rounded-xl border border-orange-100 bg-orange-50/50 p-4 space-y-2">
+            <Label className="text-sm font-medium text-slate-800">
+              Choose 2 delivery weekdays
+              <span className="ml-2 text-xs font-normal text-orange-600">(required — twice a week)</span>
+            </Label>
+            <p className="text-xs text-slate-500">
+              Pick exactly 2 days per week. The system will schedule deliveries on those days every week of the month.
+            </p>
+            <DeliveryDaysPicker selected={weekdays} onChange={(d) => {
+              if (d.length <= 2) setWeekdays(d);
+            }} />
+            {weekdays.length !== 2 && (
+              <p className="text-xs text-red-500 mt-1">Select exactly 2 weekdays (currently {weekdays.length} selected)</p>
+            )}
+          </div>
+        )}
+
+        {/* Monthly – Weekly: must pick exactly 1 day */}
+        {needsWeeklyDay && (
+          <div className="rounded-xl border border-orange-100 bg-orange-50/50 p-4 space-y-2">
+            <Label className="text-sm font-medium text-slate-800">
+              Choose your delivery weekday
+              <span className="ml-2 text-xs font-normal text-orange-600">(required — once a week)</span>
+            </Label>
+            <p className="text-xs text-slate-500">
+              Pick 1 day per week. The plan delivers 4 times per month on that day.
+            </p>
+            <DeliveryDaysPicker selected={weekdays} onChange={(d) => {
+              // Allow only 1 day for weekly
+              if (d.length > 1) {
+                const last = d[d.length - 1];
+                setWeekdays([last]);
+              } else {
+                setWeekdays(d);
+              }
+            }} />
+            {weekdays.length !== 1 && (
+              <p className="text-xs text-red-500 mt-1">Select exactly 1 weekday (currently {weekdays.length} selected)</p>
+            )}
           </div>
         )}
 
@@ -616,7 +634,13 @@ export function SubscriptionCheckoutContainer({
             weeklyPattern={
               vendorConstrainsWeekly ? 'specific_weekdays' : weeklyPattern
             }
-            weekdays={purchaseType === 'WEEKLY_PLAN' ? weekdays : undefined}
+            weekdays={
+              purchaseType === 'WEEKLY_PLAN'
+                ? weekdays
+                : (needsTwiceWeeklyDays || needsWeeklyDay)
+                  ? weekdays
+                  : undefined
+            }
             monthlyVendorFreq={vendorMonthlyFreq}
             previewCount={Math.min(4, Math.max(1, totalSessions))}
           />
@@ -633,7 +657,9 @@ export function SubscriptionCheckoutContainer({
             !preview ||
             !hasCoords ||
             !startDate ||
-            (pets.length > 0 && !petId)
+            (pets.length > 0 && !petId) ||
+            (needsTwiceWeeklyDays && weekdays.length !== 2) ||
+            (needsWeeklyDay && weekdays.length !== 1)
           }
         >
           {submitting ? 'Opening payment…' : `Pay ₹${estimatedTotal}`}

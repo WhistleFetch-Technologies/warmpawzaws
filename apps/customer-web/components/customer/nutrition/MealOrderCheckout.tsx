@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, Clock, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -31,7 +30,6 @@ interface MealOrderCheckoutProps {
 }
 
 export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSuccess }: MealOrderCheckoutProps) {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [mealPlan, setMealPlan] = useState<any>(null);
@@ -307,10 +305,6 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         vendorId={vendorId}
         purchaseType={purchaseTypeForOrder as 'WEEKLY_PLAN' | 'MONTHLY_PLAN'}
         onBack={onBack}
-        onSuccess={(subscriptionId) => {
-          toast.success('Subscription is active');
-          router.push(`/subscriptions/detail?id=${encodeURIComponent(subscriptionId)}`);
-        }}
       />
     );
   }

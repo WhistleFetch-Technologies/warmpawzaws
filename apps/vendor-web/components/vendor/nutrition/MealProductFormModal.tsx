@@ -119,11 +119,12 @@ export function MealProductFormModal({
     setUploadingMealImage(true);
     try {
       const res = await uploadImageWithProgress(file, `meal-products/${vendorId}`, { verifyUpload: false });
-      if (!res.success || !(res.publicUrl || res.url)) {
+      if (!res.success || !(res.url || res.publicUrl)) {
         toast.error(res.error || 'Image upload failed');
         return;
       }
-      const url = res.publicUrl || res.url || '';
+      // Prefer presigned display URL (works for private buckets); raw publicUrl often 403s in <img>.
+      const url = (res.url || res.publicUrl || '').trim();
       setForm((prev) => ({ ...prev, mealImageUrl: url }));
       toast.success('Meal image uploaded');
     } finally {

@@ -1811,7 +1811,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/meal-products
-   * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
+   * Create a meal product: **meal_plans first** (single canonical nutrition catalog row).
+   * Falls back to **products** only when `meal_plans` insert fails with a recoverable schema error
+   * (e.g. missing relation/column), matching older DBs that lack columns.
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
    *
    * Extended catalog fields (camelCase JSON, also persisted inside dietary_requirements / metadata):
@@ -1847,40 +1849,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         : undefined;
       const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, { mealImageUrl });
 
-      // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
-      const productCols = await getPublicTableColumns('products');
-      const hasMetadata = productCols.has('metadata');
-      const hasSpecifications = productCols.has('specifications');
-
-      try {
-        const productPayload: any = {
-          vendor_id: vendorId,
-          name: p.name,
-          description: p.description,
-          price: p.price,
-          category: 'meal_plan',
-          sku: `MP-${Date.now()}`,
-          stock: p.stockQuantity ?? 100,
-          is_active: true,
-        };
-        if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;
-        if (productCols.has('subscription_config')) {
-          productPayload.subscription_config = dietaryPayload.subscriptionConfig ?? {};
-        }
-        if (hasMetadata) {
-          productPayload.metadata = JSON.stringify(dietaryPayload);
-        } else if (hasSpecifications) {
-          productPayload.specifications = JSON.stringify(dietaryPayload);
-        }
-        const product = await insert('products', productPayload);
-        return c.json({ success: true, product: product[0] });
-      } catch (productsErr: any) {
-        if (!productsErr?.message?.includes('does not exist') && !productsErr?.message?.includes('metadata')) {
-          throw productsErr;
-        }
-      }
-
-      // Fallback to meal_plans table
+      // Prefer meal_plans (legacy nutrition catalog); fall back to products only on schema-level failures.
       const mpCols = await getPublicTableColumns('meal_plans');
       const mealPlanRow: Record<string, unknown> = {
         vendor_id: vendorId,
@@ -1904,14 +1873,49 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (mpCols.has('allergens') && p.allergens?.length) mealPlanRow.allergens = p.allergens;
       if (mpCols.has('ingredients')) mealPlanRow.ingredients = JSON.stringify(p.ingredients);
 
-      const mealPlan = await insert('meal_plans', mealPlanRow as any);
-      const transformedProduct = {
-        ...mealPlan[0],
-        name: mealPlan[0].plan_name,
+      try {
+        const mealPlan = await insert('meal_plans', mealPlanRow as any);
+        const transformedProduct = {
+          ...mealPlan[0],
+          name: mealPlan[0].plan_name,
+          category: 'meal_plan',
+          metadata: mealPlan[0].dietary_requirements,
+        };
+        return c.json({ success: true, product: transformedProduct });
+      } catch (mealPlansErr: any) {
+        const m = String(mealPlansErr?.message || '');
+        if (!m.includes('does not exist')) {
+          throw mealPlansErr;
+        }
+        console.warn('[meal-products POST] meal_plans insert failed, falling back to products:', m);
+      }
+
+      // Fallback: products (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
+      const productCols = await getPublicTableColumns('products');
+      const hasMetadata = productCols.has('metadata');
+      const hasSpecifications = productCols.has('specifications');
+
+      const productPayload: any = {
+        vendor_id: vendorId,
+        name: p.name,
+        description: p.description,
+        price: p.price,
         category: 'meal_plan',
-        metadata: mealPlan[0].dietary_requirements,
+        sku: `MP-${Date.now()}`,
+        stock: p.stockQuantity ?? 100,
+        is_active: true,
       };
-      return c.json({ success: true, product: transformedProduct });
+      if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;
+      if (productCols.has('subscription_config')) {
+        productPayload.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+      }
+      if (hasMetadata) {
+        productPayload.metadata = JSON.stringify(dietaryPayload);
+      } else if (hasSpecifications) {
+        productPayload.specifications = JSON.stringify(dietaryPayload);
+      }
+      const product = await insert('products', productPayload);
+      return c.json({ success: true, product: product[0] });
     } catch (error: any) {
       console.error('Error creating meal product:', error);
       return c.json({ error: error.message }, 500);

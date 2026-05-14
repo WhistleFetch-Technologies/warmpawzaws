@@ -27,6 +27,10 @@ import {
   sanitizeRazorpayInstanceOptions,
   getWarmpawzRazorpayStandardDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
+import { CustomerWalletApply } from './CustomerWalletApply';
+import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
   waitForWarmpawzNativeRazorpayResult,
@@ -44,7 +48,12 @@ interface UniversalPaymentPageProps {
   // Booking/Order details
   bookingId?: string;
   orderId?: string;
-  type: 'booking' | 'order';
+  type: 'booking' | 'order' | 'meal_subscription';
+
+  /** Canonical meal subscription id (pending_payment) when type === 'meal_subscription'. */
+  mealSubscriptionId?: string;
+  /** Extra lines under plan title (sessions, cadence, first delivery, etc.). */
+  mealSubscriptionSummaryLines?: MealSubscriptionSummaryLine[];
 
   // Service/Product details
   serviceId?: string;
@@ -283,6 +292,8 @@ export function UniversalPaymentPage({
   bookingId,
   orderId,
   type,
+  mealSubscriptionId,
+  mealSubscriptionSummaryLines,
   serviceId,
   productId,
   serviceName,
@@ -513,6 +524,27 @@ export function UniversalPaymentPage({
     loadPaymentData();
     if (!isWarmpawzCustomerNativeWebView()) {
       loadRazorpayScript();
+    }
+    if (type === 'meal_subscription') {
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        totalTax: 0,
+        total: baseAmount,
+        taxRate: 0,
+        isInterState: false,
+      });
+      setPlatformFees({
+        platformFee: 0,
+        convenienceFee: 0,
+        deliveryFee: 0,
+        packagingFee: 0,
+        total: 0,
+      });
+      loadPaymentAndRefundPolicies();
+      return;
     }
     calculateTax();
     loadPromotions();
@@ -976,6 +1008,9 @@ export function UniversalPaymentPage({
           if (type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
+          if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
+            setUseWallet(true);
+          }
         }
       } catch (e) {
         console.log('No wallet found');
@@ -1363,6 +1398,92 @@ export function UniversalPaymentPage({
     setProcessing(true);
 
     try {
+      if (type === 'meal_subscription' && mealSubscriptionId && customerId) {
+        await loadRazorpayScript();
+        const idempotent = `mealw-${mealSubscriptionId}-${Date.now().toString(36)}`;
+        let amountInRupeesForGateway = finalAmount;
+        if (useWallet && walletAmount > 0.009) {
+          const wd = await apiClient.post<any>(`/meal/subscriptions/${mealSubscriptionId}/wallet-debit`, {
+            customerId,
+            amountInRupees: Math.round(walletAmount * 100) / 100,
+            idempotencyKey: idempotent,
+          });
+          if (!wd?.success) {
+            throw new Error(wd?.error || 'Wallet debit failed');
+          }
+          const rem = Number(wd.remainderInRupees);
+          if (Number.isFinite(rem)) {
+            amountInRupeesForGateway = Math.max(0, Math.round(rem * 100) / 100);
+          }
+        }
+        if (amountInRupeesForGateway > 0.009) {
+          const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
+            amountInRupees: amountInRupeesForGateway,
+            notes: {
+              customerId,
+              mealSubscriptionId,
+              kind: 'meal_subscription',
+            },
+          });
+          if (!rz?.razorpayOrderId) {
+            throw new Error(rz?.error || 'Failed to create payment order');
+          }
+          const attach = await apiClient.post<any>(`/meal/subscriptions/${mealSubscriptionId}/checkout-order`, {
+            customerId,
+            razorpayOrderId: rz.razorpayOrderId,
+          });
+          if (!attach?.success) {
+            throw new Error(attach?.error || 'Could not link checkout order');
+          }
+          const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+          if (!keyId) {
+            toast.error('Payment gateway not configured');
+            setProcessing(false);
+            return;
+          }
+          const checkoutEmailArg =
+            (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
+          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            key: keyId,
+            amountPaise: Math.max(1, Math.round(Number(rz.amount))),
+            currency: rz.currency || 'INR',
+            name: 'Warmpawz',
+            description: `Meal subscription — ${serviceName || 'Plan'}`,
+            order_id: rz.razorpayOrderId,
+            customerPhone,
+            customerEmail: checkoutEmailArg,
+            includeInstrumentBlocks: true,
+            handler: async (response: any) => {
+              try {
+                await confirmMealSubscriptionPayment(
+                  mealSubscriptionId,
+                  customerId,
+                  response.razorpay_payment_id,
+                );
+                toast.success('Subscription payment confirmed!');
+                onSuccess(mealSubscriptionId);
+              } catch (err: any) {
+                toast.error(err?.message || 'Payment confirmation failed');
+              } finally {
+                setProcessing(false);
+              }
+            },
+            theme: { color: '#FF8C42' },
+            modal: {
+              ondismiss: () => setProcessing(false),
+            },
+          });
+          const razorpay = new (window as any).Razorpay(options);
+          razorpay.open();
+          return;
+        }
+        await confirmMealSubscriptionPayment(mealSubscriptionId, customerId, undefined);
+        toast.success('Subscription paid from wallet!');
+        onSuccess(mealSubscriptionId);
+        setProcessing(false);
+        return;
+      }
+
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
       let requiredUpfrontAmount: number | null = null;
@@ -2794,7 +2915,7 @@ export function UniversalPaymentPage({
       value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
       label: 'Duration',
     },
-    { value: type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
+    { value: type === 'meal_subscription' ? 'Meal plan' : type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
   ];
 
   return (
@@ -2905,6 +3026,15 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
+        {type === 'meal_subscription' ? (
+          <MealSubscriptionPaymentSummary
+            planTitle={String(serviceName || productName || 'Meal plan')}
+            vendorName={String(vendorName || '')}
+            lines={mealSubscriptionSummaryLines || []}
+            totalInr={Number(baseAmount) || 0}
+          />
+        ) : (
+          <>
         {/* Booking/Order Summary - Universal display for all service booking flows */}
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -3004,9 +3134,11 @@ export function UniversalPaymentPage({
             </div>
           )}
         </Card>
+          </>
+        )}
 
         {/* Promotions & Spotlight Offers */}
-        {promotions.length > 0 && (
+        {type !== 'meal_subscription' && promotions.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -3047,6 +3179,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon Section */}
+        {type !== 'meal_subscription' && (
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -3103,9 +3236,10 @@ export function UniversalPaymentPage({
             </button>
           )}
         </Card>
+        )}
 
         {/* Razorpay Offers */}
-        {razorpayOffers.length > 0 && (
+        {type !== 'meal_subscription' && razorpayOffers.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />
@@ -3144,37 +3278,12 @@ export function UniversalPaymentPage({
 
         {/* Wallet Section */}
         {wallet && wallet.balance > 0 && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <button
-              onClick={() => setUseWallet(!useWallet)}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
-                }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${useWallet ? 'bg-green-100' : 'bg-orange-100'
-                  }`}>
-                  <Wallet className={`w-5 h-5 ${useWallet ? 'text-green-600' : 'text-[#FF8C42]'}`} />
-                </div>
-                <div className="text-left">
-                  <p className="font-medium text-gray-900">Warmpawz Wallet</p>
-                  <p className="text-sm text-gray-500">
-                    Balance: ₹{wallet.balance.toFixed(2)}
-                    {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
-                  </p>
-                </div>
-              </div>
-              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
-                }`}>
-                {useWallet && <CheckCircle2 className="w-4 h-4" />}
-              </div>
-            </button>
-            {useWallet && (
-              <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4" />
-                ₹{walletAmount.toFixed(2)} will be deducted from wallet
-              </p>
-            )}
-          </Card>
+          <CustomerWalletApply
+            wallet={wallet}
+            useWallet={useWallet}
+            onToggleUseWallet={() => setUseWallet(!useWallet)}
+            walletAmountApplied={walletAmount}
+          />
         )}
 
         {/* Price Breakdown */}

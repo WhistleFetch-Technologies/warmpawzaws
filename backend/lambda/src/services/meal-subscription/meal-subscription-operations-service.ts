@@ -8,6 +8,8 @@ import { query, withTransaction } from '../../database/rds-connection';
 import { ensureRollingSessions, type SubscriptionRowForGeneration } from './meal-subscription-session-generation';
 import { websocketService } from '../../lib/services/websocket-service';
 import { presignMealPlanRowDisplayFields } from '../../utils/s3-media-presign';
+import { debitCustomerWalletForMealSubscriptionInTransaction } from '../../utils/wallet-operations';
+import { processMealSessionVendorCancelRefund } from '../../utils/meal-subscription-refund';
 
 export type MealSubscriptionLifecycleFilter =
   | 'all'
@@ -374,6 +376,135 @@ export async function resumeCanonicalSubscription(
   return subOut;
 }
 
+/**
+ * Debit Warmpawz wallet toward a pending_payment meal subscription (idempotent per idempotencyKey).
+ * Updates the latest pending `meal_subscription_payments.metadata.wallet_debit_inr` (cumulative).
+ */
+export async function applyWalletDebitToPendingMealSubscription(
+  subscriptionId: string,
+  customerId: string,
+  amountInRupees: number,
+  idempotencyKey: string,
+): Promise<{
+  success: boolean;
+  debited: number;
+  remainderInRupees: number;
+  balanceAfter?: number;
+  error?: string;
+}> {
+  const sid = String(subscriptionId || '').trim();
+  const cid = String(customerId || '').trim();
+  const key = String(idempotencyKey || '').trim();
+  if (!sid || !cid || !key) {
+    return { success: false, debited: 0, remainderInRupees: 0, error: 'subscriptionId, customerId, idempotencyKey required' };
+  }
+  const req = Math.round(Number(amountInRupees) * 100) / 100;
+  if (!Number.isFinite(req) || req <= 0) {
+    return { success: false, debited: 0, remainderInRupees: 0, error: 'amountInRupees must be positive' };
+  }
+
+  const sub = await assertCustomerOwnsSubscription(sid, cid);
+  if (!sub) return { success: false, debited: 0, remainderInRupees: 0, error: 'Subscription not found' };
+  if (String(sub.lifecycle_status || '') !== 'pending_payment') {
+    return { success: false, debited: 0, remainderInRupees: 0, error: 'Subscription is not awaiting payment' };
+  }
+
+  try {
+    let debitedOut = 0;
+    let balanceAfterOut: number | undefined;
+    let pendingInvoiceTotal = 0;
+    await withTransaction(async (client: PoolClient) => {
+      const payRes = await client.query(
+        `SELECT id, amount::text, COALESCE(metadata->>'wallet_debit_inr','0') AS wallet_applied
+         FROM meal_subscription_payments
+         WHERE subscription_id = $1::uuid AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [sid],
+      );
+      if (!payRes.rows?.length) {
+        throw Object.assign(new Error('No pending payment row for subscription'), { statusCode: 400 });
+      }
+      const row = payRes.rows[0] as { id: string; amount: string; wallet_applied: string };
+      const pendingAmount = parseFloat(String(row.amount ?? '0')) || 0;
+      pendingInvoiceTotal = pendingAmount;
+      const alreadyWallet = parseFloat(String(row.wallet_applied ?? '0')) || 0;
+      const cap = Math.max(0, Math.round((pendingAmount - alreadyWallet) * 100) / 100);
+      const debitAmount = Math.max(0, Math.min(req, cap));
+      if (debitAmount <= 0) {
+        debitedOut = 0;
+        balanceAfterOut = undefined;
+        return;
+      }
+
+      const { debited, balanceAfter } = await debitCustomerWalletForMealSubscriptionInTransaction(client, {
+        customerId: cid,
+        subscriptionId: sid,
+        amount: debitAmount,
+        idempotencyKey: key,
+      });
+      debitedOut = debited;
+      balanceAfterOut = balanceAfter;
+
+      const newWalletTotal = Math.round((alreadyWallet + debited) * 100) / 100;
+      await client.query(
+        `UPDATE meal_subscription_payments
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('wallet_debit_inr', $2::text),
+             updated_at = NOW()
+         WHERE id = $1::uuid`,
+        [row.id, String(newWalletTotal)],
+      );
+    });
+
+    const payAgain = await query(
+      `SELECT amount::text AS amt, COALESCE(metadata->>'wallet_debit_inr','0') AS w FROM meal_subscription_payments
+       WHERE subscription_id = $1::uuid AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
+      [sid],
+    );
+    const inv = parseFloat(String(payAgain.rows?.[0]?.amt ?? pendingInvoiceTotal ?? '0')) || 0;
+    const wtot = parseFloat(String(payAgain.rows?.[0]?.w ?? '0')) || 0;
+    const remainder = Math.max(0, Math.round((inv - wtot) * 100) / 100);
+    return { success: true, debited: debitedOut, remainderInRupees: remainder, balanceAfter: balanceAfterOut };
+  } catch (e: unknown) {
+    const err = e as { message?: string; statusCode?: number };
+    return {
+      success: false,
+      debited: 0,
+      remainderInRupees: 0,
+      error: err.message || 'Wallet debit failed',
+    };
+  }
+}
+
+/** Attach Razorpay order id to the latest pending initial payment row (after wallet split). */
+export async function setMealSubscriptionCheckoutRazorpayOrder(
+  subscriptionId: string,
+  customerId: string,
+  razorpayOrderId: string,
+): Promise<boolean> {
+  const sid = String(subscriptionId || '').trim();
+  const cid = String(customerId || '').trim();
+  const oid = String(razorpayOrderId || '').trim();
+  if (!sid || !cid || !oid) return false;
+  const own = await assertCustomerOwnsSubscription(sid, cid);
+  if (!own) return false;
+  const r = await query(
+    `UPDATE meal_subscription_payments msp
+     SET provider_order_id = $3, updated_at = NOW()
+     FROM meal_subscriptions ms
+     WHERE msp.subscription_id = ms.id
+       AND ms.id = $1::uuid
+       AND ms.customer_id = $2::uuid
+       AND msp.subscription_id = ms.id
+       AND msp.status = 'pending'
+       AND msp.purpose = 'initial'
+     RETURNING msp.id`,
+    [sid, cid, oid],
+  );
+  return (r.rows?.length || 0) > 0;
+}
+
 export async function activateCanonicalSubscriptionAfterPayment(
   subscriptionId: string,
   customerId: string,
@@ -394,13 +525,14 @@ export async function activateCanonicalSubscriptionAfterPayment(
        WHERE id = $1 AND customer_id = $2`,
       [subscriptionId, customerId],
     );
-    if (razorpayPaymentId) {
-      await client.query(
-        `UPDATE meal_subscription_payments SET status = 'paid', provider_payment_id = COALESCE(provider_payment_id, $2), updated_at = NOW()
-         WHERE subscription_id = $1`,
-        [subscriptionId, razorpayPaymentId],
-      );
-    }
+    await client.query(
+      `UPDATE meal_subscription_payments SET
+         status = 'paid',
+         provider_payment_id = COALESCE($2::varchar, provider_payment_id, 'wallet'),
+         updated_at = NOW()
+       WHERE subscription_id = $1::uuid AND status = 'pending'`,
+      [subscriptionId, razorpayPaymentId || null],
+    );
     const rowRes = await client.query(`SELECT * FROM meal_subscriptions WHERE id = $1`, [subscriptionId]);
     const row = rowRes.rows[0] as Record<string, unknown>;
     await ensureRollingSessions(client, row as unknown as SubscriptionRowForGeneration, {});
@@ -644,6 +776,7 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
   headerVendorId?: string;
   deliveryId: string;
   status: string;
+  cancelReason?: string;
 }): Promise<Record<string, unknown> | null> {
   const vendorId = vendorHeaderVendorId(options.vendorIdFromPath, options.headerVendorId);
   if (!vendorId) {
@@ -661,6 +794,19 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
     throw Object.assign(new Error('Subscription or delivery is paused by the customer'), { statusCode: 400 });
   }
 
+  // Cancel is only allowed on the first (parent) session
+  if (options.status === 'cancelled') {
+    const sessionNum = Number((own.delivery as Record<string, unknown>).session_number ?? 0);
+    if (sessionNum !== 1) {
+      throw Object.assign(
+        new Error(
+          'Individual Meal Plan sessions cannot be cancelled. Only the first session (parent) can be cancelled, which cancels the subscription.',
+        ),
+        { statusCode: 400 },
+      );
+    }
+  }
+
   if (options.status === 'delivered') {
     await markMealSubscriptionDeliveryDeliveredById(
       options.deliveryId,
@@ -674,6 +820,18 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
 
   const row = await vendorGetMealSubscriptionDelivery(vendorId, options.deliveryId);
   await broadcastDeliveryUpdate(row, own.subscription, options.status);
+
+  // Trigger refund on vendor cancel of first session
+  if (options.status === 'cancelled') {
+    const subId = String(own.subscription.id || '');
+    const sessionNum = Number((own.delivery as Record<string, unknown>).session_number ?? 1);
+    const reason = options.cancelReason || 'Vendor cancelled the Meal Plan session';
+    processMealSessionVendorCancelRefund(subId, options.deliveryId, sessionNum, reason).catch((err: unknown) => {
+      const e = err as { message?: string };
+      console.error('[meal-ops] Refund failed after vendor cancel', e.message, { subId, deliveryId: options.deliveryId });
+    });
+  }
+
   return row;
 }
 
