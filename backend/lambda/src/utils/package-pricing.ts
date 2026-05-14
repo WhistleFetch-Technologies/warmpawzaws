@@ -77,6 +77,90 @@ function resolvePackagePolicySnapshot(
   return { cancellationPolicy, refundPolicy, version };
 }
 
+function parseJsonAddressStateCity(
+  rawAddr: unknown
+): { state?: string; city?: string; pincode?: string } | undefined {
+  if (rawAddr == null || rawAddr === '') return undefined;
+  try {
+    let addr: any = null;
+    if (typeof rawAddr === 'string') {
+      if (rawAddr.startsWith('{') || rawAddr.startsWith('[')) {
+        addr = JSON.parse(rawAddr);
+      } else {
+        return undefined;
+      }
+    } else if (typeof rawAddr === 'object') {
+      addr = rawAddr;
+    }
+    if (addr?.state) {
+      return {
+        state: String(addr.state),
+        city: addr.city != null ? String(addr.city) : undefined,
+        pincode: addr.pincode != null ? String(addr.pincode) : undefined,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
+async function resolveCustomerTaxLocation(
+  customerId: string
+): Promise<{ state: string; city?: string; pincode?: string } | undefined> {
+  const cid = String(customerId || '').trim();
+  if (!cid) return undefined;
+  try {
+    const r = await query(
+      `SELECT city, state, pincode
+       FROM customer_addresses
+       WHERE customer_id = $1::uuid AND is_default = true
+       LIMIT 1`,
+      [cid]
+    );
+    const row = r.rows?.[0];
+    if (row?.state) {
+      return {
+        state: String(row.state),
+        city: row.city != null ? String(row.city) : undefined,
+        pincode: row.pincode != null ? String(row.pincode) : undefined,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const r2 = await query(`SELECT address FROM customers WHERE id = $1::uuid LIMIT 1`, [cid]);
+    const parsed = parseJsonAddressStateCity(r2.rows?.[0]?.address);
+    if (parsed?.state) {
+      return {
+        state: parsed.state,
+        city: parsed.city,
+        pincode: parsed.pincode,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
+function vendorTaxLocationFromDbRow(row: Record<string, unknown> | undefined): { state: string; city?: string } | undefined {
+  if (!row) return undefined;
+  const st = row.state != null ? String(row.state).trim() : '';
+  if (st) {
+    return {
+      state: st,
+      city: row.city != null ? String(row.city) : undefined,
+    };
+  }
+  const fromAddr = parseJsonAddressStateCity(row.address);
+  if (fromAddr?.state) {
+    return { state: fromAddr.state, city: fromAddr.city };
+  }
+  return undefined;
+}
+
 /**
  * Compute package totals using the same pipeline as a normal booking.
  *
@@ -106,19 +190,56 @@ export async function quotePackagePricing(
 
   try {
     let vendorLocation: { state: string; city?: string } | undefined;
+    let roleId: string | undefined;
     try {
-      const vRes = await query(`SELECT state, city FROM vendors WHERE id = $1::uuid LIMIT 1`, [
-        comp.vendorId,
-      ]);
-      if (vRes.rows?.[0]?.state) {
-        vendorLocation = {
-          state: String(vRes.rows[0].state),
-          city: vRes.rows[0].city ? String(vRes.rows[0].city) : undefined,
-        };
-      }
+      const vRes = await query(
+        `SELECT state, city, address, role_id::text AS role_id
+         FROM vendors WHERE id = $1::uuid LIMIT 1`,
+        [comp.vendorId]
+      );
+      const vrow = vRes.rows?.[0] as Record<string, unknown> | undefined;
+      vendorLocation = vendorTaxLocationFromDbRow(vrow);
+      if (vrow?.role_id) roleId = String(vrow.role_id);
     } catch {
       vendorLocation = undefined;
     }
+
+    let customerLocation: { state: string; city?: string; pincode?: string } | undefined;
+    try {
+      customerLocation = await resolveCustomerTaxLocation(comp.customerId);
+    } catch {
+      customerLocation = undefined;
+    }
+
+    let catalogCategoryId: string | null = null;
+    try {
+      const catRes = await query(
+        `SELECT vs.category::text AS vs_cat, sc.category_id::text AS sc_cat
+         FROM vendor_services vs
+         LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+         WHERE vs.id = $1::uuid
+         LIMIT 1`,
+        [comp.vendorServiceId]
+      );
+      const crow = catRes.rows?.[0] as { vs_cat?: string; sc_cat?: string } | undefined;
+      if (crow?.sc_cat) {
+        catalogCategoryId = String(crow.sc_cat).trim();
+      }
+      if (!catalogCategoryId) {
+        const { resolveCatalogCategoryUuidFromRef } = await import(
+          '../lib/services/gst-catalog-role-resolution'
+        );
+        catalogCategoryId = await resolveCatalogCategoryUuidFromRef(
+          crow?.vs_cat || comp.serviceType || ''
+        );
+      }
+    } catch {
+      catalogCategoryId = null;
+    }
+
+    const serviceStyleNorm = String(comp.serviceStyle || '')
+      .toLowerCase()
+      .trim() as 'at_center' | 'at_home' | 'tele' | 'hybrid';
 
     const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
     const taxResult = await taxCalculationService.calculateTax({
@@ -129,9 +250,18 @@ export async function quotePackagePricing(
           amount: basePrice,
           quantity: 1,
           category: comp.serviceType,
-          serviceStyle: comp.serviceStyle,
+          serviceStyle:
+            serviceStyleNorm === 'at_center' ||
+            serviceStyleNorm === 'at_home' ||
+            serviceStyleNorm === 'tele' ||
+            serviceStyleNorm === 'hybrid'
+              ? serviceStyleNorm
+              : undefined,
+          catalogCategoryId: catalogCategoryId || undefined,
+          roleId,
         },
       ],
+      customerLocation,
       vendorLocation,
       vendorId: comp.vendorId,
       serviceType: comp.serviceType,
