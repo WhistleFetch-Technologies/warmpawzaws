@@ -192,6 +192,13 @@ export async function pauseCanonicalSubscription(
   let deliveriesToNotify: Record<string, unknown>[] = [];
 
   await withTransaction(async (client: PoolClient) => {
+    const snapCol = await client.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'meal_orders' AND column_name = 'purchase_snapshot'
+       LIMIT 1`,
+    );
+    const hasPurchaseSnapshot = (snapCol.rowCount ?? 0) > 0;
+
     await client.query(
       `UPDATE meal_subscriptions SET
          lifecycle_status = 'paused',
@@ -214,8 +221,8 @@ export async function pauseCanonicalSubscription(
     );
     deliveriesToNotify = (pauseRes.rows || []) as Record<string, unknown>[];
 
-    await client.query(
-      `UPDATE meal_orders mo
+    const mealOrderPauseSql = hasPurchaseSnapshot
+      ? `UPDATE meal_orders mo
        SET
          pre_pause_order_status = mo.status,
          status = 'paused',
@@ -236,9 +243,21 @@ export async function pauseCanonicalSubscription(
                AND d.status = 'paused'
                AND mo.special_instructions LIKE '%__canonical_delivery_id__:' || d.id::text || '__%'
            )
-         )`,
-      [subscriptionId],
-    );
+         )`
+      : `UPDATE meal_orders mo
+       SET
+         pre_pause_order_status = mo.status,
+         status = 'paused',
+         updated_at = NOW()
+       WHERE mo.subscription_id = $1::uuid
+         AND mo.status NOT IN ('delivered', 'cancelled', 'paused')
+         AND EXISTS (
+           SELECT 1 FROM meal_subscription_deliveries d
+           WHERE d.subscription_id = mo.subscription_id
+             AND d.status = 'paused'
+             AND mo.special_instructions LIKE '%__canonical_delivery_id__:' || d.id::text || '__%'
+         )`;
+    await client.query(mealOrderPauseSql, [subscriptionId]);
   });
 
   const r = await query(`SELECT * FROM meal_subscriptions WHERE id = $1`, [subscriptionId]);

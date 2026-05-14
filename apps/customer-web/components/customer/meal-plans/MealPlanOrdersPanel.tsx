@@ -24,7 +24,6 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 export interface MealPlanOrder {
   id: string;
@@ -207,8 +206,13 @@ export function MealPlanOrdersPanel({
   };
 
   const handleBackClick = () => {
-    if (onBack) onBack();
-    else goBackOrHome(router);
+    // Shell passes onBack → My Bookings. Standalone must not use router.back() after visiting
+    // /subscriptions from this page — history would return to subscriptions instead of bookings.
+    if (onBack) {
+      onBack();
+      return;
+    }
+    router.push('/bookings');
   };
 
   const hubNav = (
