@@ -14,6 +14,11 @@ import {
 import { resolveMealLineSubtotalInr } from '../../utils/meal-order-pricing';
 import { computeMealSubscriptionCheckoutFees } from '../../utils/meal-subscription-checkout-fees';
 import { deliveriesPerBillingCycle } from '../../utils/meal-subscription-schedule-utils';
+import {
+  computeMealGstBreakdown,
+  getMealPlanGstRates,
+  resolveMealPlanCatalogCategoryId,
+} from '../../utils/meal-plan-gst';
 import type { MealSubscriptionLifecycleStatus } from '../../constants/meal-subscription-canonical';
 import { ensureRollingSessions, type SubscriptionRowForGeneration } from './meal-subscription-session-generation';
 
@@ -255,6 +260,15 @@ export async function createCanonicalSubscription(
 
   const deliveryFeePerDelivery = feeQuote.perSessionDeliveryFee ?? 0;
 
+  const planRow = plan as Record<string, unknown>;
+  const gstRates = await getMealPlanGstRates(planRow);
+  const mealPlanGstCatalogCategoryId = await resolveMealPlanCatalogCategoryId(planRow);
+  const foodSubtotalUpfront =
+    Math.round(feeQuote.perSessionFoodSubtotal * feeQuote.totalSessionsUsed * 100) / 100;
+  const mealGst = computeMealGstBreakdown(foodSubtotalUpfront, 0, gstRates.foodGstPct, 0);
+  const upfrontTotalWithFoodGst =
+    Math.round((feeQuote.upfrontTotalAmount + mealGst.totalGstAmount) * 100) / 100;
+
   const pricingSnapshot = {
     pricePerDelivery,
     quantity: qty,
@@ -270,7 +284,13 @@ export async function createCanonicalSubscription(
     perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
     platformFeePerCycle: feeQuote.platformFeePerCycle,
     convenienceFeePerCycle: feeQuote.convenienceFeePerCycle,
-    upfrontTotalAmount: feeQuote.upfrontTotalAmount,
+    upfrontTotalAmount: upfrontTotalWithFoodGst,
+    upfrontTotalAmountBeforeFoodGst: feeQuote.upfrontTotalAmount,
+    foodSubtotalUpfront,
+    foodGstPct: gstRates.foodGstPct,
+    foodGstAmount: mealGst.totalGstAmount,
+    mealTaxCategoryId: gstRates.taxCategoryId,
+    mealPlanGstCatalogCategoryId: mealPlanGstCatalogCategoryId || gstRates.catalogCategoryId,
   };
 
   const subscriptionNumber = shortSubscriptionNumber();

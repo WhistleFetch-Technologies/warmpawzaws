@@ -1,73 +1,162 @@
 /**
- * Resolve GST rate for a meal plan from the admin-controlled tax_categories table.
- * Falls back to 5 % (India standard for prepared pet food) when the category row is missing.
- *
- * Meal plans may carry an explicit `tax_category_id`; if not, the platform
- * uses the row named "Meal Plans – Food" seeded in migration 1012.
+ * Meal plan checkout GST: same Admin catalogue category (e.g. Nutritionist) as services,
+ * but a dedicated tax_categories row with gst_application_scope = 'meal_plan_food'.
+ * Admin edits that row's rate in Finance → GST; no separate "meal delivery fee" tax bucket — delivery GST is 0 here.
  */
 
 import { query } from '../database/rds-connection';
+import {
+  resolveCatalogCategoryUuidFromRef,
+  resolveGstRateForCatalogAndRole,
+} from '../lib/services/gst-catalog-role-resolution';
 
-const DEFAULT_MEAL_FOOD_GST = 5; // %
+const DEFAULT_MEAL_FOOD_GST = 5;
 
-let _cache: { foodRate: number; deliveryRate: number; ts: number } | null = null;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const rateCache = new Map<
+  string,
+  { foodGstPct: number; catalogCategoryId: string | null; taxCategoryId: string | null; ts: number }
+>();
 
-async function fetchMealPlanTaxRates(): Promise<{ foodRate: number; deliveryRate: number }> {
-  if (_cache && Date.now() - _cache.ts < CACHE_TTL_MS) {
-    return { foodRate: _cache.foodRate, deliveryRate: _cache.deliveryRate };
+function cacheKey(catalogId: string, roleId: string): string {
+  return `${catalogId}|${roleId}`;
+}
+
+function parseDietJson(plan: Record<string, unknown>): Record<string, unknown> {
+  const raw = plan.dietary_requirements;
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
   }
+  return {};
+}
 
-  const res = await query(
-    `SELECT name, default_gst_rate FROM tax_categories
-     WHERE name IN ('Meal Plans – Food', 'Meal Plans – Delivery Fee')
-       AND is_active = TRUE`,
-    [],
-  ).catch(() => ({ rows: [] }));
-
-  let foodRate = DEFAULT_MEAL_FOOD_GST;
-  let deliveryRate = 18;
-  for (const row of res.rows as { name: string; default_gst_rate: string | number }[]) {
-    const r = parseFloat(String(row.default_gst_rate));
-    if (!Number.isFinite(r)) continue;
-    if (String(row.name).includes('Delivery')) deliveryRate = r;
-    else foodRate = r;
-  }
-
-  _cache = { foodRate, deliveryRate, ts: Date.now() };
-  return { foodRate, deliveryRate };
+async function resolveVendorRoleId(vendorId: string | null | undefined): Promise<string | null> {
+  const vid = String(vendorId || '').trim();
+  if (!vid) return null;
+  const r = await query(`SELECT role_id::text AS rid FROM vendors WHERE id = $1::uuid LIMIT 1`, [vid]).catch(
+    () => ({ rows: [] }),
+  );
+  const rid = r.rows?.[0] as { rid?: string } | undefined;
+  return rid?.rid ? String(rid.rid) : null;
 }
 
 /**
- * Returns { foodGstPct, deliveryGstPct } for a meal plan.
- * When the plan carries an explicit tax_category_id, the associated rate is used for the food component.
+ * Catalogue UUID for meal GST: explicit column → diet JSON ref → Nutritionist master category.
  */
-export async function getMealPlanGstRates(plan?: {
-  tax_category_id?: string | null;
-}): Promise<{ foodGstPct: number; deliveryGstPct: number }> {
-  const base = await fetchMealPlanTaxRates();
+export async function resolveMealPlanCatalogCategoryId(plan: Record<string, unknown>): Promise<string | null> {
+  const pinned = plan.service_catalog_category_id ?? plan.serviceCatalogCategoryId;
+  if (pinned != null && String(pinned).trim() !== '') {
+    const id = String(pinned).trim();
+    const fromPinned = await resolveCatalogCategoryUuidFromRef(id);
+    if (fromPinned) return fromPinned;
+  }
+  const diet = parseDietJson(plan);
+  const ref =
+    (diet.catalogCategoryId as string | undefined) ||
+    (diet.catalog_category_id as string | undefined) ||
+    (diet.catalogCategoryRef as string | undefined) ||
+    (diet.catalog_category_ref as string | undefined);
+  if (ref != null && String(ref).trim() !== '') {
+    const id = await resolveCatalogCategoryUuidFromRef(String(ref).trim());
+    if (id) return id;
+  }
+  return await resolveCatalogCategoryUuidFromRef('nutritionist');
+}
 
-  if (plan?.tax_category_id) {
-    const r = await query(
-      `SELECT default_gst_rate FROM tax_categories
-       WHERE id = $1 AND is_active = TRUE LIMIT 1`,
-      [plan.tax_category_id],
+/**
+ * Returns GST % for meal plan food from Admin (catalogue + meal_plan_food scope).
+ * `deliveryGstPct` is always 0 — no separate meal-delivery tax category.
+ */
+export async function getMealPlanGstRates(plan?: Record<string, unknown> | null): Promise<{
+  foodGstPct: number;
+  deliveryGstPct: number;
+  taxCategoryId: string | null;
+  /** Resolved `service_categories.id` UUID for meal_plan_food GST /tax/calculate */
+  catalogCategoryId: string | null;
+}> {
+  const p = plan ?? {};
+  const catalogForResponse = await resolveMealPlanCatalogCategoryId(p);
+  const overrideId = p.tax_category_id ?? p.taxCategoryId;
+  if (overrideId != null && String(overrideId).trim() !== '') {
+    const tid = String(overrideId).trim();
+    let r = await query(
+      `SELECT default_gst_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+      [tid],
     ).catch(() => ({ rows: [] }));
-    const row = r.rows?.[0] as { default_gst_rate: string | number } | undefined;
+    let row = r.rows?.[0] as { default_gst_rate: string | number } | undefined;
+    if (!row) {
+      r = await query(
+        `SELECT tax_rate AS default_gst_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+        [tid],
+      ).catch(() => ({ rows: [] }));
+      row = r.rows?.[0] as { default_gst_rate: string | number } | undefined;
+    }
     if (row) {
       const rate = parseFloat(String(row.default_gst_rate));
-      if (Number.isFinite(rate)) return { foodGstPct: rate, deliveryGstPct: base.deliveryRate };
+      if (Number.isFinite(rate)) {
+        return {
+          foodGstPct: rate,
+          deliveryGstPct: 0,
+          taxCategoryId: tid,
+          catalogCategoryId: catalogForResponse,
+        };
+      }
     }
   }
 
-  return { foodGstPct: base.foodRate, deliveryGstPct: base.deliveryRate };
+  const catalogId = catalogForResponse;
+  const roleId = await resolveVendorRoleId(
+    (p.vendor_id ?? p.vendorId) as string | null | undefined,
+  );
+
+  if (!catalogId) {
+    return {
+      foodGstPct: DEFAULT_MEAL_FOOD_GST,
+      deliveryGstPct: 0,
+      taxCategoryId: null,
+      catalogCategoryId: null,
+    };
+  }
+
+  const ck = cacheKey(catalogId, roleId || '_');
+  const hit = rateCache.get(ck);
+  if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
+    return {
+      foodGstPct: hit.foodGstPct,
+      deliveryGstPct: 0,
+      taxCategoryId: hit.taxCategoryId,
+      catalogCategoryId: hit.catalogCategoryId ?? catalogId,
+    };
+  }
+
+  const resolved = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_food');
+  let foodGstPct = resolved.rate;
+  if (!resolved.taxCategoryId && resolved.rate === 18) {
+    foodGstPct = DEFAULT_MEAL_FOOD_GST;
+  }
+  if (!Number.isFinite(foodGstPct) || foodGstPct < 0) foodGstPct = DEFAULT_MEAL_FOOD_GST;
+
+  rateCache.set(ck, {
+    foodGstPct,
+    catalogCategoryId: catalogId,
+    taxCategoryId: resolved.taxCategoryId,
+    ts: Date.now(),
+  });
+  return {
+    foodGstPct,
+    deliveryGstPct: 0,
+    taxCategoryId: resolved.taxCategoryId,
+    catalogCategoryId: catalogId,
+  };
 }
 
-/**
- * Compute GST breakdown on a meal subscription checkout total.
- * India: food GST is included in the meal price (vendor sets price inclusive).
- * Returns component amounts for display on the invoice/payment summary.
- */
 export function computeMealGstBreakdown(
   foodSubtotal: number,
   deliveryFee: number,
@@ -92,7 +181,6 @@ export function computeMealGstBreakdown(
   };
 }
 
-/** Invalidate cache (useful after admin updates a tax category). */
 export function invalidateMealPlanGstCache(): void {
-  _cache = null;
+  rateCache.clear();
 }

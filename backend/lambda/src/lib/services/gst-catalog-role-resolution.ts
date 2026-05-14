@@ -42,23 +42,35 @@ export async function resolveCatalogCategoryUuidFromRef(
 
 export type CatalogRoleGstResolution = { rate: number; taxCategoryId: string | null };
 
+/** Service checkout vs meal plan food — same catalogue category, different tax_categories rows. */
+export type GstApplicationScope = 'service_booking' | 'meal_plan_food';
+
 /**
  * Prefer tax row where junction includes vendor role; else row with no junction rows (wildcard).
+ * @param applicationScope service_booking (default) = existing GST rows; meal_plan_food = meal-only rows.
  */
 export async function resolveGstRateForCatalogAndRole(
   catalogCategoryUuid: string,
-  vendorRoleUuid: string | null | undefined
+  vendorRoleUuid: string | null | undefined,
+  applicationScope: GstApplicationScope = 'service_booking',
 ): Promise<CatalogRoleGstResolution> {
   const cat = String(catalogCategoryUuid).trim();
   const role =
     vendorRoleUuid && String(vendorRoleUuid).trim() !== '' ? String(vendorRoleUuid).trim() : null;
+  const scope = applicationScope === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
 
   const result = await query(
     `SELECT tc.*,
             (SELECT COUNT(*)::int FROM tax_category_roles tcr WHERE tcr.tax_category_id = tc.id) AS jcnt
      FROM tax_categories tc
-     WHERE tc.is_active = true AND tc.catalog_category_id IS NOT NULL AND tc.catalog_category_id::text = $1`,
-    [cat]
+     WHERE tc.is_active = true
+       AND tc.catalog_category_id IS NOT NULL
+       AND tc.catalog_category_id::text = $1
+       AND (
+         ($2::text = 'meal_plan_food' AND tc.gst_application_scope = 'meal_plan_food')
+         OR ($2::text = 'service_booking' AND COALESCE(tc.gst_application_scope, 'service_booking') = 'service_booking')
+       )`,
+    [cat, scope],
   );
   const list = (result as { rows?: Record<string, unknown>[] })?.rows ?? [];
   if (list.length === 0) return { rate: 18, taxCategoryId: null };

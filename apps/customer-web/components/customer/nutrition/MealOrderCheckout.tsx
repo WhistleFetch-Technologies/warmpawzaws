@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, Clock, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,10 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import {
   formatAllergenLabel,
@@ -30,8 +27,8 @@ interface MealOrderCheckoutProps {
 }
 
 export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSuccess }: MealOrderCheckoutProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [mealPlan, setMealPlan] = useState<any>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [pets, setPets] = useState<any[]>([]);
@@ -44,6 +41,13 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     convenienceFee?: number;
     totalAmount: number;
     leadTimeHours: number;
+    gst?: {
+      foodGstPct: number;
+      deliveryGstPct?: number;
+      taxCategoryId?: string | null;
+      catalogCategoryId?: string | null;
+      foodGstAmount?: number;
+    };
   } | null>(null);
 
   const [petId, setPetId] = useState('');
@@ -198,84 +202,41 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       return;
     }
 
-    const totalAmount = preview.totalAmount;
-    setSubmitting(true);
+    const gst = preview.gst || {};
+    const addrObj = {
+      ...deliveryAddress,
+      state: selectedAddress?.state,
+      city: selectedAddress?.city,
+      pincode: selectedAddress?.pincode,
+    };
+    const draft = {
+      mealPlanId: String(mealPlan.id),
+      customerId: customerId || undefined,
+      customerPhone: phone,
+      vendorId,
+      quantity,
+      petId: petId || undefined,
+      specialInstructions: specialInstructions || undefined,
+      deliveryAddress: addrObj,
+      scheduledDeliveryDate: scheduledDate,
+      scheduledDeliverySlot: { start: scheduledTime, end: scheduledTime },
+      logisticsType: 'warmpawz',
+      foodSubtotalInr: preview.subtotal,
+      foodGstPct: Number(gst.foodGstPct) || 5,
+      mealPlanGstCatalogCategoryId:
+        gst.catalogCategoryId != null ? String(gst.catalogCategoryId) : undefined,
+      deliveryFeeInr: preview.deliveryFee ?? 0,
+      platformFeeInr: preview.platformFee ?? 0,
+      convenienceFeeInr: preview.convenienceFee ?? 0,
+    };
     try {
-      const razorpayRes = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
-        amountInRupees: totalAmount,
-        notes: { customerId, mealPlanId, vendorId },
-      });
-      if (!razorpayRes?.razorpayOrderId) {
-        throw new Error(razorpayRes?.error || 'Failed to create payment order');
-      }
-
-      const createRes = await apiClient.post<any>('/meal/orders/create', {
-        customerId: customerId || undefined,
-        customerPhone: customerId ? undefined : phone,
-        mealPlanId: mealPlan.id,
-        petId: petId || undefined,
-        quantity,
-        purchaseType: purchaseTypeForOrder,
-        specialInstructions: specialInstructions || undefined,
-        deliveryAddress,
-        scheduledDeliveryDate: scheduledDate,
-        scheduledDeliverySlot: { start: scheduledTime, end: scheduledTime },
-        logisticsType: 'warmpawz',
-        razorpayOrderId: razorpayRes.razorpayOrderId,
-      });
-      const order = createRes?.order || createRes;
-      const orderId = order?.id;
-      if (!orderId) throw new Error('Order created but ID missing');
-
-      const keyId = razorpayRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-      if (!keyId) {
-        toast.success('Order created. Payment gateway not configured – contact support to complete payment.');
-        onSuccess(orderId);
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      document.body.appendChild(script);
-      await new Promise<void>((resolve) => {
-        if ((window as any).Razorpay) return resolve();
-        script.onload = () => resolve();
-      });
-
-      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
-        key: keyId,
-        amountPaise: Math.max(1, Math.round(Number(razorpayRes.amount))),
-        currency: razorpayRes.currency || 'INR',
-        name: 'Warmpawz',
-        description: `Meal plan: ${mealPlan.name || 'Order'}`,
-        order_id: razorpayRes.razorpayOrderId,
-        customerPhone: phone,
-        customerEmail: checkoutEmail,
-        includeInstrumentBlocks: true,
-        handler: async (response: any) => {
-          try {
-            await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            });
-            toast.success('Order confirmed!');
-            onSuccess(orderId);
-          } catch (err: any) {
-            toast.error(err?.message || 'Payment confirmation failed');
-          }
-        },
-        theme: { color: '#FF8C42' },
-        modal: { ondismiss: () => setSubmitting(false) },
-      });
-      const razorpay = new (window as any).Razorpay(options);
-      razorpay.open();
-    } catch (err: any) {
-      toast.error(err?.message || 'Checkout failed');
-    } finally {
-      setSubmitting(false);
+      sessionStorage.setItem('meal_one_time_pay_draft_v1', JSON.stringify(draft));
+    } catch {
+      toast.error('Could not start checkout. Enable site storage and try again.');
+      return;
     }
+    const name = mealPlan.name || mealPlan.plan_name || 'Meal plan';
+    router.push(`/meal-plans/checkout-pay?mealPlanName=${encodeURIComponent(String(name))}`);
   };
 
   if (loading) {
@@ -542,6 +503,19 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               </div>
               <div className="flex justify-between"><span>Platform fee</span><span>₹{preview.platformFee}</span></div>
               <div className="flex justify-between"><span>Convenience fee</span><span>₹{preview.convenienceFee ?? 0}</span></div>
+              {preview.gst && preview.gst.foodGstPct != null ? (
+                <div className="flex justify-between text-slate-700">
+                  <span>GST on meal (food)</span>
+                  <span>
+                    ₹
+                    {(
+                      (preview.subtotal * (Number(preview.gst.foodGstPct) || 0)) /
+                      100
+                    ).toFixed(2)}{' '}
+                    ({Number(preview.gst.foodGstPct)}%)
+                  </span>
+                </div>
+              ) : null}
               <div className="flex justify-between font-semibold text-slate-900 pt-2 border-t">
                 <span>Total</span><span>₹{preview.totalAmount}</span>
               </div>
@@ -553,7 +527,6 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           type="submit"
           className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
           disabled={
-            submitting ||
             !addressId ||
             !preview ||
             !hasSelectedAddressCoordinates ||
@@ -562,7 +535,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             (pets.length > 0 && !petId)
           }
         >
-          {submitting ? 'Opening payment...' : `Pay ₹${preview?.totalAmount ?? 0}`}
+          {`Continue to pay ₹${preview?.totalAmount ?? 0}`}
         </Button>
       </form>
     </div>

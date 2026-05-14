@@ -33,7 +33,7 @@ VALUES
   ('Meal Plans – Delivery Fee',
    'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
    18.00, TRUE)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
 -- 3. Add tax_category_id to meal_plans (optional per-plan override)
 ALTER TABLE meal_plans

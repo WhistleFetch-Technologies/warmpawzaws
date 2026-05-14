@@ -47,6 +47,8 @@ export interface TaxItem {
   serviceStyle?: 'at_center' | 'at_home' | 'tele' | 'hybrid';
   /** vendors.role_id (UUID) for GST role mapping */
   roleId?: string;
+  /** When set with type service + catalogCategoryId, selects tax_categories.gst_application_scope row */
+  gstApplicationScope?: 'service_booking' | 'meal_plan_food';
   /** When true, `amount` × qty is tax-inclusive; engine derives taxable value as amount/(1+gst%/100). */
   amountIsTaxInclusive?: boolean;
 }
@@ -134,9 +136,12 @@ export class TaxCalculationService {
 
       if (item.type === 'service') {
         if (item.catalogCategoryId) {
+          const scope =
+            item.gstApplicationScope === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
           const resolved = await resolveGstRateForCatalogAndRole(
             item.catalogCategoryId,
-            item.roleId
+            item.roleId,
+            scope,
           );
           gstRate = coerceRate(resolved.rate, 18);
         } else {

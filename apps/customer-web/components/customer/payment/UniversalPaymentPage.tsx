@@ -48,14 +48,43 @@ interface UniversalPaymentPageProps {
   // Booking/Order details
   bookingId?: string;
   orderId?: string;
-  type: 'booking' | 'order' | 'meal_subscription';
+  type: 'booking' | 'order' | 'meal_subscription' | 'meal_one_time';
 
   /** Canonical meal subscription id (pending_payment) when type === 'meal_subscription'. */
   mealSubscriptionId?: string;
   /** Extra lines under plan title (sessions, cadence, first delivery, etc.). */
   mealSubscriptionSummaryLines?: MealSubscriptionSummaryLine[];
+  /** Taxable food subtotal (pre-GST) for meal subscription pay — CGST/SGST/IGST on this line only. */
+  mealPlanFoodTaxableInr?: number;
+  /** `service_categories.id` UUID for meal_plan_food GST row (from pricing snapshot / order-preview). */
+  mealPlanGstCatalogCategoryId?: string;
+  /** Non-food fees included in subscription upfront (platform, convenience, delivery). */
+  mealSubscriptionFeeTotals?: {
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+  };
 
-  // Service/Product details
+  /** One-time meal checkout: create order + Razorpay after universal pay (same UX as subscription pay). */
+  mealOneTimeDraft?: {
+    mealPlanId: string;
+    customerId?: string;
+    customerPhone: string;
+    vendorId: string;
+    quantity: number;
+    petId?: string;
+    specialInstructions?: string;
+    deliveryAddress: Record<string, unknown>;
+    scheduledDeliveryDate: string;
+    scheduledDeliverySlot: { start: string; end: string };
+    logisticsType?: string;
+    foodSubtotalInr: number;
+    foodGstPct: number;
+    mealPlanGstCatalogCategoryId?: string;
+    deliveryFeeInr: number;
+    platformFeeInr: number;
+    convenienceFeeInr: number;
+  };
   serviceId?: string;
   productId?: string;
   serviceName?: string;
@@ -294,6 +323,10 @@ export function UniversalPaymentPage({
   type,
   mealSubscriptionId,
   mealSubscriptionSummaryLines,
+  mealPlanFoodTaxableInr,
+  mealPlanGstCatalogCategoryId,
+  mealSubscriptionFeeTotals,
+  mealOneTimeDraft,
   serviceId,
   productId,
   serviceName,
@@ -418,6 +451,159 @@ export function UniversalPaymentPage({
     [baseAmount, priceIncludesTax]
   );
 
+  const runMealCheckoutTaxAndFees = useCallback(async () => {
+    if (type !== 'meal_subscription' && type !== 'meal_one_time') return;
+
+    const addr =
+      type === 'meal_one_time' && mealOneTimeDraft
+        ? {
+            state: String((mealOneTimeDraft.deliveryAddress as { state?: string })?.state || '').trim(),
+            city: String((mealOneTimeDraft.deliveryAddress as { city?: string })?.city || '').trim(),
+            pincode: String((mealOneTimeDraft.deliveryAddress as { pincode?: string })?.pincode || '').trim(),
+          }
+        : {
+            state: String((selectedAddress || address)?.state || '').trim(),
+            city: String((selectedAddress || address)?.city || '').trim(),
+            pincode: String((selectedAddress || address)?.pincode || '').trim(),
+          };
+
+    const foodAmt =
+      type === 'meal_one_time' && mealOneTimeDraft
+        ? Number(mealOneTimeDraft.foodSubtotalInr)
+        : Number(mealPlanFoodTaxableInr ?? 0);
+    let catId =
+      type === 'meal_one_time' && mealOneTimeDraft
+        ? String(mealOneTimeDraft.mealPlanGstCatalogCategoryId || '').trim()
+        : String(mealPlanGstCatalogCategoryId || '').trim();
+    if (!catId) catId = 'nutritionist';
+
+    if (type === 'meal_subscription' && mealSubscriptionFeeTotals) {
+      const p = mealSubscriptionFeeTotals;
+      const t =
+        (Number(p.platformFee) || 0) +
+        (Number(p.convenienceFee) || 0) +
+        (Number(p.deliveryFee) || 0);
+      setPlatformFees({
+        platformFee: Number(p.platformFee) || 0,
+        convenienceFee: Number(p.convenienceFee) || 0,
+        deliveryFee: Number(p.deliveryFee) || 0,
+        packagingFee: 0,
+        total: Math.round(t * 100) / 100,
+      });
+    } else if (type === 'meal_one_time' && mealOneTimeDraft) {
+      const d = mealOneTimeDraft;
+      const t = d.platformFeeInr + d.convenienceFeeInr + d.deliveryFeeInr;
+      setPlatformFees({
+        platformFee: d.platformFeeInr,
+        convenienceFee: d.convenienceFeeInr,
+        deliveryFee: d.deliveryFeeInr,
+        packagingFee: 0,
+        total: Math.round(t * 100) / 100,
+      });
+    } else {
+      setPlatformFees({ platformFee: 0, convenienceFee: 0, deliveryFee: 0, packagingFee: 0, total: 0 });
+    }
+
+    if (!(foodAmt > 0.009)) {
+      setTaxBreakdown({
+        subtotal: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        totalTax: 0,
+        total: 0,
+        taxRate: 0,
+        isInterState: false,
+      });
+      return;
+    }
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: 'meal-plan-food',
+            type: 'service',
+            catalogCategoryId: catId,
+            gstApplicationScope: 'meal_plan_food',
+            amount: foodAmt,
+            quantity: 1,
+            category: 'nutrition',
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation:
+          addr.state || addr.city || addr.pincode
+            ? { state: addr.state || undefined, city: addr.city || undefined, pincode: addr.pincode || undefined }
+            : undefined,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const exclusiveSub = Number(taxRes.totalAmount);
+        const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : foodAmt;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const fallbackRateDraft =
+          type === 'meal_one_time' && mealOneTimeDraft
+            ? Math.min(100, Math.max(0, Number(mealOneTimeDraft.foodGstPct) || 5))
+            : 5;
+        const taxRate = Number.isFinite(rawRate) ? rawRate : fallbackRateDraft;
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0.009;
+        const grand = Number(taxRes.grandTotal);
+        const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
+
+        setTaxBreakdown({
+          subtotal: taxableForLabel,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: totalPay,
+          taxRate,
+          isInterState: interState,
+          taxDetails: taxRes.breakdown || [],
+        });
+        return;
+      }
+    } catch (e) {
+      console.error('Meal checkout tax error:', e);
+    }
+
+    const fallbackRate =
+      type === 'meal_one_time' && mealOneTimeDraft
+        ? Math.min(100, Math.max(0, Number(mealOneTimeDraft.foodGstPct) || 5))
+        : 5;
+    const taxable = foodAmt;
+    const totalTax = (taxable * fallbackRate) / 100;
+    setTaxBreakdown({
+      subtotal: taxable,
+      cgst: totalTax / 2,
+      sgst: totalTax / 2,
+      igst: 0,
+      totalTax,
+      total: taxable + totalTax,
+      taxRate: fallbackRate,
+      isInterState: false,
+    });
+  }, [
+    type,
+    mealOneTimeDraft,
+    mealPlanFoodTaxableInr,
+    mealPlanGstCatalogCategoryId,
+    mealSubscriptionFeeTotals,
+    vendorId,
+    customerId,
+    customerPhone,
+    selectedAddress,
+    address,
+  ]);
+
   const calculateTax = useCallback(async () => {
     const catalogServiceId = resolvedServiceId || serviceId;
     const addr = selectedAddress || address;
@@ -525,24 +711,8 @@ export function UniversalPaymentPage({
     if (!isWarmpawzCustomerNativeWebView()) {
       loadRazorpayScript();
     }
-    if (type === 'meal_subscription') {
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: 0,
-        sgst: 0,
-        igst: 0,
-        totalTax: 0,
-        total: baseAmount,
-        taxRate: 0,
-        isInterState: false,
-      });
-      setPlatformFees({
-        platformFee: 0,
-        convenienceFee: 0,
-        deliveryFee: 0,
-        packagingFee: 0,
-        total: 0,
-      });
+    if (type === 'meal_subscription' || type === 'meal_one_time') {
+      void runMealCheckoutTaxAndFees();
       loadPaymentAndRefundPolicies();
       return;
     }
@@ -566,6 +736,11 @@ export function UniversalPaymentPage({
     productId,
     customerAddrStateForTax,
     calculateTax,
+    runMealCheckoutTaxAndFees,
+    mealPlanFoodTaxableInr,
+    mealPlanGstCatalogCategoryId,
+    mealSubscriptionFeeTotals,
+    mealOneTimeDraft,
   ]);
 
   // Check if customer has active subscription that covers this booking
@@ -1367,10 +1542,18 @@ export function UniversalPaymentPage({
   const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
   const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
 
-  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
+  const isMealPay = type === 'meal_subscription' || type === 'meal_one_time';
+  const walletCapBase = isMealPay
+    ? Math.max(0, Number(baseAmount) - razorpayOfferDiscount)
+    : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
+  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
   // ✅ NEW: If subscription covers this booking, final amount is 0
-  const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+  const finalAmount = subscriptionCovered
+    ? 0
+    : isMealPay
+      ? Math.max(0, Number(baseAmount) - razorpayOfferDiscount - walletAmount)
+      : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
   const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
@@ -1398,6 +1581,87 @@ export function UniversalPaymentPage({
     setProcessing(true);
 
     try {
+      if (type === 'meal_one_time' && mealOneTimeDraft) {
+        await loadRazorpayScript();
+        const d = mealOneTimeDraft;
+        const cid = d.customerId || customerId;
+        let amountInRupeesForGateway = finalAmount;
+        if (!(amountInRupeesForGateway > 0.009)) {
+          toast.error('Nothing to pay');
+          setProcessing(false);
+          return;
+        }
+        const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
+          amountInRupees: amountInRupeesForGateway,
+          notes: {
+            customerId: cid,
+            mealPlanId: d.mealPlanId,
+            vendorId: d.vendorId,
+            kind: 'meal_one_time',
+          },
+        });
+        if (!rz?.razorpayOrderId) {
+          throw new Error(rz?.error || 'Failed to create payment order');
+        }
+        const createRes = await apiClient.post<any>('/meal/orders/create', {
+          customerId: cid,
+          customerPhone: cid ? undefined : d.customerPhone || customerPhone,
+          mealPlanId: d.mealPlanId,
+          petId: d.petId,
+          quantity: d.quantity,
+          purchaseType: 'ONE_TIME',
+          specialInstructions: d.specialInstructions,
+          deliveryAddress: d.deliveryAddress,
+          scheduledDeliveryDate: d.scheduledDeliveryDate,
+          scheduledDeliverySlot: d.scheduledDeliverySlot,
+          logisticsType: d.logisticsType || 'warmpawz',
+          razorpayOrderId: rz.razorpayOrderId,
+        });
+        const order = createRes?.order || createRes;
+        const orderId = order?.id as string | undefined;
+        if (!orderId) throw new Error('Order created but ID missing');
+        const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+        if (!keyId) {
+          toast.error('Payment gateway not configured');
+          setProcessing(false);
+          return;
+        }
+        const checkoutEmailArg =
+          (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
+        const options = buildSanitizedStandardRazorpayCheckoutOptions({
+          key: keyId,
+          amountPaise: Math.max(1, Math.round(Number(rz.amount))),
+          currency: rz.currency || 'INR',
+          name: 'Warmpawz',
+          description: `Meal plan: ${serviceName || 'Order'}`,
+          order_id: rz.razorpayOrderId,
+          customerPhone: d.customerPhone || customerPhone,
+          customerEmail: checkoutEmailArg,
+          includeInstrumentBlocks: true,
+          handler: async (response: any) => {
+            try {
+              await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+              toast.success('Order confirmed!');
+              onSuccess(orderId);
+            } catch (err: any) {
+              toast.error(err?.message || 'Payment confirmation failed');
+            } finally {
+              setProcessing(false);
+            }
+          },
+          theme: { color: '#FF8C42' },
+          modal: {
+            ondismiss: () => setProcessing(false),
+          },
+        });
+        const razorpay = new (window as any).Razorpay(options);
+        razorpay.open();
+        return;
+      }
+
       if (type === 'meal_subscription' && mealSubscriptionId && customerId) {
         await loadRazorpayScript();
         const idempotent = `mealw-${mealSubscriptionId}-${Date.now().toString(36)}`;
@@ -2915,7 +3179,7 @@ export function UniversalPaymentPage({
       value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
       label: 'Duration',
     },
-    { value: type === 'meal_subscription' ? 'Meal plan' : type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
+    { value: type === 'meal_subscription' || type === 'meal_one_time' ? 'Meal plan' : type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
   ];
 
   return (
@@ -3026,7 +3290,7 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
-        {type === 'meal_subscription' ? (
+        {type === 'meal_subscription' || type === 'meal_one_time' ? (
           <MealSubscriptionPaymentSummary
             planTitle={String(serviceName || productName || 'Meal plan')}
             vendorName={String(vendorName || '')}
@@ -3138,7 +3402,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Promotions & Spotlight Offers */}
-        {type !== 'meal_subscription' && promotions.length > 0 && (
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -3179,7 +3443,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon Section */}
-        {type !== 'meal_subscription' && (
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && (
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -3239,7 +3503,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Razorpay Offers */}
-        {type !== 'meal_subscription' && razorpayOffers.length > 0 && (
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && razorpayOffers.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />

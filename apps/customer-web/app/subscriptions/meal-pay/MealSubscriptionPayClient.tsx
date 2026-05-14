@@ -9,9 +9,40 @@ import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-chec
 import {
   buildMealSubscriptionSummaryLinesFromRow,
   upfrontTotalInrFromSubscriptionRow,
+  parsePricingSnapshot,
+  n,
 } from '@/lib/meal-subscription-payment-summary-lines';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { Button } from '@/components/ui/button';
+
+function deliveryAddressToPaymentAddress(
+  raw: unknown,
+): { state?: string; city?: string; pincode?: string; addressLine1?: string } | undefined {
+  if (raw == null) return undefined;
+  let o: Record<string, unknown> | null = null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) o = raw as Record<string, unknown>;
+  else if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      if (p && typeof p === 'object' && !Array.isArray(p)) o = p as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+  if (!o) return undefined;
+  const line =
+    typeof o.address === 'string'
+      ? o.address
+      : typeof o.addressLine1 === 'string'
+        ? o.addressLine1
+        : undefined;
+  return {
+    state: typeof o.state === 'string' ? o.state : undefined,
+    city: typeof o.city === 'string' ? o.city : undefined,
+    pincode: typeof o.pincode === 'string' ? o.pincode : undefined,
+    addressLine1: line,
+  };
+}
 
 function MealSubscriptionPayInner() {
   const router = useRouter();
@@ -79,6 +110,33 @@ function MealSubscriptionPayInner() {
   const summaryLines = useMemo(() => (sub ? buildMealSubscriptionSummaryLinesFromRow(sub) : []), [sub]);
   const baseAmount = useMemo(() => (sub ? upfrontTotalInrFromSubscriptionRow(sub) : 0), [sub]);
 
+  const snap = useMemo(() => (sub ? parsePricingSnapshot(sub) : null), [sub]);
+  const mealPlanFoodTaxableInr = useMemo(() => {
+    if (!snap) return 0;
+    const direct = n(snap.foodSubtotalUpfront);
+    if (direct > 0.009) return direct;
+    const per = n(snap.perSessionFoodSubtotal);
+    const ts = n(snap.totalSessionsUsed);
+    if (per > 0 && ts > 0) return Math.round(per * ts * 100) / 100;
+    return 0;
+  }, [snap]);
+  const mealPlanGstCatalogCategoryId = useMemo(() => {
+    const id = snap?.mealPlanGstCatalogCategoryId;
+    return id != null && String(id).trim() ? String(id).trim() : undefined;
+  }, [snap]);
+  const mealSubscriptionFeeTotals = useMemo(() => {
+    if (!snap) return undefined;
+    return {
+      platformFee: n(snap.platformFeeUpfront),
+      convenienceFee: n(snap.convenienceFeeUpfront),
+      deliveryFee: n(snap.totalDeliveryFeeUpfront),
+    };
+  }, [snap]);
+  const subscriptionPayAddress = useMemo(
+    () => deliveryAddressToPaymentAddress(sub?.delivery_address),
+    [sub],
+  );
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-orange-50">
@@ -136,6 +194,10 @@ function MealSubscriptionPayInner() {
       type="meal_subscription"
       mealSubscriptionId={subscriptionId}
       mealSubscriptionSummaryLines={summaryLines}
+      mealPlanFoodTaxableInr={mealPlanFoodTaxableInr}
+      mealPlanGstCatalogCategoryId={mealPlanGstCatalogCategoryId}
+      mealSubscriptionFeeTotals={mealSubscriptionFeeTotals}
+      address={subscriptionPayAddress}
       vendorId={vendorId}
       vendorName={vendorName}
       serviceName={planTitle}

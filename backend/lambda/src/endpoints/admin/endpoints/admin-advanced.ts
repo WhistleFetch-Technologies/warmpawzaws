@@ -4575,6 +4575,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           catalog_category_id: row.catalog_category_id ?? null,
           catalog_category_name: row.catalog_category_name ?? null,
           catalog_master_slug: row.catalog_master_slug ?? null,
+          gst_application_scope: row.gst_application_scope ?? null,
           roles: rolesParsed,
           role_ids,
           is_active: row.is_active !== false,
@@ -4595,11 +4596,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       const { description, defaultGSTRate, isActive, name } = body;
+      const gstApplicationScopeRaw = body.gstApplicationScope ?? body.gst_application_scope;
+      const gstApplicationScope =
+        String(gstApplicationScopeRaw || '').trim() === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
 
       if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
         return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+      if (
+        gstApplicationScope !== 'meal_plan_food' &&
+        (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0)
+      ) {
         return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
       }
       const rate =
@@ -4634,6 +4641,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
         catalog_category_id: String(catalogCategoryId).trim(),
+        gst_application_scope: gstApplicationScope,
       };
 
       let newCategory: any[];
@@ -4655,12 +4663,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
               delete insertPayload.catalog_category_id;
               newCategory = await tryInsertTaxCategory();
+            } else if (m2.includes('gst_application_scope') && m2.includes('does not exist')) {
+              delete insertPayload.gst_application_scope;
+              newCategory = await tryInsertTaxCategory();
             } else {
               throw e2;
             }
           }
         } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
           delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else if (msg.includes('gst_application_scope') && msg.includes('does not exist')) {
+          delete insertPayload.gst_application_scope;
           newCategory = await tryInsertTaxCategory();
         } else {
           throw insErr;
@@ -4669,7 +4683,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const tcId = newCategory[0]?.id;
       const ccid = String(catalogCategoryId).trim();
-      if (tcId) {
+      if (tcId && Array.isArray(roleIdsRaw) && roleIdsRaw.length > 0) {
         for (const rid of roleIdsRaw) {
           const roleId = String(rid).trim();
           if (!roleId) continue;
@@ -4734,6 +4748,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             ? String(catalogCategoryId).trim()
             : null;
       }
+      const gstScopeBody = body.gstApplicationScope ?? body.gst_application_scope;
+      if (gstScopeBody !== undefined && gstScopeBody !== null) {
+        const s = String(gstScopeBody).trim();
+        updateData.gst_application_scope = s === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
+      }
 
       const applyTaxCategoryUpdate = async (): Promise<void> => {
         if (Object.keys(updateData).length === 0) return;
@@ -4751,6 +4770,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             await applyTaxCategoryUpdate();
             return;
           }
+          if (
+            updateData.gst_application_scope !== undefined &&
+            msg.includes('gst_application_scope') &&
+            msg.includes('does not exist')
+          ) {
+            delete updateData.gst_application_scope;
+            await applyTaxCategoryUpdate();
+            return;
+          }
           throw updErr;
         }
       };
@@ -4758,36 +4786,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       if (Array.isArray(roleIdsRaw)) {
+        const scMeta = await query(
+          `SELECT catalog_category_id::text AS cid, COALESCE(gst_application_scope, 'service_booking')::text AS gs
+           FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+          [id],
+        );
+        const effScope = String(scMeta.rows?.[0]?.gs || 'service_booking').trim();
         if (roleIdsRaw.length === 0) {
-          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
-        }
-        let ccid = String(catalogCategoryId || '').trim();
-        if (!ccid) {
-          const cur = await query(
-            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
-            [id]
-          );
-          ccid = String(cur.rows?.[0]?.cid || '').trim();
-        }
-        if (!ccid) {
-          return c.json(
-            { success: false, error: 'catalogCategoryId is required to update role mapping' },
-            400
-          );
-        }
-        try {
-          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
-          for (const rid of roleIdsRaw) {
-            const roleId = String(rid).trim();
-            if (!roleId) continue;
-            await query(
-              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
-               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
-              [id, roleId, ccid]
+          if (effScope === 'meal_plan_food') {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          } else {
+            return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+          }
+        } else {
+          let ccid = String(catalogCategoryId || '').trim();
+          if (!ccid) {
+            ccid = String(scMeta.rows?.[0]?.cid || '').trim();
+          }
+          if (!ccid) {
+            return c.json(
+              { success: false, error: 'catalogCategoryId is required to update role mapping' },
+              400,
             );
           }
-        } catch (e: any) {
-          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          try {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+            for (const rid of roleIdsRaw) {
+              const roleId = String(rid).trim();
+              if (!roleId) continue;
+              await query(
+                `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+                 VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+                [id, roleId, ccid],
+              );
+            }
+          } catch (e: any) {
+            if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          }
         }
       }
 

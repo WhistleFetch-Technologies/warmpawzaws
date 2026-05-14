@@ -1,6 +1,6 @@
 import type { MealSubscriptionSummaryLine } from '@/components/customer/payment/MealSubscriptionPaymentSummary';
 
-function parsePricingSnapshot(raw: unknown): Record<string, unknown> | null {
+export function parsePricingSnapshot(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   if (typeof raw === 'string') {
@@ -14,7 +14,7 @@ function parsePricingSnapshot(raw: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function n(v: unknown): number {
+export function n(v: unknown): number {
   const x = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
   return Number.isFinite(x) ? x : 0;
 }

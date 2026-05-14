@@ -22,7 +22,7 @@ import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-c
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
 import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
-import { getMealPlanGstRates } from '../utils/meal-plan-gst';
+import { getMealPlanGstRates, computeMealGstBreakdown } from '../utils/meal-plan-gst';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 import {
   computePolicyDeliveryFeeForOrder,
@@ -694,6 +694,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       };
       const subCheckout = subscriptionCheckoutPreviewFields(plan, quantity, previewQ);
       const subtotal = subCheckout?.subtotal ?? resolveMealPurchaseSubtotalInr(plan, quantity);
+      const gstRates = await getMealPlanGstRates(plan);
 
       /** Weekly/monthly: delivery fee = (same per-session quote as one-time) × total sessions. */
       if (subCheckout) {
@@ -727,6 +728,9 @@ export function registerMealPlanEndpoints(app: Hono) {
           Math.round(feeQuote.platformFeePerCycle * bc * 100) / 100;
         const convenienceFeeUpfront =
           Math.round(feeQuote.convenienceFeePerCycle * bc * 100) / 100;
+        const mealGstPreview = computeMealGstBreakdown(foodSubtotalUpfront, 0, gstRates.foodGstPct, 0);
+        const upfrontTotalWithFoodGst =
+          Math.round((feeQuote.upfrontTotalAmount + mealGstPreview.totalGstAmount) * 100) / 100;
         return c.json({
           success: true,
           subtotal: subCheckout.subtotal,
@@ -736,18 +740,19 @@ export function registerMealPlanEndpoints(app: Hono) {
           deliveryFeePendingAddress: feeQuote.deliveryFeePendingAddress,
           platformFee: feeQuote.platformFeePerCycle,
           convenienceFee: feeQuote.convenienceFeePerCycle,
-          totalAmount: feeQuote.upfrontTotalAmount,
+          totalAmount: upfrontTotalWithFoodGst,
           leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-          gst: await getMealPlanGstRates(plan as { tax_category_id?: string | null }),
+          gst: { ...gstRates, foodGstAmount: mealGstPreview.foodGstAmount },
           subscriptionCheckout: {
             ...subCheckout,
             packageTotalAmount,
-            upfrontTotalAmount: feeQuote.upfrontTotalAmount,
+            upfrontTotalAmount: upfrontTotalWithFoodGst,
             perSessionDeliveryFee: feeQuote.perSessionDeliveryFee,
             totalDeliveryFeeUpfront: feeQuote.totalDeliveryFeeUpfront,
             nonDeliveryPackagePerCycle: feeQuote.nonDeliveryPackagePerCycle,
             perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
             foodSubtotalUpfront,
+            foodGstAmount: mealGstPreview.totalGstAmount,
             platformFeeUpfront,
             convenienceFeeUpfront,
             subtotalPerCycle: feeQuote.subtotalPerCycle,
@@ -776,7 +781,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
         const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
         if (customerLat == null || customerLng == null) {
-          const packageTotalAmount = subtotal + platformFee + convenienceFee;
+          const mealGstNoAddr = computeMealGstBreakdown(subtotal, 0, gstRates.foodGstPct, 0);
+          const packageTotalAmount =
+            subtotal + platformFee + convenienceFee + mealGstNoAddr.totalGstAmount;
           return c.json(
             {
               success: true,
@@ -789,6 +796,7 @@ export function registerMealPlanEndpoints(app: Hono) {
               convenienceFee,
               totalAmount: packageTotalAmount,
               leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+              gst: { ...gstRates, foodGstAmount: mealGstNoAddr.foodGstAmount },
             },
             200
           );
@@ -815,7 +823,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         deliveryFee = 0;
         platformFee = Math.round(subtotal * 0.02);
       }
-      const packageTotalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
+      const mealGstOneTime = computeMealGstBreakdown(subtotal, 0, gstRates.foodGstPct, 0);
+      const packageTotalAmount =
+        subtotal + deliveryFee + platformFee + convenienceFee + mealGstOneTime.totalGstAmount;
       return c.json({
         success: true,
         subtotal,
@@ -826,6 +836,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         convenienceFee,
         totalAmount: packageTotalAmount,
         leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+        gst: { ...gstRates, foodGstAmount: mealGstOneTime.foodGstAmount },
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);
@@ -1111,7 +1122,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         convenienceFee = 0;
       }
       
-      const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
+      const totalAmountBeforeGst = subtotal + deliveryFee + platformFee + convenienceFee;
+      const gstRatesOrder = await getMealPlanGstRates(plan as Record<string, unknown>);
+      const mealGstOrder = computeMealGstBreakdown(subtotal, 0, gstRatesOrder.foodGstPct, 0);
+      const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
 
       const moCols = await mealOrdersTableColumns();
       const mealOrderRow: Record<string, unknown> = {

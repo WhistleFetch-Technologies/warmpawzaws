@@ -931,6 +931,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
         serviceStyle?: string;
         roleId?: string;
         amountIsTaxInclusive?: boolean;
+        gstApplicationScope?: 'service_booking' | 'meal_plan_food';
       }> = [];
 
       let vendorRoleId: string | undefined;
@@ -952,6 +953,34 @@ export function registerTaxManagementEndpoints(app: Hono) {
           item.amountTaxInclusive === true || item.amount_is_tax_inclusive === true;
 
         if (itemType === 'service') {
+          const gstScopeRaw = String(
+            (item as { gstApplicationScope?: string }).gstApplicationScope ||
+              (item as { gst_application_scope?: string }).gst_application_scope ||
+              '',
+          ).trim();
+          const isMealPlanFoodScope = gstScopeRaw === 'meal_plan_food';
+          const explicitCatRaw =
+            (item as { catalogCategoryId?: string }).catalogCategoryId ||
+            (item as { catalog_category_id?: string }).catalog_category_id;
+          if (isMealPlanFoodScope && explicitCatRaw && vendorId) {
+            const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
+            if (catalogCategoryUuid) {
+              taxItems.push({
+                id: (item as { id?: string }).id || 'meal-plan-food',
+                type: 'service',
+                amount,
+                quantity,
+                catalogCategoryId: catalogCategoryUuid,
+                category: category || 'nutrition',
+                serviceStyle: item.serviceStyle,
+                roleId: (item as { roleId?: string }).roleId || vendorRoleId,
+                amountIsTaxInclusive,
+                gstApplicationScope: 'meal_plan_food',
+              });
+              continue;
+            }
+          }
+
           let scCatRef: string | undefined;
           if (serviceId && vendorId) {
             const vendorSvcs = await query(
@@ -1045,6 +1074,11 @@ export function registerTaxManagementEndpoints(app: Hono) {
             serviceStyle: item.serviceStyle,
             roleId: item.roleId || vendorRoleId,
             amountIsTaxInclusive,
+            gstApplicationScope:
+              String(item.gstApplicationScope || (item as { gst_application_scope?: string }).gst_application_scope || '').trim() ===
+              'meal_plan_food'
+                ? 'meal_plan_food'
+                : undefined,
           });
           continue;
         }
