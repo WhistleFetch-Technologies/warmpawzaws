@@ -117,6 +117,9 @@ const vendorData: Record<
   default: { name: 'Warmpawz Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
+/** Cart "Choose Delivery Speed" UI. Totals still use standard (₹60) fee when hidden. */
+const SHOW_CART_DELIVERY_SPEED_PICKER = false;
+
 export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
   const router = useRouter();
   const { cart, updateQuantity, removeFromCart, addToCart, itemCount } = useCart();
@@ -436,60 +439,61 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
           </div>
         )}
 
-        {/* Delivery Options */}
-        <div className="bg-white px-4 py-4 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Truck className="w-5 h-5 text-[#FF8C42]" />
-            Choose Delivery Speed
-          </h3>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('standard')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'standard'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Package className="h-5 w-5 shrink-0 text-gray-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Standard</div>
-                <div className="text-xs text-gray-500">₹60</div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('express')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'express'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Zap className="h-5 w-5 shrink-0 text-yellow-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Express</div>
-                <div className="text-xs text-gray-500">₹150</div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('scheduled')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'scheduled'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Clock className="h-5 w-5 shrink-0 text-blue-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Scheduled</div>
-                <div className="text-xs text-gray-500">₹80</div>
-              </div>
-            </button>
+        {SHOW_CART_DELIVERY_SPEED_PICKER && (
+          <div className="bg-white px-4 py-4 border-b border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Truck className="w-5 h-5 text-[#FF8C42]" />
+              Choose Delivery Speed
+            </h3>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('standard')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'standard'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Package className="h-5 w-5 shrink-0 text-gray-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Standard</div>
+                  <div className="text-xs text-gray-500">₹60</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('express')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'express'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Zap className="h-5 w-5 shrink-0 text-yellow-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Express</div>
+                  <div className="text-xs text-gray-500">₹150</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('scheduled')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'scheduled'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Clock className="h-5 w-5 shrink-0 text-blue-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Scheduled</div>
+                  <div className="text-xs text-gray-500">₹80</div>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Cart Items by Vendor */}
         {Object.entries(itemsByVendor).map(([vendorId, vendorItems]) => {

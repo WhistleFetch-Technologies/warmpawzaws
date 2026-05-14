@@ -14,7 +14,7 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Set to bake shop/cart/wishlist on for this deploy (default off = "Soon" tiles).
+    # Set to bake shop/cart/wishlist on for this deploy (default off).
     [switch]$CustomerEcommerceEnabled
 )
 
