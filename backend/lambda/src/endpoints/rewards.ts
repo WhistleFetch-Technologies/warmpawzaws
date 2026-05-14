@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query, withTransaction } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
 
 /** When `customer_loyalty_points` counters are NULL/stale, derive lifetime stats from the ledger. */
@@ -453,11 +454,13 @@ export function registerRewardsEndpoints(app: Hono) {
            ORDER BY display_order ASC, points_cost ASC`
       );
 
+      const rows = (rewards.rows || []).map((r) => fixRewardCatalogTextFields(r));
+
       return c.json({
         success: true,
-        rewards: rewards.rows,
-        catalog: rewards.rows,
-        count: rewards.rows.length,
+        rewards: rows,
+        catalog: rows,
+        count: rows.length,
       });
     } catch (error: any) {
       console.error('Error fetching rewards catalog:', error);
@@ -499,7 +502,7 @@ export function registerRewardsEndpoints(app: Hono) {
         return c.json({ error: 'Reward not found or inactive' }, 404);
       }
 
-      const reward = rewards.rows[0];
+      const reward = fixRewardCatalogTextFields(rewards.rows[0]);
       const cost = parseInt(String(reward.points_cost ?? points), 10);
       if (!Number.isFinite(cost) || cost < 1) {
         return c.json({ error: 'Invalid reward points_cost' }, 400);
@@ -692,7 +695,7 @@ export function registerRewardsEndpoints(app: Hono) {
            LIMIT $2 OFFSET $3`,
         [customerId, limit, offset]
       );
-      const rows = result.rows || [];
+      const rows = (result.rows || []).map((r) => fixRewardCatalogTextFields(r));
 
       return c.json({
         success: true,
@@ -730,7 +733,7 @@ export function registerRewardsEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        reward: rewards.rows[0],
+        reward: fixRewardCatalogTextFields(rewards.rows[0]),
       });
     } catch (error: any) {
       console.error('Error fetching reward details:', error);

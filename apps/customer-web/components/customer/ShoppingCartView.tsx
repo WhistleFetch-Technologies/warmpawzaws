@@ -38,6 +38,7 @@ import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
 import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
 import { CartPromotionResult } from '@/lib/promotions-engine';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface ShoppingCartViewProps {
   onBack: () => void;
@@ -115,6 +116,9 @@ const vendorData: Record<
   vendor3: { name: 'Furry Friends Shop', reviews: 0, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
   default: { name: 'Warmpawz Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
+
+/** Cart "Choose Delivery Speed" UI. Totals still use standard (₹60) fee when hidden. */
+const SHOW_CART_DELIVERY_SPEED_PICKER = false;
 
 export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
   const router = useRouter();
@@ -286,7 +290,44 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
     setSavedItems(savedItems.filter(i => i.id !== itemId));
   };
 
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-customer mx-auto relative">
+        <ServiceDashboardHeader
+          className="sticky top-0 z-30 shrink-0"
+          serviceName="Shopping Cart"
+          serviceSubtitle="Coming soon"
+          serviceIcon={ShoppingBag}
+          iconColor="text-white"
+          stats={[]}
+          onBack={onNavigateHome ?? onBack}
+          showBackButton
+          bottomEdge="sheet"
+          sheetToneClass="bg-gradient-to-br from-orange-50 to-amber-50"
+        />
+        <div className="-mt-1 flex flex-1 flex-col items-center justify-center p-8 text-center">
+          <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
+            <ShoppingBag className="w-16 h-16 text-[#FF8C42]" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900">Coming soon</h2>
+          <p className="text-gray-600 mt-2 mb-8 max-w-sm text-[15px] leading-relaxed">
+            Shopping cart and checkout are not available in this build yet. Check back soon.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full max-w-xs rounded-xl border-gray-300 py-6"
+            onClick={() => (onNavigateHome ?? onBack)()}
+          >
+            {onNavigateHome ? 'Home' : 'Back'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (cart.length === 0 && savedItems.length === 0) {
+    const shopEnabled = isCustomerEcommerceEnabled();
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-customer mx-auto relative">
         <ServiceDashboardHeader
@@ -306,7 +347,40 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
           <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
             <ShoppingBag className="w-16 h-16 text-[#FF8C42]" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">coming soon</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Your cart is empty</h2>
+          <p className="text-gray-600 mt-2 mb-8 max-w-sm text-[15px] leading-relaxed">
+            {shopEnabled
+              ? 'Browse the shop and add items — they appear here for checkout when you are ready.'
+              : 'The marketplace is not available in this build yet. Check back soon.'}
+          </p>
+          <div className="flex w-full min-w-0 max-w-xs flex-col gap-3 sm:flex-row sm:items-stretch">
+            {shopEnabled ? (
+              <Button
+                type="button"
+                className="w-full min-w-0 shrink rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-6 font-semibold text-white sm:flex-1"
+                onClick={() => onContinueShopping()}
+              >
+                Browse shop
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full min-w-0 shrink rounded-xl py-6 sm:flex-1"
+                onClick={() => (onNavigateHome ?? onBack)()}
+              >
+                Go back
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full min-w-0 shrink rounded-xl border-gray-300 py-6 sm:flex-1"
+              onClick={() => (onNavigateHome ?? onBack)()}
+            >
+              {onNavigateHome ? 'Home' : 'Back'}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -365,60 +439,61 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
           </div>
         )}
 
-        {/* Delivery Options */}
-        <div className="bg-white px-4 py-4 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Truck className="w-5 h-5 text-[#FF8C42]" />
-            Choose Delivery Speed
-          </h3>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('standard')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'standard'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Package className="h-5 w-5 shrink-0 text-gray-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Standard</div>
-                <div className="text-xs text-gray-500">₹60</div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('express')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'express'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Zap className="h-5 w-5 shrink-0 text-yellow-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Express</div>
-                <div className="text-xs text-gray-500">₹150</div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDelivery('scheduled')}
-              className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
-                selectedDelivery === 'scheduled'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <Clock className="h-5 w-5 shrink-0 text-blue-600" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900">Scheduled</div>
-                <div className="text-xs text-gray-500">₹80</div>
-              </div>
-            </button>
+        {SHOW_CART_DELIVERY_SPEED_PICKER && (
+          <div className="bg-white px-4 py-4 border-b border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Truck className="w-5 h-5 text-[#FF8C42]" />
+              Choose Delivery Speed
+            </h3>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('standard')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'standard'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Package className="h-5 w-5 shrink-0 text-gray-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Standard</div>
+                  <div className="text-xs text-gray-500">₹60</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('express')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'express'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Zap className="h-5 w-5 shrink-0 text-yellow-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Express</div>
+                  <div className="text-xs text-gray-500">₹150</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDelivery('scheduled')}
+                className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                  selectedDelivery === 'scheduled'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <Clock className="h-5 w-5 shrink-0 text-blue-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900">Scheduled</div>
+                  <div className="text-xs text-gray-500">₹80</div>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Cart Items by Vendor */}
         {Object.entries(itemsByVendor).map(([vendorId, vendorItems]) => {

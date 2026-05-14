@@ -36,7 +36,10 @@ import { NotAvailable } from './NotAvailable';
 
 // Pet Management
 const CustomerPetDetails = dynamic(() => import('./CustomerPetDetails').then(mod => ({ default: mod.CustomerPetDetails })), { loading: LoadingSpinner });
-const CustomerPetProfile = dynamic(() => import('./CustomerPetProfile').then(mod => ({ default: mod.CustomerPetProfile })), { loading: LoadingSpinner });
+const EnhancedAddPetModal = dynamic(
+  () => import('./EnhancedAddPetModal').then((mod) => ({ default: mod.EnhancedAddPetModal })),
+  { loading: LoadingSpinner, ssr: false }
+);
 const PetBookingDetails = dynamic(() => import('./PetBookingDetails').then(mod => ({ default: mod.PetBookingDetails })), { loading: LoadingSpinner });
 const PetQuickView = dynamic(() => import('./PetQuickView').then(mod => ({ default: mod.PetQuickView })), { loading: LoadingSpinner });
 const AddPetModal = dynamic(() => import('./AddPetModal').then(mod => ({ default: mod.AddPetModal })), { loading: LoadingSpinner });
@@ -369,7 +372,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'insurance') navigateToScreen('insurance');
     else if (service === 'cafes') navigateToScreen('cafes');
     else if (service === 'shop') navigateToScreen('shop');
-    else if (service === 'cart') navigateToScreen('shop'); // Navigate to shop then cart logic handles
+    else if (service === 'cart') navigateToScreen('cart');
     else if (service === 'photography') navigateToScreen('photography');
     else if (service === 'breeder') navigateToScreen('breeder');
     else if (service === 'ambulance') navigateToScreen('ambulance');
@@ -593,7 +596,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         }}
       />
     );
-  if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
+  if (currentScreen === 'add-pet')
+    return (
+      <EnhancedAddPetModal
+        key="screen-add-pet"
+        variant="fullscreen"
+        phone={phone}
+        isOpen
+        onBack={handleBack}
+        onClose={handleBack}
+        onSuccess={() => {
+          void handlePetProfileComplete([]);
+        }}
+      />
+    );
   
   // Core Services
   // ✅ FIX: Add keys to service components for proper unmounting during navigation

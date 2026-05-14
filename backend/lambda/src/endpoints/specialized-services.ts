@@ -1745,7 +1745,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             ingredients: meta.ingredients || [],
             nutritionalValue: meta.nutritionalValue || {},
             sku: p.sku,
-            stock_quantity: p.stock_quantity,
+            stock_quantity: p.stock ?? p.stock_quantity,
             is_active: p.is_active,
             created_at: p.created_at,
             updated_at: p.updated_at,
@@ -1860,7 +1860,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           price: p.price,
           category: 'meal_plan',
           sku: `MP-${Date.now()}`,
-          stock_quantity: p.stockQuantity ?? 100,
+          stock: p.stockQuantity ?? 100,
           is_active: true,
         };
         if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;

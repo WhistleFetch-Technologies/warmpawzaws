@@ -93,8 +93,11 @@ export function useHubVendorDiscovery(
 
         const phoneKey = config.phoneQueryParam === 'phone' ? 'phone' : 'customerPhone';
         const phoneParam = phone ? `&${phoneKey}=${encodeURIComponent(phone)}` : '';
+        const specParam = config.specialization
+          ? `&specialization=${encodeURIComponent(config.specialization)}`
+          : '';
 
-        let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}${locationParams}${phoneParam}`;
+        let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}${locationParams}${phoneParam}${specParam}`;
         if (config.discoverRoleId) {
           endpoint += `&roleId=${encodeURIComponent(config.discoverRoleId)}`;
         }
@@ -108,7 +111,7 @@ export function useHubVendorDiscovery(
 
         if (rows.length === 0 && config.fallbackByStyle) {
           try {
-            let altUrl = `/customer/services/by-style?style=${encodeURIComponent(config.fallbackByStyle.style)}&category=${encodeURIComponent(config.fallbackByStyle.category)}${locationParams}${phoneParam}`;
+            let altUrl = `/customer/services/by-style?style=${encodeURIComponent(config.fallbackByStyle.style)}&category=${encodeURIComponent(config.fallbackByStyle.category)}${locationParams}${phoneParam}${specParam}`;
             if (config.fallbackByStyle.roleId) {
               altUrl += `&roleId=${encodeURIComponent(config.fallbackByStyle.roleId)}`;
             }

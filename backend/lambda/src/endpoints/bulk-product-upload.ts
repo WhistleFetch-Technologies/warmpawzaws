@@ -15,6 +15,10 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import {
+  loadActiveEcommerceCategoryMap,
+  resolveEcommerceCategoryByName,
+} from '../utils/ecommerce-category-resolve';
 import { buildBulkProductTemplateBuffer, parseBulkProductXlsxBuffer } from './bulk-product-xlsx';
 
 interface BulkProductRow {
@@ -130,14 +134,15 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           push('price', 'SP must be greater than 0', priceNum);
         }
 
-        // 3. Quantity*
-        const stockNum = Number(product.stock_quantity);
-        if (product.stock_quantity === undefined || product.stock_quantity === null || product.stock_quantity === '') {
+        // 3. Quantity* (CSV field stock_quantity; alias stock)
+        const qtyRaw = product.stock_quantity ?? product.stock;
+        const stockNum = Number(qtyRaw);
+        if (qtyRaw === undefined || qtyRaw === null || qtyRaw === '') {
           push('stock_quantity', 'Quantity is required', product.stock_quantity);
         } else if (isNaN(stockNum) || stockNum < 0) {
-          push('stock_quantity', 'Quantity must be a number ≥ 0', product.stock_quantity);
+          push('stock_quantity', 'Quantity must be a number ≥ 0', qtyRaw);
         } else if (!Number.isInteger(stockNum)) {
-          push('stock_quantity', 'Quantity must be a whole number', product.stock_quantity);
+          push('stock_quantity', 'Quantity must be a whole number', qtyRaw);
         }
 
         // 4. Category* — required AND must match an active catalog name
@@ -267,12 +272,24 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         errors: [] as Array<{ row: number; error: string }>,
       };
 
+      const categoryMap = await loadActiveEcommerceCategoryMap();
+
       // Process each product
       for (let i = 0; i < products.length; i++) {
         const product = products[i];
         const rowNum = i + 1;
 
         try {
+          const categoryTrim = product.category ? String(product.category).trim() : '';
+          const resolvedCategory = resolveEcommerceCategoryByName(categoryMap, categoryTrim);
+          if (!resolvedCategory) {
+            throw new Error(
+              categoryTrim
+                ? `Unknown or inactive category: "${categoryTrim}". Use an exact name from the template category list.`
+                : 'Category is required (must match an active catalog name).'
+            );
+          }
+
           // Check if SKU exists for update
           let existingProduct = null;
           if (product.sku) {
@@ -306,16 +323,19 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             }
           }
 
+          const stockValue =
+            Number(product.stock_quantity ?? product.stock ?? product.stockQuantity) || 0;
+
           const productData = {
             vendor_id: vendorId,
             name: product.name?.trim(),
             description: product.description?.trim() || null,
-            category: product.category?.trim() || null,
+            category_id: resolvedCategory.id,
+            category: resolvedCategory.name,
             sku: product.sku?.trim() || null,
             price: Number(product.price),
             compare_at_price: product.compare_at_price ? Number(product.compare_at_price) : null,
-            stock_quantity: Number(product.stock_quantity) || 0,
-            stock: Number(product.stock_quantity) || 0,
+            stock: stockValue,
             hsn_code: product.hsn_code?.trim() || null,
             gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
             weight: product.weight ? Number(product.weight) : null,

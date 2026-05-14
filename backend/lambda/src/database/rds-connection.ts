@@ -483,6 +483,33 @@ function normalizeSupportTicketsCheckConstraints(row: Record<string, any>): Reco
 }
 
 /**
+ * Migration 013 renamed `products.stock_quantity` → `products.stock`.
+ * Map legacy payloads so INSERT/UPDATE never reference a removed column.
+ *
+ * Always shallow-clones so callers are not mutated. Uses `in` instead of
+ * `hasOwnProperty` so non-plain objects still normalize when they expose
+ * `stock_quantity` as an own property after spread.
+ */
+export function normalizeProductsTableRowForPg<T extends Record<string, any>>(row: T): T {
+  if (!row || typeof row !== 'object') {
+    return row;
+  }
+  const out = { ...(row as Record<string, any>) };
+  if (!('stock_quantity' in out)) {
+    return out as T;
+  }
+  const hasUsableStock =
+    out.stock !== undefined && out.stock !== null && out.stock !== '';
+  if (!hasUsableStock) {
+    const raw = out.stock_quantity;
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+    out.stock = Number.isFinite(n) ? n : 0;
+  }
+  delete out.stock_quantity;
+  return out as T;
+}
+
+/**
  * Execute an INSERT query
  * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
  */
@@ -501,6 +528,16 @@ export async function insert(
       // Never send top-level attachments to PG unless column exists (migration 617); strip defensively.
       if (merged && typeof merged === 'object') delete (merged as Record<string, unknown>).attachments;
       return merged;
+    });
+  }
+
+  if (table === 'products') {
+    dataArray = dataArray.map((row) => {
+      const normalized = normalizeProductsTableRowForPg({ ...row });
+      if (normalized && typeof normalized === 'object') {
+        delete (normalized as Record<string, unknown>).stock_quantity;
+      }
+      return normalized;
     });
   }
 
@@ -603,6 +640,11 @@ export async function update(
       normalizeSupportTicketsRowForInsertOrUpdate({ ...payload }),
     );
     delete (payload as Record<string, unknown>).attachments;
+  }
+
+  if (table === 'products' && payload && typeof payload === 'object') {
+    payload = normalizeProductsTableRowForPg({ ...payload });
+    delete (payload as Record<string, unknown>).stock_quantity;
   }
 
   const setClause: string[] = [];
@@ -761,8 +803,18 @@ export async function upsert(
   data: any | any[],
   conflictColumn: string = 'id'
 ): Promise<any[]> {
-  const dataArray = Array.isArray(data) ? data : [data];
+  let dataArray = Array.isArray(data) ? data : [data];
   if (dataArray.length === 0) return [];
+
+  if (table === 'products') {
+    dataArray = dataArray.map((row) => {
+      const normalized = normalizeProductsTableRowForPg({ ...row });
+      if (normalized && typeof normalized === 'object') {
+        delete (normalized as Record<string, unknown>).stock_quantity;
+      }
+      return normalized;
+    });
+  }
 
   const keys = Object.keys(dataArray[0]);
   const placeholders = dataArray.map((_, idx) => {

@@ -10,6 +10,8 @@
  * 
  * Date: 2026-01-07
  * ============================================================================
+ *
+ * Canonical routes live in `endpoints/customer/customerEndpoint/customer-orders.ts` (see handler/index.ts).
  */
 
 import { Hono } from 'hono';
