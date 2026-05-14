@@ -97,23 +97,26 @@ export function ActiveCustomersTab() {
   const handleOpenCustomerPortal = async (customerId: string) => {
     setPortalLoadingId(customerId);
     try {
-      const res = await apiClient.post<{ success?: boolean; code?: string; error?: string }>(
-        `/admin/customers/${customerId}/customer-portal-code`,
+      // Use the admin-side combined endpoint: create + exchange the portal code in one call.
+      // This avoids the customer-web needing a direct Lambda connection (which can fail in
+      // certain network/browser environments).
+      const res = await apiClient.post<Record<string, unknown>>(
+        `/admin/customers/${customerId}/customer-portal-session`,
         {}
       );
       const raw = res as Record<string, unknown>;
-      const code = typeof raw?.code === 'string' ? raw.code : null;
-      if (!code) {
-        const err = typeof raw?.error === 'string' ? raw.error : 'No portal code returned';
-        alert(err);
+      if (raw?.success && raw?.data) {
+        const encoded = btoa(JSON.stringify(raw.data));
+        const base = getCustomerWebBaseUrl();
+        window.open(
+          `${base.replace(/\/+$/, '')}/session/from-admin#preauth=${encodeURIComponent(encoded)}`,
+          '_blank',
+          'noopener,noreferrer'
+        );
         return;
       }
-      const base = getCustomerWebBaseUrl();
-      window.open(
-        `${base.replace(/\/+$/, '')}/session/from-admin?code=${encodeURIComponent(code)}`,
-        '_blank',
-        'noopener,noreferrer'
-      );
+      const err = typeof raw?.error === 'string' ? raw.error : 'Failed to create portal session';
+      alert(err);
     } catch (error: unknown) {
       alert(error instanceof Error ? error.message : 'Failed to open customer app');
     } finally {
@@ -183,7 +186,7 @@ export function ActiveCustomersTab() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, phone, email, city…"
+            placeholder="Search name, phone, email, city, address…"
             className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-lg focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none"
           />
           {searchQuery && (
@@ -229,10 +232,10 @@ export function ActiveCustomersTab() {
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <h4 className="font-semibold text-gray-900 text-lg mb-2">{c.name}</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="sm:col-span-2 md:col-span-2 min-w-0">
                       <span className="text-gray-500">Location:</span>
-                      <span className="ml-2 text-gray-900 font-medium">{c.location}</span>
+                      <span className="ml-2 text-gray-900 font-medium break-words">{c.location}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Bookings:</span>

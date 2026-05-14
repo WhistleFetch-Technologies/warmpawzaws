@@ -342,7 +342,7 @@ export function BoardingVendorProfileView({
           </div>
         )}
 
-        <div className="px-4 pb-36">
+        <div className="px-4 cw-scroll-pad-tabbar-sticky-cta">
           <div className="relative z-10 -mt-6 mb-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h1 className="mb-3 text-2xl font-bold text-gray-900">{vendor.name}</h1>
 

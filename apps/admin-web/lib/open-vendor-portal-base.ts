@@ -114,7 +114,7 @@ export function getOpenVendorPortalBaseUrl(): string {
 // --- Customer web (admin "Open customer portal") — same pattern as vendor ---
 
 const PROD_CUSTOMER = 'https://customer.warmpawz.com';
-const DEV_CUSTOMER = 'https://dev.customer.warmpawz.com';
+const DEV_CUSTOMER = 'https://d2aoyjj8ine0wk.cloudfront.net';
 export const LOCAL_CUSTOMER_ORIGIN = 'http://127.0.0.1:3001';
 
 /**
