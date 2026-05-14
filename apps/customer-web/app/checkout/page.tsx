@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
   ShoppingCart, MapPin, CreditCard, CheckCircle, ArrowLeft,
   Truck, Shield, Tag, Plus, ChevronRight, AlertCircle, Package
@@ -17,7 +18,6 @@ import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 import { clearWarmpawzCartStorage, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
-import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface CartItem {
   id: string;
@@ -90,6 +90,7 @@ type CheckoutStep = 'address' | 'payment' | 'review' | 'confirmation';
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const commerceEnabled = isCustomerEcommerceEnabled();
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('address');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -131,8 +132,30 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!commerceEnabled) return;
     loadCheckoutData();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceEnabled]);
+
+  if (!commerceEnabled) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-200" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="text-gray-500">Checkout will be available when the marketplace launches.</p>
+        </div>
+      </div>
+    );
+  }
 
   const loadCheckoutData = async () => {
     try {
@@ -383,25 +406,6 @@ export default function CheckoutPage() {
     { id: 'review', label: 'Review', icon: ShoppingCart },
     { id: 'confirmation', label: 'Done', icon: CheckCircle },
   ];
-
-  if (!isCustomerEcommerceEnabled()) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
-        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
-          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-300" />
-          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
-          <p className="mb-6 text-gray-500">Online checkout is not available yet.</p>
-          <button
-            type="button"
-            onClick={() => goBackOrHome(router)}
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-semibold text-white"
-          >
-            Go back
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (

@@ -14,8 +14,10 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Set to bake shop/cart/wishlist on for this deploy (default off).
-    [switch]$CustomerEcommerceEnabled
+    # Pass -CustomerEcommerceEnabled to turn shop/cart/wishlist/orders ON for this deploy (default off).
+    [switch]$CustomerEcommerceEnabled,
+    # Deprecated: use -CustomerEcommerceEnabled instead. Kept so old invocations still parse.
+    [switch]$CustomerEcommerceDisabled
 )
 
 $ErrorActionPreference = "Stop"

@@ -12,7 +12,7 @@ import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPay
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
-import { readWishlistIds, setWishlistIds, WISHLIST_UPDATED_EVENT } from '@/lib/warmpawz-wishlist-local';
+import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
@@ -1097,7 +1097,6 @@ export default function ShopPage() {
 // ============================================================================
 
 function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAddToCart: () => void; inCart: boolean }) {
-  const [isWishlisted, setIsWishlisted] = React.useState(false);
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
@@ -1107,63 +1106,6 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
   React.useEffect(() => {
     setImageFailed(false);
   }, [product.id, product.images?.[0]]);
-
-  React.useEffect(() => {
-    const sync = () => {
-      setIsWishlisted(readWishlistIds().some((id: string) => String(id) === String(wishlistPid)));
-    };
-    sync();
-    window.addEventListener(WISHLIST_UPDATED_EVENT, sync);
-    return () => window.removeEventListener(WISHLIST_UPDATED_EVENT, sync);
-  }, [wishlistPid]);
-
-  const toggleWishlist = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const pid = wishlistPid;
-    if (!pid) {
-      console.warn('[wishlist] shop card: missing product id', { product });
-      return;
-    }
-    const wishlist = readWishlistIds();
-    const customerId = getResolvedCustomerId();
-    const wasInList = isWishlisted;
-
-    console.log('[wishlist] shop card toggle', { productId: pid, customerId, wasInList });
-
-    if (wasInList) {
-      setWishlistIds(wishlist.filter((id: string) => String(id) !== String(pid)));
-      setIsWishlisted(false);
-    } else {
-      const next = [...wishlist];
-      if (!next.some((id: string) => String(id) === String(pid))) {
-        next.push(pid);
-      }
-      setWishlistIds(next);
-      setIsWishlisted(true);
-    }
-
-    if (customerId) {
-      const action = wasInList ? 'remove' : 'add';
-      try {
-        const res = await apiClient.post<any>(`/customer/${customerId}/wishlist`, {
-          productId: pid,
-          action,
-        });
-        console.log('[wishlist] shop POST response', { productId: pid, customerId, res });
-        if (action === 'add') {
-          const verify = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
-          console.log('[wishlist] shop GET verify', {
-            customerId,
-            itemCount: verify?.wishlist?.items?.length ?? 0,
-          });
-        }
-      } catch (err) {
-        console.error('[wishlist] shop POST failed', { productId: pid, customerId, err });
-      }
-    } else {
-      console.warn('[wishlist] shop: no customerId; local only', { productId: pid });
-    }
-  };
 
   const handleCardClick = () => {
     window.location.href = `/shop/${wishlistPid}`;
@@ -1203,18 +1145,11 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={toggleWishlist}
-          className={`absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full shadow-sm transition-all ${
-            isWishlisted
-              ? 'bg-red-500 text-white'
-              : 'bg-white/90 text-slate-400 backdrop-blur-sm active:scale-95'
-          }`}
-          aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-        >
-          <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-current' : ''}`} />
-        </button>
+        <WishlistProductHeartButton
+          productId={wishlistPid}
+          visualVariant="shop-floating"
+          className="absolute top-2 right-2 w-8 h-8"
+        />
 
         {discount > 0 && !outOfStock && (
           <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-md shadow-sm">
