@@ -3,13 +3,16 @@
  *
  * - Prefill E.164 `contact`, `email` (with placeholder if missing), and `name` when available —
  *   Razorpay needs `prefill.email` for UPI Collect (UPI ID) to surface on the Standard Checkout.
- * - We let Razorpay render its **default Standard Checkout layout** (Recommended UPI apps + the
- *   "All Payment Options" section) instead of forcing a single custom `display.blocks.upi` block.
- *   That custom block was collapsing to nothing on Android (no UPI section visible at all) when
- *   the intent flow could not enumerate installed PSP apps — see the `<queries>` declaration in
- *   `android/app/src/main/AndroidManifest.xml` for the package-visibility fix that pairs with
- *   this. Removing the override matches the reference (BHIVE / Razorpay Trusted Business)
- *   layout and keeps iOS — which already worked — visually identical.
+ * - Force UPI on by declaring `method: { upi: true }` and a `config.display.blocks.upi`
+ *   instrument block with `flows: ['collect','intent','qr']`. This is the same shape the
+ *   customer-web checkout uses in
+ *   `apps/customer-web/lib/razorpay/build-standard-checkout-options.ts` and the reason iOS
+ *   already shows the UPI section — without it, Android Standard Checkout silently drops UPI
+ *   from `All payment options` even though the merchant has UPI enabled. We pair the block with
+ *   `preferences.show_default_blocks: true` so Razorpay still renders Cards / Wallet / Netbanking
+ *   below UPI (matching the BHIVE / Razorpay Trusted Business reference). The `<queries>`
+ *   declaration in `android/app/src/main/AndroidManifest.xml` lets the SDK enumerate installed
+ *   UPI PSP apps for the "Recommended" Google Pay / PhonePe shortcuts.
  * - System chrome around `com.razorpay.CheckoutActivity` (status bar / merchant toolbar
  *   alignment) is handled in `MainApplication.RazorpayCheckoutWindowInsetsCallback` so the
  *   `← Warmpawz` header lays out cleanly below the system status bar. We do NOT set
@@ -51,10 +54,11 @@ export function profileEmailAndName(profile: any): { email?: string; name?: stri
 }
 
 /**
- * Merges customer prefill (E.164 contact, email, name) into the options passed to
- * `RazorpayCheckout.open`. UPI surface configuration is intentionally NOT overridden — Razorpay's
- * default Standard Checkout layout is used so UPI Apps + UPI ID + QR all appear (matching iOS and
- * the Razorpay reference design). Returns a shallow copy; safe to call right before `open()`.
+ * Merges customer prefill (E.164 contact, email, name) and a UPI-friendly `config.display` /
+ * `method.upi` into the options passed to `RazorpayCheckout.open`. This mirrors the
+ * customer-web checkout payload (`buildSanitizedStandardRazorpayCheckoutOptions`) so the native
+ * RN screens get the same `All payment options: UPI / Cards / Wallet / Netbanking` layout iOS
+ * already shows. Returns a shallow copy; safe to call right before `open()`.
  */
 export function applyWarmpawzCustomerToRazorpayOptions(
   options: Record<string, any>,
@@ -77,10 +81,41 @@ export function applyWarmpawzCustomerToRazorpayOptions(
   const existingTheme =
     typeof options.theme === 'object' && options.theme !== null ? options.theme : {};
 
+  const existingConfig =
+    typeof options.config === 'object' && options.config !== null ? options.config : {};
+  const existingDisplay =
+    typeof (existingConfig as any).display === 'object' && (existingConfig as any).display !== null
+      ? (existingConfig as any).display
+      : {};
+
+  // `show_default_blocks: true` keeps Cards / Wallet / Netbanking visible below the explicit
+  // UPI block. `flows: ['collect','intent','qr']` matches the customer-web payload — Razorpay
+  // surfaces UPI ID (collect), installed PSP intents, and QR on whichever device supports them.
+  const display: Record<string, unknown> = {
+    ...existingDisplay,
+    preferences: { show_default_blocks: true },
+    blocks: {
+      ...(typeof (existingDisplay as any).blocks === 'object' &&
+      (existingDisplay as any).blocks !== null
+        ? (existingDisplay as any).blocks
+        : {}),
+      upi: {
+        name: 'Pay using UPI',
+        instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
+      },
+    },
+    sequence: ['block.upi'],
+  };
+
+  const existingMethod =
+    typeof options.method === 'object' && options.method !== null ? options.method : {};
+
   const out: Record<string, any> = {
     ...options,
     prefill,
     theme: { ...existingTheme },
+    config: { ...existingConfig, display },
+    method: { ...existingMethod, upi: true },
   };
 
   console.log('Razorpay options:', out);
