@@ -4,7 +4,7 @@
 import type { Hono } from 'hono';
 import { query, select, update } from '../../../database/rds-connection';
 import { requireAdminAuth } from './admin.controller';
-import { createCustomerPortalCode } from '../../../lib/services/admin/customer-portal-session-service';
+import { createCustomerPortalCode, consumeCustomerPortalCodeAndBuildPayload } from '../../../lib/services/admin/customer-portal-session-service';
 
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -12,6 +12,47 @@ function normalizeIsActive(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   if (value === true || value === 1 || value === '1' || value === 't' || value === 'true') return true;
   return false;
+}
+
+/**
+ * Primary address line from `customers.address` — aligned with GET /customer/profile
+ * (string = full line; object = formatted_address or street / addressLine1).
+ */
+function primaryCustomerAddressText(cust: Record<string, unknown> | null | undefined): string {
+  if (!cust) return '';
+  const raw = cust.address;
+  if (raw == null || raw === '') return '';
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return '';
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        const o = JSON.parse(t) as Record<string, unknown>;
+        return primaryCustomerAddressText({ ...cust, address: o });
+      } catch {
+        return t;
+      }
+    }
+    return t;
+  }
+  if (typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    const formatted = String(o.formatted_address || o.formattedAddress || '').trim();
+    if (formatted) return formatted;
+    const street = String(o.street || o.addressLine1 || o.line1 || '').trim();
+    if (street) return street;
+  }
+  return '';
+}
+
+/** Full location for admin lists: prefer stored address line, then city/state/pincode. */
+function customerAdminDisplayLocation(cust: Record<string, unknown>): string {
+  const line = primaryCustomerAddressText(cust);
+  if (line) return line;
+  const city = String(cust.city ?? '').trim();
+  const state = String(cust.state ?? '').trim();
+  const pincode = String(cust.pincode ?? '').trim();
+  return [city, state, pincode].filter(Boolean).join(', ') || '';
 }
 
 async function gate(c: any) {
@@ -182,7 +223,8 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           const em = String(cust.email || '').toLowerCase();
           const ph = String(cust.phone || '');
           const ct = String(cust.city || '').toLowerCase();
-          return fn.includes(search) || em.includes(search) || ph.includes(search) || ct.includes(search);
+          const loc = customerAdminDisplayLocation(cust).toLowerCase();
+          return fn.includes(search) || em.includes(search) || ph.includes(search) || ct.includes(search) || loc.includes(search);
         });
       }
       if (city && city !== 'all') {
@@ -197,7 +239,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         ownerName: cust.full_name || '',
         tier: 'Standard',
         city: cust.city || '',
-        location: cust.city || cust.address || '',
+        location: customerAdminDisplayLocation(cust),
         category: 'customer',
         rating: 0,
         vendorType: 'solo',
@@ -232,7 +274,8 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           const fn = String(cust.full_name || '').toLowerCase();
           const ph = String(cust.phone || '');
           const em = String(cust.email || '').toLowerCase();
-          return fn.includes(search) || ph.includes(search) || em.includes(search);
+          const loc = customerAdminDisplayLocation(cust).toLowerCase();
+          return fn.includes(search) || ph.includes(search) || em.includes(search) || loc.includes(search);
         });
       }
       list = list.slice(0, limit);
@@ -250,7 +293,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         tier: 'Standard',
         isActive: false,
         vendorType: 'solo',
-        location: cust.city || null,
+        location: customerAdminDisplayLocation(cust) || null,
         city: cust.city || '',
         completedBookingsCount: 0,
         totalRevenue: 0,
@@ -774,6 +817,9 @@ export function registerAdminCustomerEndpoints(app: Hono) {
           email: cust.email,
           phone: cust.phone,
           city: cust.city,
+          state: cust.state,
+          pincode: cust.pincode,
+          location: customerAdminDisplayLocation(cust),
           status: cust.is_active === false ? 'inactive' : 'active',
         },
       });
@@ -796,6 +842,41 @@ export function registerAdminCustomerEndpoints(app: Hono) {
         );
       }
       return c.json({ success: true, code: result.code, expiresAt: result.expiresAt });
+    } catch (error: any) {
+      return c.json({ success: false, error: error?.message || 'Failed' }, 500);
+    }
+  });
+
+  /**
+   * Combined: create + immediately exchange a portal code for the customer session.
+   * Admin calls this so the customer-web receives a ready-to-use session via URL fragment,
+   * avoiding a direct customer-web → Lambda fetch (which can fail in certain network setups).
+   */
+  app.post('/admin/customers/:customerId/customer-portal-session', async (c) => {
+    const g = await gate(c);
+    if (!g.ok) return g.res;
+    try {
+      const customerId = c.req.param('customerId');
+      const adminId = (c.get('userId') as string | undefined) || g.userId;
+      const codeResult = await createCustomerPortalCode({ adminId, customerId });
+      if (!codeResult.ok) {
+        return c.json(
+          { success: false, error: codeResult.error, code: codeResult.errorCode },
+          codeResult.status as 400 | 403 | 404 | 500
+        );
+      }
+      const requestId = c.req.header('x-request-id') || `req-${Date.now()}`;
+      const sessionResult = await consumeCustomerPortalCodeAndBuildPayload({
+        code: codeResult.code,
+        requestId,
+      });
+      if (!sessionResult.ok) {
+        return c.json(
+          { success: false, error: sessionResult.error, code: sessionResult.errorCode },
+          sessionResult.status as 400 | 401 | 403 | 404 | 500
+        );
+      }
+      return c.json({ success: true, data: sessionResult.data });
     } catch (error: any) {
       return c.json({ success: false, error: error?.message || 'Failed' }, 500);
     }

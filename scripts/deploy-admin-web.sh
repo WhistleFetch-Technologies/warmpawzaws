@@ -94,6 +94,8 @@ if [ "$PROD" = false ] && [ -z "$API_BASE_URL" ]; then
     if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
       if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
         API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+      elif [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v node &>/dev/null; then
+        API_BASE_URL=$(node -e "const fs=require('fs'); const p=process.argv[1]; const j=JSON.parse(fs.readFileSync(p,'utf8')); console.log(j.apiGatewayDefaultUrl||'');" "$PROJECT_ROOT/config/urls.json")
       fi
     fi
   fi
