@@ -29,7 +29,8 @@ import {
 } from '../utils/customer-delivery-fee-quote';
 import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
-import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { resolveVendorId } from '../utils/vendor-resolve';
 import {
   mealPlanMatchesCustomerMealType,
   mealPlanMatchesCustomerPurpose,
@@ -317,7 +318,8 @@ export function registerMealPlanEndpoints(app: Hono) {
    */
   app.get("/meal-plans/vendor/:vendorId", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       const activeOnly = c.req.query('activeOnly') === 'true';
 
       let queryText = `
@@ -333,9 +335,52 @@ export function registerMealPlanEndpoints(app: Hono) {
       queryText += ` ORDER BY created_at DESC`;
 
       const result = await query(queryText, params);
+      const fromMealPlans = result.rows || [];
+
+      let productRows: any[] = [];
+      try {
+        let productsResult: any;
+        try {
+          productsResult = await query(
+            `SELECT * FROM products 
+             WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
+             ORDER BY created_at DESC`,
+            [vendorId],
+          );
+        } catch (colErr: any) {
+          if (colErr?.message?.includes('category') || colErr?.message?.includes('does not exist')) {
+            productsResult = await query(`SELECT * FROM products WHERE vendor_id = $1 ORDER BY created_at DESC`, [
+              vendorId,
+            ]);
+            if (productsResult?.rows?.length) {
+              productsResult.rows = productsResult.rows.filter((p: any) =>
+                ['meal_plan', 'nutrition', 'food'].includes(String(p.category || '').toLowerCase()),
+              );
+            }
+          } else {
+            throw colErr;
+          }
+        }
+        productRows = productsResult?.rows || [];
+      } catch (err: any) {
+        console.warn('[meal-plans/vendor] products query failed:', err?.message);
+      }
+
+      const fromProducts: Record<string, unknown>[] = [];
+      for (const p of productRows) {
+        if (activeOnly && p.is_active === false) continue;
+        const shaped = normalizeProductRowToMealPlanShape(p as Record<string, unknown>);
+        if (shaped) fromProducts.push(shaped);
+      }
+
+      const merged = [...fromMealPlans, ...fromProducts].sort((a: any, b: any) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      });
 
       const mealPlans = await Promise.all(
-        (result.rows || []).map(async (mp: any) => {
+        merged.map(async (mp: any) => {
           const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
             mp as Record<string, unknown>,
           );
@@ -892,7 +937,12 @@ export function registerMealPlanEndpoints(app: Hono) {
         );
       }
 
-      // Get meal plan
+      const resolvedPlan = await resolveMealPlanOrProductById(String(mealPlanId));
+      if (!resolvedPlan) {
+        return c.json({ error: 'Meal plan not found' }, 404);
+      }
+      await ensureMealPlanMirrorForProductCheckout(resolvedPlan);
+
       const plans = await select('meal_plans', { id: mealPlanId });
       if (plans.length === 0) {
         return c.json({ error: 'Meal plan not found' }, 404);

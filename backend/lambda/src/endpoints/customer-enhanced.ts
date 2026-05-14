@@ -445,6 +445,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           quantity: o.quantity,
           vendor_id: o.vendor_id,
           vendor_name: o.vendor_name,
+          subscription_id: o.subscription_id ?? null,
           total_amount: o.total_amount,
           status: o.status,
           delivery_address: o.delivery_address,

@@ -19,6 +19,53 @@ export type MealSubscriptionLifecycleFilter =
   | 'pending_payment';
 
 /**
+ * When a canonical `meal_subscription_deliveries` row is rescheduled, mirrored `meal_orders` (vendor
+ * nutrition queue + customer meal-plan list) must get the same `scheduled_delivery_date`.
+ */
+async function syncMirroredMealOrderDeliveryDateForCanonicalSession(options: {
+  subscriptionId: string;
+  canonicalDeliveryId: string;
+  deliveryDateYmd: string;
+}): Promise<void> {
+  const subId = String(options.subscriptionId || '').trim();
+  const cid = String(options.canonicalDeliveryId || '').trim();
+  if (!subId || !cid || !/^\d{4}-\d{2}-\d{2}$/.test(options.deliveryDateYmd)) return;
+  try {
+    const snap = await query(
+      `SELECT 1 AS ok FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'meal_orders' AND column_name = 'purchase_snapshot'
+       LIMIT 1`,
+    ).catch(() => ({ rows: [] as { ok: number }[] }));
+    const hasPurchaseSnapshot = ((snap as { rows?: unknown[] }).rows?.length || 0) > 0;
+    const likePat = `%__canonical_delivery_id__:${cid}__%`;
+
+    if (hasPurchaseSnapshot) {
+      await query(
+        `UPDATE meal_orders mo
+         SET scheduled_delivery_date = $1::date, updated_at = NOW()
+         WHERE mo.subscription_id = $2::uuid
+           AND (
+             (mo.purchase_snapshot IS NOT NULL AND (mo.purchase_snapshot->>'canonicalDeliveryId') = $3)
+             OR (mo.special_instructions IS NOT NULL AND mo.special_instructions LIKE $4)
+           )`,
+        [options.deliveryDateYmd, subId, cid, likePat],
+      );
+    } else {
+      await query(
+        `UPDATE meal_orders mo
+         SET scheduled_delivery_date = $1::date, updated_at = NOW()
+         WHERE mo.subscription_id = $2::uuid
+           AND mo.special_instructions IS NOT NULL
+           AND mo.special_instructions LIKE $3`,
+        [options.deliveryDateYmd, subId, likePat],
+      );
+    }
+  } catch (e) {
+    console.warn('[meal-subscription] syncMirroredMealOrderDeliveryDateForCanonicalSession skipped:', e);
+  }
+}
+
+/**
  * Idempotent: marks a canonical delivery delivered and bumps subscription session counters once.
  * Use when `meal_orders` mirrors a subscription session (`purchase_snapshot.canonicalDeliveryId`).
  */
@@ -445,6 +492,14 @@ export async function rescheduleCanonicalDeliverySession(
      WHERE id = $1`,
     [deliveryId, newDeliveryDate],
   );
+  const subId = String(own.subscription.id || '').trim();
+  if (subId) {
+    await syncMirroredMealOrderDeliveryDateForCanonicalSession({
+      subscriptionId: subId,
+      canonicalDeliveryId: deliveryId,
+      deliveryDateYmd: newDeliveryDate,
+    });
+  }
   const out = await query(`SELECT * FROM meal_subscription_deliveries WHERE id = $1`, [deliveryId]);
   const drow = out.rows?.[0] as Record<string, unknown>;
   await broadcastDeliveryUpdate(drow, own.subscription, 'rescheduled');

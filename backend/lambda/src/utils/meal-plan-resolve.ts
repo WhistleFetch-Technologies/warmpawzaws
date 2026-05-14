@@ -5,6 +5,7 @@
 
 import { query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
+import { normalizePurchaseType } from './meal-purchase-metadata';
 
 function parseJsonObject(v: unknown): Record<string, unknown> {
   if (v == null || v === '') return {};
@@ -61,6 +62,93 @@ function mealCategoryAllowed(category: unknown): boolean {
 }
 
 /**
+ * Maps a `products` row (meal_plan / nutrition / food) to a row shaped like `meal_plans`
+ * for catalog parity with `resolveMealPlanOrProductById`.
+ */
+export function normalizeProductRowToMealPlanShape(p: Record<string, unknown>): Record<string, unknown> | null {
+  if (p?.id == null) return null;
+  if (
+    p.category !== undefined &&
+    p.category !== null &&
+    String(p.category).trim() !== '' &&
+    !mealCategoryAllowed(p.category)
+  ) {
+    return null;
+  }
+
+  const meta = mergeProductMeta(p);
+  const mealImageUrlRaw = meta.mealImageUrl;
+  const mealImageUrl =
+    typeof mealImageUrlRaw === 'string' && mealImageUrlRaw.trim() ? mealImageUrlRaw.trim() : undefined;
+
+  const ingredients = Array.isArray(meta.ingredients) ? meta.ingredients : [];
+  const nutritionalValue =
+    meta.nutritionalValue && typeof meta.nutritionalValue === 'object' && !Array.isArray(meta.nutritionalValue)
+      ? meta.nutritionalValue
+      : {};
+
+  const dietType = coerceDietType(meta.dietType);
+  const suitableRaw = meta.suitableFor;
+  const suitableFor =
+    suitableRaw && typeof suitableRaw === 'object' && !Array.isArray(suitableRaw)
+      ? suitableRaw
+      : petTypesToSuitableFor(meta.petTypes);
+
+  const photos = photosFromProduct(meta, p);
+  const priceRaw = p.price;
+  const price =
+    priceRaw != null && priceRaw !== ''
+      ? typeof priceRaw === 'number'
+        ? priceRaw
+        : parseFloat(String(priceRaw).replace(/,/g, ''))
+      : 0;
+  const safePrice = Number.isFinite(price) ? price : 0;
+
+  const dietary_requirements: Record<string, unknown> = {
+    ...meta,
+    ingredients,
+    nutritionalValue,
+    ...(mealImageUrl ? { mealImageUrl } : {}),
+  };
+
+  const prepLead = meta.preparationLeadTime;
+  const shelfLife = meta.shelfLifeDays;
+
+  return {
+    id: p.id,
+    vendor_id: p.vendor_id,
+    name: p.name,
+    plan_name: p.name,
+    description: p.description ?? '',
+    short_description: typeof meta.shortDescription === 'string' ? meta.shortDescription : null,
+    photos: JSON.stringify(photos),
+    thumbnail_url: mealImageUrl ?? null,
+    meal_type: typeof meta.mealType === 'string' ? meta.mealType : 'fresh_daily',
+    diet_type: dietType,
+    suitable_for: JSON.stringify(suitableFor),
+    ingredients: JSON.stringify(ingredients),
+    nutrition_info: JSON.stringify(nutritionalValue),
+    allergens: Array.isArray(meta.allergens) ? meta.allergens : [],
+    price_per_meal: safePrice,
+    price: safePrice,
+    prep_time_minutes: typeof meta.prepTimeMinutes === 'number' ? meta.prepTimeMinutes : 60,
+    shelf_life_days: typeof shelfLife === 'number' ? shelfLife : 7,
+    storage_instructions:
+      typeof meta.storageInstructions === 'string' ? meta.storageInstructions : null,
+    serving_instructions:
+      typeof meta.feedingInstructions === 'string' ? meta.feedingInstructions : null,
+    available_days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    order_cutoff_time: '18:00',
+    delivery_slots: JSON.stringify(Array.isArray(meta.deliverySlots) ? meta.deliverySlots : []),
+    lead_time_hours: typeof prepLead === 'number' ? prepLead : 24,
+    is_active: p.is_active !== false,
+    dietary_requirements,
+    created_at: p.created_at,
+    updated_at: p.updated_at,
+  };
+}
+
+/**
  * Returns a DB-shaped meal plan row for GET /meal-plans/:id and order-preview,
  * or null if neither meal_plans nor products contains a matching meal SKU.
  */
@@ -98,78 +186,137 @@ export async function resolveMealPlanOrProductById(planId: string): Promise<Reco
 
     const p = prodRes.rows?.[0];
     if (!p) return null;
-
-    const meta = mergeProductMeta(p);
-    const mealImageUrlRaw = meta.mealImageUrl;
-    const mealImageUrl =
-      typeof mealImageUrlRaw === 'string' && mealImageUrlRaw.trim() ? mealImageUrlRaw.trim() : undefined;
-
-    const ingredients = Array.isArray(meta.ingredients) ? meta.ingredients : [];
-    const nutritionalValue =
-      meta.nutritionalValue && typeof meta.nutritionalValue === 'object' && !Array.isArray(meta.nutritionalValue)
-        ? meta.nutritionalValue
-        : {};
-
-    const dietType = coerceDietType(meta.dietType);
-    const suitableRaw = meta.suitableFor;
-    const suitableFor =
-      suitableRaw && typeof suitableRaw === 'object' && !Array.isArray(suitableRaw)
-        ? suitableRaw
-        : petTypesToSuitableFor(meta.petTypes);
-
-    const photos = photosFromProduct(meta, p);
-    const priceRaw = p.price;
-    const price =
-      priceRaw != null && priceRaw !== ''
-        ? typeof priceRaw === 'number'
-          ? priceRaw
-          : parseFloat(String(priceRaw).replace(/,/g, ''))
-        : 0;
-    const safePrice = Number.isFinite(price) ? price : 0;
-
-    const dietary_requirements: Record<string, unknown> = {
-      ...meta,
-      ingredients,
-      nutritionalValue,
-      ...(mealImageUrl ? { mealImageUrl } : {}),
-    };
-
-    const prepLead = meta.preparationLeadTime;
-    const shelfLife = meta.shelfLifeDays;
-
-    return {
-      id: p.id,
-      vendor_id: p.vendor_id,
-      name: p.name,
-      plan_name: p.name,
-      description: p.description ?? '',
-      short_description: typeof meta.shortDescription === 'string' ? meta.shortDescription : null,
-      photos: JSON.stringify(photos),
-      thumbnail_url: mealImageUrl ?? null,
-      meal_type: typeof meta.mealType === 'string' ? meta.mealType : 'fresh_daily',
-      diet_type: dietType,
-      suitable_for: JSON.stringify(suitableFor),
-      ingredients: JSON.stringify(ingredients),
-      nutrition_info: JSON.stringify(nutritionalValue),
-      allergens: Array.isArray(meta.allergens) ? meta.allergens : [],
-      price_per_meal: safePrice,
-      price: safePrice,
-      prep_time_minutes: typeof meta.prepTimeMinutes === 'number' ? meta.prepTimeMinutes : 60,
-      shelf_life_days: typeof shelfLife === 'number' ? shelfLife : 7,
-      storage_instructions:
-        typeof meta.storageInstructions === 'string' ? meta.storageInstructions : null,
-      serving_instructions:
-        typeof meta.feedingInstructions === 'string' ? meta.feedingInstructions : null,
-      available_days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-      order_cutoff_time: '18:00',
-      delivery_slots: JSON.stringify(Array.isArray(meta.deliverySlots) ? meta.deliverySlots : []),
-      lead_time_hours: typeof prepLead === 'number' ? prepLead : 24,
-      is_active: p.is_active !== false,
-      dietary_requirements,
-    };
+    return normalizeProductRowToMealPlanShape(p as Record<string, unknown>);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[meal-plan-resolve] products lookup failed:', msg);
     return null;
+  }
+}
+
+function parseJsonLoose(v: unknown): unknown {
+  if (typeof v !== 'string') return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}
+
+/**
+ * `meal_orders.meal_plan_id` references `meal_plans(id)`. Nutrition SKUs that live only in
+ * `products` must be mirrored into `meal_plans` (same id as the product) before inserting an order.
+ * Idempotent: no-op if a row already exists.
+ */
+export async function ensureMealPlanMirrorForProductCheckout(resolved: Record<string, unknown>): Promise<void> {
+  const idStr = String(resolved.id ?? '').trim();
+  if (!idStr || !isValidUUID(idStr)) return;
+
+  const exists = await query(`SELECT 1 FROM meal_plans WHERE id = $1::uuid LIMIT 1`, [idStr]);
+  if (exists.rows?.length) return;
+
+  const metaR = await query(
+    `SELECT column_name, data_type FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'meal_plans'`,
+    [],
+  );
+  const colMeta = (metaR.rows || []) as { column_name: string; data_type: string }[];
+  const colSet = new Set(colMeta.map((r) => r.column_name));
+  const jsonbCols = new Set(
+    colMeta.filter((r) => r.data_type === 'jsonb' || r.data_type === 'json').map((r) => r.column_name),
+  );
+
+  const dr =
+    resolved.dietary_requirements &&
+    typeof resolved.dietary_requirements === 'object' &&
+    !Array.isArray(resolved.dietary_requirements)
+      ? (resolved.dietary_requirements as Record<string, unknown>)
+      : {};
+
+  const planName = String(resolved.plan_name ?? resolved.name ?? 'Meal');
+  const name = String(resolved.name ?? planName);
+
+  const candidates: Record<string, unknown> = {
+    id: idStr,
+    vendor_id: resolved.vendor_id,
+    plan_name: planName,
+    description: resolved.description ?? '',
+    price_per_meal: resolved.price_per_meal ?? resolved.price ?? 0,
+    price: resolved.price ?? resolved.price_per_meal ?? 0,
+    prep_time_minutes: Number(resolved.prep_time_minutes) || 60,
+    shelf_life_days: Number(resolved.shelf_life_days) || 7,
+    lead_time_hours: Number(resolved.lead_time_hours) || 24,
+    meal_type: resolved.meal_type ?? 'fresh_daily',
+    is_active: resolved.is_active !== false,
+    thumbnail_url: resolved.thumbnail_url ?? null,
+    storage_instructions: resolved.storage_instructions ?? null,
+    serving_instructions: resolved.serving_instructions ?? null,
+    order_cutoff_time: resolved.order_cutoff_time ?? '18:00',
+    dietary_requirements: dr,
+    allergens: Array.isArray(resolved.allergens) ? resolved.allergens : [],
+    diet_type: Array.isArray(resolved.diet_type) ? resolved.diet_type : [],
+    available_days: Array.isArray(resolved.available_days)
+      ? resolved.available_days
+      : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+  };
+
+  if (colSet.has('name')) candidates.name = name;
+  if (colSet.has('short_description')) candidates.short_description = resolved.short_description ?? null;
+
+  const photos = parseJsonLoose(resolved.photos);
+  candidates.photos = Array.isArray(photos) ? photos : [];
+  const sf = parseJsonLoose(resolved.suitable_for);
+  candidates.suitable_for = sf && typeof sf === 'object' && !Array.isArray(sf) ? sf : {};
+  const ing = parseJsonLoose(resolved.ingredients);
+  candidates.ingredients = Array.isArray(ing) ? ing : [];
+  const ni = parseJsonLoose(resolved.nutrition_info);
+  candidates.nutrition_info = ni && typeof ni === 'object' && !Array.isArray(ni) ? ni : {};
+  const ds = parseJsonLoose(resolved.delivery_slots);
+  candidates.delivery_slots = Array.isArray(ds) ? ds : [];
+
+  if (colSet.has('meals_per_day')) {
+    const m = dr.mealsPerDay;
+    const n = typeof m === 'number' ? m : parseInt(String(m || '1'), 10);
+    candidates.meals_per_day = Number.isFinite(n) && n >= 1 ? Math.min(50, n) : 1;
+  }
+  if (colSet.has('duration_days')) {
+    const d = dr.shelfLife ?? dr.shelfLifeDays ?? resolved.shelf_life_days;
+    const n = typeof d === 'number' ? d : parseInt(String(d || '1'), 10);
+    candidates.duration_days = Number.isFinite(n) && n >= 1 ? Math.min(365, n) : 1;
+  }
+  if (colSet.has('purchase_type')) {
+    candidates.purchase_type = normalizePurchaseType(dr as Record<string, unknown>);
+  }
+  if (colSet.has('subscription_config') && dr.subscriptionConfig && typeof dr.subscriptionConfig === 'object') {
+    candidates.subscription_config = dr.subscriptionConfig;
+  }
+
+  const keys = Object.keys(candidates).filter((k) => colSet.has(k));
+  if (!keys.includes('vendor_id') || !keys.includes('plan_name')) {
+    throw new Error('meal_plans mirror: schema missing vendor_id or plan_name');
+  }
+
+  const values: unknown[] = keys.map((k) => {
+    const v = candidates[k];
+    if (jsonbCols.has(k)) {
+      if (v === null || v === undefined) return '{}';
+      return JSON.stringify(v);
+    }
+    return v;
+  });
+
+  const placeholders = keys.map((k, i) => (jsonbCols.has(k) ? `$${i + 1}::jsonb` : `$${i + 1}`)).join(', ');
+  const colList = keys.map((k) => `"${k}"`).join(', ');
+
+  try {
+    await query(
+      `INSERT INTO meal_plans (${colList}) VALUES (${placeholders}) ON CONFLICT (id) DO NOTHING`,
+      values,
+    );
+  } catch (e) {
+    const again = await query(`SELECT 1 FROM meal_plans WHERE id = $1::uuid LIMIT 1`, [idStr]);
+    if (again.rows?.length) return;
+    console.error('[meal-plan-resolve] ensureMealPlanMirror insert failed:', e);
+    throw e;
   }
 }

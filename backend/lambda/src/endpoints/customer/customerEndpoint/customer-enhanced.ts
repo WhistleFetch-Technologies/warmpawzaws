@@ -517,6 +517,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           quantity: o.quantity,
           vendor_id: o.vendor_id,
           vendor_name: o.vendor_name,
+          subscription_id: o.subscription_id ?? null,
           subtotal,
           total_amount: total,
           status: o.status,

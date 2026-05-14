@@ -28,6 +28,8 @@ import { toast } from 'sonner';
 export interface MealPlanOrder {
   id: string;
   order_number: string;
+  /** Present when this row mirrors a canonical weekly/monthly subscription session. */
+  subscription_id?: string | null;
   meal_plan_id: string;
   meal_plan_name: string;
   pet_id: string;
@@ -108,6 +110,7 @@ export function MealPlanOrdersPanel({
         const r = response as { orders?: unknown[] };
         const mealPlanOrders = (r?.orders || []).map((o: Record<string, unknown>) => ({
           ...o,
+          subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
           meal_plan_name: (o.meal_plan_name as string) || (o.meal_plan_id as string) || 'Meal Plan',
           pet_name: (o.pet_name as string) || undefined,
           quantity: o.quantity != null ? Number(o.quantity) : undefined,
@@ -437,16 +440,27 @@ export function MealPlanOrdersPanel({
                   </div>
                 )}
 
-                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-gray-600">
                     Ordered: {new Date(order.created_at).toLocaleString()}
                   </div>
-                  <button
-                    onClick={(e) => handleTrackClick(order.id, e)}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                  >
-                    Track Order
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                    {order.subscription_id ? (
+                      <Link
+                        href={`/subscriptions/detail?id=${encodeURIComponent(order.subscription_id)}`}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold border border-orange-300 text-orange-700 bg-white hover:bg-orange-50"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Reschedule in subscription
+                      </Link>
+                    ) : null}
+                    <button
+                      onClick={(e) => handleTrackClick(order.id, e)}
+                      className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                    >
+                      Track Order
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
+import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -223,6 +224,7 @@ function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
 
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
   const router = useRouter();
+  const { subscribeToMealSubscriptionDeliveryBroadcast } = useVendorWebSocket(vendorId);
   const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'analytics'>('products');
   const [products, setProducts] = useState<MealProduct[]>([]);
   const [orders, setOrders] = useState<MealOrder[]>([]);
@@ -392,6 +394,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [activeTab, fetchOrders]);
+
+  /** Customer reschedule/skip/pause on canonical sessions updates DB; refetch meal_orders-backed list. */
+  useEffect(() => {
+    const unsub = subscribeToMealSubscriptionDeliveryBroadcast(() => {
+      if (activeTab === 'orders') void fetchOrders();
+    });
+    return () => unsub();
+  }, [subscribeToMealSubscriptionDeliveryBroadcast, fetchOrders, activeTab]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
