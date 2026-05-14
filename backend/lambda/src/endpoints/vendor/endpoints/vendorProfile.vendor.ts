@@ -29,6 +29,8 @@ import {
   resolveAndPersistVendorType,
   enrichVendorLocationFromOnboardingApplication,
   inferVendorKindFromServiceCategory,
+  appendVendorGeocodeToProfileUpdate,
+  persistVendorGeocodeIfNeeded,
   type VendorKind,
 } from './vendor-profile.vendor';
 
@@ -1004,6 +1006,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
           updateData[key] = value;
         }
       }
+
+      await appendVendorGeocodeToProfileUpdate({
+        vendor,
+        updateData,
+        rawUpdates: rawUpdates as Record<string, any>,
+        existingColumns,
+      });
       
       // Log skipped fields for debugging
       const skippedFields = Object.keys(updates).filter(k => !existingColumns.has(k) && safeColumns.includes(k));
@@ -1208,6 +1217,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       // ✅ Align with vendor-profile.vendor: location backfill, persist vendor_type, parse roles.config JSON string
       vendor = await enrichVendorLocationFromOnboardingApplication(vendor);
+      vendor = await persistVendorGeocodeIfNeeded(vendor);
       const resolvedVt = await resolveAndPersistVendorType(vendor);
       vendor = { ...vendor, vendor_type: resolvedVt };
       
