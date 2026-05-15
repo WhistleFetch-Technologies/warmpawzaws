@@ -1331,6 +1331,11 @@ export function VendorBookingManagement({
                       key={booking.id} 
                       className="border border-gray-200 rounded-xl p-3 cursor-pointer hover:shadow-lg hover:border-[#FF8C42] transition-all"
                       onClick={() => {
+                        // Dismiss list-level OTP so it cannot reappear under / after the details modal.
+                        setShowOTPModal(false);
+                        setSelectedBooking(null);
+                        setOtpInput('');
+                        setOtpError('');
                         setDetailBookingId(booking.id);
                         setShowAppointmentDetail(true);
                       }}
@@ -1460,7 +1465,10 @@ export function VendorBookingManagement({
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleCompleteBooking(booking)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCompleteBooking(booking);
+                                    }}
                                     disabled={completingBooking}
                                     className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                   >
@@ -1486,7 +1494,10 @@ export function VendorBookingManagement({
                           <div className="mt-3">
                             <button
                               type="button"
-                              onClick={() => handleCompleteBooking(booking)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCompleteBooking(booking);
+                              }}
                               disabled={completingBooking}
                               className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                             >

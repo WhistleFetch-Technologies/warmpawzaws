@@ -397,6 +397,169 @@ export async function enrichVendorLocationFromOnboardingApplication(vendor: any)
   }
 }
 
+/** True when `vendors.latitude` / `longitude` are absent or not usable for maps / distance. */
+export function vendorRowMissingCoords(v: { latitude?: unknown; longitude?: unknown } | null | undefined): boolean {
+  if (!v) return true;
+  const lat = v.latitude;
+  const lng = v.longitude;
+  if (lat == null || lng == null || lat === '' || lng === '') return true;
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return true;
+  if (Math.abs(la) < 1e-6 && Math.abs(lo) < 1e-6) return true;
+  return false;
+}
+
+function joinAddressQueryParts(parts: unknown[]): string {
+  return parts
+    .map((p) => (p != null ? String(p).trim() : ''))
+    .filter((s) => s.length > 0 && s.toLowerCase() !== 'not specified')
+    .join(', ');
+}
+
+/**
+ * Build a single geocoding query from vendor row + optional PATCH (snake_case keys).
+ * Handles JSON `vendors.address` objects and plain-text address lines.
+ */
+export function buildVendorGeocodeQueryString(
+  vendor: Record<string, unknown>,
+  patch: Record<string, unknown>
+): string {
+  const addrRaw = patch.address !== undefined ? patch.address : vendor.address;
+  let line = '';
+  if (addrRaw != null && typeof addrRaw === 'object') {
+    const o = addrRaw as Record<string, unknown>;
+    line = joinAddressQueryParts([
+      o.line1,
+      o.line2,
+      o.street,
+      o.address,
+      o.addressLine,
+      o.address_line,
+    ]);
+  } else if (typeof addrRaw === 'string') {
+    const s = addrRaw.trim();
+    if (s.startsWith('{') || s.startsWith('[')) {
+      try {
+        const o = JSON.parse(s) as Record<string, unknown>;
+        line = joinAddressQueryParts([
+          o.line1,
+          o.line2,
+          o.street,
+          o.address,
+          o.addressLine,
+          o.address_line,
+        ]);
+      } catch {
+        line = s;
+      }
+    } else {
+      line = s;
+    }
+  }
+  const city =
+    patch.city !== undefined ? String(patch.city ?? '').trim() : String(vendor.city ?? '').trim();
+  const state =
+    patch.state !== undefined ? String(patch.state ?? '').trim() : String(vendor.state ?? '').trim();
+  const pincode =
+    patch.pincode !== undefined ? String(patch.pincode ?? '').trim() : String(vendor.pincode ?? '').trim();
+
+  return joinAddressQueryParts([line, city, state, pincode, 'India']);
+}
+
+/**
+ * Geocode vendor business address (Google when `GOOGLE_MAPS_API_KEY` / secret is configured).
+ * Returns null when the query is too thin or geocoding fails.
+ */
+export async function resolveGeocodeCoordsForVendorAddress(args: {
+  vendor: Record<string, unknown>;
+  patch: Record<string, unknown>;
+}): Promise<{ latitude: number; longitude: number } | null> {
+  const q = buildVendorGeocodeQueryString(args.vendor, args.patch);
+  if (q.replace(/,/g, '').trim().length < 6) return null;
+
+  const { geocodeAddress, geocodeIndiaPincode } = await import('../../../lib/utils/geocode');
+  const byAddr = await geocodeAddress(q);
+  if (byAddr?.latitude != null && byAddr.longitude != null) {
+    return { latitude: byAddr.latitude, longitude: byAddr.longitude };
+  }
+
+  const pinSource =
+    args.patch.pincode !== undefined ? String(args.patch.pincode ?? '') : String(args.vendor.pincode ?? '');
+  const pin = pinSource.replace(/\D/g, '');
+  if (pin.length === 6) {
+    const byPin = await geocodeIndiaPincode(pin);
+    if (byPin?.latitude != null && byPin.longitude != null) {
+      return { latitude: byPin.latitude, longitude: byPin.longitude };
+    }
+  }
+  return null;
+}
+
+/**
+ * When coordinates are missing but we have enough address text, persist lat/lng on `vendors`.
+ * Returns the vendor object merged with new coordinates when a write succeeds.
+ */
+export async function persistVendorGeocodeIfNeeded(vendor: any): Promise<any> {
+  if (!vendor?.id || !vendorRowMissingCoords(vendor)) return vendor;
+  const coords = await resolveGeocodeCoordsForVendorAddress({ vendor, patch: {} });
+  if (!coords) return vendor;
+  try {
+    await update(
+      'vendors',
+      { id: vendor.id },
+      {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        updated_at: new Date().toISOString(),
+      }
+    );
+    return { ...vendor, latitude: coords.latitude, longitude: coords.longitude };
+  } catch (e) {
+    console.warn('[PROFILE] persistVendorGeocodeIfNeeded failed:', e instanceof Error ? e.message : e);
+    return vendor;
+  }
+}
+
+/**
+ * On profile PATCH, when address fields are updated and the client did not send coordinates,
+ * fill `latitude` / `longitude` via geocoding (same source as pincode centroid elsewhere).
+ */
+export async function appendVendorGeocodeToProfileUpdate(opts: {
+  vendor: any;
+  updateData: Record<string, any>;
+  rawUpdates: Record<string, any>;
+  existingColumns: Set<string>;
+}): Promise<void> {
+  const { vendor, updateData, rawUpdates, existingColumns } = opts;
+  if (!existingColumns.has('latitude') || !existingColumns.has('longitude')) return;
+
+  const clientProvidedLatLon =
+    updateData.latitude !== undefined ||
+    updateData.longitude !== undefined ||
+    rawUpdates.latitude !== undefined ||
+    rawUpdates.longitude !== undefined ||
+    (rawUpdates as any).lat !== undefined ||
+    (rawUpdates as any).lng !== undefined;
+  if (clientProvidedLatLon) return;
+
+  const addrKeys = ['address', 'city', 'state', 'pincode'] as const;
+  const touched = addrKeys.some((k) => updateData[k] !== undefined);
+  if (!touched) return;
+
+  let changed = false;
+  for (const k of addrKeys) {
+    if (updateData[k] === undefined) continue;
+    if (String(updateData[k] ?? '') !== String(vendor[k] ?? '')) changed = true;
+  }
+  if (!changed) return;
+
+  const coords = await resolveGeocodeCoordsForVendorAddress({ vendor, patch: updateData });
+  if (!coords) return;
+  updateData.latitude = coords.latitude;
+  updateData.longitude = coords.longitude;
+}
+
 /** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
 export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const trimmedId = (vendorId || '').trim();
