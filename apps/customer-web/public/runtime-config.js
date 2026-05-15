@@ -65,7 +65,7 @@
       apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
       uatMode: mapped.uatMode,
       environment: mapped.environment,
-      customerEcommerceEnabled: Boolean(mapped.customerEcommerceEnabled)
+      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false
     };
   } else {
     // Fallback to production

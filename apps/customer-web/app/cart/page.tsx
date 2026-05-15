@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
   ShoppingCart,
   Minus,
@@ -15,7 +16,6 @@ import {
 } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
-import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface CartItem {
   product_id: string;
@@ -37,10 +37,13 @@ export default function CartPage() {
   const [couponCode, setCouponCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [fromBuyNow, setFromBuyNow] = useState(false);
+  const commerceEnabled = isCustomerEcommerceEnabled();
 
   useEffect(() => {
+    if (!commerceEnabled) return;
     loadCart();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceEnabled]);
 
   useEffect(() => {
     if (loading || !fromBuyNow || cart.length === 0) return;
@@ -52,6 +55,26 @@ export default function CartPage() {
     }, 200);
     return () => clearTimeout(t);
   }, [loading, fromBuyNow, cart.length]);
+
+  if (!commerceEnabled) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <button
+          type="button"
+          onClick={() => goBackOrReplace(router, '/')}
+          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
+          aria-label="Back"
+        >
+          <ShoppingCart className="h-5 w-5 text-gray-700" />
+        </button>
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-200" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="text-gray-500">The marketplace cart will be available when the shop launches.</p>
+        </div>
+      </div>
+    );
+  }
 
   const loadCart = () => {
     if (typeof window !== 'undefined') {
@@ -107,27 +130,6 @@ export default function CartPage() {
 
   const scrollPad =
     'pb-[calc(5.75rem+env(safe-area-inset-bottom,0px)+12px)]';
-
-  if (!isCustomerEcommerceEnabled()) {
-    return (
-      <div className="mx-auto flex min-h-screen w-full max-w-customer flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 px-4">
-        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
-          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-300" />
-          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
-          <p className="mb-6 text-gray-500">
-            Online cart and checkout will be available when the marketplace launches.
-          </p>
-          <button
-            type="button"
-            onClick={() => goBackOrReplace(router, '/')}
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-semibold text-white"
-          >
-            Go home
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
