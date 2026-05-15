@@ -326,6 +326,162 @@ function sqlVendorMatchesDeclaredSpecialization(paramBase: number): string {
           )`;
 }
 
+type VendorRowForSpecBundle = {
+  vendor_id: string;
+  metadata?: unknown;
+  /** Populated when `vendors.specializations` column exists (alias in SQL). */
+  v_specs_jsonb?: unknown;
+};
+
+/**
+ * Load merged vendor specialization keys (vendor_specializations + JSONB + metadata)
+ * and resolve human-readable labels via specialization_master (one batched query).
+ * Used by GET /customer/discover-services and GET /customer/services/by-style so the
+ * customer app can show badges/filters and match tile labels to stored UUIDs/slugs.
+ */
+async function batchLoadVendorSpecializationsForDiscovery(
+  rows: VendorRowForSpecBundle[]
+): Promise<Map<string, { raw: string[]; displayLabels: string[] }>> {
+  const out = new Map<string, { raw: string[]; displayLabels: string[] }>();
+  if (!rows?.length) return out;
+
+  const idList = [...new Set(rows.map((r) => String(r.vendor_id || '').trim()).filter(Boolean))];
+  if (idList.length === 0) return out;
+
+  const metaSpecsByVendor = new Map<string, string[]>();
+  const jsonbSpecsByVendor = new Map<string, string[]>();
+
+  for (const row of rows) {
+    const vid = String(row.vendor_id || '').trim();
+    if (!vid) continue;
+
+    try {
+      const meta =
+        typeof row.metadata === 'string' ? JSON.parse(row.metadata || '{}') : (row.metadata || {});
+      const m = (meta as any)?.specializations;
+      if (Array.isArray(m)) {
+        const arr = m
+          .map((x: any) =>
+            typeof x === 'string' ? x.trim() : String(x?.id ?? x ?? '').trim()
+          )
+          .filter(Boolean);
+        if (arr.length) metaSpecsByVendor.set(vid, arr);
+      }
+    } catch {
+      /* non-fatal */
+    }
+
+    if (row.v_specs_jsonb != null) {
+      try {
+        let arr: string[] = [];
+        if (Array.isArray(row.v_specs_jsonb)) {
+          arr = row.v_specs_jsonb.map((x: any) => String(x).trim()).filter(Boolean);
+        } else if (typeof row.v_specs_jsonb === 'string') {
+          const parsed = JSON.parse(row.v_specs_jsonb || '[]');
+          arr = Array.isArray(parsed) ? parsed.map((x: any) => String(x).trim()).filter(Boolean) : [];
+        }
+        if (arr.length) jsonbSpecsByVendor.set(vid, arr);
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }
+
+  let tableRows: { vendor_id: string; specialization: string }[] = [];
+  try {
+    const res = await query(
+      `SELECT vendor_id::text AS vendor_id, specialization
+       FROM vendor_specializations
+       WHERE vendor_id = ANY($1::uuid[])`,
+      [idList]
+    );
+    tableRows = (res.rows || []) as { vendor_id: string; specialization: string }[];
+  } catch {
+    tableRows = [];
+  }
+
+  const tableByVendor = new Map<string, string[]>();
+  for (const r of tableRows) {
+    const vid = String(r.vendor_id || '').trim();
+    const s = String(r.specialization || '').trim();
+    if (!vid || !s) continue;
+    if (!tableByVendor.has(vid)) tableByVendor.set(vid, []);
+    tableByVendor.get(vid)!.push(s);
+  }
+
+  const rawByVendor = new Map<string, string[]>();
+  for (const vid of idList) {
+    const fromTable = tableByVendor.get(vid) || [];
+    const fromJsonb = jsonbSpecsByVendor.get(vid) || [];
+    const fromMeta = metaSpecsByVendor.get(vid) || [];
+    /** Union all sources (deduped) — facility sync can lag one store; discovery must not drop specs. */
+    const merged: string[] = [...fromTable, ...fromJsonb, ...fromMeta];
+
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    for (const x of merged) {
+      const k = String(x).trim();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      deduped.push(k);
+    }
+    rawByVendor.set(vid, deduped);
+  }
+
+  const allRaw = new Set<string>();
+  for (const arr of rawByVendor.values()) {
+    for (const x of arr) allRaw.add(x);
+  }
+
+  const labelByRaw = new Map<string, string>();
+  const keys = Array.from(allRaw).filter((k) => k.length > 0);
+  if (keys.length > 0) {
+    try {
+      const res = await query(
+        `SELECT DISTINCT ON (q.inval)
+            q.inval AS raw_in,
+            COALESCE(
+              NULLIF(TRIM(sm.display_name), ''),
+              NULLIF(TRIM(sm.name), ''),
+              NULLIF(TRIM(sm.specialization_id), ''),
+              q.inval
+            ) AS lbl
+         FROM unnest($1::text[]) AS q(inval)
+         LEFT JOIN specialization_master sm
+           ON sm.is_active = true
+          AND (
+                sm.id::text = TRIM(q.inval)
+             OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(q.inval))
+             OR LOWER(TRIM(sm.name)) = LOWER(TRIM(q.inval))
+             OR LOWER(TRIM(sm.display_name)) = LOWER(TRIM(q.inval))
+             OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g')
+                = regexp_replace(LOWER(TRIM(q.inval)), '[^a-z0-9]+', '_', 'g')
+          )
+         ORDER BY q.inval, sm.id NULLS LAST`,
+        [keys]
+      );
+      for (const r of res.rows || []) {
+        const rawIn = String((r as any).raw_in || '').trim();
+        if (!rawIn) continue;
+        labelByRaw.set(rawIn, String((r as any).lbl || rawIn));
+      }
+      for (const k of keys) {
+        if (!labelByRaw.has(k)) labelByRaw.set(k, k);
+      }
+    } catch {
+      for (const k of keys) labelByRaw.set(k, k);
+    }
+  }
+
+  for (const vid of idList) {
+    const raw = rawByVendor.get(vid) || [];
+    const displayLabels = raw.map((k) => labelByRaw.get(k) || k);
+    out.set(vid, { raw, displayLabels });
+  }
+
+  return out;
+}
+
 /**
  * Safely parse operating_hours from the vendors table.
  * Returns the parsed object if valid JSON, or null if it's plain text / malformed.
@@ -488,6 +644,7 @@ const TRAINING_HUB_ROLE_NAMES_LOWER: readonly string[] = [
   'pet_trainer',
   'trainer_solo',
   'trainer_center',
+  'training_center',
   'training_solo',
   'behaviorist_solo',
   'behaviorist_center',
@@ -968,7 +1125,7 @@ function getCategoryFromRole(roleId: string): string {
     // Grooming
     'grooming_salon': 'grooming', 'pet_groomer': 'grooming', 'groomer': 'grooming', 'groomer_solo': 'grooming', 'groomer_center': 'grooming', 'grooming_solo': 'grooming',
     // Training
-    'trainer': 'training', 'pet_trainer': 'training', 'trainer_solo': 'training', 'trainer_center': 'training', 'training_solo': 'training', 'solo': 'training',
+    'trainer': 'training', 'pet_trainer': 'training', 'trainer_solo': 'training', 'trainer_center': 'training', 'training_center': 'training', 'training_solo': 'training', 'solo': 'training',
     // Walker
     'dog_walker': 'walker', 'pet_walker': 'walker', 'walker': 'walker', 'walker_solo': 'walker', 'walking': 'walker',
     // Boarding
@@ -1038,7 +1195,7 @@ const ROLE_ID_ALIASES: Record<string, string> = {
 const CATEGORY_ROLE_NAMES: Record<string, string[]> = {
   vet: ['veterinarian', 'vet_clinic', 'vet_solo', 'vet'],
   grooming: ['groomer', 'groomer_solo', 'groomer_center', 'grooming_solo', 'pet_groomer'],
-  training: ['trainer', 'trainer_solo', 'trainer_center', 'training_solo', 'pet_trainer', 'solo'],
+  training: ['trainer', 'trainer_solo', 'trainer_center', 'training_center', 'training_solo', 'pet_trainer', 'solo'],
   walker: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
   walking: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
   boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
@@ -1524,6 +1681,11 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
       ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
       : '';
 
+  const trainingRoleCenterBypassOrCount =
+    trainingDiscoverySearchCount
+      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
+      : '';
+
   const trainingCategoryAliasVendorOrCount = trainingDiscoverySearchCount
     ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
     : '';
@@ -1679,6 +1841,7 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
                 ${boardingRoleUncategorizedOr}
                 ${nutritionRoleUncategorizedOr}
                 ${trainingRoleUncategorizedOrCount}
+                ${trainingRoleCenterBypassOrCount}
                 ${trainingCategoryAliasVendorOrCount}
                 ${behaviorRoleUncategorizedOrCount}
                 ${behaviorCategoryAliasVendorOrCount}
@@ -1898,6 +2061,197 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[discovery/count] Error:', error);
       return c.json({ success: false, error: error?.message || 'Count failed', count: 0 }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/debug/training-vendors
+   * Debug: runs the exact training at_center discovery SQL and reports why vendors appear/don't appear.
+   */
+  app.get('/customer/debug/training-vendors', async (c) => {
+    try {
+      const hasVsCatId = await columnExists('vendor_services', 'category_id');
+
+      // Show all trainer_center / training_center vendors and their at_center services
+      const vendorCheck = await query(`
+        SELECT
+          v.id,
+          v.business_name,
+          v.status,
+          v.is_active,
+          v.is_online,
+          r.name as role_name,
+          (
+            SELECT json_agg(json_build_object(
+              'name', vs.service_name,
+              'style', vs.service_style,
+              'category', vs.category,
+              'is_enabled', vs.is_enabled,
+              'publish_status', vs.publish_status,
+              'is_custom', vs.is_custom_service
+            ))
+            FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.service_style IN ('at_center','at_vendor','at_clinic')
+              AND vs.is_enabled = true
+              AND (vs.publish_status IS NULL OR vs.publish_status IN ('published','auto_published','draft'))
+          ) as at_center_services,
+          (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id
+            AND vs.is_enabled = true
+            AND (vs.publish_status IS NULL OR vs.publish_status IN ('published','auto_published','draft'))
+            AND vs.service_style IN ('at_center','at_vendor','at_clinic')
+          ) as at_center_count
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE LOWER(COALESCE(r.name, '')) IN ('trainer_center', 'training_center', 'pet_trainer', 'trainer', 'trainer_solo')
+        ORDER BY v.business_name
+        LIMIT 20
+      `);
+
+      // Run the by-style EXISTS check for each vendor (full conditions including is_custom)
+      const byStyleCheck = await query(`
+        SELECT DISTINCT ON (v.id)
+          v.id,
+          v.business_name,
+          v.status,
+          v.is_active,
+          v.is_online,
+          r.name as role_name,
+          EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id
+              AND vs.is_enabled = true
+              AND (vs.publish_status IS NULL OR LOWER(TRIM(COALESCE(vs.publish_status::text,''))) IN ('published','auto_published','draft'))
+              AND vs.service_style = ANY(ARRAY['at_center','at_vendor','at_clinic'])
+              AND (
+                LOWER(COALESCE(vs.category,'')) = 'training'
+                OR LOWER(COALESCE(vs.category,'')) LIKE '%training%'
+                OR LOWER(COALESCE(TRIM(r.name), '')) IN ('trainer', 'pet_trainer', 'trainer_solo', 'trainer_center', 'training_center')
+              )
+          ) as passes_category_check,
+          EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id
+              AND vs.is_enabled = true
+              AND (vs.publish_status IS NULL OR LOWER(TRIM(COALESCE(vs.publish_status::text,''))) IN ('published','auto_published','draft'))
+              AND vs.service_style = ANY(ARRAY['at_center','at_vendor','at_clinic'])
+              AND (
+                LOWER(COALESCE(vs.category,'')) = 'training'
+                OR LOWER(COALESCE(vs.category,'')) LIKE '%training%'
+                OR LOWER(COALESCE(TRIM(r.name), '')) IN ('trainer', 'pet_trainer', 'trainer_solo', 'trainer_center', 'training_center')
+              )
+              AND (
+                COALESCE(vs.is_custom_service, false) = false
+                OR (
+                  vs.is_custom_service = true
+                  AND (
+                    LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%training%'
+                    OR TRIM(COALESCE(vs.category, '')) = ''
+                    OR LOWER(COALESCE(TRIM(r.name), '')) IN ('trainer', 'pet_trainer', 'trainer_solo', 'trainer_center', 'training_center')
+                  )
+                )
+              )
+          ) as passes_full_check
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.is_active = true
+          AND (
+            LOWER(TRIM(COALESCE(v.status::text, ''))) IN ('approved', 'active', 'activated')
+            OR (LOWER(TRIM(COALESCE(v.status::text, ''))) = 'pending' AND LOWER(TRIM(COALESCE(v.vendor_type::text, ''))) = 'solo')
+          )
+          AND COALESCE(v.is_online, true) = true
+          AND LOWER(COALESCE(r.name, '')) IN ('trainer_center', 'training_center', 'pet_trainer', 'trainer', 'trainer_solo')
+        ORDER BY v.id
+        LIMIT 20
+      `);
+
+      // Check specializations for "wrong persona" vendor specifically
+      const specCheck = await query(`
+        SELECT
+          v.id,
+          v.business_name,
+          v.specializations AS jsonb_specializations,
+          v.metadata->'specializations' AS meta_specializations,
+          (SELECT json_agg(vsp.specialization) FROM vendor_specializations vsp WHERE vsp.vendor_id = v.id) AS table_specializations
+        FROM vendors v
+        WHERE LOWER(v.business_name) LIKE '%wrong%' OR LOWER(v.business_name) LIKE '%training%'
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
+      // Check what specialization_master has for basic_obedience
+      const masterCheck = await query(`
+        SELECT id::text, specialization_id, name, display_name
+        FROM specialization_master
+        WHERE is_active = true
+          AND (
+            LOWER(TRIM(COALESCE(specialization_id,''))) LIKE '%obedience%'
+            OR LOWER(TRIM(COALESCE(display_name,''))) LIKE '%obedience%'
+            OR LOWER(TRIM(COALESCE(name,''))) LIKE '%obedience%'
+          )
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
+      // Simulate the exact sqlVendorMatchesDeclaredSpecialization SQL for 'basic_obedience'
+      // This is exactly what the by-style endpoint runs when specialization=basic_obedience
+      const specKeys = ['basic_obedience', 'basic obedience', 'obedience', 'd9466ca6-2809-45e5-8a40-13443d652e8f'];
+      const specIlike = ['%basic\\_obedience%', '%basic obedience%', '%obedience%', '%d9466ca6-2809-45e5-8a40-13443d652e8f%'];
+      const specFilterSimulation = await query(`
+        SELECT
+          v.id,
+          v.business_name,
+          EXISTS (
+            SELECT 1 FROM vendor_specializations vsp
+            WHERE vsp.vendor_id = v.id
+              AND (
+                LOWER(TRIM(vsp.specialization)) = ANY($1::text[])
+                OR vsp.specialization ILIKE ANY($2::text[])
+              )
+          ) AS branch1_table_exact,
+          EXISTS (
+            SELECT 1 FROM vendor_specializations vsp2
+            JOIN specialization_master sm
+              ON sm.is_active = true
+                 AND (
+                   sm.id::text = vsp2.specialization
+                   OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                   OR LOWER(TRIM(sm.name)) = LOWER(TRIM(vsp2.specialization))
+                   OR LOWER(TRIM(sm.display_name)) = LOWER(TRIM(vsp2.specialization))
+                 )
+            WHERE vsp2.vendor_id = v.id
+              AND (
+                sm.id::text = ANY($1::text[])
+                OR LOWER(TRIM(sm.specialization_id)) = ANY($1::text[])
+                OR LOWER(TRIM(sm.name)) = ANY($1::text[])
+                OR LOWER(TRIM(sm.display_name)) = ANY($1::text[])
+                OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($1::text[])
+              )
+          ) AS branch2_table_uuid,
+          CASE WHEN v.specializations IS NOT NULL
+               THEN v.specializations::text ILIKE ANY($2::text[])
+               ELSE false
+          END AS branch3_jsonb_ilike,
+          CASE WHEN v.metadata->'specializations' IS NOT NULL
+               THEN (v.metadata->'specializations')::text ILIKE ANY($2::text[])
+               ELSE false
+          END AS branch4_meta_ilike,
+          v.specializations AS raw_jsonb_specs,
+          (SELECT json_agg(vsp.specialization) FROM vendor_specializations vsp WHERE vsp.vendor_id = v.id) AS raw_table_specs
+        FROM vendors v
+        WHERE LOWER(v.business_name) LIKE '%wrong%' OR LOWER(v.business_name) LIKE '%training center%'
+        LIMIT 10
+      `, [specKeys, specIlike]).catch((e: any) => ({ rows: [], error: e?.message }));
+
+      return c.json({
+        success: true,
+        has_category_id_col: hasVsCatId,
+        training_vendors_detail: vendorCheck.rows,
+        by_style_check: byStyleCheck.rows,
+        specialization_check: specCheck.rows,
+        master_check: masterCheck.rows,
+        spec_filter_simulation: (specFilterSimulation as any).rows || [],
+        spec_filter_error: (specFilterSimulation as any).error || null,
+      });
+    } catch (error: any) {
+      return c.json({ success: false, error: error?.message }, 500);
     }
   });
 
@@ -2490,9 +2844,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
+      let trainingCustomCategoryIdOrSql = '';
+      if (trainingDiscoverySearch && hasVsCategoryIdDiscover) {
+        const slugResTraining = await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['training', 'pet training', 'dog training']]
+        ).catch(() => ({ rows: [] as { id: string }[] }));
+        const idsT = (slugResTraining.rows || []).map((r: any) => r?.id).filter(Boolean);
+        const UUID_RE_T =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const cleanT = idsT.filter((id: string) => UUID_RE_T.test(String(id).trim()));
+        if (cleanT.length > 0) {
+          const uuidListT = cleanT.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
+          trainingCustomCategoryIdOrSql = `
+                OR (
+                  COALESCE(vs.is_custom_service, false) = true
+                  AND vs.category_id IS NOT NULL
+                  AND vs.category_id = ANY(ARRAY[${uuidListT}]::uuid[])
+                )`;
+        }
+      }
+
       // 3) Helpers
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
+      const hasVendorSpecializationsCol = await columnExists('vendors', 'specializations');
+      const vendorSpecsJsonbSql = hasVendorSpecializationsCol ? 'v.specializations' : 'NULL::jsonb';
 
       const distResolverDiscover = new DistanceResolver(customerLat, customerLng, customerApproximateDiscover);
 
@@ -2527,7 +2909,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           !sitterRoleBypass &&
           trainingDiscoverySearch &&
           vendorRoleIsTrainingHub(_vendorRoleName)
-            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            ? ` OR TRUE`
             : '';
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
@@ -2566,6 +2948,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${walkerCategoryDiscoveryOr}
             ${vetCategoryEmptyForFetch}
             ${boardingCustomCategoryIdOrSql}
+            ${trainingCustomCategoryIdOrSql}
           )
         `
             : '';
@@ -2654,6 +3037,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
 
+      /** Filled after vendor SQL runs; enrichVendor reads resolved specialization labels. */
+      let vendorSpecBundleForDiscover = new Map<string, { raw: string[]; displayLabels: string[] }>();
+
       // Enrichment
       const enrichVendor = async (vendor: any) => {
         // Load matching published services first. Do NOT drop by role_config here: primary
@@ -2722,6 +3108,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
 
+        const specBundle = vendorSpecBundleForDiscover.get(vendor.vendor_id);
+        const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];
+        const specialization =
+          specializations.length > 0 ? specializations.join(' · ') : null;
+
         return {
           id: vendor.vendor_id,
           vendorId: vendor.vendor_id,
@@ -2756,6 +3147,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
           priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
           bestForProblem: problemTitle || undefined,
+          specializations,
+          specialization,
           services,
         };
       };
@@ -2835,6 +3228,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         !sittingDiscoveryRelaxed && trainingDiscoverySearch
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
           : '';
+      // Role-based bypass: show all at_center services for training center vendors even
+      // when their services are mis-categorized (e.g. vendor set category='Boarding').
+      const trainingRoleCenterBypassOr =
+        !sittingDiscoveryRelaxed && trainingDiscoverySearch && isAtCenter
+          ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
+          : '';
       const trainingCategoryAliasVendorOr =
         !sittingDiscoveryRelaxed && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
       const behaviorRoleUncategorizedOr =
@@ -2877,6 +3276,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${boardingRoleUncategorizedOr}
                 ${nutritionRoleUncategorizedOr}
                 ${trainingRoleUncategorizedOr}
+                ${trainingRoleCenterBypassOr}
                 ${trainingCategoryAliasVendorOr}
                 ${behaviorRoleUncategorizedOr}
                 ${behaviorCategoryAliasVendorOr}
@@ -2884,6 +3284,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${walkerCategoryDiscoveryOr}
                 ${vetCategoryEmptyOr}
                 ${boardingCustomCategoryIdOrSql}
+                ${trainingCustomCategoryIdOrSql}
               )`
           : '';
 
@@ -2917,6 +3318,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.state, v.latitude, v.longitude, v.pincode, v.metadata,
+          ${vendorSpecsJsonbSql} AS v_specs_jsonb,
           ${vendorDistanceColsDiscover},
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
@@ -2945,6 +3347,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       `;
 
       const vendorRows = await query(vendorSql, vendorParamsDiscover);
+      vendorSpecBundleForDiscover = await batchLoadVendorSpecializationsForDiscovery(
+        vendorRows.rows || []
+      );
       const vendorRadiusLookupDiscover = new Map<
         string,
         { service_radius?: unknown; service_distance_km?: unknown }
@@ -6140,6 +6545,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
       console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawCount} total`);
 
+      const facilitySpecMap = await batchLoadVendorSpecializationsForDiscovery([
+        {
+          vendor_id: String(vendor.id),
+          metadata: vendor.metadata,
+          v_specs_jsonb: (vendor as any).specializations,
+        },
+      ]);
+      const facilitySpecializationLabels =
+        facilitySpecMap.get(String(vendor.id))?.displayLabels ?? [];
+
       return c.json({
         success: true,
         vendor: {
@@ -6176,7 +6591,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           disclaimer: metadata.disclaimer,
           disclaimerPoints: metadata.disclaimerPoints || [],
           operatingHours: operatingHours, // ✅ FIX: Parse operating hours
-          specializations: metadata.specializations || [], // ✅ FIX: Include specializations
+          specializations:
+            facilitySpecializationLabels.length > 0
+              ? facilitySpecializationLabels
+              : metadata.specializations || [],
         },
         rating: {
           average: parseFloat(ratingResult.rows[0]?.avg_rating || '0').toFixed(1),
@@ -6333,16 +6751,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let longitude =
         c.req.query('longitude') || c.req.query('lng') || c.req.query('lon');
       let customerApproximateByStyle = false;
+      const customerPhoneForByStyle = c.req.query('customerPhone') || c.req.query('phone') || null;
 
       // If coordinates not provided, fetch from customer's default address (with pincode fallback)
       if (!latitude || !longitude) {
-        const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
-        const coords = await getCustomerCoordinates(customerPhone || undefined);
+        const coords = await getCustomerCoordinates(customerPhoneForByStyle || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
           customerApproximateByStyle = !!coords.approximate;
           console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateByStyle}`);
+        } else if (customerPhoneForByStyle) {
+          console.warn(
+            '[by-style] No customer coordinates for distance: query omitted lat/lng and getCustomerCoordinates returned null. ' +
+              'Ensure default address has coordinates or a 6-digit pincode (and Geocoding API key on Lambda), or pass latitude/longitude from the app.'
+          );
         }
       }
 
@@ -6367,6 +6790,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       //get the customer latitude and longitude
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
+      if (
+        (customerLat == null ||
+          customerLng == null ||
+          !Number.isFinite(customerLat) ||
+          !Number.isFinite(customerLng)) &&
+        (latitude || longitude)
+      ) {
+        console.warn('[by-style] Invalid latitude/longitude query values; distance will be omitted', {
+          latitude,
+          longitude,
+        });
+      }
       //check if the service style is at_center
       const isAtCenter = serviceStyle === 'at_center';
 
@@ -6393,6 +6828,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
         (roleId &&
           ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
+
+      // Declare these here so they are available inside strictCustomDiscoverySql (avoids TDZ errors).
+      const trainingDiscoverySearchByStyle = catTextExact.some(
+        (c) => c === 'training' || c.includes('training')
+      );
+
+      const behaviorHubDiscoverySearchByStyle = catTextRequestsBehaviorHub(catTextExact);
 
       // Strict catalogue category IDs from the `category` query param only (not roleId) — custom services must match.
       const categoryOnlyKeys: string[] = [];
@@ -6438,6 +6880,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     )
   )`;
               }
+              if (trainingDiscoverySearchByStyle) {
+                return ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND (
+        (vs.category_id IS NOT NULL AND vs.category_id = ANY(${arr}))
+        OR LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%training%'
+        OR LOWER(TRIM(COALESCE(vs.category, ''))) IN ('behavioral','behaviour','behavioural','behaviourist','behavior','behavior_modification')
+        OR TRIM(COALESCE(vs.category, '')) = ''
+        OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+      )
+    )
+  )`;
+              }
               return ` AND (
     COALESCE(vs.is_custom_service, false) = false
     OR (
@@ -6447,6 +6904,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     )
   )`;
             })()
+          : trainingDiscoverySearchByStyle && hasVsCategoryIdCol
+            ? ` AND (
+    COALESCE(vs.is_custom_service, false) = false
+    OR (
+      vs.is_custom_service = true
+      AND (
+        LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%training%'
+        OR LOWER(TRIM(COALESCE(vs.category, ''))) IN ('behavioral','behaviour','behavioural','behaviourist','behavior','behavior_modification')
+        OR TRIM(COALESCE(vs.category, '')) = ''
+        OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})
+      )
+    )
+  )`
           : boardingDiscoverySearchByStyle && hasVsCategoryIdCol
             ? ` AND (
     COALESCE(vs.is_custom_service, false) = false
@@ -6496,12 +6966,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             String(roleId).toLowerCase().replace(/-/g, '_')
           ));
 
-      const trainingDiscoverySearchByStyle = catTextExact.some(
-        (c) => c === 'training' || c.includes('training')
-      );
-
-      const behaviorHubDiscoverySearchByStyle = catTextRequestsBehaviorHub(catTextExact);
-
       const boardingRoleUncategorizedOrByStyle =
         boardingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
@@ -6515,6 +6979,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const trainingRoleUncategorizedOrByStyle =
         trainingDiscoverySearchByStyle
           ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
+          : '';
+
+      // Role-based bypass: show training center vendors for at_center training search
+      // even when their services are mis-categorized (e.g. vendor set category='Boarding').
+      const trainingRoleCenterBypassOrByStyle =
+        trainingDiscoverySearchByStyle && isAtCenter
+          ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
           : '';
 
       const trainingCategoryAliasVendorOrByStyle = trainingDiscoverySearchByStyle
@@ -6562,6 +7033,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ────────────────────────────────────────────────────────
       const hasLogoUrl = await columnExists('vendors', 'logo_url');
       const logoCol = hasLogoUrl ? 'v.logo_url' : 'NULL';
+      const hasVendorSpecializationsColByStyle = await columnExists('vendors', 'specializations');
+      const vendorSpecsJsonbSqlByStyle = hasVendorSpecializationsColByStyle ? 'v.specializations' : 'NULL::jsonb';
 
       const distResolverByStyle = new DistanceResolver(customerLat, customerLng, customerApproximateByStyle);
 
@@ -6583,7 +7056,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : '';
         const trainingUncatSqlByStyle =
           trainingDiscoverySearchByStyle && vendorRoleIsTrainingHub(vendorRoleName)
-            ? ` OR LOWER(COALESCE(TRIM(vs.category), '')) = ''`
+            ? ` OR TRUE`
             : '';
         const trainingCategoryAliasFetchOrByStyle = trainingDiscoverySearchByStyle
           ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
@@ -6619,6 +7092,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${boardingCustomCategoryIdOrByStyleSql}
           )
         ` : '';
+        // strictCustomDiscoverySql references `r.name` (the outer vendor query's role join),
+        // which is not available inside fetchServices (no roles JOIN here). For training hub
+        // vendors the `trainingUncatSqlByStyle = ' OR TRUE'` already bypasses all category
+        // filtering, so we can safely skip the strict filter for those vendors.
+        const strictCustomSqlForFetch =
+          trainingDiscoverySearchByStyle && vendorRoleIsTrainingHub(vendorRoleName)
+            ? ''
+            : strictCustomDiscoverySql;
+
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
                   vs.custom_price,
@@ -6641,7 +7123,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
-            ${strictCustomDiscoverySql}
+            ${strictCustomSqlForFetch}
              AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
@@ -6657,6 +7139,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         return deduplicateServices(res.rows.map((s: any) => mapVendorServiceRowForCustomerDiscoveryList(s)));
       };
+
+      let vendorSpecBundleForByStyle = new Map<string, { raw: string[]; displayLabels: string[] }>();
 
       /**
        * Turn a raw vendor row into a fully enriched provider object.
@@ -6723,6 +7207,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         const photoUrl = await getVendorPhotoUrl(vendor);
 
+        const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
+        const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];
+        const specialization =
+          specializations.length > 0 ? specializations.join(' · ') : null;
+
         return {
           id: vendor.vendor_id,
           vendorId: vendor.vendor_id,
@@ -6757,6 +7246,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
           priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
           bestForProblem: problemTitle || undefined,
+          specializations,
+          specialization,
           services,
         };
       };
@@ -6790,6 +7281,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
           v.address, v.city, v.state, v.latitude, v.longitude, v.pincode, v.metadata,
+          ${vendorSpecsJsonbSqlByStyle} AS v_specs_jsonb,
           ${vendorDistanceColsByStyle},
           v.profile_photo_url, ${logoCol} AS logo_url, v.vendor_type,
           v.is_online,
@@ -6818,6 +7310,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${boardingRoleUncategorizedOrByStyle}
                 ${nutritionRoleUncategorizedOrByStyle}
                 ${trainingRoleUncategorizedOrByStyle}
+                ${trainingRoleCenterBypassOrByStyle}
                 ${trainingCategoryAliasVendorOrByStyle}
                 ${behaviorRoleUncategorizedOrByStyle}
                 ${behaviorCategoryAliasVendorOrByStyle}
@@ -6833,6 +7326,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       `;
 
       const vendorRows = await query(vendorSql, vendorParamsByStyle);
+      vendorSpecBundleForByStyle = await batchLoadVendorSpecializationsForDiscovery(
+        vendorRows.rows || []
+      );
       const vendorRadiusLookupByStyle = new Map<
         string,
         { service_radius?: unknown; service_distance_km?: unknown }

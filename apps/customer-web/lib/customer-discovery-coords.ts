@@ -12,13 +12,26 @@ export function resolveCustomerDiscoveryPhone(candidate?: string): string {
   ).trim();
 }
 
-/** Same resolution order as useHubVendorDiscovery for discover-services parity. */
-export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
+export type CustomerDiscoveryCoordsSource = 'profile' | 'localStorage' | 'geolocation';
+
+/**
+ * Same resolution order as useHubVendorDiscovery: profile → localStorage → GPS.
+ * When coords come from profile or geolocation, they are written to `customer_latitude` /
+ * `customer_longitude` so other screens (by-style listings) reuse them without racing.
+ */
+export async function resolveCustomerDiscoveryCoords(
+  phone?: string,
+  options?: { persist?: boolean }
+): Promise<{
   latitude?: string;
   longitude?: string;
+  source?: CustomerDiscoveryCoordsSource;
 }> {
+  const persist = options?.persist !== false;
   let latitude: string | undefined;
   let longitude: string | undefined;
+  let source: CustomerDiscoveryCoordsSource | undefined;
+
   const ph = (phone || '').trim();
   if (ph.length >= 8) {
     try {
@@ -29,6 +42,7 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       if (profile?.latitude != null && profile?.longitude != null) {
         latitude = String(profile.latitude);
         longitude = String(profile.longitude);
+        source = 'profile';
       }
     } catch {
       /* ignore */
@@ -41,6 +55,7 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       if (lat && lng) {
         latitude = lat;
         longitude = lng;
+        source = 'localStorage';
       }
     } catch {
       /* ignore */
@@ -56,9 +71,27 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       });
       latitude = String(pos.coords.latitude);
       longitude = String(pos.coords.longitude);
+      source = 'geolocation';
     } catch {
       /* ignore */
     }
   }
-  return { latitude, longitude };
+
+  if (
+    persist &&
+    typeof window !== 'undefined' &&
+    latitude != null &&
+    longitude != null &&
+    source != null &&
+    source !== 'localStorage'
+  ) {
+    try {
+      localStorage.setItem('customer_latitude', latitude);
+      localStorage.setItem('customer_longitude', longitude);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { latitude, longitude, source };
 }

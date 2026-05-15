@@ -121,7 +121,13 @@ export default function ECommerceManagement() {
 				{/* Content - Match wireframe: max-w-7xl mx-auto */}
 				<div className="flex-1 overflow-y-auto">
 					<div className="max-w-7xl mx-auto">
-						{activeTab === "dashboard" && <ECommerceDashboard />}
+						{activeTab === "dashboard" && (
+							<ECommerceDashboard
+								onNavigateToOrders={() => setActiveTab("orders")}
+								onNavigateToProducts={() => setActiveTab("products")}
+								onNavigateToSellers={() => setActiveTab("sellers")}
+							/>
+						)}
 						{activeTab === "sellers" && <SellerManagement />}
 						{activeTab === "products" && <ProductApproval />}
 						{activeTab === "orders" && <OrderManagementAdmin />}

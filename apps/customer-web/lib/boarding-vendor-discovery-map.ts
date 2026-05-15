@@ -9,6 +9,7 @@ import {
 } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingPlanRow {
@@ -340,7 +341,7 @@ export function buildBoardingVendorListFromRows(
       (service.priceMin ? `From ₹${service.priceMin}` : '') ||
       (service.basePrice ? `₹${service.basePrice}` : '₹800+');
 
-    const distKm = service.distance != null && service.distance !== '' ? Number(service.distance) : null;
+    const distKm = pickProviderDistanceKm(service);
     const distanceStr =
       distKm != null && Number.isFinite(distKm) ? `${distKm.toFixed(1)} km` : null;
 
@@ -388,6 +389,13 @@ export function buildBoardingVendorListFromRows(
       }
       v.planRows = mergePlanRows(v.planRows, fromNested);
       v.needsServiceFetch = v.planRows.length === 0;
+      if (v.distanceKm == null || !Number.isFinite(v.distanceKm)) {
+        const fillKm = pickProviderDistanceKm(service);
+        if (fillKm != null && Number.isFinite(fillKm)) {
+          v.distanceKm = fillKm;
+          v.distance = `${fillKm.toFixed(1)} km`;
+        }
+      }
     }
   });
 

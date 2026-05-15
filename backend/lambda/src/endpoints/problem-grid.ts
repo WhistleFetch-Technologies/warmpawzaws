@@ -51,6 +51,14 @@ function vendorDiscoverableStatusSql(alias = 'v', allowAllPending = false): stri
   return `(${statusInList} OR ${pendingClause})`;
 }
 
+/**
+ * Parity with `sqlVendorOnlineForCustomerDiscovery` in service-discovery.customer.ts:
+ * hide vendors with `is_online = false` from all customer discovery (NULL → online).
+ */
+function sqlVendorOnlineForCustomerDiscovery(vAlias = 'v'): string {
+  return `COALESCE(${vAlias}.is_online, true) = true`;
+}
+
 function isVendorStatusDiscoverable(status: string | null | undefined, vendorType: string | null | undefined, allowAllPending = false): boolean {
   const s = String(status ?? '').trim().toLowerCase();
   const vt = String(vendorType ?? '').trim().toLowerCase();
@@ -1092,6 +1100,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         LEFT JOIN roles r ON v.role_id = r.id
         LEFT JOIN reviews rev ON rev.vendor_id = v.id AND (rev.is_published = true OR rev.is_published IS NULL)
         WHERE ${statusFilter}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.is_active = true
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
@@ -1285,6 +1294,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )
             AND ${vendorDiscoverableStatusSql('v', isDevOrUatEnvironment)}
+            AND ${sqlVendorOnlineForCustomerDiscovery('v')}
             AND v.is_active = true
           LIMIT 5
         `, [specializationKeys]);
@@ -1332,6 +1342,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             INNER JOIN vendor_services vs ON vs.vendor_id = v.id
             LEFT JOIN roles r ON v.role_id = r.id
             WHERE ${statusFilter}
+              AND ${sqlVendorOnlineForCustomerDiscovery('v')}
               AND v.is_active = true
               AND vs.is_enabled = true
               AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
@@ -1756,6 +1767,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           GROUP BY vendor_id
         ) b_stats ON b_stats.vendor_id = v.id
         WHERE ${vendorDiscoverableStatusSql('v', false)}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.is_active = true
       `;
 
@@ -1863,6 +1875,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             WHERE specializations IS NOT NULL 
               AND jsonb_typeof(specializations) = 'array'
               AND jsonb_array_length(specializations) > 0
+              AND COALESCE(is_online, true) = true
               AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec 
                 WHERE spec = ANY($1::text[])
@@ -1900,6 +1913,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               )
             )
             AND ${vendorDiscoverableStatusSql('v', false)}
+            AND ${sqlVendorOnlineForCustomerDiscovery('v')}
             AND v.is_active = true
             LIMIT 10
           `;
@@ -2231,6 +2245,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             SELECT COUNT(*) as count FROM vendors 
             WHERE specializations IS NOT NULL 
               AND jsonb_typeof(specializations) = 'array'
+              AND COALESCE(is_online, true) = true
               AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec WHERE spec = ANY($1::text[]))
           `;
           const debugJsonbResult = await query(debugJsonbQuery, [subCategoryIds]);

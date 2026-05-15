@@ -14,7 +14,8 @@ export function normalizeServiceKey(key: string | null | undefined): string {
     .replace(/_/g, '-');
 }
 
-function normalizeCategoryToken(raw: string | null | undefined): string {
+/** DB / API category string → comparable token (aligns with SQL `REGEXP_REPLACE` in search). */
+export function normalizeCategoryToken(raw: string | null | undefined): string {
   return String(raw ?? '')
     .trim()
     .toLowerCase()
@@ -90,7 +91,13 @@ export function getSearchCategoryAliases(category: string | null | undefined): s
   if (!normalized) return [];
   const canonical = normalized in BASE_SEARCH_CATEGORY_ALIASES ? normalized : normalized.replace(/_/g, '-');
   const list = BASE_SEARCH_CATEGORY_ALIASES[canonical] || BASE_SEARCH_CATEGORY_ALIASES[normalized] || [];
-  const out = new Set<string>([normalized, ...list.map((entry) => normalizeCategoryToken(entry))]);
+  const launchIds = hubChipToLaunchIdsForCatalogInversion(normalized);
+  const catalogExtras = getCatalogSlugAliasesForLaunchServiceIds(launchIds);
+  const out = new Set<string>([
+    normalized,
+    ...list.map((entry) => normalizeCategoryToken(entry)),
+    ...catalogExtras,
+  ]);
   return Array.from(out);
 }
 
@@ -98,40 +105,69 @@ export function getSearchCategoryAliases(category: string | null | undefined): s
  * Maps catalog / role `category_id` to the canonical launch service id used in
  * `platform:service-launch-config`, GET /config/service-launch, and GET /config/service-launch/customer.
  */
+/**
+ * Canonical catalog / onboarding category slugs → launch service id (platform_settings keys).
+ * Used by customer search hub browse to invert “which catalog ids belong under this chip”.
+ */
+export const CATALOG_SLUG_TO_LAUNCH_SERVICE_ID: Readonly<Record<string, string>> = {
+  veterinary: 'vet',
+  grooming: 'grooming',
+  training: 'training',
+  walking: 'walker',
+  walker: 'walker',
+  'dog-walker': 'walker',
+  dog_walker: 'walker',
+  boarding: 'boarding',
+  'pet-holiday': 'holiday',
+  pet_holiday: 'holiday',
+  pet_holiday_planner: 'holiday',
+  diagnostic: 'diagnostics',
+  diagnostics: 'diagnostics',
+  pharmacy: 'pharmacy',
+  emergency: 'ambulance',
+  wellness: 'nutritionist',
+  nutrition: 'nutritionist',
+  specialty: 'specialty',
+  speciality: 'specialty',
+  daycare: 'daycare',
+  behavioral: 'training',
+  behaviorist: 'training',
+  pet_behaviorist: 'training',
+  pet_trainer: 'training',
+  trainer: 'training',
+  sitting: 'pet-sitter',
+  'pet-sitter': 'pet-sitter',
+  sitter: 'pet-sitter',
+};
+
+/** Launch ids whose catalog rows should expand customer Search hub slug aliases (multi-launch chips). */
+export function hubChipToLaunchIdsForCatalogInversion(chip: string | null | undefined): string[] {
+  const n = normalizeCategoryToken(chip);
+  if (!n) return [];
+  if (n === 'vet') return ['vet', 'diagnostics'];
+  if (n === 'cafe') return ['cafes'];
+  if (n === 'resort') return ['resort', 'holiday'];
+  return [n];
+}
+
+/** Normalized catalog tokens stored on vendors/vendor_services that map to any of the given launch ids. */
+export function getCatalogSlugAliasesForLaunchServiceIds(launchIds: readonly string[]): string[] {
+  const want = new Set(launchIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean));
+  if (!want.size) return [];
+  const out = new Set<string>();
+  for (const [catalogKey, launchVal] of Object.entries(CATALOG_SLUG_TO_LAUNCH_SERVICE_ID)) {
+    const lv = String(launchVal || '').trim().toLowerCase();
+    if (!want.has(lv)) continue;
+    out.add(normalizeCategoryToken(catalogKey));
+  }
+  return Array.from(out).filter(Boolean);
+}
+
 export function mapCatalogSlugToLaunchServiceId(categoryId: string | null | undefined): string {
   if (categoryId == null || String(categoryId).trim() === '') return 'unknown';
   const key = normalizeServiceKey(categoryId);
-  const mappings: Record<string, string> = {
-    veterinary: 'vet',
-    grooming: 'grooming',
-    training: 'training',
-    walking: 'walker',
-    walker: 'walker',
-    'dog-walker': 'walker',
-    dog_walker: 'walker',
-    boarding: 'boarding',
-    'pet-holiday': 'holiday',
-    pet_holiday: 'holiday',
-    pet_holiday_planner: 'holiday',
-    diagnostic: 'diagnostics',
-    diagnostics: 'diagnostics',
-    pharmacy: 'pharmacy',
-    emergency: 'ambulance',
-    wellness: 'nutritionist',
-    nutrition: 'nutritionist',
-    specialty: 'specialty',
-    speciality: 'specialty',
-    daycare: 'daycare',
-    behavioral: 'training',
-    behaviorist: 'training',
-    pet_behaviorist: 'training',
-    pet_trainer: 'training',
-    trainer: 'training',
-    sitting: 'pet-sitter',
-    'pet-sitter': 'pet-sitter',
-    sitter: 'pet-sitter',
-  };
-  if (mappings[key]) return mappings[key];
+  const mapped = CATALOG_SLUG_TO_LAUNCH_SERVICE_ID[key];
+  if (mapped) return mapped;
   return String(categoryId).trim();
 }
 
