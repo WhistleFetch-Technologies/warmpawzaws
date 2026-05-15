@@ -468,6 +468,31 @@ test.describe('Schema Validation - Admin APIs', () => {
     }
   });
 
+  test('GET /admin/ecommerce/analytics/platform should return KPI fields in data', async ({ request }) => {
+    const response = await request.get(`${API_BASE}/admin/ecommerce/analytics/platform`, {
+      headers: adminHeaders,
+    });
+
+    if (response.ok()) {
+      const body = await response.json();
+      expect(body).toHaveProperty('success', true);
+      expect(body).toHaveProperty('data');
+      const d = body.data;
+      expect(d).toHaveProperty('activeProducts');
+      expect(d).toHaveProperty('pendingApprovals');
+      expect(d).toHaveProperty('processingOrders');
+      expect(d).toHaveProperty('pendingSettlements');
+      expect(typeof d.activeProducts).toBe('number');
+      expect(typeof d.pendingApprovals).toBe('number');
+      expect(typeof d.processingOrders).toBe('number');
+      expect(typeof d.pendingSettlements).toBe('number');
+      expect(d).toHaveProperty('totalGMV');
+      expect(d).toHaveProperty('pendingSettlementAmount');
+      expect(typeof d.totalGMV).toBe('number');
+      expect(typeof d.pendingSettlementAmount).toBe('number');
+    }
+  });
+
   test('GET /admin/ecommerce/orders should return orders list', async ({ request }) => {
     const response = await request.get(`${API_BASE}/admin/ecommerce/orders`, {
       headers: adminHeaders,
