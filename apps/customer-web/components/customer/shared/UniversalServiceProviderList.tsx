@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
@@ -69,6 +70,8 @@ interface Provider {
   priceMin?: number;
   priceMax?: number;
   hasPackages?: boolean;
+  /** Resolved display labels from vendor profile (GET /customer/services/by-style). */
+  specializations?: string[];
 }
 
 interface Problem {
@@ -537,6 +540,38 @@ const DEFAULT_PROBLEMS: Record<string, Problem[]> = {
   ],
 };
 
+function specializationSlugNorm(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+/** Match hub chip / filter label to API `specialization` string or `specializations[]` (UUID-backed rows resolve to display names on the server). */
+function providerMatchesSpecializationLabel(
+  p: Provider,
+  filterLabel: string | null
+): boolean {
+  if (!filterLabel?.trim()) return true;
+  const f = filterLabel.trim().toLowerCase();
+  const fSlug = specializationSlugNorm(filterLabel);
+  const parts = [
+    p.specialization,
+    ...(Array.isArray(p.specializations) ? p.specializations : []),
+  ]
+    .filter(Boolean)
+    .map((x) => String(x).trim());
+  for (const part of parts) {
+    const pl = part.toLowerCase();
+    const pSlug = specializationSlugNorm(part);
+    if (pl === f || pSlug === fSlug) return true;
+    if (pl.includes(f) || f.includes(pl)) return true;
+    if (pSlug && fSlug && (pSlug.includes(fSlug) || fSlug.includes(pSlug))) return true;
+  }
+  return false;
+}
+
 export function UniversalServiceProviderList({
   phone,
   category,
@@ -575,18 +610,21 @@ export function UniversalServiceProviderList({
     sortBy: 'rating',
   });
 
-  // Extract unique specializations from providers
-  const specializations = [...new Set(
-    providers
-      .map(p => p.specialization)
-      .filter(Boolean)
-  )] as string[];
+  // Extract unique specializations from providers (by-style returns `specializations[]` + joined `specialization`)
+  const specializations = [
+    ...new Set(
+      providers.flatMap((p) => [
+        p.specialization,
+        ...(Array.isArray(p.specializations) ? p.specializations : []),
+      ].filter(Boolean) as string[])
+    ),
+  ];
 
   // Load providers on mount
   useEffect(() => {
     loadProviders();
     loadSponsoredProviders();
-  }, [category, roleId, serviceStyle, specializationFilter, problemTitle]);
+  }, [category, roleId, serviceStyle, specializationFilter, problemTitle, phone]);
 
   // Load sponsored providers (ads)
   const loadSponsoredProviders = async () => {
@@ -605,16 +643,10 @@ export function UniversalServiceProviderList({
     try {
       setLoading(true);
 
-      // Get customer location for distance-based sorting
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
       let locationParams = '';
-      try {
-        const customerLat = localStorage.getItem('customer_latitude');
-        const customerLng = localStorage.getItem('customer_longitude');
-        if (customerLat && customerLng) {
-          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
-        }
-      } catch (e) {
-        console.log('Could not get customer location');
+      if (latitude != null && longitude != null) {
+        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
       }
 
       // Build specialization filter param
@@ -691,7 +723,10 @@ export function UniversalServiceProviderList({
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesName = p.name.toLowerCase().includes(query);
-      const matchesSpec = p.specialization?.toLowerCase().includes(query);
+      const matchesSpec =
+        (p.specialization?.toLowerCase().includes(query) ?? false) ||
+        (Array.isArray(p.specializations) &&
+          p.specializations.some((s) => String(s).toLowerCase().includes(query)));
       const matchesCity = p.city?.toLowerCase().includes(query);
       if (!matchesName && !matchesSpec && !matchesCity) return false;
     }
@@ -710,8 +745,10 @@ export function UniversalServiceProviderList({
       p.distance > filters.maxDistance
     ) return false;
 
-    // Specialization filter
-    if (filters.specialization && p.specialization !== filters.specialization) return false;
+    // Specialization filter (chip / modal — match any declared label; server may join several into `specialization`)
+    if (filters.specialization && !providerMatchesSpecializationLabel(p, filters.specialization)) {
+      return false;
+    }
 
     return true;
   }).sort((a, b) => {

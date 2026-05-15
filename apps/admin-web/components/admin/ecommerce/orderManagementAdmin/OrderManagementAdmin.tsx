@@ -71,10 +71,13 @@ export function OrderManagementAdmin() {
     );
   });
 
+  const getOrderStatus = (order: any): string =>
+    (order.order_status ?? order.status ?? 'pending') as string;
+
   const statusCounts = ORDER_STATUSES.reduce((acc, status) => {
-    acc[status.id] = status.id === 'all' 
-      ? orders.length 
-      : orders.filter(o => o.status === status.id).length;
+    acc[status.id] = status.id === 'all'
+      ? orders.length
+      : orders.filter(o => getOrderStatus(o) === status.id).length;
     return acc;
   }, {} as Record<string, number>);
 
@@ -198,8 +201,8 @@ export function OrderManagementAdmin() {
                     )}
                   </td>
                   <td className="p-4 text-center">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                      {order.status}
+                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(getOrderStatus(order))}`}>
+                      {getOrderStatus(order)}
                     </span>
                   </td>
                   <td className="p-4 text-center text-sm text-slate-500">
@@ -243,16 +246,16 @@ export function OrderManagementAdmin() {
               {/* Status Update */}
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-xl ${getStatusColor(selectedOrder.status)}`}>
+                  <div className={`p-3 rounded-xl ${getStatusColor(getOrderStatus(selectedOrder))}`}>
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
                     <p className="font-semibold text-slate-900">Current Status</p>
-                    <p className="text-sm text-slate-500">{selectedOrder.status}</p>
+                    <p className="text-sm text-slate-500">{getOrderStatus(selectedOrder)}</p>
                   </div>
                 </div>
                 <select
-                  value={selectedOrder.status}
+                  value={getOrderStatus(selectedOrder)}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateOrderStatus(selectedOrder.id, e.target.value)}
                   className="px-4 py-2 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 >

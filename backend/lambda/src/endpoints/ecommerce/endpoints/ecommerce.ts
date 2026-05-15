@@ -19,6 +19,10 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { select, insert, update, query, upsert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import {
+  getTemporaryVendorSuppressionParams,
+  sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
@@ -890,21 +894,30 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/admin/ecommerce/analytics/platform", async (c) => {
     try {
-      // Get total revenue from orders
-      const revenueStats = await query(
-        `SELECT 
+      const suppression = getTemporaryVendorSuppressionParams();
+      const settlementSuppressionWhere = suppression
+        ? ` WHERE ${sqlExcludeSuppressedSettlementRows('settlements', 1, 2)}`
+        : '';
+      const settlementSuppressionParams =
+        suppression && suppression.vendorIds?.length ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
+
+      const [
+        revenueStats,
+        sellerStats,
+        activeProductsRow,
+        pendingApprovalsRow,
+        processingOrdersRow,
+        settlementAggRow,
+      ] = await Promise.all([
+        query(
+          `SELECT 
            COUNT(*) as total_orders,
            COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as total_revenue,
            COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
          FROM orders`
-      );
-
-      // Get seller stats - filter for e-commerce sellers only
-      // E-commerce sellers are identified by:
-      // 1. Specific e-commerce roles: pet_product, pet_products_store, product_seller, pet_product_seller, seller
-      // 2. seller_status IN ('pending', 'approved') - excludes 'not_applied' (default for all vendors)
-      const sellerStats = await query(
-        `SELECT 
+        ).catch(() => ({ rows: [{}] })),
+        query(
+          `SELECT 
            COUNT(DISTINCT v.id) FILTER (WHERE 
              v.is_active = true 
              AND (v.is_deleted IS NULL OR v.is_deleted = false)
@@ -930,21 +943,75 @@ export function registerEcommerceEndpoints(app: Hono) {
            ) as total_sellers
          FROM vendors v
          LEFT JOIN roles r ON v.role_id = r.id`
-      );
+        ).catch(() => ({ rows: [{}] })),
+        query(
+          `SELECT COUNT(*)::int AS c FROM products p
+           WHERE p.is_active = true
+             AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'`
+        ).catch(() => ({ rows: [{ c: 0 }] })),
+        query(
+          `SELECT COUNT(*)::int AS c FROM products p
+           WHERE (
+             p.status IS NULL
+             OR LOWER(TRIM(p.status::text)) IN ('pending', 'pending_approval', 'submit_for_approval', 'submitted')
+           )`
+        ).catch(() => ({ rows: [{ c: 0 }] })),
+        query(
+          `SELECT COUNT(*)::int AS c FROM orders o
+           WHERE o.order_status IN ('confirmed', 'processing', 'shipped')`
+        ).catch(() => ({ rows: [{ c: 0 }] })),
+        (async () => {
+          try {
+            return await query(
+              `SELECT 
+                COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing'))::int AS pending_count,
+                COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')), 0) AS pending_amount
+              FROM settlements
+              ${settlementSuppressionWhere}`,
+              settlementSuppressionParams.length ? settlementSuppressionParams : undefined
+            );
+          } catch {
+            try {
+              return await query(
+                `SELECT 
+                  0::int AS pending_count,
+                  COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)), 0) AS pending_amount
+                FROM settlements
+                ${settlementSuppressionWhere}`,
+                settlementSuppressionParams.length ? settlementSuppressionParams : undefined
+              );
+            } catch {
+              return { rows: [{ pending_count: 0, pending_amount: 0 }] };
+            }
+          }
+        })(),
+      ]);
 
       // Get commission (assuming 10% default)
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
       const totalCommission = totalRevenue * 0.1;
+      const activeProducts = parseInt(String(activeProductsRow.rows[0]?.c ?? '0'), 10) || 0;
+      const pendingApprovals = parseInt(String(pendingApprovalsRow.rows[0]?.c ?? '0'), 10) || 0;
+      const processingOrders = parseInt(String(processingOrdersRow.rows[0]?.c ?? '0'), 10) || 0;
+      const settlementRow = settlementAggRow.rows[0] || {};
+      const pendingSettlements = parseInt(String(settlementRow.pending_count ?? '0'), 10) || 0;
+      const pendingSettlementAmount = parseFloat(String(settlementRow.pending_amount ?? '0')) || 0;
 
       return c.json({
         success: true,
         data: {
           totalRevenue,
+          totalGMV: totalRevenue,
           totalCommission,
           totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0', 10),
           activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
           totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
           thisMonthRevenue: parseFloat(revenueStats.rows[0]?.this_month_revenue || '0'),
+          activeProducts,
+          pendingApprovals,
+          processingOrders,
+          pendingSettlements,
+          pendingSettlementAmount,
         },
       });
     } catch (error: any) {

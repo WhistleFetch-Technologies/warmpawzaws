@@ -1,4 +1,19 @@
-import { getSearchCategoryAliases } from '@warmpawz/service-launch-mappings';
+import { getSearchCategoryAliases, normalizeCategoryToken } from '@warmpawz/service-launch-mappings';
+
+/** Empty keyword + hub chip → strict category-column matching only (no service_name ILIKE leakage). */
+export function isHubBrowseCategoryOnly(
+  categorySlug: string | undefined,
+  searchQuery: string | undefined
+): boolean {
+  return !!String(categorySlug ?? '').trim() && !String(searchQuery ?? '').trim();
+}
+
+/** Normalized tokens for SQL `REGEXP_REPLACE` category comparison (canonical hub aliases only). */
+export function expandSearchCategoryNormalizedTokens(slug: string | undefined): string[] {
+  const list = getSearchCategoryAliases(slug);
+  if (!list.length) return [];
+  return Array.from(new Set(list.map((v) => normalizeCategoryToken(v)).filter(Boolean)));
+}
 
 export function expandSearchCategoryForSql(slug: string | undefined): string[] {
   const list = getSearchCategoryAliases(slug);

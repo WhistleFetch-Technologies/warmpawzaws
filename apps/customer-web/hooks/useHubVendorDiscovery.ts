@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import {
   buildBoardingVendorListFromRows,
   mapServicesApiResponseToPlanRows,
@@ -46,46 +47,7 @@ export function useHubVendorDiscovery(
       if (customLoadRef.current) {
         rows = await customLoadRef.current();
       } else {
-        let latitude: string | undefined;
-        let longitude: string | undefined;
-        try {
-          const profileRes = (await apiClient.get(
-            `/customer/profile?phone=${encodeURIComponent(phone)}`
-          )) as any;
-          const profile = profileRes?.profile || profileRes;
-          if (profile?.latitude != null && profile?.longitude != null) {
-            latitude = String(profile.latitude);
-            longitude = String(profile.longitude);
-          }
-        } catch {
-          /* ignore */
-        }
-        if (latitude == null && typeof window !== 'undefined') {
-          try {
-            const lat = localStorage.getItem('customer_latitude');
-            const lng = localStorage.getItem('customer_longitude');
-            if (lat && lng) {
-              latitude = lat;
-              longitude = lng;
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-          try {
-            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(resolve, reject, {
-                timeout: 5000,
-                maximumAge: 300000,
-              });
-            });
-            latitude = String(pos.coords.latitude);
-            longitude = String(pos.coords.longitude);
-          } catch {
-            /* ignore */
-          }
-        }
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
         const locationParams =
           latitude && longitude
             ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
