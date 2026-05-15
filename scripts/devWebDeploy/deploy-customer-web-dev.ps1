@@ -16,7 +16,7 @@ param(
     [switch]$SkipInvalidation,
     # Pass -CustomerEcommerceEnabled to turn shop/cart/wishlist/orders ON for this deploy (default off).
     [switch]$CustomerEcommerceEnabled,
-    # Deprecated: use -CustomerEcommerceEnabled instead. Kept so old invocations still parse.
+    # Kept for compatibility: forces ecommerce off even if -CustomerEcommerceEnabled is also passed.
     [switch]$CustomerEcommerceDisabled
 )
 
@@ -133,7 +133,7 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
-$customerEcommerceJs = if ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
+$customerEcommerceJs = if ($CustomerEcommerceDisabled) { 'false' } elseif ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint

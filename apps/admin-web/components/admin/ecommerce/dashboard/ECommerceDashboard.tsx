@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   Store, Package, ShoppingCart, IndianRupee, TrendingUp, AlertCircle,
   Eye, ArrowUp, ArrowDown, Users, Truck, FileText, Tag, CreditCard,
@@ -8,6 +9,24 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ProductDetailsModal } from '../shared/ProductDetailsModal';
+
+/** Response shape from GET /admin/ecommerce/analytics/platform */
+export interface ECommercePlatformAnalytics {
+  totalRevenue?: number;
+  totalGMV?: number;
+  totalCommission?: number;
+  totalOrders?: number;
+  activeSellers?: number;
+  totalSellers?: number;
+  thisMonthRevenue?: number;
+  activeProducts?: number;
+  pendingApprovals?: number;
+  processingOrders?: number;
+  pendingSettlements?: number;
+  pendingSettlementAmount?: number;
+  totalGST?: number;
+  totalPayouts?: number;
+}
 
 interface ECommerceDashboardProps {
   onNavigateToSellers?: () => void;
@@ -26,7 +45,7 @@ export function ECommerceDashboard({
   onNavigateToPromotions,
   onNavigateToCategories
 }: ECommerceDashboardProps) {
-  const [analytics, setAnalytics] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<ECommercePlatformAnalytics>({});
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [topSellers, setTopSellers] = useState<any[]>([]);
@@ -43,8 +62,10 @@ export function ECommerceDashboard({
       if (!opts?.silent) setLoading(true);
       
       // Load analytics
-      const analyticsResponse = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({ data: {} }));
-      setAnalytics(analyticsResponse?.data || {});
+      const analyticsResponse = await apiClient.get<{ data?: ECommercePlatformAnalytics }>(
+        '/admin/ecommerce/analytics/platform'
+      ).catch(() => ({ data: {} as ECommercePlatformAnalytics }));
+      setAnalytics(analyticsResponse?.data ?? {});
       
       // Load recent orders
       const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
@@ -126,13 +147,59 @@ export function ECommerceDashboard({
     },
   ];
 
-  // Quick metrics
-  const quickMetrics = [
-    { label: 'Active Products', value: analytics?.activeProducts || 0, icon: Package, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Pending Approvals', value: analytics?.pendingApprovals || 0, icon: Clock, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Processing Orders', value: analytics?.processingOrders || 0, icon: RefreshCcw, color: 'text-blue-600 bg-blue-50' },
-    { label: 'Pending Settlements', value: analytics?.pendingSettlements || 0, icon: CreditCard, color: 'text-purple-600 bg-purple-50' },
+  type QuickMetricId = 'activeProducts' | 'pendingApprovals' | 'processingOrders' | 'pendingSettlements';
+
+  const quickMetrics: {
+    id: QuickMetricId;
+    label: string;
+    icon: LucideIcon;
+    color: string;
+    onNavigate?: () => void;
+  }[] = [
+    {
+      id: 'activeProducts',
+      label: 'Active Products',
+      icon: Package,
+      color: 'text-emerald-600 bg-emerald-50',
+      onNavigate: onNavigateToProducts,
+    },
+    {
+      id: 'pendingApprovals',
+      label: 'Pending Approvals',
+      icon: Clock,
+      color: 'text-amber-600 bg-amber-50',
+      onNavigate: onNavigateToProducts,
+    },
+    {
+      id: 'processingOrders',
+      label: 'Processing Orders',
+      icon: RefreshCcw,
+      color: 'text-blue-600 bg-blue-50',
+      onNavigate: onNavigateToOrders,
+    },
+    {
+      id: 'pendingSettlements',
+      label: 'Pending Settlements',
+      icon: CreditCard,
+      color: 'text-purple-600 bg-purple-50',
+      onNavigate: onNavigateToSettlements,
+    },
   ];
+
+  const quickMetricValue = (id: QuickMetricId): number => {
+    switch (id) {
+      case 'activeProducts':
+        return analytics.activeProducts ?? 0;
+      case 'pendingApprovals':
+        return analytics.pendingApprovals ?? 0;
+      case 'processingOrders':
+        return analytics.processingOrders ?? 0;
+      case 'pendingSettlements':
+        return analytics.pendingSettlements ?? 0;
+      default:
+        return 0;
+    }
+  };
 
 
   const getOrderStatusBadge = (status: string) => {
@@ -196,17 +263,35 @@ export function ECommerceDashboard({
 
       {/* Quick Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {quickMetrics.map((metric, index) => (
-          <div key={index} className="bg-white rounded-xl border border-slate-100 p-4 flex items-center gap-3">
-            <div className={`p-2.5 rounded-lg ${metric.color}`}>
-              <metric.icon className="w-5 h-5" />
+        {quickMetrics.map((metric) => {
+          const clickable = Boolean(metric.onNavigate);
+          const displayValue = loading ? '—' : quickMetricValue(metric.id).toLocaleString();
+          const inner = (
+            <>
+              <div className={`p-2.5 rounded-lg ${metric.color}`}>
+                <metric.icon className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <p className="text-2xl font-bold text-slate-900">{displayValue}</p>
+                <p className="text-xs text-slate-500">{metric.label}</p>
+              </div>
+            </>
+          );
+          return clickable ? (
+            <button
+              key={metric.id}
+              type="button"
+              onClick={() => metric.onNavigate?.()}
+              className="bg-white rounded-xl border border-slate-100 p-4 flex items-center gap-3 w-full text-left hover:border-orange-200 hover:shadow-sm transition-colors cursor-pointer"
+            >
+              {inner}
+            </button>
+          ) : (
+            <div key={metric.id} className="bg-white rounded-xl border border-slate-100 p-4 flex items-center gap-3">
+              {inner}
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{metric.value}</p>
-              <p className="text-xs text-slate-500">{metric.label}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
 

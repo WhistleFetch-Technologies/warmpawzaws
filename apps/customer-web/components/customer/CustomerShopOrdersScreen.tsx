@@ -559,8 +559,16 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                           <StatusIcon className="w-4 h-4 text-orange-500" />
                           Order status
                         </h4>
-                        <div className="flex items-center gap-1 overflow-x-auto pb-1">
-                          {['pending', 'confirmed', 'processing', 'shipped', 'delivered'].map((status, index) => {
+                        <div className="flex w-full min-w-0">
+                          {(
+                            [
+                              { key: 'pending' as const, label: 'Placed' },
+                              { key: 'confirmed' as const, label: 'Confirmed' },
+                              { key: 'processing' as const, label: 'Processing' },
+                              { key: 'shipped' as const, label: 'Shipped' },
+                              { key: 'delivered' as const, label: 'Delivered' },
+                            ] as const
+                          ).map((step, index) => {
                             const statusOrder = [
                               'pending',
                               'confirmed',
@@ -568,42 +576,48 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                               'shipped',
                               'out_for_delivery',
                               'delivered',
-                            ];
+                            ] as const;
                             const currentIndex = statusOrder.indexOf(order.status);
                             const isComplete =
                               index <= currentIndex && !['cancelled', 'returned'].includes(order.status);
-                            const isCurrent = statusOrder[index] === order.status;
+                            const isCurrent =
+                              order.status === step.key ||
+                              (order.status === 'out_for_delivery' && step.key === 'delivered');
+                            const active = !['cancelled', 'returned'].includes(order.status);
+                            const lineLeftGreen = active && index > 0 && currentIndex >= index;
+                            const lineRightGreen = active && index < 4 && currentIndex > index;
 
                             return (
-                              <React.Fragment key={status}>
-                                <div
-                                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${
-                                    isComplete
-                                      ? 'bg-emerald-500 text-white'
-                                      : isCurrent
-                                        ? 'bg-orange-500 text-white'
-                                        : 'bg-slate-200 text-slate-400'
-                                  }`}
-                                >
-                                  {isComplete ? <Check className="w-3.5 h-3.5" /> : index + 1}
-                                </div>
-                                {index < 4 && (
+                              <div key={step.key} className="flex flex-1 min-w-0 flex-col items-center">
+                                <div className="flex w-full items-center">
+                                  {index > 0 && (
+                                    <div
+                                      className={`h-0.5 flex-1 min-w-[2px] rounded ${lineLeftGreen ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                                    />
+                                  )}
                                   <div
-                                    className={`h-0.5 w-6 sm:w-8 shrink-0 rounded ${
-                                      isComplete ? 'bg-emerald-500' : 'bg-slate-200'
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${
+                                      isComplete
+                                        ? 'bg-emerald-500 text-white'
+                                        : isCurrent
+                                          ? 'bg-orange-500 text-white'
+                                          : 'bg-slate-200 text-slate-400'
                                     }`}
-                                  />
-                                )}
-                              </React.Fragment>
+                                  >
+                                    {isComplete ? <Check className="w-3.5 h-3.5" /> : index + 1}
+                                  </div>
+                                  {index < 4 && (
+                                    <div
+                                      className={`h-0.5 flex-1 min-w-[2px] rounded ${lineRightGreen ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                                    />
+                                  )}
+                                </div>
+                                <span className="mt-1.5 text-[10px] text-slate-500 text-center leading-tight px-0.5 w-full">
+                                  {step.label}
+                                </span>
+                              </div>
                             );
                           })}
-                        </div>
-                        <div className="flex justify-between mt-1.5 text-[10px] text-slate-500 gap-1">
-                          <span>Placed</span>
-                          <span className="hidden min-[380px]:inline">Confirmed</span>
-                          <span>Processing</span>
-                          <span>Shipped</span>
-                          <span>Delivered</span>
                         </div>
                       </div>
 

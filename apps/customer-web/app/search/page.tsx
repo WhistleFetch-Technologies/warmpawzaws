@@ -11,10 +11,21 @@ import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
+import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
+import {
+  formatVendorAddressLine,
+  haversineDistanceKm,
+  pickDistanceKmFromApi,
+  pickProfileImageUrl,
+  pickServiceListingImage,
+  pickVendorLatLng,
+  type SearchApiVendorRow,
+} from '@/lib/search-vendor-display';
 
 interface SearchResult {
   id: string;
   type: 'vendor' | 'service';
+  /** For services: listing title (shown under business name). Hub filter uses this for service rows. */
   name: string;
   category: string;
   rating: number;
@@ -22,58 +33,116 @@ interface SearchResult {
   city: string;
   price?: number;
   imageUrl?: string;
+  /** Service rows: owning vendor id. */
+  vendorOwnerId?: string;
+  /** Service rows: headline (business name). */
+  vendorBusinessName?: string;
+  /** Vendor rows: single line for cards (never raw coordinates). */
+  addressDisplay?: string;
+  state?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  /** From GET /search `distanceKm` and/or client when geo + coords exist. */
+  distanceKm?: number | null;
 }
 
 function mapSearchApiToResults(response: any): SearchResult[] {
   const vendorsRaw = response.vendors ?? response.data?.vendors ?? [];
   const servicesRaw = response.services ?? response.data?.services ?? [];
 
-  const vendors = (vendorsRaw || []).map((v: any) => ({
-    id: v.id,
-    type: 'vendor' as const,
-    name: v.businessName ?? v.business_name ?? '',
-    category:
-      v.category ??
-      v.roleId ??
-      v.role_id ??
-      v.serviceType ??
-      v.service_type ??
-      '',
-    rating: parseFloat(v.rating ?? v.avg_rating) || 0,
-    reviewCount: v.review_count ?? v.completedBookings ?? 0,
-    city: v.city ?? '',
-    imageUrl: v.profile_image ?? v.photoUrl,
-  }));
+  const vendors = (vendorsRaw || []).map((v: any) => {
+    const row = v as SearchApiVendorRow;
+    const geo = pickVendorLatLng(row);
+    const apiDist = pickDistanceKmFromApi(row);
+    return {
+      id: v.id,
+      type: 'vendor' as const,
+      name: v.businessName ?? v.business_name ?? '',
+      category:
+        v.category ??
+        v.roleName ??
+        v.role_name ??
+        v.searchRoleName ??
+        v.search_role_name ??
+        v.serviceType ??
+        v.service_type ??
+        '',
+      rating: parseFloat(v.rating ?? v.avg_rating) || 0,
+      reviewCount: v.review_count ?? v.completedBookings ?? 0,
+      city: v.city ?? '',
+      imageUrl: pickProfileImageUrl(row),
+      addressDisplay: formatVendorAddressLine({
+        address: v.address,
+        landmark: v.landmark,
+        city: v.city,
+        state: v.state,
+        pincode: v.pincode,
+      }),
+      state: v.state ?? undefined,
+      latitude: geo?.lat ?? null,
+      longitude: geo?.lng ?? null,
+      distanceKm: apiDist,
+    };
+  });
 
   const services = (servicesRaw || []).map((s: any) => {
     const id = String(s.id ?? s.vendor_service_id ?? s.vendorServiceId ?? '').trim();
+    const row = s as SearchApiVendorRow;
+    const vendorFacet: SearchApiVendorRow = {
+      ...row,
+      latitude: s.vendorLatitude ?? s.vendor_latitude ?? s.latitude,
+      longitude: s.vendorLongitude ?? s.vendor_longitude ?? s.longitude,
+      profileImage: s.vendorProfileImage ?? s.vendor_profile_image,
+      profile_image: s.vendor_profile_image ?? s.vendorProfileImage,
+      address: s.vendorAddress ?? s.vendor_address,
+      landmark: s.vendorLandmark ?? s.vendor_landmark,
+      pincode: s.vendorPincode ?? s.vendor_pincode,
+      distanceKm: s.distanceKm ?? s.distance_km,
+    };
+    const geo = pickVendorLatLng(vendorFacet);
+    const apiDist = pickDistanceKmFromApi(vendorFacet);
+    const headline =
+      (typeof s.vendorName === 'string' && s.vendorName.trim()) ||
+      (typeof s.business_name === 'string' && s.business_name.trim()) ||
+      '';
+    const serviceTitle = (s.serviceName ?? s.service_name ?? '').trim() || 'Service';
+    const profileImg = pickProfileImageUrl(vendorFacet);
+    const galleryImg = pickServiceListingImage(row);
     return {
       id,
       type: 'service' as const,
-      name: s.serviceName ?? s.service_name ?? '',
-      category: s.category ?? s.serviceType ?? s.service_type ?? '',
-      rating: 0,
-      reviewCount: 0,
+      name: serviceTitle,
+      category:
+        s.category ??
+        s.serviceType ??
+        s.service_type ??
+        s.searchRoleName ??
+        s.search_role_name ??
+        s.vendorRoleName ??
+        s.vendor_role_name ??
+        '',
+      rating: parseFloat(s.vendorRating ?? s.vendor_rating ?? s.rating) || 0,
+      reviewCount: parseInt(String(s.vendorReviewCount ?? s.total_reviews ?? 0), 10) || 0,
       city: s.city ?? '',
       price: parseFloat(s.price ?? s.base_price) || undefined,
-      imageUrl: s.image_url,
+      imageUrl: profileImg || galleryImg,
+      vendorOwnerId: String(s.vendorId ?? s.vendor_id ?? '').trim(),
+      vendorBusinessName: headline,
+      addressDisplay: formatVendorAddressLine({
+        address: s.vendorAddress ?? s.vendor_address,
+        landmark: s.vendorLandmark ?? s.vendor_landmark,
+        city: s.city,
+        state: s.state,
+        pincode: s.vendorPincode ?? s.vendor_pincode,
+      }),
+      state: s.state ?? undefined,
+      latitude: geo?.lat ?? null,
+      longitude: geo?.lng ?? null,
+      distanceKm: apiDist,
     };
   }).filter((s: SearchResult) => s.id);
 
   return [...vendors, ...services];
-}
-
-function categoryEmoji(cat: string): string {
-  const c = (cat || '').toLowerCase();
-  if (c.includes('vet') || c.includes('veterinar') || c.includes('clinic')) return '🏥';
-  if (c.includes('groom')) return '✂️';
-  if (c.includes('train')) return '🎓';
-  if (c.includes('board')) return '🏨';
-  if (c.includes('walk')) return '🚶';
-  if (c.includes('cafe')) return '☕';
-  if (c.includes('resort')) return '🏝️';
-  if (c.includes('pharma') || c.includes('chemist')) return '💊';
-  return '🐾';
 }
 
 export default function SearchPage() {
@@ -111,13 +180,15 @@ function SearchContent() {
   const categoryRef = React.useRef(category);
   const queryRef = React.useRef(query);
   const apiResultsRef = React.useRef(apiResults);
+  const lastSearchTriggerRef = React.useRef<string>('');
   categoryRef.current = category;
   queryRef.current = query;
   apiResultsRef.current = apiResults;
 
   /**
-   * Keyword present → fetch GET /search?q=… only (no category); hub chips filter client-side.
-   * No keyword but hub selected → fetch GET /search?category=… (browse-by-hub).
+   * Keyword present → fetch GET /search?q=… only (no category query param); hub chips filter client-side.
+   * No keyword but hub selected → fetch GET /search?category=… (backend strict hub browse).
+   * Whenever a hub chip is selected, results are filtered client-side with canonical category tokens (defense in depth).
    */
   const searchFetchTrigger = useMemo(() => {
     return buildSearchFetchTrigger(query, category, vendorIdParam, searchNonce);
@@ -126,9 +197,74 @@ function SearchContent() {
   const displayedResults = useMemo(() => {
     const q = (query || '').trim();
     const hub = (category || '').trim();
-    if (!q) return apiResults;
-    return applyHubCategoryFilter(apiResults, hub, q);
+
+    // For hub browse the backend already filtered by category+role. Re-applying the client
+    // filter is defense-in-depth but must not silently drop rows whose category came from
+    // the role-name fallback (which the backend matched via JOIN on roles but which may not
+    // perfectly round-trip through normalizeCategoryToken). Apply client filter only for
+    // keyword mode (where the backend returned the full unfiltered set).
+    const filtered = (hub && q) ? applyHubCategoryFilter(apiResults, hub, q) : apiResults;
+
+    // Deduplicate: if a vendor row is present, its services are reachable by clicking the
+    // vendor card. Suppress service rows from the same vendor to prevent the same business
+    // appearing N+1 times (once as vendor + once per service).
+    const vendorRowIds = new Set(
+      filtered.filter(r => r.type === 'vendor').map(r => r.id)
+    );
+    return filtered.filter(
+      r => r.type === 'vendor' || !(r.vendorOwnerId && vendorRowIds.has(r.vendorOwnerId))
+    );
   }, [apiResults, query, category]);
+
+  /** Used only for distance labels; omit fake defaults — no distance until browser shares location. */
+  const [userGeo, setUserGeo] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    const tryHigh = () =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () =>
+          navigator.geolocation.getCurrentPosition(
+            (pos) =>
+              setUserGeo({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+              }),
+            () => setUserGeo(null),
+            {
+              maximumAge: 300_000,
+              timeout: 25_000,
+              enableHighAccuracy: true,
+            }
+          ),
+        {
+          maximumAge: 120_000,
+          timeout: 20_000,
+          enableHighAccuracy: false,
+        }
+      );
+    tryHigh();
+  }, []);
+
+  const displayedWithDistance = useMemo(() => {
+    return displayedResults.map((r) => {
+      let distanceKm = r.distanceKm;
+      if (
+        (distanceKm == null || !Number.isFinite(Number(distanceKm))) &&
+        userGeo &&
+        r.latitude != null &&
+        r.longitude != null &&
+        Number.isFinite(r.latitude) &&
+        Number.isFinite(r.longitude)
+      ) {
+        distanceKm = haversineDistanceKm(userGeo.lat, userGeo.lng, r.latitude, r.longitude);
+      }
+      return { ...r, distanceKm };
+    });
+  }, [displayedResults, userGeo]);
 
   const categories = [
     { id: '', label: 'All', icon: '🔍' },
@@ -161,8 +297,12 @@ function SearchContent() {
     }
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setError(null);
+      const triggerJson = JSON.stringify(searchFetchTrigger);
+      const sameSearchAsLast = lastSearchTriggerRef.current === triggerJson;
+      lastSearchTriggerRef.current = triggerJson;
+      const quietGeoRefetch =
+        !!userGeo && sameSearchAsLast && apiResultsRef.current.length > 0;
+      setLoading(!quietGeoRefetch);
       try {
         const params = new URLSearchParams();
         if (searchFetchTrigger.kind === 'keyword') {
@@ -174,6 +314,10 @@ function SearchContent() {
         } else {
           params.set('limit', '50');
         }
+        if (userGeo) {
+          params.set('userLat', String(userGeo.lat));
+          params.set('userLng', String(userGeo.lng));
+        }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
         const mapped = mapSearchApiToResults(response);
@@ -181,7 +325,9 @@ function SearchContent() {
         if (searchFetchTrigger.kind === 'keyword') {
           const qStr = searchFetchTrigger.q;
           const hub = categoryRef.current.trim();
-          const contextResults = hub ? applyHubCategoryFilter(mapped, hub, qStr) : mapped;
+          const filtered = (hub && qStr) ? applyHubCategoryFilter(mapped, hub, qStr) : mapped;
+          const vIds = new Set(filtered.filter(r => r.type === 'vendor').map(r => r.id));
+          const contextResults = filtered.filter(r => r.type === 'vendor' || !(r.vendorOwnerId && vIds.has(r.vendorOwnerId)));
           saveSearchContext({
             query: qStr,
             category: hub || undefined,
@@ -216,7 +362,7 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchFetchTrigger, vendorIdParam]);
+  }, [searchFetchTrigger, vendorIdParam, userGeo]);
 
   /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
   useEffect(() => {
@@ -224,11 +370,14 @@ function SearchContent() {
     const q = queryRef.current.trim();
     if (!q || !apiResultsRef.current.length) return;
     const hub = category.trim();
-    const filtered = hub ? applyHubCategoryFilter(apiResultsRef.current, hub, q) : apiResultsRef.current;
+    // Use same dedup logic as displayedResults so stored context matches what's shown.
+    const filtered = (hub && q) ? applyHubCategoryFilter(apiResultsRef.current, hub, q) : apiResultsRef.current;
+    const vendorIds = new Set(filtered.filter(r => r.type === 'vendor').map(r => r.id));
+    const deduped = filtered.filter(r => r.type === 'vendor' || !(r.vendorOwnerId && vendorIds.has(r.vendorOwnerId)));
     saveSearchContext({
       query: q,
       category: hub || undefined,
-      results: filtered,
+      results: deduped,
       timestamp: Date.now(),
     });
   }, [category, vendorIdParam]);
@@ -277,6 +426,9 @@ function SearchContent() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // Keyword submit → clear hub chip so results are not AND-filtered by category.
+    // The user's typed query is the primary intent; the chip was a browse mode.
+    if (query.trim()) setCategory('');
     setSearchNonce((n) => n + 1);
   };
 
@@ -342,7 +494,12 @@ function SearchContent() {
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => setCategory(cat.id)}
+                onClick={() => {
+                  // Hub chip click → clear keyword so results are not AND-filtered.
+                  // The chip is a browse mode; keyword is a search mode. Keep them exclusive.
+                  if (cat.id) setQuery('');
+                  setCategory(cat.id);
+                }}
                 className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition active:scale-[0.98] ${
                   category === cat.id
                     ? 'bg-[#FF8C42] text-white shadow-sm'
@@ -438,7 +595,7 @@ function SearchContent() {
               Try Again
             </button>
           </div>
-        ) : displayedResults.length === 0 ? (
+        ) : displayedWithDistance.length === 0 ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center px-2 py-10 text-center">
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
               <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
@@ -450,53 +607,66 @@ function SearchContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
-            {displayedResults.map((result) => (
-              <a
-                key={`${result.type}-${result.id}`}
-                href={result.type === 'service' ? `/booking/${result.id}` : `/search?vendorId=${result.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  // Update search context with selection before navigation
-                  if (result.type === 'vendor') {
+            {displayedWithDistance.map((result) =>
+              result.type === 'vendor' ? (
+                <button
+                  key={`vendor-${result.id}`}
+                  type="button"
+                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
+                  onClick={() => {
                     updateSearchContextSelection(result.id, undefined);
-                    // For vendors, redirect to search with vendorId to show services
                     router.push(`/search?vendorId=${result.id}`);
-                  } else {
+                  }}
+                >
+                  <CustomerSearchListingCard
+                    title={result.name}
+                    category={result.category}
+                    imageUrl={result.imageUrl}
+                    addressLine={
+                      result.addressDisplay ||
+                      [result.city, result.state].filter(Boolean).join(', ') ||
+                      'Address on file'
+                    }
+                    distanceKm={result.distanceKm}
+                    rating={result.rating}
+                    reviewCount={result.reviewCount}
+                    badgeLabel={result.category || undefined}
+                  />
+                </button>
+              ) : (
+                <button
+                  key={`service-${result.id}`}
+                  type="button"
+                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
+                  onClick={(e) => {
+                    e.preventDefault();
                     updateSearchContextSelection(undefined, result.id);
-                    // For services, go directly to booking (will be guarded)
                     router.push(`/booking/${result.id}`);
-                  }
-                }}
-                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
-              >
-                <div className="flex h-32 items-center justify-center bg-gradient-to-br from-orange-100 to-amber-100 text-5xl">
-                  {categoryEmoji(result.category)}
-                </div>
-                <div className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{result.name}</h3>
-                      <p className="text-sm text-gray-500 flex items-center gap-1">
-                        <span>📍</span> {result.city}
-                      </p>
-                    </div>
-                    {result.price && (
-                      <span className="text-orange-500 font-semibold">₹{result.price}</span>
-                    )}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <span className="text-yellow-500">⭐</span>
-                      <span className="font-medium">{result.rating.toFixed(1)}</span>
-                      <span className="text-gray-400">({result.reviewCount})</span>
-                    </div>
-                    <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full">
-                      {result.category}
-                    </span>
-                  </div>
-                </div>
-              </a>
-            ))}
+                  }}
+                >
+                  <CustomerSearchListingCard
+                    title={
+                      result.vendorBusinessName ||
+                      [result.city, result.state].filter(Boolean).join(', ') ||
+                      'Service provider'
+                    }
+                    subtitle={result.vendorBusinessName ? result.name : undefined}
+                    category={result.category}
+                    imageUrl={result.imageUrl}
+                    addressLine={
+                      result.addressDisplay ||
+                      [result.city, result.state].filter(Boolean).join(', ') ||
+                      'Address on file'
+                    }
+                    distanceKm={result.distanceKm}
+                    rating={result.rating}
+                    reviewCount={result.reviewCount}
+                    price={result.price}
+                    badgeLabel={result.category || undefined}
+                  />
+                </button>
+              )
+            )}
           </div>
         )}
       </main>
