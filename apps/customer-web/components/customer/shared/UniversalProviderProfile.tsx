@@ -558,11 +558,6 @@ export function UniversalProviderProfile({
                   <p className="text-sm text-gray-500 truncate">{provider.qualifications}</p>
                 )}
                 
-                {provider.specialization && (
-                  <Badge className="bg-purple-100 text-purple-700 text-xs mt-1">
-                    {provider.specialization}
-                  </Badge>
-                )}
               </div>
             </div>
 

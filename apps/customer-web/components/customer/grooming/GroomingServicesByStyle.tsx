@@ -1294,10 +1294,6 @@ export function GroomingServicesByStyle({
                           )}
                         </div>
                         <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
-                        {/* ✅ NEW: Specialisation display */}
-                        {provider.specialisation && (
-                          <p className="text-xs text-purple-600 font-medium mt-1">{provider.specialisation}</p>
-                        )}
                         <div className="flex items-center gap-3 mt-1">
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { MapPin, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar, Award, Navigation, Heart, CheckCircle } from 'lucide-react';
+import { MapPin, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar, Navigation, Heart, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { trackClick } from '@/lib/analytics';
@@ -297,18 +297,6 @@ export function UniversalVendorCard({
             )}
           </div>
 
-          {/* ✅ ENRICHED: Specializations */}
-          {showEnrichedData && specializations && specializations.length > 0 && (
-            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <Award className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
-              {specializations.map((spec, idx) => (
-                <span key={spec.id} className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
-                  {spec.icon && <span className="mr-0.5">{spec.icon}</span>}
-                  {spec.name}
-                </span>
-              ))}
-            </div>
-          )}
 
           {/* Service Name (if available) */}
           {vendor.serviceName && (
