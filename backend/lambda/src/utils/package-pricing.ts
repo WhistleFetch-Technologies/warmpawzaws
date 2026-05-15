@@ -145,7 +145,9 @@ async function resolveCustomerTaxLocation(
   return undefined;
 }
 
-function vendorTaxLocationFromDbRow(row: Record<string, unknown> | undefined): { state: string; city?: string } | undefined {
+function vendorTaxLocationFromDbRow(
+  row: Record<string, unknown> | undefined
+): { state: string; city?: string } | undefined {
   if (!row) return undefined;
   const st = row.state != null ? String(row.state).trim() : '';
   if (st) {
@@ -259,6 +261,7 @@ export async function quotePackagePricing(
               : undefined,
           catalogCategoryId: catalogCategoryId || undefined,
           roleId,
+          gstApplicationScope: 'service_booking',
         },
       ],
       customerLocation,
