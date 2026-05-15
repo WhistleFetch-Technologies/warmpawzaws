@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -24,6 +25,7 @@ import {
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
@@ -169,7 +171,13 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     address,
     rating: Number(p.rating ?? 0) || 0,
     review_count: Number(p.reviewCount ?? p.review_count ?? 0) || 0,
-    distanceKm: p.distance != null && p.distance !== '' ? Number(p.distance) : null,
+    distanceKm: (() => {
+      if (p.distance != null && p.distance !== '') {
+        const n = Number(p.distance);
+        return Number.isFinite(n) ? n : null;
+      }
+      return pickProviderDistanceKm(p);
+    })(),
     timing: p.businessHours || p.timing || '9 AM - 8 PM',
     photo: p.photo || p.vendorPhoto || p.photoUrl,
     nextAvailableSlot: nextSlot,
@@ -201,19 +209,6 @@ export function ClinicListView({
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
-
-  const getLocationParams = () => {
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        return `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
-      }
-    } catch {
-      /* ignore */
-    }
-    return '';
-  };
 
   const fetchVendorServicesForClinic = useCallback(
     async (clinicId: string) => {
@@ -255,7 +250,7 @@ export function ClinicListView({
 
   useEffect(() => {
     loadClinics();
-  }, [specialization]);
+  }, [specialization, phone]);
 
   const loadDiscoverFallback = async (locationParams: string) => {
     const specParam = specialization
@@ -318,7 +313,13 @@ export function ClinicListView({
             String(service.vendorReviewCount || service.reviewsCount || service.review_count || '0'),
             10
           ),
-          distanceKm: service.distance != null ? Number(service.distance) : null,
+          distanceKm: (() => {
+            if (service.distance != null) {
+              const n = Number(service.distance);
+              return Number.isFinite(n) ? n : null;
+            }
+            return pickProviderDistanceKm(service);
+          })(),
           timing: actualTiming,
           photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage,
           nextAvailableSlot: nextSlot,
@@ -344,7 +345,11 @@ export function ClinicListView({
   const loadClinics = async () => {
     try {
       setLoading(true);
-      const locationParams = getLocationParams();
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+      let locationParams = '';
+      if (latitude != null && longitude != null) {
+        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
+      }
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
 
       let mapped: ClinicProvider[] = [];

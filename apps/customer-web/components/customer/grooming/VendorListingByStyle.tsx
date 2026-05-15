@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { Star, MapPin, Building2, Home, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, Video, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
-import { formatDistanceDisplay } from '@/lib/distance-display';
+import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-display';
 import { StarRating } from '../shared/StarRating';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -33,6 +34,8 @@ interface Vendor {
   rating: number;
   reviewCount: number;
   distance?: number | null;
+  distanceKm?: number | null;
+  distanceText?: string | null;
   city?: string;
   address?: string;
   photo?: string;
@@ -67,22 +70,126 @@ export function VendorListingByStyle({
   const [minRating, setMinRating] = useState<number>(0);
   const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Get customer location on mount
   useEffect(() => {
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        setCustomerLocation({ lat: parseFloat(customerLat), lng: parseFloat(customerLng) });
+    let cancelled = false;
+    (async () => {
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+      if (cancelled) return;
+      if (latitude != null && longitude != null) {
+        const lat = parseFloat(latitude);
+        const lng = parseFloat(longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setCustomerLocation({ lat, lng });
+          return;
+        }
       }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-  }, []);
+      setCustomerLocation(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
+
+  const loadVendors = useCallback(
+    async (searchFilter?: string) => {
+      try {
+        setLoading(true);
+
+        let locationParams = '';
+        if (customerLocation) {
+          locationParams = `&latitude=${customerLocation.lat}&longitude=${customerLocation.lng}`;
+          if (distanceRange !== 'all') {
+            locationParams += `&maxDistance=${distanceRange}`;
+          }
+        }
+
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+        const response = (await apiClient.get(
+          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
+        )) as any;
+
+        if (response.success) {
+          let providerData = response.providers || response.vendors || [];
+
+          const vendorMap = new Map<string, Vendor>();
+
+          providerData.forEach((item: any) => {
+            const vendorId = item.providerId || item.vendorId || item.id;
+            const providerType = item.providerType || 'vendor';
+            const distKm = pickProviderDistanceKm(item);
+
+            if (!vendorMap.has(vendorId)) {
+              const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
+              const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
+              vendorMap.set(vendorId, {
+                id: vendorId,
+                name: item.name || item.vendorName || item.businessName || 'Service Provider',
+                type: providerType,
+                rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+                reviewCount: rc,
+                distance: distKm,
+                distanceKm: distKm,
+                distanceText:
+                  typeof item.distanceText === 'string' && item.distanceText.trim()
+                    ? item.distanceText.trim()
+                    : null,
+                city: item.city,
+                address: item.address,
+                photo: item.photo,
+                isVerified: item.isVerified,
+                experienceYears: item.experienceYears,
+                qualifications: item.qualifications,
+                vendorId: item.vendorId,
+                vendorName: item.vendorName,
+                specialization: item.specialization,
+                nextAvailable: item.nextAvailable,
+                price: item.price,
+              });
+            }
+          });
+
+          let vendorsList = Array.from(vendorMap.values());
+
+          if (searchFilter) {
+            const lowerSearch = searchFilter.toLowerCase();
+            vendorsList = vendorsList.filter(
+              (v) =>
+                v.name.toLowerCase().includes(lowerSearch) ||
+                v.city?.toLowerCase().includes(lowerSearch) ||
+                v.specialization?.toLowerCase().includes(lowerSearch)
+            );
+          }
+
+          if (minRating > 0) {
+            vendorsList = vendorsList.filter((v) => v.rating >= minRating);
+          }
+
+          if (distanceRange !== 'all' && customerLocation) {
+            const maxDist = parseInt(distanceRange);
+            vendorsList = vendorsList.filter(
+              (v) => v.distance === null || v.distance === undefined || v.distance <= maxDist
+            );
+          }
+
+          setVendors(vendorsList);
+          console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
+        } else {
+          console.warn(`⚠️ [VendorListingByStyle] Primary endpoint returned success=false or no vendors`);
+          setVendors([]);
+        }
+      } catch (error) {
+        console.error('❌ [VendorListingByStyle] Error:', error);
+        setVendors([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [customerLocation, phone, serviceStyle, distanceRange, minRating, category]
+  );
 
   useEffect(() => {
     loadVendors();
-  }, [serviceStyle, distanceRange, minRating]);
+  }, [loadVendors]);
 
   // Debounced search using OpenSearch
   const debouncedSearch = useCallback(
@@ -91,143 +198,59 @@ export function VendorListingByStyle({
         loadVendors();
         return;
       }
-      
+
       setIsSearching(true);
       try {
-        // Try OpenSearch first
         const searchParams = new URLSearchParams({
           q: query,
           category: category,
-          ...(customerLocation && { 
+          ...(customerLocation && {
             latitude: customerLocation.lat.toString(),
-            longitude: customerLocation.lng.toString() 
+            longitude: customerLocation.lng.toString(),
           }),
           ...(distanceRange !== 'all' && { distance: distanceRange }),
         });
-        
-        const response = await apiClient.get(`/search?${searchParams}`) as any;
-        
+
+        const response = (await apiClient.get(`/search?${searchParams}`)) as any;
+
         if (response.success || response.vendors) {
           const searchVendors = (response.vendors || []).map((v: any) => {
             const rc = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
             const r = v.rating != null ? Number(v.rating) : NaN;
+            const distKm = pickProviderDistanceKm(v);
             return {
-            id: v.id,
-            name: v.businessName || v.name,
-            type: 'vendor' as const,
-            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
-            reviewCount: rc,
-            distance: v.distance_km ?? v.distance ?? null,
-            city: v.city,
-            isVerified: true,
-            specialization: v.specialization,
-          };
+              id: v.id,
+              name: v.businessName || v.name,
+              type: 'vendor' as const,
+              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+              reviewCount: rc,
+              distance: distKm,
+              distanceKm: distKm,
+              distanceText:
+                typeof v.distanceText === 'string' && v.distanceText.trim()
+                  ? v.distanceText.trim()
+                  : null,
+              city: v.city,
+              isVerified: true,
+              specialization: v.specialization,
+            };
           });
           setVendors(searchVendors);
         }
       } catch (error) {
         console.warn('OpenSearch failed, using local filter:', error);
-        // Fallback to local filtering
         loadVendors(query);
       } finally {
         setIsSearching(false);
       }
     }, 300),
-    [category, customerLocation, distanceRange]
+    [category, customerLocation, distanceRange, loadVendors]
   );
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
     debouncedSearch(query);
-  };
-
-  const loadVendors = async (searchFilter?: string) => {
-    try {
-      setLoading(true);
-      
-      let locationParams = '';
-      if (customerLocation) {
-        locationParams = `&latitude=${customerLocation.lat}&longitude=${customerLocation.lng}`;
-        if (distanceRange !== 'all') {
-          locationParams += `&maxDistance=${distanceRange}`;
-        }
-      }
-      
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
-      ) as any;
-
-      if (response.success) {
-        let providerData = response.providers || response.vendors || [];
-        
-        const vendorMap = new Map<string, Vendor>();
-        
-        providerData.forEach((item: any) => {
-          const vendorId = item.providerId || item.vendorId || item.id;
-          const providerType = item.providerType || 'vendor';
-          
-          if (!vendorMap.has(vendorId)) {
-            const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
-            const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
-            vendorMap.set(vendorId, {
-              id: vendorId,
-              name: item.name || item.vendorName || item.businessName || 'Service Provider',
-              type: providerType,
-              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
-              reviewCount: rc,
-              distance: item.distance || null,
-              city: item.city,
-              address: item.address,
-              photo: item.photo,
-              isVerified: item.isVerified,
-              experienceYears: item.experienceYears,
-              qualifications: item.qualifications,
-              vendorId: item.vendorId,
-              vendorName: item.vendorName,
-              specialization: item.specialization,
-              nextAvailable: item.nextAvailable,
-              price: item.price,
-            });
-          }
-        });
-        
-        let vendorsList = Array.from(vendorMap.values());
-        
-        // Apply local filters
-        if (searchFilter) {
-          const lowerSearch = searchFilter.toLowerCase();
-          vendorsList = vendorsList.filter(v => 
-            v.name.toLowerCase().includes(lowerSearch) ||
-            v.city?.toLowerCase().includes(lowerSearch) ||
-            v.specialization?.toLowerCase().includes(lowerSearch)
-          );
-        }
-        
-        if (minRating > 0) {
-          vendorsList = vendorsList.filter(v => v.rating >= minRating);
-        }
-        
-        if (distanceRange !== 'all' && customerLocation) {
-          const maxDist = parseInt(distanceRange);
-          vendorsList = vendorsList.filter(v => 
-            v.distance === null || v.distance === undefined || v.distance <= maxDist
-          );
-        }
-        
-        setVendors(vendorsList);
-        console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
-      } else {
-        console.warn(`⚠️ [VendorListingByStyle] Primary endpoint returned success=false or no vendors`);
-          setVendors([]);
-      }
-    } catch (error) {
-      console.error('❌ [VendorListingByStyle] Error:', error);
-      setVendors([]);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const getStyleIcon = () => {

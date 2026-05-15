@@ -37,8 +37,8 @@ export const HUB_DISCOVERY_TRAINING: HubVendorDiscoveryConfig = {
   servicesApiCategory: 'training',
   serviceStyle: 'at_center',
   discoverCategory: 'training',
-  fallbackByStyle: { style: 'at_home', category: 'training' },
-  fallbackVendorSearch: { roleId: 'pet_trainer', limit: 50 },
+  fallbackByStyle: { style: 'at_center', category: 'training' },
+  fallbackVendorSearch: { roleId: 'trainer_center', limit: 50 },
 };
 
 export const HUB_DISCOVERY_VET: HubVendorDiscoveryConfig = {
