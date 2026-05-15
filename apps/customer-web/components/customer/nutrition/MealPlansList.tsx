@@ -11,6 +11,7 @@ import {
   type NutritionVendorCardModel,
 } from './NutritionVendorDetailsCard';
 import { uniqueVendorsFromMealPlans } from './meal-plans-vendor-grouping';
+import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 
 const MAX_RADIUS_KM = 10;
 
@@ -195,7 +196,7 @@ export function MealPlansList({
         : photosArr[0] && typeof photosArr[0] === 'object'
           ? String((photosArr[0] as { url?: string; src?: string }).url || (photosArr[0] as { url?: string; src?: string }).src || '')
           : '';
-    const mealImageUrl =
+    const mealImageRaw =
       mealPlan.mealImageUrl ||
       mealPlan.thumbnail_url ||
       (mealPlan.dietary_requirements &&
@@ -203,6 +204,7 @@ export function MealPlansList({
         mealPlan.dietary_requirements.mealImageUrl) ||
       firstPhoto ||
       null;
+    const mealImageUrl = resolveCustomerPublicAssetUrl(mealImageRaw);
 
     return (
       <Card

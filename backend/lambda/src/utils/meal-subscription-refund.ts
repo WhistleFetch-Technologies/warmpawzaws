@@ -11,8 +11,13 @@ export interface MealSessionRefundResult {
   refunded: boolean;
   razorpayRefundId?: string;
   walletCredited?: number;
+  /** Gross amount returned to the customer (wallet + payment route), after any platform-fee withholding. */
   amountInr: number;
   message: string;
+  /** When set, platform fee was kept non-refundable per policy (vendor cancel before prep). */
+  platformFeeRetainedInr?: number;
+  /** Original charge before partial refund breakdown. */
+  totalPaidInr?: number;
 }
 
 function round2(n: number): number {

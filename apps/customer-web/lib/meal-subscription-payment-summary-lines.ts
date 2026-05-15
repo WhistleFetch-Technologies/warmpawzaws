@@ -72,3 +72,27 @@ export function upfrontTotalInrFromSubscriptionRow(sub: Record<string, unknown>)
   if (fromSnap > 0) return Math.round(fromSnap * 100) / 100;
   return 0;
 }
+
+/** Canonical subscription row: pricing JSON lives in `pricing_snapshot` only. */
+export function pricingSnapshotFromSubscriptionRow(sub: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!sub) return null;
+  return parsePricingSnapshot(sub.pricing_snapshot);
+}
+
+/** Platform/convenience upfront: newer snapshots set `*Upfront`; older rows derive from per-cycle × billing cycles. */
+export function subscriptionPlatformConvenienceUpfrontFromSnap(snap: Record<string, unknown> | null): {
+  platformFee: number;
+  convenienceFee: number;
+} {
+  if (!snap) return { platformFee: 0, convenienceFee: 0 };
+  const bc = Math.max(1, n(snap.billingCycles));
+  const platformFee =
+    n(snap.platformFeeUpfront) > 0.009
+      ? n(snap.platformFeeUpfront)
+      : Math.round(n(snap.platformFeePerCycle) * bc * 100) / 100;
+  const convenienceFee =
+    n(snap.convenienceFeeUpfront) > 0.009
+      ? n(snap.convenienceFeeUpfront)
+      : Math.round(n(snap.convenienceFeePerCycle) * bc * 100) / 100;
+  return { platformFee, convenienceFee };
+}

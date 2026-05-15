@@ -5,6 +5,20 @@
 import { insert, query } from '../database/rds-connection';
 import { syncCanonicalMealSubscriptionDeliveryWhenMealOrderDelivered } from './sync-canonical-delivery-from-meal-order';
 
+function parseMealOrderPurchaseSnapshot(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
+}
+
 export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string): Promise<void> {
   try {
     const orders = await query(`SELECT * FROM meal_orders WHERE id = $1`, [mealOrderId]);
@@ -48,12 +62,26 @@ export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string):
       commissionRate = 15.0;
     }
 
-    const orderAmount = parseFloat(order.total_amount);
-    const deliveryFee = parseFloat(order.delivery_fee || '0');
-    const platformFee = parseFloat(order.platform_fee || '0');
-    const convenienceFee = parseFloat(order.convenience_fee || '0');
-    const logisticsCost =
+    const snap = parseMealOrderPurchaseSnapshot(order.purchase_snapshot);
+    const isVendorSubscriptionParent = snap.subscriptionVendorBookingRole === 'parent';
+
+    /** Parent row stores full customer checkout on total_amount; vendor commission uses meal (subtotal) only. */
+    let orderAmount = parseFloat(order.total_amount);
+    let deliveryFee = parseFloat(order.delivery_fee || '0');
+    let platformFee = parseFloat(order.platform_fee || '0');
+    let convenienceFee = parseFloat(order.convenience_fee || '0');
+    let logisticsCost =
       order.logistics_type === 'warmpawz' ? parseFloat(order.logistics_cost || '0') : 0;
+
+    if (isVendorSubscriptionParent) {
+      const sessions = Math.max(1, Number(snap.subscriptionTotalSessions) || 1);
+      const foodUpfront = parseFloat(String(order.subtotal ?? order.total_amount ?? '0'));
+      orderAmount = Math.round((foodUpfront / sessions) * 100) / 100;
+      deliveryFee = 0;
+      platformFee = 0;
+      convenienceFee = 0;
+      logisticsCost = 0;
+    }
 
     const commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
     const commissionAmount = Math.round(commissionableAmount * (commissionRate / 100));

@@ -62,6 +62,67 @@ function mealCategoryAllowed(category: unknown): boolean {
 }
 
 /**
+ * `meal_plans` mirrors for nutrition SKUs often omit GST catalogue pins that vendors store on `products`
+ * (specifications/metadata). Merge those hints so GET order-preview and subscription creation match buy-once GST.
+ */
+async function enrichMealPlanRowGstHintsFromProduct(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const id = String(row.id ?? '').trim();
+  if (!id) return row;
+
+  try {
+    const pr = await query(
+      `SELECT specifications, metadata FROM products WHERE id = $1::uuid
+       AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
+       LIMIT 1`,
+      [id],
+    );
+    const p = pr.rows?.[0] as Record<string, unknown> | undefined;
+    if (!p) return row;
+
+    const meta = mergeProductMeta(p);
+    const out: Record<string, unknown> = { ...row };
+
+    const mergeScalar = (existing: unknown, fromMeta: unknown): unknown => {
+      if (existing != null && String(existing).trim() !== '') return existing;
+      if (fromMeta != null && String(fromMeta).trim() !== '') return String(fromMeta).trim();
+      return existing;
+    };
+
+    out.service_catalog_category_id = mergeScalar(
+      row.service_catalog_category_id ?? row.serviceCatalogCategoryId,
+      meta.serviceCatalogCategoryId ??
+        meta.service_catalog_category_id ??
+        meta.catalogCategoryId ??
+        meta.catalog_category_id,
+    );
+    out.tax_category_id = mergeScalar(row.tax_category_id ?? row.taxCategoryId, meta.taxCategoryId ?? meta.tax_category_id);
+
+    const diet = parseJsonObject(row.dietary_requirements);
+    let dietTouched = false;
+    const catalogKeys = [
+      'catalogCategoryId',
+      'catalog_category_id',
+      'catalogCategoryRef',
+      'catalog_category_ref',
+    ] as const;
+    const mergedDiet = { ...diet };
+    for (const k of catalogKeys) {
+      if (mergedDiet[k] == null && meta[k] != null && String(meta[k]).trim() !== '') {
+        mergedDiet[k] = meta[k];
+        dietTouched = true;
+      }
+    }
+    if (dietTouched) out.dietary_requirements = mergedDiet;
+
+    return out;
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[meal-plan-resolve] enrich GST hints from product skipped:', msg);
+    return row;
+  }
+}
+
+/**
  * Maps a `products` row (meal_plan / nutrition / food) to a row shaped like `meal_plans`
  * for catalog parity with `resolveMealPlanOrProductById`.
  */
@@ -114,6 +175,21 @@ export function normalizeProductRowToMealPlanShape(p: Record<string, unknown>): 
   const prepLead = meta.preparationLeadTime;
   const shelfLife = meta.shelfLifeDays;
 
+  const taxCategoryFromRow =
+    p.tax_category_id != null && String(p.tax_category_id).trim() !== '' ? p.tax_category_id : null;
+  const taxCategoryFromMeta =
+    meta.taxCategoryId ?? meta.tax_category_id ?? null;
+  const serviceCatFromRow =
+    p.service_catalog_category_id != null && String(p.service_catalog_category_id).trim() !== ''
+      ? p.service_catalog_category_id
+      : null;
+  const serviceCatFromMeta =
+    meta.serviceCatalogCategoryId ??
+    meta.service_catalog_category_id ??
+    meta.catalogCategoryId ??
+    meta.catalog_category_id ??
+    null;
+
   return {
     id: p.id,
     vendor_id: p.vendor_id,
@@ -143,6 +219,16 @@ export function normalizeProductRowToMealPlanShape(p: Record<string, unknown>): 
     lead_time_hours: typeof prepLead === 'number' ? prepLead : 24,
     is_active: p.is_active !== false,
     dietary_requirements,
+    ...(taxCategoryFromRow != null
+      ? { tax_category_id: taxCategoryFromRow }
+      : taxCategoryFromMeta != null && String(taxCategoryFromMeta).trim() !== ''
+        ? { tax_category_id: String(taxCategoryFromMeta).trim() }
+        : {}),
+    ...(serviceCatFromRow != null
+      ? { service_catalog_category_id: serviceCatFromRow }
+      : serviceCatFromMeta != null && String(serviceCatFromMeta).trim() !== ''
+        ? { service_catalog_category_id: String(serviceCatFromMeta).trim() }
+        : {}),
     created_at: p.created_at,
     updated_at: p.updated_at,
   };
@@ -158,7 +244,10 @@ export async function resolveMealPlanOrProductById(planId: string): Promise<Reco
 
   try {
     const mpRes = await query(`SELECT * FROM meal_plans WHERE id = $1 LIMIT 1`, [id]);
-    if (mpRes.rows?.length) return mpRes.rows[0] as Record<string, unknown>;
+    if (mpRes.rows?.length) {
+      const enriched = await enrichMealPlanRowGstHintsFromProduct(mpRes.rows[0] as Record<string, unknown>);
+      return enriched;
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[meal-plan-resolve] meal_plans lookup failed:', msg);
@@ -289,6 +378,16 @@ export async function ensureMealPlanMirrorForProductCheckout(resolved: Record<st
   }
   if (colSet.has('subscription_config') && dr.subscriptionConfig && typeof dr.subscriptionConfig === 'object') {
     candidates.subscription_config = dr.subscriptionConfig;
+  }
+  if (colSet.has('tax_category_id') && resolved.tax_category_id != null && resolved.tax_category_id !== '') {
+    candidates.tax_category_id = resolved.tax_category_id;
+  }
+  if (
+    colSet.has('service_catalog_category_id') &&
+    resolved.service_catalog_category_id != null &&
+    resolved.service_catalog_category_id !== ''
+  ) {
+    candidates.service_catalog_category_id = resolved.service_catalog_category_id;
   }
 
   const keys = Object.keys(candidates).filter((k) => colSet.has(k));

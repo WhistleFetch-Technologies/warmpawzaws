@@ -106,6 +106,12 @@ function buildSubscriptionPreviewSchedule(
   q: { weekdays?: string; weeklyPattern?: string; monthlyMode?: string },
 ): Record<string, unknown> {
   const pt = String(purchaseType || '').toUpperCase();
+  const catalogDf = String(diet.deliveryFrequency || '').toUpperCase();
+  const dfExtras =
+    catalogDf && (catalogDf === 'TWICE_WEEKLY' || catalogDf === 'WEEKLY')
+      ? { deliveryFrequency: catalogDf }
+      : {};
+
   if (pt === 'WEEKLY_PLAN') {
     const vendor = normalizeCatalogDeliveryDaysArray(diet.deliveryDays);
     const wdRaw = String(q.weekdays || '')
@@ -115,21 +121,34 @@ function buildSubscriptionPreviewSchedule(
     const pattern = String(q.weeklyPattern || 'weekly_default').trim();
     if (vendor.length > 0) {
       const weekdays = wdRaw.length ? wdRaw.filter((d) => vendor.includes(d)) : [...vendor];
-      return { weeklyPattern: 'specific_weekdays', weekdays: weekdays.length ? weekdays : [...vendor] };
+      return {
+        weeklyPattern: 'specific_weekdays',
+        weekdays: weekdays.length ? weekdays : [...vendor],
+        ...dfExtras,
+      };
     }
     return {
       weeklyPattern: pattern,
       ...(wdRaw.length ? { weekdays: wdRaw } : {}),
+      ...dfExtras,
     };
   }
-  const mf = String(diet.deliveryFrequency || '').toUpperCase();
+  const mf = catalogDf;
   if (!mf) return {};
+  const wdMonthly = String(q.weekdays || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase().slice(0, 3))
+    .filter(Boolean);
   const mm = String(q.monthlyMode || '').trim().toLowerCase();
   const monthlyMode =
     mm === 'fixed_sessions' || mm === 'recurring_monthly' ? mm : undefined;
-  return monthlyMode
+  const base = monthlyMode
     ? { monthlyDeliveryFrequency: mf, monthlyMode }
     : { monthlyDeliveryFrequency: mf };
+  if ((mf === 'TWICE_WEEKLY' || mf === 'WEEKLY') && wdMonthly.length) {
+    return { ...base, weekdays: wdMonthly };
+  }
+  return base;
 }
 
 function subscriptionCheckoutPreviewFields(
@@ -765,7 +784,9 @@ export function registerMealPlanEndpoints(app: Hono) {
             nonDeliveryPackagePerCycle: feeQuote.nonDeliveryPackagePerCycle,
             perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
             foodSubtotalUpfront,
-            foodGstAmount: mealGstPreview.totalGstAmount,
+            foodGstAmount: mealGstPreview.foodGstAmount,
+            deliveryGstAmount: mealGstPreview.deliveryGstAmount,
+            totalGstAmount: mealGstPreview.totalGstAmount,
             platformFeeUpfront,
             convenienceFeeUpfront,
             subtotalPerCycle: feeQuote.subtotalPerCycle,

@@ -125,6 +125,8 @@ interface MealOrder {
   status: string;
   /** Meal line total only (listed price × qty), from API `vendor_meal_total`. */
   vendor_meal_total?: number;
+  /** Subscription signup total paid by customer (parent row + mirrored sessions carry snapshot). */
+  subscription_customer_paid_total_inr?: number;
   created_at: string;
   /** Scheduled drop-off day from meal_orders / booking flow (YYYY-MM-DD or ISO). */
   scheduled_delivery_date?: string;
@@ -132,6 +134,15 @@ interface MealOrder {
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
   delivery_address?: any;
+  /** Canonical weekly/monthly: parent queue row — Accept/Cancel signup. */
+  subscription_vendor_parent_booking?: boolean;
+  /** Mirrored per-session row — no Accept/Cancel; follows parent acceptance + scheduled date. */
+  subscription_vendor_session_booking?: boolean;
+  subscription_session_number?: number | null;
+  subscription_booking_session_count?: number | null;
+  subscription_booking_plan_kind?: string;
+  subscription_booking_delivery_type?: string;
+  subscription_monthly_delivery_frequency?: string;
 }
 
 interface NutritionistDashboardProps {
@@ -161,9 +172,62 @@ function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
   return 0;
 }
 
-/** Vendor-facing meal listing amount only (never customer grand total / fees). */
+/** Vendor-facing meal listing amount only (meal line; excludes delivery, platform, convenience, GST). */
 function vendorMealListingRupee(o: MealOrder): number {
   return coerceVendorMealListingAmount(o as Record<string, unknown>);
+}
+
+function subscriptionParentPlanTitle(o: MealOrder): string {
+  const raw = o as Record<string, unknown>;
+  const kind = String(raw.subscription_booking_plan_kind || '').toLowerCase();
+  if (kind === 'weekly') return 'Weekly subscription';
+  if (kind === 'monthly') return 'Monthly subscription';
+  return 'Meal subscription';
+}
+
+function monthlyCadenceShort(freq: string): string {
+  const f = freq.toUpperCase();
+  if (f === 'DAILY') return 'daily';
+  if (f === 'ALTERNATE_DAYS') return 'alternate days';
+  if (f === 'TWICE_WEEKLY') return 'twice weekly';
+  if (f === 'WEEKLY') return 'weekly';
+  return 'monthly';
+}
+
+/** Vendor-facing session progress, e.g. weekly meal session · 3/7. */
+function subscriptionSessionLabel(o: MealOrder): string {
+  const raw = o as Record<string, unknown>;
+  const n = Number(raw.subscription_session_number);
+  const total = Number(raw.subscription_booking_session_count);
+  const idx = Number.isFinite(n) && n > 0 ? Math.floor(n) : '?';
+  const tot = Number.isFinite(total) && total > 0 ? Math.floor(total) : '?';
+  const kind = String(raw.subscription_booking_plan_kind || '').toLowerCase();
+  if (kind === 'weekly') {
+    return `Weekly meal session · ${idx}/${tot}`;
+  }
+  if (kind === 'monthly') {
+    const mf = String(raw.subscription_monthly_delivery_frequency || '').trim();
+    const cadence = mf ? monthlyCadenceShort(mf) : 'chosen cadence';
+    return `Monthly meal session (${cadence}) · ${idx}/${tot}`;
+  }
+  return `Meal session · ${idx}/${tot}`;
+}
+
+function isSubscriptionSessionRow(o: MealOrder): boolean {
+  return Boolean(o.subscription_vendor_session_booking);
+}
+
+function vendorSubscriptionCancelHidden(o: MealOrder): boolean {
+  return Boolean(o.subscription_vendor_parent_booking || o.subscription_vendor_session_booking);
+}
+
+function confirmMealOrderCancel(order: MealOrder): boolean {
+  if (order.subscription_vendor_parent_booking) {
+    return window.confirm(
+      'Cancel this subscription booking?',
+    );
+  }
+  return window.confirm('Are you sure you want to cancel this order? This action cannot be undone.');
 }
 
 function ymdLocal(d: Date): string {
@@ -535,6 +599,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
   const renderMealOrderCard = (order: MealOrder) => {
     const prepOk = canStartPreparingForSchedule(order);
+    const isParentSub = Boolean(order.subscription_vendor_parent_booking);
+    const isSessionSub = isSubscriptionSessionRow(order);
+    const vendorReadyStatuses = ['confirmed', 'accepted'];
+    const sessionReadyForPrep =
+      (isSessionSub || isParentSub) &&
+      vendorReadyStatuses.includes(String(order.status || '').toLowerCase()) &&
+      !order.prep_started_at;
+
     return (
       <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
         <div className="p-4 border-b border-slate-100">
@@ -545,6 +617,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               </div>
               <div>
                 <h3 className="font-semibold text-slate-800">{order.order_number || `Order #${order.id.slice(0, 8)}`}</h3>
+                {(isSubscriptionSessionRow(order) || order.subscription_vendor_parent_booking) ? (
+                  <p className="text-xs font-medium text-indigo-700 mt-0.5">{subscriptionSessionLabel(order)}</p>
+                ) : null}
                 <p className="text-sm text-slate-500 flex items-center gap-1">
                   {Icons.user}
                   {order.customer_name || 'Customer'}
@@ -558,6 +633,22 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         </div>
 
         <div className="p-4">
+          {order.subscription_vendor_parent_booking && (
+            <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 text-slate-800">
+              <p className="text-sm font-semibold">
+                {subscriptionParentPlanTitle(order)}
+                {order.subscription_booking_session_count != null && order.subscription_booking_session_count > 0
+                  ? ` · ${order.subscription_booking_session_count} sessions`
+                  : null}
+                {order.subscription_booking_delivery_type ? (
+                  <span className="font-normal text-slate-600">
+                    {' '}
+                    · Delivery: {String(order.subscription_booking_delivery_type)}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
               <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
@@ -566,8 +657,28 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               </span>
             </div>
             <div className="text-right">
-              <span className="text-lg font-semibold text-slate-800">₹{vendorMealListingRupee(order)}</span>
-              <p className="text-xs text-slate-500">Meal total (your listing)</p>
+              {order.subscription_vendor_parent_booking ? (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal (this session)</p>
+                </>
+              ) : isSubscriptionSessionRow(order) ? (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal (this session)</p>
+                </>
+              ) : (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal total (your listing)</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -579,31 +690,70 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             )}
             {order.status === 'pending' && (
               <>
-                <button
-                  onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
-                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                >
-                  {Icons.check}
-                  <span className="text-sm">Accept</span>
-                </button>
-                <button
-                  onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                >
-                  {Icons.x}
-                  <span className="text-sm ml-1">Cancel</span>
-                </button>
+                {isSessionSub ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Accept the subscription booking on the parent row first. Sessions update automatically."
+                    className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-500 cursor-not-allowed flex items-center justify-center gap-1"
+                  >
+                    {Icons.utensils}
+                    <span className="text-sm">Start Preparing</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                      className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                    >
+                      {Icons.check}
+                      <span className="text-sm">Accept</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirmMealOrderCancel(order)) handleUpdateOrderStatus(order.id, 'cancelled');
+                      }}
+                      className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                    >
+                      {Icons.x}
+                      <span className="text-sm ml-1">Cancel</span>
+                    </button>
+                  </>
+                )}
               </>
+            )}
+
+            {sessionReadyForPrep && (
+              <button
+                type="button"
+                disabled={!prepOk}
+                title={
+                  prepOk
+                    ? undefined
+                    : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                }
+                onClick={() => {
+                  if (!prepOk) return;
+                  handleUpdateOrderStatus(order.id, 'preparing');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                  prepOk
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {Icons.utensils}
+                <span className="text-sm">Start Preparing</span>
+              </button>
             )}
 
             {(() => {
               const shouldShowAccept =
-                order.status === 'confirmed' && !order.prep_started_at && !acceptedOrderIds.has(order.id);
-              if (order.status === 'confirmed' && !order.prep_started_at) {
-                console.log(
-                  `[NutritionistDashboard] Order ${order.id}: status=confirmed, prep_started_at=${order.prep_started_at}, in acceptedOrderIds=${acceptedOrderIds.has(order.id)}, shouldShowAccept=${shouldShowAccept}`,
-                );
-              }
+                order.status === 'confirmed' &&
+                !order.prep_started_at &&
+                !acceptedOrderIds.has(order.id) &&
+                !isParentSub &&
+                !isSessionSub;
               return shouldShowAccept;
             })() && (
               <>
@@ -635,56 +785,64 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                   {Icons.utensils}
                   <span className="text-sm">Start Preparing</span>
                 </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                      handleUpdateOrderStatus(order.id, 'cancelled');
-                    }
-                  }}
-                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                >
-                  {Icons.x}
-                  <span className="text-sm ml-1">Cancel</span>
-                </button>
+                {!vendorSubscriptionCancelHidden(order) && (
+                  <button
+                    onClick={() => {
+                      if (confirmMealOrderCancel(order)) {
+                        handleUpdateOrderStatus(order.id, 'cancelled');
+                      }
+                    }}
+                    className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                  >
+                    {Icons.x}
+                    <span className="text-sm ml-1">Cancel</span>
+                  </button>
+                )}
               </>
             )}
 
-            {order.status === 'confirmed' && !order.prep_started_at && acceptedOrderIds.has(order.id) && (
-              <>
-                <button
-                  type="button"
-                  disabled={!prepOk}
-                  title={
-                    prepOk
-                      ? undefined
-                      : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
-                  }
-                  onClick={() => {
-                    if (!prepOk) return;
-                    handleUpdateOrderStatus(order.id, 'preparing');
-                  }}
-                  className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                    prepOk
-                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                  }`}
-                >
-                  {Icons.utensils}
-                  <span className="text-sm">Start Preparing</span>
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                      handleUpdateOrderStatus(order.id, 'cancelled');
+            {order.status === 'confirmed' &&
+              !order.prep_started_at &&
+              acceptedOrderIds.has(order.id) &&
+              !isParentSub &&
+              !isSessionSub && (
+                <>
+                  <button
+                    type="button"
+                    disabled={!prepOk}
+                    title={
+                      prepOk
+                        ? undefined
+                        : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
                     }
-                  }}
-                  className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                >
-                  {Icons.x}
-                  <span className="text-sm ml-1">Cancel</span>
-                </button>
-              </>
-            )}
+                    onClick={() => {
+                      if (!prepOk) return;
+                      handleUpdateOrderStatus(order.id, 'preparing');
+                    }}
+                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                      prepOk
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {Icons.utensils}
+                    <span className="text-sm">Start Preparing</span>
+                  </button>
+                  {!vendorSubscriptionCancelHidden(order) && (
+                    <button
+                      onClick={() => {
+                        if (confirmMealOrderCancel(order)) {
+                          handleUpdateOrderStatus(order.id, 'cancelled');
+                        }
+                      }}
+                      className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                    >
+                      {Icons.x}
+                      <span className="text-sm ml-1">Cancel</span>
+                    </button>
+                  )}
+                </>
+              )}
 
             {order.status === 'preparing' && (
               <button

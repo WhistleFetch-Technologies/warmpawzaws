@@ -29,6 +29,7 @@ import { SubscriptionPricingBreakdown } from './SubscriptionPricingBreakdown';
 import { SubscriptionPolicyInfo } from './SubscriptionPolicyInfo';
 import { AutoRenewToggle } from './AutoRenewToggle';
 import type { SubscriptionDeliveryPattern } from './subscription-checkout-types';
+import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 
 function newClientRequestKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -97,11 +98,11 @@ export function SubscriptionCheckoutContainer({
   const [slotEnd, setSlotEnd] = useState('12:00');
   const [instructions, setInstructions] = useState('');
   const [weeklyPattern, setWeeklyPattern] = useState<SubscriptionDeliveryPattern>('weekly_default');
-  const [weekdays, setWeekdays] = useState<string[]>(['mon', 'wed', 'fri']);
+  const [weekdays, setWeekdays] = useState<string[]>([]);
   /** Placeholder until meal plan loads; weekly is recomputed from vendor days × plan weeks. */
   const [totalSessions, setTotalSessions] = useState(purchaseType === 'MONTHLY_PLAN' ? 12 : 1);
   const [autoRenew, setAutoRenew] = useState(false);
-  const [monthlyMode, setMonthlyMode] = useState<'fixed_sessions' | 'recurring_monthly'>('recurring_monthly');
+  const [monthlyMode, setMonthlyMode] = useState<'fixed_sessions' | 'recurring_monthly'>('fixed_sessions');
 
   const vendorOfferedDays = useMemo(
     () => (mealPlan ? vendorWeeklyDeliveryDaysFromPlan(mealPlan) : []),
@@ -122,7 +123,12 @@ export function SubscriptionCheckoutContainer({
       const vd = vendorWeeklyDeliveryDaysFromPlan(mealPlan);
       if (vd.length > 0) {
         setWeeklyPattern('specific_weekdays');
-        setWeekdays([...vd]);
+        const vf = String(vendorMonthlyDeliveryFrequencyFromPlan(mealPlan) || '').toUpperCase();
+        if (vf === 'TWICE_WEEKLY') {
+          setWeekdays(vd.slice(0, 2));
+        } else {
+          setWeekdays([...vd]);
+        }
       }
     }
   }, [mealPlan, purchaseType]);
@@ -149,6 +155,10 @@ export function SubscriptionCheckoutContainer({
     }
     if (purchaseType === 'MONTHLY_PLAN') {
       q.set('monthlyMode', monthlyMode);
+      const mf = String(vendorMonthlyDeliveryFrequencyFromPlan(mealPlan) || '').toUpperCase();
+      if (mf === 'TWICE_WEEKLY' || mf === 'WEEKLY') {
+        q.set('weekdays', weekdays.join(','));
+      }
     }
     if (addrLat != null && addrLng != null) {
       q.set('customerLat', String(addrLat));
@@ -162,6 +172,7 @@ export function SubscriptionCheckoutContainer({
       .catch(() => setPreview(null));
   }, [
     mealPlanId,
+    mealPlan,
     quantity,
     addressId,
     addresses,
@@ -196,21 +207,7 @@ export function SubscriptionCheckoutContainer({
       const cid = profile?.id || (profileRes as any)?.id || (profileRes as any)?.customer?.id;
       if (cid) setCustomerId(String(cid));
       setPets(((petsRes as any)?.pets || []) as { id: string; name: string }[]);
-      let addrList = (addrRes as any)?.addresses || [];
-      const profileAddr = profile?.address ?? profile?.addressLine1 ?? profile?.address_line1;
-      if (addrList.length === 0 && (profileAddr || profile?.pincode)) {
-        addrList = [
-          {
-            id: 'profile',
-            addressLine1: profileAddr || '',
-            addressLine2: null,
-            city: profile?.city || '',
-            state: profile?.state || '',
-            pincode: profile?.pincode || '',
-          },
-        ];
-        setAddressId('profile');
-      }
+      const addrList = (addrRes as any)?.addresses || [];
       setAddresses(addrList);
     } catch (e) {
       console.error(e);
@@ -283,6 +280,18 @@ export function SubscriptionCheckoutContainer({
       toast.error('This plan delivers once a week — please select exactly 1 weekday');
       return;
     }
+    if (purchaseType === 'WEEKLY_PLAN') {
+      const wcf = String(vendorMonthlyDeliveryFrequencyFromPlan(mealPlan) || '').toUpperCase();
+      const daysRelevant = vendorConstrainsWeekly || weeklyPattern === 'specific_weekdays';
+      if (daysRelevant && wcf === 'TWICE_WEEKLY' && weekdays.length !== 2) {
+        toast.error('This plan delivers twice a week — please select exactly 2 weekdays');
+        return;
+      }
+      if (daysRelevant && wcf === 'WEEKLY' && weekdays.length !== 1) {
+        toast.error('This plan delivers once a week — please select exactly 1 weekday');
+        return;
+      }
+    }
     if (pets.length > 0 && !petId) {
       toast.error('Select a pet');
       return;
@@ -352,11 +361,13 @@ export function SubscriptionCheckoutContainer({
   }
 
   const planName = String((mealPlan as any).name || (mealPlan as any).plan_name || 'Meal plan');
-  const imageUrl =
+  const imageRaw =
     (mealPlan as any).mealImageUrl ||
+    (mealPlan as any).thumbnail_url ||
     (typeof (mealPlan as any).dietary_requirements === 'object' &&
       (mealPlan as any).dietary_requirements?.mealImageUrl) ||
     null;
+  const imageUrl = resolveCustomerPublicAssetUrl(imageRaw);
 
   const minDate = new Date();
   minDate.setHours(0, 0, 0, 0);
@@ -452,8 +463,8 @@ export function SubscriptionCheckoutContainer({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="recurring_monthly">Recurring monthly anchor</SelectItem>
                 <SelectItem value="fixed_sessions">Fixed session pack</SelectItem>
+                <SelectItem value="recurring_monthly">Recurring monthly anchor</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -638,6 +649,7 @@ export function SubscriptionCheckoutContainer({
                 100
             }
             upfrontTotal={estimatedTotal}
+            gstPreview={preview.gst}
           />
         )}
 

@@ -17,6 +17,7 @@ import {
   getMealPlanCatalogDisplay,
 } from '@/lib/meal-plan-catalog-display';
 import { SubscriptionCheckoutContainer } from '@/components/customer/meal-subscription/SubscriptionCheckoutContainer';
+import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -108,20 +109,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       if (cid) setCustomerId(String(cid));
       setPets((petsRes as any)?.pets || []);
 
-      let addrList = (addrRes as any)?.addresses || [];
-      // When no saved addresses, use profile address/pincode so checkout doesn't block
-      const profileAddr = profile?.address ?? profile?.addressLine1 ?? profile?.address_line1;
-      if (addrList.length === 0 && (profileAddr || profile?.pincode)) {
-        addrList = [{
-          id: 'profile',
-          addressLine1: profileAddr || '',
-          addressLine2: null,
-          city: profile?.city || '',
-          state: profile?.state || '',
-          pincode: profile?.pincode || '',
-        }];
-        setAddressId('profile');
-      }
+      const addrList = (addrRes as any)?.addresses || [];
       setAddresses(addrList);
     } catch (e) {
       console.error(e);
@@ -145,7 +133,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       : photosArr[0] && typeof photosArr[0] === 'object'
         ? String((photosArr[0] as { url?: string; src?: string }).url || (photosArr[0] as { url?: string; src?: string }).src || '')
         : '';
-  const mealPlanImageUrl =
+  const mealPlanImageRaw =
     mealPlan?.mealImageUrl ||
     (mealPlan as { thumbnail_url?: string })?.thumbnail_url ||
     (mealPlan?.dietary_requirements &&
@@ -153,6 +141,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       (mealPlan.dietary_requirements as { mealImageUrl?: string }).mealImageUrl) ||
     firstPhoto ||
     null;
+  const mealPlanImageUrl = resolveCustomerPublicAssetUrl(mealPlanImageRaw);
 
   const catalog = mealPlan ? getMealPlanCatalogDisplay(mealPlan as Record<string, unknown>) : null;
   const purchaseTypeForOrder = catalog?.purchaseType;

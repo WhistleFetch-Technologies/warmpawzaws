@@ -147,7 +147,11 @@ export function advanceDeliveryCursor(
     return addDays(cursor, 1);
   }
   if (pattern === 'specific_weekdays') {
-    const targets = parseJsWeekdayTargetsFromSchedule(sch);
+    const vf = String(sch.deliveryFrequency || '').toUpperCase();
+    const targets =
+      vf === 'TWICE_WEEKLY'
+        ? twiceWeeklyJsTargets(sch)
+        : parseJsWeekdayTargetsFromSchedule(sch);
     if (!targets.length) {
       return addDays(cursor, 7);
     }
@@ -184,6 +188,15 @@ export function weeklyDeliveriesPerBillingCycle(schedule: Record<string, unknown
   const sch = schedule || {};
   const pattern = normalizeWeeklyPattern(sch);
   if (pattern === 'specific_weekdays') {
+    const vf = String(sch.deliveryFrequency || '').toUpperCase();
+    if (vf === 'TWICE_WEEKLY') {
+      const t = twiceWeeklyJsTargets(sch);
+      return Math.max(1, Math.min(2, t.length || 2));
+    }
+    if (vf === 'WEEKLY') {
+      const t = parseJsWeekdayTargetsFromSchedule(sch);
+      return Math.max(1, Math.min(1, t.length || 1));
+    }
     const targets = parseJsWeekdayTargetsFromSchedule(sch);
     return Math.max(1, targets.length);
   }
@@ -209,7 +222,6 @@ export function monthlyDeliveriesPerBillingCycle(schedule: Record<string, unknow
   const sch = schedule || {};
   const mode = normalizeMonthlyMode(sch);
   const monthStart = new Date(2020, 0, 1);
-  const monthEnd = new Date(2020, 0, 31);
 
   /** Fixed session pack: one billing pack = 4 calendar weeks (28 days), same cadence math for all vendor monthly freqs. */
   if (mode === 'fixed_sessions') {
@@ -219,7 +231,9 @@ export function monthlyDeliveriesPerBillingCycle(schedule: Record<string, unknow
 
   const mf = String(sch.monthlyDeliveryFrequency || sch.deliveryFrequency || '').toUpperCase();
   if (mf === 'TWICE_WEEKLY') {
-    return countMonthlyCadenceDeliveriesInClosedWindow(schedule, monthStart, monthEnd);
+    /** ~4 weeks × 2 drops (calendar months vary 8–9; align pricing/session packs to 8). */
+    const windowEnd = addDays(monthStart, 27);
+    return countMonthlyCadenceDeliveriesInClosedWindow(schedule, monthStart, windowEnd);
   }
   let cursor = new Date(2020, 0, 1);
   const end = new Date(2020, 0, 31);

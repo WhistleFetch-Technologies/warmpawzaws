@@ -33,7 +33,9 @@ import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { resolveMealCheckoutTotalInr } from '../../../utils/meal-order-pricing';
+import {
+  resolveCustomerMealPlanOrderDisplayTotals,
+} from '../../../utils/meal-order-pricing';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -504,7 +506,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           price_per_meal: o.mp_price_per_meal,
           price: o.mp_legacy_price,
         };
-        const { subtotal, total } = resolveMealCheckoutTotalInr(o, planForPricing);
+        const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),

@@ -115,3 +115,46 @@ export function resolveMealCheckoutTotalInr(
   const total = storedTotal > 0 ? roundMoney(storedTotal) : computed;
   return { subtotal, total };
 }
+
+function parseMealOrderPurchaseSnapshot(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
+}
+
+/**
+ * Subscription parent `meal_orders` row stores the full billing-cycle bundle (food + fees).
+ * Customer lists should show this row as one session — divide displayed line + total by session count.
+ */
+export function resolveCustomerMealPlanOrderDisplayTotals(
+  order: {
+    purchase_snapshot?: unknown;
+    subtotal?: unknown;
+    delivery_fee?: unknown;
+    platform_fee?: unknown;
+    total_amount?: unknown;
+    quantity?: unknown;
+  },
+  plan: Record<string, unknown> | null | undefined,
+): { subtotal: number; total: number } {
+  const base = resolveMealCheckoutTotalInr(order, plan);
+  const snap = parseMealOrderPurchaseSnapshot(order.purchase_snapshot);
+  const role = String(snap.subscriptionVendorBookingRole || '');
+  const ts = Number(snap.subscriptionTotalSessions);
+  const n = Number.isFinite(ts) && ts >= 1 ? Math.floor(ts) : 0;
+  if (role === 'parent' && n >= 1) {
+    return {
+      subtotal: roundMoney(base.subtotal / n),
+      total: roundMoney(base.total / n),
+    };
+  }
+  return base;
+}

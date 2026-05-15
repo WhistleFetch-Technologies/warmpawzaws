@@ -42,6 +42,7 @@ import {
   isMealDispatchStrict,
 } from '../utils/meal-dispatch';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { processSubscriptionVendorParentBookingFullRefund } from '../utils/meal-subscription-parent-booking-refund';
 import {
   mealProductParsedToDietaryJson,
   mealsPerDayColumnFromPreset,
@@ -55,6 +56,22 @@ function safeMoney(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseMealOrderPurchaseSnapshotForVendor(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o)
+        ? (o as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
 }
 
 /** Vendor-facing meal list: meal line total only (quantity × listed price). Strip checkout fees & platform economics. */
@@ -76,8 +93,60 @@ const VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS = new Set([
 ]);
 
 function sanitizeVendorMealOrderRow(row: Record<string, unknown>): Record<string, unknown> {
-  const mealOnly = safeMoney(row.subtotal);
+  const snap = parseMealOrderPurchaseSnapshotForVendor(row.purchase_snapshot);
+  let mealOnly = safeMoney(row.subtotal);
   const next: Record<string, unknown> = { ...row };
+
+  if (snap.subscriptionVendorBookingRole === 'parent') {
+    next.subscription_vendor_parent_booking = true;
+    const ts = Number(snap.subscriptionTotalSessions);
+    next.subscription_booking_session_count = Number.isFinite(ts) ? ts : null;
+    const sn = Number(snap.sessionNumber);
+    next.subscription_session_number =
+      Number.isFinite(sn) && sn > 0 ? Math.floor(sn) : 1;
+    /** Parent row DB subtotal = full-cycle vendor food — vendor UI shows per-session line like session rows */
+    mealOnly = Math.round(mealOnly * 100) / 100;
+    const splitN =
+      Number.isFinite(Number(next.subscription_booking_session_count)) &&
+      Number(next.subscription_booking_session_count) >= 1
+        ? Math.floor(Number(next.subscription_booking_session_count))
+        : 1;
+    mealOnly = Math.round((mealOnly / splitN) * 100) / 100;
+    const paid =
+      Number(snap.subscriptionCustomerPaidTotalInr) > 0.009
+        ? Number(snap.subscriptionCustomerPaidTotalInr)
+        : safeMoney(row.total_amount);
+    next.subscription_customer_paid_total_inr = Math.round(paid * 100) / 100;
+    const pk = String(snap.subscriptionPurchaseType || row.purchase_type || '').trim();
+    next.subscription_booking_plan_kind = pk.replace(/_PLAN$/i, '').toLowerCase();
+    next.subscription_booking_delivery_type = String(
+      snap.subscriptionLogisticsType || row.logistics_type || 'warmpawz',
+    );
+    const mf = String(snap.subscriptionMonthlyDeliveryFrequency || '').trim().toUpperCase();
+    if (mf) next.subscription_monthly_delivery_frequency = mf;
+  }
+
+  if (snap.subscriptionVendorBookingRole === 'session') {
+    next.subscription_vendor_session_booking = true;
+    const sn = Number(snap.sessionNumber);
+    next.subscription_session_number = Number.isFinite(sn) ? sn : null;
+    const ts = Number(snap.subscriptionTotalSessions);
+    next.subscription_booking_session_count = Number.isFinite(ts) ? ts : null;
+    const pk = String(snap.subscriptionPurchaseType || row.purchase_type || '').trim();
+    next.subscription_booking_plan_kind = pk.replace(/_PLAN$/i, '').toLowerCase();
+    next.subscription_booking_delivery_type = String(
+      snap.subscriptionLogisticsType || row.logistics_type || 'warmpawz',
+    );
+    const mf = String(snap.subscriptionMonthlyDeliveryFrequency || '').trim().toUpperCase();
+    if (mf) next.subscription_monthly_delivery_frequency = mf;
+    const paid =
+      Number(snap.subscriptionCustomerPaidTotalInr) > 0.009 ? Number(snap.subscriptionCustomerPaidTotalInr) : null;
+    if (paid != null && Number.isFinite(paid)) {
+      next.subscription_customer_paid_total_inr = Math.round(paid * 100) / 100;
+    }
+    mealOnly = Math.round(safeMoney(row.subtotal) * 100) / 100;
+  }
+
   for (const k of VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS) {
     delete next[k];
   }
@@ -2468,7 +2537,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         mealParams.push(status);
         mealOrdersQuery += ` AND mo.status = $${mealParams.length}`;
       }
-      mealOrdersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
+      mealOrdersQuery += ` ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100`;
       
       // ✅ CRITICAL: If we have business_name, the query uses OR condition which might cause issues
       // Let's ensure the vendor_id match is tried FIRST and works correctly
@@ -2537,7 +2606,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           SELECT mo.*
           FROM meal_orders mo
           WHERE mo.vendor_id::text = ANY($1::text[])
-          ORDER BY mo.created_at DESC LIMIT 100
+          ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
         `;
         const simplifiedResult = await query(simplifiedQuery, [allVendorIds]).catch(() => ({ rows: [] }));
         console.log(`[meal-orders] Simplified query (no JOINs, no filters) found: ${simplifiedResult.rows.length} orders`);
@@ -2581,13 +2650,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             LEFT JOIN customers c ON mo.customer_id = c.id
             LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
             LEFT JOIN vendors v ON mp.vendor_id = v.id
-            WHERE mp.vendor_id::text = ANY($1::text[])
+            WHERE (
+              mp.vendor_id::text = ANY($1::text[])
                OR (v.business_name IS NOT NULL AND (
                    LOWER(TRIM(v.business_name)) = LOWER(TRIM($2))
                    OR LOWER(TRIM(v.business_name)) LIKE '%' || LOWER(TRIM($2)) || '%'
                    OR LOWER(TRIM($2)) LIKE '%' || LOWER(TRIM(v.business_name)) || '%'
                ))
                OR (v.phone IS NOT NULL AND v.phone = $3)
+            )
           `;
           const mealPlanVendorParams: any[] = [allVendorIds];
           if (vendor.business_name) {
@@ -2628,7 +2699,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                 LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
                 LEFT JOIN vendors v ON mp.vendor_id = v.id
                 WHERE mo.created_at >= NOW() - INTERVAL '30 days'
-                ORDER BY mo.created_at DESC LIMIT 500
+                ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 500
               `;
               const allRecentOrdersResult = await query(allRecentOrdersQuery, []).catch(() => ({ rows: [] }));
               console.log(`[meal-orders] Found ${allRecentOrdersResult.rows.length} recent orders total`);
@@ -2750,7 +2821,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               AND (LOWER(TRIM(v.business_name)) = LOWER(TRIM($1))
                    OR LOWER(TRIM(v.business_name)) LIKE '%' || LOWER(TRIM($1)) || '%'
                    OR LOWER(TRIM($1)) LIKE '%' || LOWER(TRIM(v.business_name)) || '%')
-            ORDER BY mo.created_at DESC LIMIT 100
+            ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
           `;
           const businessNameResult = await query(businessNameQuery, [vendor.business_name]).catch(() => ({ rows: [] }));
           console.log(`[meal-orders] Found ${businessNameResult.rows.length} orders by meal_plan vendor business name match`);
@@ -2833,7 +2904,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         LEFT JOIN customers c ON mo.customer_id = c.id
         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
               WHERE mo.meal_plan_id = ANY($1::uuid[])
-              ORDER BY mo.created_at DESC LIMIT 100
+              ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
       `;
             const ordersByMealPlanResult = await query(ordersByMealPlanQuery, [mealPlanIds]).catch(() => ({ rows: [] }));
             console.log(`[meal-orders] Found ${ordersByMealPlanResult.rows.length} orders by meal_plan_id`);
@@ -2864,7 +2935,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                 AND (mp.vendor_id::text = ANY($1::text[])
                      OR v.business_name IS NOT NULL AND LOWER(TRIM(v.business_name)) = LOWER(TRIM($2))
                      OR v.phone IS NOT NULL AND v.phone = $3)
-              ORDER BY mo.created_at DESC LIMIT 100
+              ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
             `;
             const directMealPlanResult = await query(directMealPlanQuery, [
               allVendorIds,
@@ -3044,60 +3115,111 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Valid statuses per DB constraint: 'pending', 'confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'
       // Map 'accepted' to 'confirmed' for backward compatibility
       const validStatuses = ['pending', 'confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
-      let actualStatus = status;
-      
-      // ✅ BUSINESS LOGIC: Map 'accepted' to 'confirmed' (they mean the same thing)
-      if (status === 'accepted') {
-        actualStatus = 'confirmed';
-        console.log(`[meal-order-status] Mapping 'accepted' to 'confirmed' for database constraint`);
-      }
-      
-      if (!validStatuses.includes(actualStatus)) {
-        return c.json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` }, 400);
-      }
 
       // ✅ CRITICAL FIX: Resolve vendor and get ALL vendor IDs (same as list endpoint)
       // This ensures orders are found even if they were created with a different vendor_id
       console.log(`[meal-order-status] Input vendorId: ${vendorId}, orderId: ${orderId}`);
       let vendor = await resolveVendorById(vendorId);
-      
+
       // ✅ FIX: If vendor not found, try to query order directly
       if (!vendor) {
         console.log(`[meal-order-status] Vendor not found for ${vendorId}, but will still try to query order directly...`);
         vendor = {
           id: vendorId,
           business_name: null,
-          phone: null
+          phone: null,
         };
       }
-      
+
       console.log(`[meal-order-status] Resolved vendor: id=${vendor.id}`);
-      
+
       // Get all vendor IDs (vendors.id + vendor_identity.id for same vendor/phone)
       let allVendorIds = await getVendorIdsForAvailabilityLookup(vendor.id);
       console.log(`[meal-order-status] All vendor IDs: ${JSON.stringify(allVendorIds)}`);
-      
+
       // Ensure vendor.id is in the array
       if (vendor.id && !allVendorIds.includes(vendor.id)) {
         allVendorIds = [vendor.id, ...allVendorIds];
       }
-      
-      // ✅ CRITICAL FIX: Check if order exists with ANY of the resolved vendor IDs
-      // Use the same query pattern as the list endpoint
-      const orderCheck = await query(
-        `SELECT id, vendor_id, status FROM meal_orders 
-         WHERE id = $1 AND vendor_id::text = ANY($2::text[])
-         LIMIT 1`,
-        [orderId, allVendorIds]
+
+      const orderRowRes = await query(
+        `SELECT mo.id, mo.vendor_id, mo.status AS order_status, mo.subscription_id,
+                mo.scheduled_delivery_date, mo.purchase_snapshot
+           FROM meal_orders mo
+          WHERE mo.id = $1 AND mo.vendor_id::text = ANY($2::text[])
+          LIMIT 1`,
+        [orderId, allVendorIds],
       ).catch(() => ({ rows: [] }));
-      
-      if (orderCheck.rows.length === 0) {
+
+      if (!orderRowRes.rows?.length) {
         console.log(`[meal-order-status] Order not found or not owned by vendor`);
         console.log(`[meal-order-status] OrderId: ${orderId}, VendorIds checked: ${JSON.stringify(allVendorIds)}`);
         return c.json({ error: 'Order not found or not owned by vendor' }, 404);
       }
-      
-      const order = orderCheck.rows[0];
+
+      const orderRow = orderRowRes.rows[0] as Record<string, unknown>;
+      const purchaseSnapEarly = parseMealOrderPurchaseSnapshotForVendor(orderRow.purchase_snapshot);
+      const subscriptionParentEarly =
+        Boolean(orderRow.subscription_id) &&
+        purchaseSnapEarly.subscriptionVendorBookingRole === 'parent';
+
+      /** Vendor rejects subscription signup before service — refund entire initial payment. */
+      if (status === 'cancelled' && subscriptionParentEarly && orderRow.subscription_id) {
+        const deliveredCheck = await query(
+          `SELECT COUNT(*)::int AS c FROM meal_subscription_deliveries
+           WHERE subscription_id = $1::uuid AND status = 'delivered'`,
+          [orderRow.subscription_id],
+        ).catch(() => ({ rows: [{ c: 0 }] }));
+        const deliveredCount = Number((deliveredCheck.rows?.[0] as { c?: number })?.c ?? 0);
+        if (deliveredCount > 0) {
+          return c.json(
+            { error: 'Cannot cancel subscription booking after sessions have been delivered.' },
+            400,
+          );
+        }
+
+        const refund = await processSubscriptionVendorParentBookingFullRefund(
+          String(orderRow.subscription_id),
+          'Vendor cancelled subscription booking from nutrition queue',
+        );
+        const msgLow = String(refund.message || '').toLowerCase();
+        if (!refund.refunded && !msgLow.includes('already processed')) {
+          return c.json({ success: false, error: refund.message || 'Refund failed' }, 422);
+        }
+        return c.json({
+          success: true,
+          message:
+            refund.refunded && refund.message
+              ? refund.message
+              : 'Subscription cancelled; refund processed per platform policy (platform fee may be retained).',
+          refund,
+        });
+      }
+
+      let actualStatus = status;
+      if (status === 'accepted') {
+        if (subscriptionParentEarly) {
+          // Parent row: vendor confirms the signup only — sessions move to `confirmed` via cascade.
+          // Fulfillment (Start preparing / logistics) happens on per-session meal_orders, not on the parent.
+          actualStatus = 'confirmed';
+          console.log(
+            `[meal-order-status] Subscription parent accept → confirmed (sessions cascaded separately; scheduled=${orderRow.scheduled_delivery_date})`,
+          );
+        } else {
+          actualStatus = 'confirmed';
+          console.log(`[meal-order-status] Mapping 'accepted' to 'confirmed' for database constraint`);
+        }
+      }
+
+      if (!validStatuses.includes(actualStatus)) {
+        return c.json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` }, 400);
+      }
+
+      const order = {
+        id: orderRow.id,
+        vendor_id: orderRow.vendor_id,
+        status: orderRow.order_status,
+      };
       console.log(`[meal-order-status] Order found: vendor_id=${order.vendor_id}, current_status=${order.status}`);
       
       // ✅ Use the order's actual vendor_id for the update (not the URL vendorId)
@@ -3143,6 +3265,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         // Direct status update to 'confirmed' (not via 'accepted')
         updatePayload.confirmed_at = new Date().toISOString();
       } else if (actualStatus === 'preparing') {
+        updatePayload.confirmed_at = updatePayload.confirmed_at ?? new Date().toISOString();
         const prepStartedAt = new Date();
         updatePayload.prep_started_at = prepStartedAt.toISOString();
 
@@ -3234,6 +3357,22 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         } else {
           throw updateError;
         }
+      }
+
+      if (status === 'accepted' && subscriptionParentEarly && orderRow.subscription_id) {
+        await query(
+          `UPDATE meal_orders
+             SET status = 'confirmed',
+                 confirmed_at = COALESCE(confirmed_at, NOW()),
+                 updated_at = NOW()
+           WHERE subscription_id = $1::uuid
+             AND purchase_snapshot IS NOT NULL
+             AND (purchase_snapshot::jsonb->>'subscriptionVendorBookingRole') = 'session'
+             AND status = 'pending'`,
+          [orderRow.subscription_id],
+        ).catch((e) =>
+          console.warn('[meal-order-status] cascade subscription session meal_orders failed', e),
+        );
       }
 
       // When not strict (MEAL_DISPATCH_REQUIRED=false), keep best-effort dispatch after DB update for local dev.

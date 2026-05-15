@@ -9,7 +9,8 @@ import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-chec
 import {
   buildMealSubscriptionSummaryLinesFromRow,
   upfrontTotalInrFromSubscriptionRow,
-  parsePricingSnapshot,
+  pricingSnapshotFromSubscriptionRow,
+  subscriptionPlatformConvenienceUpfrontFromSnap,
   n,
 } from '@/lib/meal-subscription-payment-summary-lines';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
@@ -110,26 +111,38 @@ function MealSubscriptionPayInner() {
   const summaryLines = useMemo(() => (sub ? buildMealSubscriptionSummaryLinesFromRow(sub) : []), [sub]);
   const baseAmount = useMemo(() => (sub ? upfrontTotalInrFromSubscriptionRow(sub) : 0), [sub]);
 
-  const snap = useMemo(() => (sub ? parsePricingSnapshot(sub) : null), [sub]);
+  const snap = useMemo(() => pricingSnapshotFromSubscriptionRow(sub), [sub]);
   const mealPlanFoodTaxableInr = useMemo(() => {
     if (!snap) return 0;
     const direct = n(snap.foodSubtotalUpfront);
     if (direct > 0.009) return direct;
+    const spc = n(snap.subtotalPerCycle);
+    const bc = Math.max(1, n(snap.billingCycles));
+    if (spc > 0.009 && bc >= 1) return Math.round(spc * bc * 100) / 100;
     const per = n(snap.perSessionFoodSubtotal);
     const ts = n(snap.totalSessionsUsed);
     if (per > 0 && ts > 0) return Math.round(per * ts * 100) / 100;
     return 0;
   }, [snap]);
   const mealPlanGstCatalogCategoryId = useMemo(() => {
-    const id = snap?.mealPlanGstCatalogCategoryId;
+    const id =
+      snap?.mealPlanGstCatalogCategoryId ?? (snap as { meal_plan_gst_catalog_category_id?: string })?.meal_plan_gst_catalog_category_id;
     return id != null && String(id).trim() ? String(id).trim() : undefined;
   }, [snap]);
   const mealSubscriptionFeeTotals = useMemo(() => {
     if (!snap) return undefined;
+    const { platformFee, convenienceFee } = subscriptionPlatformConvenienceUpfrontFromSnap(snap);
     return {
-      platformFee: n(snap.platformFeeUpfront),
-      convenienceFee: n(snap.convenienceFeeUpfront),
+      platformFee,
+      convenienceFee,
       deliveryFee: n(snap.totalDeliveryFeeUpfront),
+    };
+  }, [snap]);
+  const mealSubscriptionGstFallbackPct = useMemo(() => {
+    if (!snap) return undefined;
+    return {
+      food: n(snap.foodGstPct),
+      delivery: n(snap.deliveryGstPct),
     };
   }, [snap]);
   const subscriptionPayAddress = useMemo(
@@ -197,6 +210,7 @@ function MealSubscriptionPayInner() {
       mealPlanFoodTaxableInr={mealPlanFoodTaxableInr}
       mealPlanGstCatalogCategoryId={mealPlanGstCatalogCategoryId}
       mealSubscriptionFeeTotals={mealSubscriptionFeeTotals}
+      mealSubscriptionGstFallbackPct={mealSubscriptionGstFallbackPct}
       address={subscriptionPayAddress}
       vendorId={vendorId}
       vendorName={vendorName}

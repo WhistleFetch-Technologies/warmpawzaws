@@ -21,6 +21,7 @@ export function SubscriptionPricingBreakdown({
   convenienceFeePerCycle,
   convenienceFeeUpfront,
   upfrontTotal,
+  gstPreview,
 }: {
   purchaseTypeLabel: string;
   billingCycleLabel: string;
@@ -39,6 +40,14 @@ export function SubscriptionPricingBreakdown({
   convenienceFeePerCycle: number;
   convenienceFeeUpfront: number;
   upfrontTotal: number;
+  /** Same `gst` object as GET /meal-plans/:planId/order-preview (weekly/monthly). */
+  gstPreview?: {
+    foodGstPct?: number;
+    deliveryGstPct?: number;
+    foodGstAmount?: number;
+    deliveryGstAmount?: number;
+    totalGstAmount?: number;
+  } | null;
 }) {
   const fmt = (n: number) => `₹${Number.isFinite(n) ? n : 0}`;
 
@@ -85,6 +94,38 @@ export function SubscriptionPricingBreakdown({
             ) : null}
           </span>
         </div>
+        {gstPreview != null && Number(gstPreview.totalGstAmount) > 0.009 ? (
+          <>
+            {(gstPreview.foodGstAmount ?? 0) > 0.009 ? (
+              <div className="flex justify-between text-slate-700">
+                <span>
+                  GST (meal)
+                  {gstPreview.foodGstPct != null && Number.isFinite(gstPreview.foodGstPct)
+                    ? ` (${gstPreview.foodGstPct}%)`
+                    : ''}
+                </span>
+                <span>{fmt(Number(gstPreview.foodGstAmount ?? 0))}</span>
+              </div>
+            ) : null}
+            {(gstPreview.deliveryGstAmount ?? 0) > 0.009 ? (
+              <div className="flex justify-between text-slate-700">
+                <span>
+                  GST (delivery)
+                  {gstPreview.deliveryGstPct != null && Number.isFinite(gstPreview.deliveryGstPct)
+                    ? ` (${gstPreview.deliveryGstPct}%)`
+                    : ''}
+                </span>
+                <span>{fmt(Number(gstPreview.deliveryGstAmount ?? 0))}</span>
+              </div>
+            ) : null}
+            {(gstPreview.foodGstAmount ?? 0) <= 0.009 && (gstPreview.deliveryGstAmount ?? 0) <= 0.009 ? (
+              <div className="flex justify-between text-slate-700">
+                <span>GST</span>
+                <span>{fmt(Number(gstPreview.totalGstAmount ?? 0))}</span>
+              </div>
+            ) : null}
+          </>
+        ) : null}
         <div className="flex justify-between font-semibold text-slate-900 pt-2 border-t border-slate-100">
           <span>Total</span>
           <span>{fmt(upfrontTotal)}</span>
@@ -120,8 +161,8 @@ export function SubscriptionPricingBreakdown({
 
       <p className="text-xs text-slate-500 leading-snug">
         Delivery is estimated for all sessions in this signup (same rules as one-time meal orders). Platform and
-        convenience fees apply per billing cycle. Taxes are included in listed prices where applicable — same as
-        one-time meal checkout.
+        convenience fees apply per billing cycle. GST on meal and delivery matches Admin Finance (meal_plan_food /
+        meal_plan_delivery), same as buy-once checkout.
       </p>
     </div>
   );

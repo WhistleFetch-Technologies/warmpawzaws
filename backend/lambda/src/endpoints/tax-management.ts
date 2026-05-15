@@ -964,7 +964,10 @@ export function registerTaxManagementEndpoints(app: Hono) {
           const explicitCatRaw =
             (item as { catalogCategoryId?: string }).catalogCategoryId ||
             (item as { catalog_category_id?: string }).catalog_category_id;
-          if (isMealPlanFoodScope && explicitCatRaw && vendorId) {
+          // Meal-plan GST rows must always resolve catalogue UUID here. Do not require `vendorId`:
+          // missing vendor would skip this branch, drop `catalogCategoryId`, and fall through to the
+          // generic service path — which then defaults GST to 18%.
+          if (isMealPlanFoodScope && explicitCatRaw) {
             const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
             if (catalogCategoryUuid) {
               taxItems.push({
@@ -982,7 +985,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
               continue;
             }
           }
-          if (isMealPlanDeliveryScope && explicitCatRaw && vendorId) {
+          if (isMealPlanDeliveryScope && explicitCatRaw) {
             const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
             if (catalogCategoryUuid) {
               taxItems.push({

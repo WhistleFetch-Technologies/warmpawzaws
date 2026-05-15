@@ -5,6 +5,7 @@
 import type { PoolClient } from 'pg';
 import { randomBytes } from 'crypto';
 import { select, query, withTransaction } from '../../database/rds-connection';
+import { resolveMealPlanOrProductById, ensureMealPlanMirrorForProductCheckout } from '../../utils/meal-plan-resolve';
 import {
   parseMealCatalogDiet,
   normalizePurchaseType,
@@ -132,11 +133,17 @@ export async function createCanonicalSubscription(
     throw Object.assign(new Error('customerId or valid customerPhone required'), { statusCode: 400 });
   }
 
-  const plans = await select('meal_plans', { id: input.mealPlanId });
-  if (!plans.length) {
+  let plan = await resolveMealPlanOrProductById(input.mealPlanId);
+  if (!plan) {
     throw Object.assign(new Error('Meal plan not found'), { statusCode: 404 });
   }
-  const plan = plans[0] as Record<string, unknown>;
+  await ensureMealPlanMirrorForProductCheckout(plan);
+
+  const vendorId = String(plan.vendor_id ?? '').trim();
+  if (!vendorId) {
+    throw Object.assign(new Error('Meal plan has no vendor'), { statusCode: 400 });
+  }
+
   const diet = parseMealCatalogDiet(plan);
   const catalogPurchaseType = normalizePurchaseType(diet);
   if (catalogPurchaseType !== input.purchaseType) {
@@ -146,7 +153,6 @@ export async function createCanonicalSubscription(
     );
   }
 
-  const vendorId = plan.vendor_id as string;
   const qty = Math.max(1, Math.min(50, Number(input.quantity) || 1));
   assertQuantityMatchesVendorMealsPreset(diet, input.purchaseType, qty);
 
@@ -167,6 +173,7 @@ export async function createCanonicalSubscription(
     lifecycle === 'pending_payment' ? 'pending_payment' : 'active';
 
   const vendorWeeklyDayCodes = normalizeCatalogDeliveryDaysArray(diet.deliveryDays);
+  const catalogDeliveryFreqUpper = String(diet.deliveryFrequency || '').toUpperCase();
 
   let weeklyPatternResolved: SubscriptionDeliveryScheduleInput['weeklyPattern'] | undefined;
   let weekdaysResolved: string[] | undefined;
@@ -200,16 +207,61 @@ export async function createCanonicalSubscription(
     }
   }
 
+  if (
+    input.purchaseType === 'WEEKLY_PLAN' &&
+    weekdaysResolved?.length &&
+    catalogDeliveryFreqUpper === 'TWICE_WEEKLY' &&
+    weekdaysResolved.length !== 2
+  ) {
+    throw Object.assign(new Error('This plan delivers twice per week — select exactly 2 weekdays'), {
+      statusCode: 400,
+    });
+  }
+  if (
+    input.purchaseType === 'WEEKLY_PLAN' &&
+    weekdaysResolved?.length &&
+    catalogDeliveryFreqUpper === 'WEEKLY' &&
+    weekdaysResolved.length !== 1
+  ) {
+    throw Object.assign(new Error('This plan delivers once per week — select exactly 1 weekday'), {
+      statusCode: 400,
+    });
+  }
+
   const vendorMonthlyFreq =
-    input.purchaseType === 'MONTHLY_PLAN'
-      ? String(diet.deliveryFrequency || '').toUpperCase()
-      : '';
+    input.purchaseType === 'MONTHLY_PLAN' ? catalogDeliveryFreqUpper : '';
+  if (input.purchaseType === 'MONTHLY_PLAN') {
+    const rawWd = input.deliverySchedule?.weekdays;
+    if (vendorMonthlyFreq === 'TWICE_WEEKLY') {
+      if (!Array.isArray(rawWd) || rawWd.length !== 2) {
+        throw Object.assign(
+          new Error('Choose exactly 2 delivery weekdays for twice-weekly monthly plans'),
+          { statusCode: 400 },
+        );
+      }
+      weekdaysResolved = rawWd.map((x) => String(x).toLowerCase().slice(0, 3));
+    } else if (vendorMonthlyFreq === 'WEEKLY') {
+      if (!Array.isArray(rawWd) || rawWd.length !== 1) {
+        throw Object.assign(new Error('Choose exactly 1 delivery weekday for this monthly plan'), {
+          statusCode: 400,
+        });
+      }
+      weekdaysResolved = rawWd.map((x) => String(x).toLowerCase().slice(0, 3));
+    }
+  }
+
   const monthlyFreqStored =
     vendorMonthlyFreq === 'DAILY' ||
     vendorMonthlyFreq === 'ALTERNATE_DAYS' ||
     vendorMonthlyFreq === 'TWICE_WEEKLY' ||
     vendorMonthlyFreq === 'WEEKLY'
       ? vendorMonthlyFreq
+      : undefined;
+
+  const weeklyCatalogFreqStored =
+    input.purchaseType === 'WEEKLY_PLAN' &&
+    (catalogDeliveryFreqUpper === 'TWICE_WEEKLY' || catalogDeliveryFreqUpper === 'WEEKLY')
+      ? catalogDeliveryFreqUpper
       : undefined;
 
   const deliveryScheduleJson = {
@@ -221,6 +273,7 @@ export async function createCanonicalSubscription(
     source: 'canonical_v1',
     ...(weeklyPatternResolved ? { weeklyPattern: weeklyPatternResolved } : {}),
     ...(weekdaysResolved?.length ? { weekdays: weekdaysResolved } : {}),
+    ...(weeklyCatalogFreqStored ? { deliveryFrequency: weeklyCatalogFreqStored } : {}),
     ...(monthlyFreqStored ? { monthlyDeliveryFrequency: monthlyFreqStored } : {}),
     ...(input.deliverySchedule?.customerInstructions
       ? { customerInstructions: input.deliverySchedule.customerInstructions }
@@ -263,11 +316,25 @@ export async function createCanonicalSubscription(
   const planRow = plan as Record<string, unknown>;
   const gstRates = await getMealPlanGstRates(planRow);
   const mealPlanGstCatalogCategoryId = await resolveMealPlanCatalogCategoryId(planRow);
-  const foodSubtotalUpfront =
-    Math.round(feeQuote.perSessionFoodSubtotal * feeQuote.totalSessionsUsed * 100) / 100;
-  const mealGst = computeMealGstBreakdown(foodSubtotalUpfront, 0, gstRates.foodGstPct, 0);
+  /** Same basis as GET /meal-plans/:planId/order-preview weekly/monthly — cycles × per-cycle food subtotal */
+  const bc = Math.max(1, feeQuote.billingCycles || 1);
+  const foodSubtotalUpfront = Math.round(feeQuote.subtotalPerCycle * bc * 100) / 100;
+  const deliveryTotalUpfront =
+    feeQuote.totalDeliveryFeeUpfront != null && Number.isFinite(Number(feeQuote.totalDeliveryFeeUpfront))
+      ? Math.round(Number(feeQuote.totalDeliveryFeeUpfront) * 100) / 100
+      : 0;
+  /** Same basis as GET /meal-plans/:id/order-preview weekly/monthly branch — food + delivery GST */
+  const mealGst = computeMealGstBreakdown(
+    foodSubtotalUpfront,
+    deliveryTotalUpfront,
+    gstRates.foodGstPct,
+    gstRates.deliveryGstPct,
+  );
   const upfrontTotalWithFoodGst =
     Math.round((feeQuote.upfrontTotalAmount + mealGst.totalGstAmount) * 100) / 100;
+
+  const platformFeeUpfront = Math.round(feeQuote.platformFeePerCycle * bc * 100) / 100;
+  const convenienceFeeUpfront = Math.round(feeQuote.convenienceFeePerCycle * bc * 100) / 100;
 
   const pricingSnapshot = {
     pricePerDelivery,
@@ -281,14 +348,20 @@ export async function createCanonicalSubscription(
     billingCycles: feeQuote.billingCycles,
     totalSessionsUsed: feeQuote.totalSessionsUsed,
     deliveriesPerBillingCycle: feeQuote.deliveriesPerBillingCycle,
+    subtotalPerCycle: feeQuote.subtotalPerCycle,
     perSessionFoodSubtotal: feeQuote.perSessionFoodSubtotal,
     platformFeePerCycle: feeQuote.platformFeePerCycle,
     convenienceFeePerCycle: feeQuote.convenienceFeePerCycle,
+    platformFeeUpfront,
+    convenienceFeeUpfront,
     upfrontTotalAmount: upfrontTotalWithFoodGst,
     upfrontTotalAmountBeforeFoodGst: feeQuote.upfrontTotalAmount,
     foodSubtotalUpfront,
     foodGstPct: gstRates.foodGstPct,
-    foodGstAmount: mealGst.totalGstAmount,
+    deliveryGstPct: gstRates.deliveryGstPct,
+    foodGstAmount: mealGst.foodGstAmount,
+    deliveryGstAmount: mealGst.deliveryGstAmount,
+    totalGstAmount: mealGst.totalGstAmount,
     mealTaxCategoryId: gstRates.taxCategoryId,
     mealPlanGstCatalogCategoryId: mealPlanGstCatalogCategoryId || gstRates.catalogCategoryId,
   };

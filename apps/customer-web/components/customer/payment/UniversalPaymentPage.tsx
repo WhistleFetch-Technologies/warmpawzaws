@@ -64,6 +64,8 @@ interface UniversalPaymentPageProps {
     convenienceFee: number;
     deliveryFee: number;
   };
+  /** When `/tax/calculate` fails, use GST % from subscription pricing_snapshot (same source as signup preview). */
+  mealSubscriptionGstFallbackPct?: { food: number; delivery: number };
 
   /** One-time meal checkout: create order + Razorpay after universal pay (same UX as subscription pay). */
   mealOneTimeDraft?: {
@@ -327,6 +329,7 @@ export function UniversalPaymentPage({
   mealPlanFoodTaxableInr,
   mealPlanGstCatalogCategoryId,
   mealSubscriptionFeeTotals,
+  mealSubscriptionGstFallbackPct,
   mealOneTimeDraft,
   serviceId,
   productId,
@@ -399,16 +402,21 @@ export function UniversalPaymentPage({
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
-  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
-    subtotal: baseAmount,
-    cgst: 0,
-    sgst: 0,
-    igst: 0,
-    totalTax: 0,
-    total: baseAmount,
-    taxRate: 18,
-    isInterState: false,
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>(() => {
+    const meal = type === 'meal_subscription' || type === 'meal_one_time';
+    return {
+      subtotal: meal ? 0 : baseAmount,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      totalTax: 0,
+      total: meal ? 0 : baseAmount,
+      taxRate: meal ? 0 : 18,
+      isInterState: false,
+    };
   });
+  /** Meal payable uses `/tax/calculate` grand total + platform/convenience (delivery is inside GST lines). */
+  const [mealTaxReady, setMealTaxReady] = useState(false);
 
   const [platformFees, setPlatformFees] = useState<PlatformFees>({
     platformFee: 0,
@@ -454,6 +462,8 @@ export function UniversalPaymentPage({
 
   const runMealCheckoutTaxAndFees = useCallback(async () => {
     if (type !== 'meal_subscription' && type !== 'meal_one_time') return;
+
+    setMealTaxReady(false);
 
     const addr =
       type === 'meal_one_time' && mealOneTimeDraft
@@ -523,6 +533,7 @@ export function UniversalPaymentPage({
         taxRate: 0,
         isInterState: false,
       });
+      setMealTaxReady(true);
       return;
     }
 
@@ -582,11 +593,17 @@ export function UniversalPaymentPage({
         );
         const draftFoodPct =
           type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
+        const subscriptionFoodPctDisplay =
+          type === 'meal_subscription' && mealSubscriptionGstFallbackPct
+            ? Number(mealSubscriptionGstFallbackPct.food)
+            : NaN;
         const taxRate = Number.isFinite(rawRate)
           ? rawRate
           : Number.isFinite(draftFoodPct)
             ? Math.min(100, Math.max(0, draftFoodPct))
-            : 0;
+            : Number.isFinite(subscriptionFoodPctDisplay)
+              ? Math.min(100, Math.max(0, subscriptionFoodPctDisplay))
+              : 0;
         const interState =
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0.009;
         const grand = Number(taxRes.grandTotal);
@@ -603,6 +620,7 @@ export function UniversalPaymentPage({
           isInterState: interState,
           taxDetails: taxRes.breakdown || [],
         });
+        setMealTaxReady(true);
         return;
       }
     } catch (e) {
@@ -611,9 +629,15 @@ export function UniversalPaymentPage({
 
     const draftFoodPctCatch =
       type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
+    const subscriptionFoodPct =
+      type === 'meal_subscription' && mealSubscriptionGstFallbackPct
+        ? Number(mealSubscriptionGstFallbackPct.food)
+        : NaN;
     const fallbackRate = Number.isFinite(draftFoodPctCatch)
       ? Math.min(100, Math.max(0, draftFoodPctCatch))
-      : 0;
+      : Number.isFinite(subscriptionFoodPct)
+        ? Math.min(100, Math.max(0, subscriptionFoodPct))
+        : 0;
     const taxable = foodAmt;
     const totalTax = (taxable * fallbackRate) / 100;
     const deliveryPctFallback =
@@ -621,7 +645,9 @@ export function UniversalPaymentPage({
       mealOneTimeDraft &&
       typeof mealOneTimeDraft.deliveryGstPct === 'number'
         ? mealOneTimeDraft.deliveryGstPct
-        : 0;
+        : type === 'meal_subscription' && mealSubscriptionGstFallbackPct
+          ? Number(mealSubscriptionGstFallbackPct.delivery)
+          : 0;
     const deliveryTax =
       deliveryFeeForTax > 0.009
         ? Math.round(((deliveryFeeForTax * deliveryPctFallback) / 100) * 100) / 100
@@ -637,12 +663,14 @@ export function UniversalPaymentPage({
       taxRate: fallbackRate,
       isInterState: false,
     });
+    setMealTaxReady(true);
   }, [
     type,
     mealOneTimeDraft,
     mealPlanFoodTaxableInr,
     mealPlanGstCatalogCategoryId,
     mealSubscriptionFeeTotals,
+    mealSubscriptionGstFallbackPct,
     vendorId,
     customerId,
     customerPhone,
@@ -786,6 +814,7 @@ export function UniversalPaymentPage({
     mealPlanFoodTaxableInr,
     mealPlanGstCatalogCategoryId,
     mealSubscriptionFeeTotals,
+    mealSubscriptionGstFallbackPct,
     mealOneTimeDraft,
   ]);
 
@@ -1589,8 +1618,14 @@ export function UniversalPaymentPage({
   const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
 
   const isMealPay = type === 'meal_subscription' || type === 'meal_one_time';
+  /** After `/tax/calculate`: grand total for food+delivery+GST lines only — add platform & convenience once (not `platformFees.total`, which includes delivery). */
+  const resolvedMealPayTotal = isMealPay
+    ? mealTaxReady
+      ? Math.round((taxBreakdown.total + platformFees.platformFee + platformFees.convenienceFee) * 100) / 100
+      : Number(baseAmount)
+    : NaN;
   const walletCapBase = isMealPay
-    ? Math.max(0, Number(baseAmount) - razorpayOfferDiscount)
+    ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount)
     : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
@@ -1598,7 +1633,7 @@ export function UniversalPaymentPage({
   const finalAmount = subscriptionCovered
     ? 0
     : isMealPay
-      ? Math.max(0, Number(baseAmount) - razorpayOfferDiscount - walletAmount)
+      ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
@@ -3200,9 +3235,12 @@ export function UniversalPaymentPage({
     || firstServiceFromArray?.name || firstServiceFromArray?.serviceName
     || 'Service';
   const displayDescription = serviceDescription || firstServiceFromArray?.description || '';
-  const displayAmount = Number(baseAmount) || (effectiveSelectedServices
-    ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
-    : 0);
+  const displayAmount = isMealPay
+    ? resolvedMealPayTotal
+    : Number(baseAmount) ||
+      (effectiveSelectedServices
+        ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
+        : 0);
   const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== ''))
     ? Number(duration)
     : (effectiveSelectedServices
@@ -3341,7 +3379,7 @@ export function UniversalPaymentPage({
             planTitle={String(serviceName || productName || 'Meal plan')}
             vendorName={String(vendorName || '')}
             lines={mealSubscriptionSummaryLines || []}
-            totalInr={Number(baseAmount) || 0}
+            totalInr={resolvedMealPayTotal}
           />
         ) : (
           <>
@@ -3696,7 +3734,7 @@ export function UniversalPaymentPage({
               </div>
             )}
 
-            {platformFees.deliveryFee > 0 && (
+            {platformFees.deliveryFee > 0 && type !== 'meal_subscription' && type !== 'meal_one_time' && (
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-1">
                   Delivery Fee

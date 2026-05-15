@@ -36,6 +36,23 @@ function parsePricingSnap(raw: unknown): Record<string, unknown> {
   return {};
 }
 
+async function resolveSubscriptionParentMealOrderId(
+  client: PoolClient,
+  subscriptionId: string,
+): Promise<string | null> {
+  const r = await client.query(
+    `SELECT id::text AS id FROM meal_orders
+     WHERE subscription_id = $1::uuid
+       AND purchase_snapshot IS NOT NULL
+       AND (purchase_snapshot::jsonb->>'subscriptionVendorBookingRole') = 'parent'
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [subscriptionId],
+  );
+  const id = r.rows?.[0]?.id as string | undefined;
+  return id || null;
+}
+
 export async function upsertVendorMealOrderForCanonicalDelivery(
   client: PoolClient,
   params: {
@@ -100,6 +117,49 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
   const sessionDelivery = Math.round(deliveryFeePerSession * 100) / 100;
   const totalAmount = Math.round((lineSubtotal + sessionDelivery + platformCombined) * 100) / 100;
 
+  const totalSessionsForPlan = Math.max(
+    1,
+    Number(sub.total_sessions) || perCycleDeliveries || 1,
+  );
+
+  const upfrontTotal =
+    Number(snap.upfrontTotalAmount ?? snap.upfront_total_amount ?? 0) || 0;
+  const foodUpfront =
+    Number(snap.foodSubtotalUpfront ?? snap.food_subtotal_upfront ?? 0) || 0;
+  const deliveryUpfront =
+    Number(snap.totalDeliveryFeeUpfront ?? snap.total_delivery_fee_upfront ?? 0) || 0;
+  const platformFeeUpfront =
+    Number(snap.platformFeeUpfront ?? snap.platform_fee_upfront ?? 0) || 0;
+  const convenienceFeeUpfront =
+    Number(snap.convenienceFeeUpfront ?? snap.convenience_fee_upfront ?? 0) || 0;
+  const platformCombinedUpfront =
+    Math.round((platformFeeUpfront + convenienceFeeUpfront) * 100) / 100;
+
+  const sessionTotalsFallback =
+    Math.round(totalAmount * totalSessionsForPlan * 100) / 100;
+  const parentGrandTotal =
+    upfrontTotal > 0.009 ? Math.round(upfrontTotal * 100) / 100 : sessionTotalsFallback;
+  const parentFood =
+    foodUpfront > 0.009
+      ? Math.round(foodUpfront * 100) / 100
+      : Math.round(lineSubtotal * totalSessionsForPlan * 100) / 100;
+  const parentDelivery =
+    deliveryUpfront > 0.009
+      ? Math.round(deliveryUpfront * 100) / 100
+      : Math.round(sessionDelivery * totalSessionsForPlan * 100) / 100;
+  const parentPlatform =
+    platformCombinedUpfront > 0.009
+      ? platformCombinedUpfront
+      : Math.round(platformCombined * totalSessionsForPlan * 100) / 100;
+
+  const logisticsType =
+    String(sub.logistics_type || sub.logisticsType || 'warmpawz').trim() || 'warmpawz';
+
+  const scheduleJson = asScheduleJson(sub.delivery_schedule_json);
+  const monthlyDeliveryFrequency = String(
+    scheduleJson.monthlyDeliveryFrequency || scheduleJson.monthly_delivery_frequency || '',
+  ).toUpperCase();
+
   const addrObj = parseAddr(sub.delivery_address);
   const lat = sub.customer_lat ?? addrObj.lat ?? addrObj.latitude;
   const lng = sub.customer_lng ?? addrObj.lng ?? addrObj.longitude;
@@ -107,11 +167,43 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
   const petId = sub.pet_id != null ? sub.pet_id : null;
   const qty = Math.max(1, Math.min(50, Number(sub.meals_per_delivery) || 1));
 
-  const purchaseSnap = {
-    canonicalDeliveryId: params.canonicalDeliveryId,
-    sessionNumber: params.sessionNumber,
-    source: 'canonical_meal_subscription',
-  };
+  const isParentSession = params.sessionNumber === 1;
+
+  let purchaseSnap: Record<string, unknown>;
+
+  if (isParentSession) {
+    purchaseSnap = {
+      canonicalDeliveryId: params.canonicalDeliveryId,
+      sessionNumber: params.sessionNumber,
+      source: 'canonical_meal_subscription',
+      subscriptionVendorBookingRole: 'parent',
+      subscriptionTotalSessions: totalSessionsForPlan,
+      subscriptionPurchaseType: purchaseType,
+      subscriptionCustomerPaidTotalInr: parentGrandTotal,
+      subscriptionLogisticsType: logisticsType,
+      ...(monthlyDeliveryFrequency
+        ? { subscriptionMonthlyDeliveryFrequency: monthlyDeliveryFrequency }
+        : {}),
+    };
+  } else {
+    const parentMealOrderId = await resolveSubscriptionParentMealOrderId(client, subId);
+    purchaseSnap = {
+      canonicalDeliveryId: params.canonicalDeliveryId,
+      sessionNumber: params.sessionNumber,
+      source: 'canonical_meal_subscription',
+      subscriptionTotalSessions: totalSessionsForPlan,
+      subscriptionPurchaseType: purchaseType,
+      subscriptionCustomerPaidTotalInr: parentGrandTotal,
+      subscriptionLogisticsType: logisticsType,
+      ...(monthlyDeliveryFrequency
+        ? { subscriptionMonthlyDeliveryFrequency: monthlyDeliveryFrequency }
+        : {}),
+    };
+    if (parentMealOrderId) {
+      purchaseSnap.subscriptionVendorBookingRole = 'session';
+      purchaseSnap.subscriptionVendorParentMealOrderId = parentMealOrderId;
+    }
+  }
 
   const row: Record<string, unknown> = {
     customer_id: sub.customer_id,
@@ -122,10 +214,10 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
     order_type: 'subscription',
     quantity: qty,
     special_instructions: specialInstructions,
-    subtotal: lineSubtotal,
-    delivery_fee: sessionDelivery,
-    platform_fee: platformCombined,
-    total_amount: totalAmount,
+    subtotal: isParentSession ? parentFood : lineSubtotal,
+    delivery_fee: isParentSession ? parentDelivery : sessionDelivery,
+    platform_fee: isParentSession ? parentPlatform : platformCombined,
+    total_amount: isParentSession ? parentGrandTotal : totalAmount,
     delivery_address: JSON.stringify(addrObj),
     customer_lat: lat != null ? Number(lat) : null,
     customer_lng: lng != null ? Number(lng) : null,
@@ -133,8 +225,8 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
     scheduled_delivery_slot: JSON.stringify(params.slot),
     payment_status: 'paid',
     status: 'pending',
-    logistics_type: 'warmpawz',
-    logistics_cost: sessionDelivery,
+    logistics_type: logisticsType,
+    logistics_cost: isParentSession ? parentDelivery : sessionDelivery,
     created_at: new Date(),
     updated_at: new Date(),
   };
