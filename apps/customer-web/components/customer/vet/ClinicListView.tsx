@@ -740,59 +740,59 @@ export function ClinicListView({
                             return (
                               <div
                                 key={service.stableKey}
-                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                               >
-                                {/* Row 1: name + package badge (left) | price (right) */}
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                                    <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                                      {service.name}
-                                    </h5>
-                                    {isPackage && (
-                                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                        Package
-                                      </span>
+                                {/* Row 1: name + package badge (left) | price + note (right) */}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start gap-2">
+                                      <h5 className="min-w-0 flex-1 font-semibold text-gray-900 text-[15px] leading-snug">
+                                        {service.name}
+                                      </h5>
+                                      {isPackage && (
+                                        <span className="mt-0.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                          Package
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Row 2: description */}
+                                    {descTrim ? (
+                                      <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                        <ServiceDescriptionInline
+                                          description={descTrim}
+                                          title={service.name}
+                                          className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                          dialogHint="Full description from the clinic (vendor-provided)"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1.5 text-gray-400 text-sm line-clamp-2 italic">
+                                        Professional in-clinic care — tap Book Now to continue.
+                                      </p>
                                     )}
                                   </div>
+
                                   <div className="shrink-0 text-right">
                                     <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
                                     </div>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
                                   </div>
                                 </div>
 
-                                {/* Row 2: description full width */}
-                                {descTrim ? (
-                                  <div onClick={(e) => e.stopPropagation()}>
-                                    <ServiceDescriptionInline
-                                      description={descTrim}
-                                      title={service.name}
-                                      className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                      dialogHint="Full description from the clinic (vendor-provided)"
-                                    />
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-400 text-sm line-clamp-2 italic">
-                                    Professional in-clinic care — tap Book Now to continue.
-                                  </p>
-                                )}
-
                                 {/* Row 3: badges (left) | Book Now (right) */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline" className="text-xs shrink-0">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      {service.duration} mins
-                                    </Badge>
-                                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                                      {service.category || 'Veterinary'}
-                                    </Badge>
+                                <div className="flex items-center justify-between gap-2 mt-3">
+                                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                    <span>{service.duration} mins</span>
+                                    <span className="text-gray-300">·</span>
+                                    <span>{service.category || 'Vet Care'}</span>
                                   </div>
                                   <Button
                                     type="button"
                                     size="sm"
-                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 rounded-full px-5"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleBookService(clinic, service);
