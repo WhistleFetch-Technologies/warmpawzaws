@@ -2164,11 +2164,91 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LIMIT 20
       `);
 
+      // Check specializations for "wrong persona" vendor specifically
+      const specCheck = await query(`
+        SELECT
+          v.id,
+          v.business_name,
+          v.specializations AS jsonb_specializations,
+          v.metadata->'specializations' AS meta_specializations,
+          (SELECT json_agg(vsp.specialization) FROM vendor_specializations vsp WHERE vsp.vendor_id = v.id) AS table_specializations
+        FROM vendors v
+        WHERE LOWER(v.business_name) LIKE '%wrong%' OR LOWER(v.business_name) LIKE '%training%'
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
+      // Check what specialization_master has for basic_obedience
+      const masterCheck = await query(`
+        SELECT id::text, specialization_id, name, display_name
+        FROM specialization_master
+        WHERE is_active = true
+          AND (
+            LOWER(TRIM(COALESCE(specialization_id,''))) LIKE '%obedience%'
+            OR LOWER(TRIM(COALESCE(display_name,''))) LIKE '%obedience%'
+            OR LOWER(TRIM(COALESCE(name,''))) LIKE '%obedience%'
+          )
+        LIMIT 10
+      `).catch(() => ({ rows: [] }));
+
+      // Simulate the exact sqlVendorMatchesDeclaredSpecialization SQL for 'basic_obedience'
+      // This is exactly what the by-style endpoint runs when specialization=basic_obedience
+      const specKeys = ['basic_obedience', 'basic obedience', 'obedience', 'd9466ca6-2809-45e5-8a40-13443d652e8f'];
+      const specIlike = ['%basic\\_obedience%', '%basic obedience%', '%obedience%', '%d9466ca6-2809-45e5-8a40-13443d652e8f%'];
+      const specFilterSimulation = await query(`
+        SELECT
+          v.id,
+          v.business_name,
+          EXISTS (
+            SELECT 1 FROM vendor_specializations vsp
+            WHERE vsp.vendor_id = v.id
+              AND (
+                LOWER(TRIM(vsp.specialization)) = ANY($1::text[])
+                OR vsp.specialization ILIKE ANY($2::text[])
+              )
+          ) AS branch1_table_exact,
+          EXISTS (
+            SELECT 1 FROM vendor_specializations vsp2
+            JOIN specialization_master sm
+              ON sm.is_active = true
+                 AND (
+                   sm.id::text = vsp2.specialization
+                   OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                   OR LOWER(TRIM(sm.name)) = LOWER(TRIM(vsp2.specialization))
+                   OR LOWER(TRIM(sm.display_name)) = LOWER(TRIM(vsp2.specialization))
+                 )
+            WHERE vsp2.vendor_id = v.id
+              AND (
+                sm.id::text = ANY($1::text[])
+                OR LOWER(TRIM(sm.specialization_id)) = ANY($1::text[])
+                OR LOWER(TRIM(sm.name)) = ANY($1::text[])
+                OR LOWER(TRIM(sm.display_name)) = ANY($1::text[])
+                OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($1::text[])
+              )
+          ) AS branch2_table_uuid,
+          CASE WHEN v.specializations IS NOT NULL
+               THEN v.specializations::text ILIKE ANY($2::text[])
+               ELSE false
+          END AS branch3_jsonb_ilike,
+          CASE WHEN v.metadata->'specializations' IS NOT NULL
+               THEN (v.metadata->'specializations')::text ILIKE ANY($2::text[])
+               ELSE false
+          END AS branch4_meta_ilike,
+          v.specializations AS raw_jsonb_specs,
+          (SELECT json_agg(vsp.specialization) FROM vendor_specializations vsp WHERE vsp.vendor_id = v.id) AS raw_table_specs
+        FROM vendors v
+        WHERE LOWER(v.business_name) LIKE '%wrong%' OR LOWER(v.business_name) LIKE '%training center%'
+        LIMIT 10
+      `, [specKeys, specIlike]).catch((e: any) => ({ rows: [], error: e?.message }));
+
       return c.json({
         success: true,
         has_category_id_col: hasVsCatId,
         training_vendors_detail: vendorCheck.rows,
         by_style_check: byStyleCheck.rows,
+        specialization_check: specCheck.rows,
+        master_check: masterCheck.rows,
+        spec_filter_simulation: (specFilterSimulation as any).rows || [],
+        spec_filter_error: (specFilterSimulation as any).error || null,
       });
     } catch (error: any) {
       return c.json({ success: false, error: error?.message }, 500);
@@ -6671,16 +6751,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let longitude =
         c.req.query('longitude') || c.req.query('lng') || c.req.query('lon');
       let customerApproximateByStyle = false;
+      const customerPhoneForByStyle = c.req.query('customerPhone') || c.req.query('phone') || null;
 
       // If coordinates not provided, fetch from customer's default address (with pincode fallback)
       if (!latitude || !longitude) {
-        const customerPhone = c.req.query('customerPhone') || c.req.query('phone') || null;
-        const coords = await getCustomerCoordinates(customerPhone || undefined);
+        const coords = await getCustomerCoordinates(customerPhoneForByStyle || undefined);
         if (coords) {
           latitude = String(coords.latitude);
           longitude = String(coords.longitude);
           customerApproximateByStyle = !!coords.approximate;
           console.log(`[by-style] Using coordinates from customer address: ${latitude}, ${longitude}, approx=${customerApproximateByStyle}`);
+        } else if (customerPhoneForByStyle) {
+          console.warn(
+            '[by-style] No customer coordinates for distance: query omitted lat/lng and getCustomerCoordinates returned null. ' +
+              'Ensure default address has coordinates or a 6-digit pincode (and Geocoding API key on Lambda), or pass latitude/longitude from the app.'
+          );
         }
       }
 
@@ -6705,6 +6790,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       //get the customer latitude and longitude
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
+      if (
+        (customerLat == null ||
+          customerLng == null ||
+          !Number.isFinite(customerLat) ||
+          !Number.isFinite(customerLng)) &&
+        (latitude || longitude)
+      ) {
+        console.warn('[by-style] Invalid latitude/longitude query values; distance will be omitted', {
+          latitude,
+          longitude,
+        });
+      }
       //check if the service style is at_center
       const isAtCenter = serviceStyle === 'at_center';
 

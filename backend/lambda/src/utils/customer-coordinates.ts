@@ -1,5 +1,8 @@
 /**
- * Resolve customer default-address coordinates for discovery / AI booking flows.
+ * Resolve customer reference coordinates for discovery / distance (Haversine).
+ * Order: `customers.latitude/longitude` (profile / account), then default-address
+ * JSON `coordinates`, then 6-digit pincode centroid via Google Geocoding.
+ * Returns `approximate: true` when pincode-centroid is used.
  */
 
 import { select, query } from '../database/rds-connection';
@@ -38,6 +41,20 @@ export async function getCustomerCoordinates(
       return null;
     }
 
+    /** Profile / account location (same source as GET /customer/profile). Avoids relying only on address JSON + Geocoding API. */
+    const customerRowRes = await query(
+      `SELECT latitude, longitude FROM customers WHERE id = $1 LIMIT 1`,
+      [resolvedCustomerId]
+    ).catch(() => ({ rows: [] as { latitude?: unknown; longitude?: unknown }[] }));
+    const customerRow = customerRowRes.rows[0];
+    if (customerRow) {
+      const clat = customerRow.latitude != null ? parseFloat(String(customerRow.latitude)) : NaN;
+      const clng = customerRow.longitude != null ? parseFloat(String(customerRow.longitude)) : NaN;
+      if (Number.isFinite(clat) && Number.isFinite(clng)) {
+        return { latitude: clat, longitude: clng, approximate: false };
+      }
+    }
+
     const addressResult = await query(
       `SELECT coordinates, pincode
        FROM customer_addresses
@@ -47,7 +64,9 @@ export async function getCustomerCoordinates(
     );
 
     if (addressResult.rows.length === 0) {
-      console.warn('[getCustomerCoordinates] No default address found', { customerId: resolvedCustomerId });
+      console.warn('[getCustomerCoordinates] No default address and no usable customer lat/lng', {
+        customerId: resolvedCustomerId,
+      });
       return null;
     }
 
@@ -86,6 +105,8 @@ export async function getCustomerCoordinates(
 
     console.warn('[getCustomerCoordinates] Could not extract valid coordinates', {
       customerId: resolvedCustomerId,
+      hasCustomerRowLatLng:
+        customerRow != null && customerRow.latitude != null && customerRow.longitude != null,
       hasCoordinates: !!addr.coordinates,
       hasPincode: pin.length === 6,
     });

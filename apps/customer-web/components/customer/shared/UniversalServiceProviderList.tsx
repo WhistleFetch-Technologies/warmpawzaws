@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
@@ -623,7 +624,7 @@ export function UniversalServiceProviderList({
   useEffect(() => {
     loadProviders();
     loadSponsoredProviders();
-  }, [category, roleId, serviceStyle, specializationFilter, problemTitle]);
+  }, [category, roleId, serviceStyle, specializationFilter, problemTitle, phone]);
 
   // Load sponsored providers (ads)
   const loadSponsoredProviders = async () => {
@@ -642,16 +643,10 @@ export function UniversalServiceProviderList({
     try {
       setLoading(true);
 
-      // Get customer location for distance-based sorting
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
       let locationParams = '';
-      try {
-        const customerLat = localStorage.getItem('customer_latitude');
-        const customerLng = localStorage.getItem('customer_longitude');
-        if (customerLat && customerLng) {
-          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
-        }
-      } catch (e) {
-        console.log('Could not get customer location');
+      if (latitude != null && longitude != null) {
+        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
       }
 
       // Build specialization filter param
