@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState, type ReactNode } from 'react';
 import { MapPin, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar, Award, Navigation, Heart, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,53 +24,60 @@ interface Specialization {
   icon?: string;
 }
 
-interface UniversalVendorCardProps {
-  vendor: {
-    id: string;
-    vendorId: string;
-    vendorName: string;
-    vendorRating?: number;
-    vendorReviewCount?: number;
-    vendorLocation?: string;
-    price?: number | string;
-    duration?: string;
-    serviceName?: string;
-    description?: string;
-    serviceStyle?: string;
-    vendorProfileImage?: string;
-    // ✅ NEW: Promotion fields from backend
-    hasActivePromotions?: boolean;
-    promotions?: VendorPromotion[];
-    topPromotion?: VendorPromotion | null;
-    // ✅ ENRICHED DATA: Next availability, distance, specializations
-    nextAvailability?: string; // e.g., "Today 2:30 PM", "Tomorrow 10:00 AM"
-    nextAvailableSlot?: {
-      date: string;
-      time: string;
-      formattedDisplay: string;
-    };
-    distance?: number; // in km
-    distanceText?: string; // e.g., "2.3 km away"
-    specializations?: Specialization[] | string[];
-    experience?: string; // e.g., "5+ years"
-    completedBookings?: number;
-    languages?: string[];
-    isVerified?: boolean;
-    isFavorite?: boolean;
-    photoUrl?: string; // Alias for vendorProfileImage
-    // Phase 2: Gallery, price range, Best for problem, package badge
-    photos?: string[]; // 3-5 photos for gallery
-    priceMin?: number;
-    priceMax?: number;
-    bestForProblem?: string; // e.g. "Vaccination", "Full Grooming"
-    hasPackages?: boolean;
+/** Vendor payload for `UniversalVendorCard` (also used by search mappers). */
+export interface UniversalVendorCardVendor {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  vendorRating?: number;
+  vendorReviewCount?: number;
+  vendorLocation?: string;
+  price?: number | string;
+  duration?: string;
+  serviceName?: string;
+  description?: string;
+  serviceStyle?: string;
+  vendorProfileImage?: string;
+  // ✅ NEW: Promotion fields from backend
+  hasActivePromotions?: boolean;
+  promotions?: VendorPromotion[];
+  topPromotion?: VendorPromotion | null;
+  // ✅ ENRICHED DATA: Next availability, distance, specializations
+  nextAvailability?: string; // e.g., "Today 2:30 PM", "Tomorrow 10:00 AM"
+  nextAvailableSlot?: {
+    date: string;
+    time: string;
+    formattedDisplay: string;
   };
-  icon?: string;
+  distance?: number; // in km
+  distanceText?: string; // e.g., "2.3 km away"
+  specializations?: Specialization[] | string[];
+  experience?: string; // e.g., "5+ years"
+  completedBookings?: number;
+  languages?: string[];
+  isVerified?: boolean;
+  isFavorite?: boolean;
+  photoUrl?: string; // Alias for vendorProfileImage
+  // Phase 2: Gallery, price range, Best for problem, package badge
+  photos?: string[]; // 3-5 photos for gallery
+  priceMin?: number;
+  priceMax?: number;
+  bestForProblem?: string; // e.g. "Vaccination", "Full Grooming"
+  hasPackages?: boolean;
+}
+
+interface UniversalVendorCardProps {
+  vendor: UniversalVendorCardVendor;
+  icon?: ReactNode;
   colorClass?: string;
   onViewDetails?: (vendorId: string) => void;
   onBook?: (vendorId: string) => void;
   onToggleFavorite?: (vendorId: string) => void;
   showEnrichedData?: boolean; // Enable enriched display mode
+  /** When false, hides the bottom action row (e.g. whole-card navigation on /search). */
+  showActionButtons?: boolean;
+  /** When false, hides the price / package row (listings without a bookable price). */
+  showPriceRow?: boolean;
 }
 
 export function UniversalVendorCard({ 
@@ -79,11 +87,20 @@ export function UniversalVendorCard({
   onViewDetails,
   onBook,
   onToggleFavorite,
-  showEnrichedData = true
+  showEnrichedData = true,
+  showActionButtons = true,
+  showPriceRow = true,
 }: UniversalVendorCardProps) {
   const reviewCount = vendor.vendorReviewCount ?? 0;
   const location = vendor.vendorLocation || 'Location not specified';
   const profileImage = vendor.vendorProfileImage || vendor.photoUrl;
+  const [listingImageFailed, setListingImageFailed] = useState(false);
+  const singlePhotoUrl = profileImage || vendor.photos?.[0];
+  const vendorKey = `${vendor.vendorId || vendor.id}:${singlePhotoUrl || ''}`;
+
+  useEffect(() => {
+    setListingImageFailed(false);
+  }, [vendorKey]);
 
   const formatPrice = (price: number | string | undefined) => {
     if (!price) return 'Contact for price';
@@ -214,12 +231,12 @@ export function UniversalVendorCard({
             </div>
           ) : (
             <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center text-3xl`}>
-              {profileImage || (vendor.photos?.[0]) ? (
+              {!listingImageFailed && singlePhotoUrl ? (
                 <img 
-                  src={profileImage || vendor.photos?.[0]} 
+                  src={singlePhotoUrl} 
                   alt={vendor.vendorName}
                   className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  onError={() => setListingImageFailed(true)}
                 />
               ) : (
                 icon
@@ -305,9 +322,9 @@ export function UniversalVendorCard({
 
           {/* ✅ ENRICHED: Location, Distance & Duration Row */}
           <div className="flex items-center gap-3 mt-2 flex-wrap">
-            <div className="flex items-center gap-1 text-sm text-gray-600">
+            <div className="flex items-center gap-1 text-sm text-gray-600 min-w-0 flex-1">
               <MapPin className="w-4 h-4 flex-shrink-0" />
-              <span className="truncate max-w-[120px]">{location}</span>
+              <span className="truncate">{location}</span>
             </div>
             {distanceDisplay && (
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
@@ -332,6 +349,7 @@ export function UniversalVendorCard({
           )}
 
           {/* Price Row - Phase 2: price range + package badge */}
+          {showPriceRow && (
           <div className="flex items-center justify-between mt-2 flex-wrap gap-1">
             <span className="text-lg font-bold text-blue-600">
               {getPriceDisplay() || formatPrice(vendor.price)}
@@ -346,10 +364,12 @@ export function UniversalVendorCard({
               </span>
             )}
           </div>
+          )}
         </div>
       </div>
 
       {/* Action Buttons */}
+      {showActionButtons && (onViewDetails || onBook) && (
       <div className="flex gap-2 mt-3">
         {onViewDetails && (
           <Button
@@ -369,6 +389,7 @@ export function UniversalVendorCard({
           </Button>
         )}
       </div>
+      )}
     </Card>
   );
 }

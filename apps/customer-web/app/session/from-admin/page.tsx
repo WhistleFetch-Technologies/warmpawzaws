@@ -57,6 +57,21 @@ function BootstrapContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fast path: admin already exchanged the code and passed the session via URL fragment.
+    // Fragments are never sent to servers, so tokens stay private.
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    const preauthMatch = hash.match(/[#&]preauth=([^&]*)/);
+    if (preauthMatch) {
+      try {
+        const data = JSON.parse(atob(decodeURIComponent(preauthMatch[1])));
+        applyCustomerPortalSessionFromEnvelope({ success: true, data });
+        window.location.replace('/');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Invalid session data');
+      }
+      return;
+    }
+
     const rawCode = searchParams.get('code');
     const code = rawCode ? rawCode.trim() : '';
     if (!code) {

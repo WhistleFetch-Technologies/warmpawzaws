@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
@@ -233,21 +234,15 @@ export function UniversalServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId, specialization]); // ✅ RULE 2 FIX: Reload when specialization changes
+  }, [serviceStyle, vendorId, specialization, phone]); // Reload when specialization or coords context (phone) changes
 
   const loadServicesByStyle = async () => {
-    // Get customer location from localStorage for distance-based sorting
+    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
     let locationParams = '';
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
-      }
-    } catch (e) {
-      console.log('Could not get customer location');
+    if (latitude != null && longitude != null) {
+      locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     }
-    
+
     try {
       setLoading(true);
       

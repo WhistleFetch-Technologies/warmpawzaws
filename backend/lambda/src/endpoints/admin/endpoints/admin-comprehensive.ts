@@ -4134,10 +4134,10 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         vendors = vendors.filter((v: any) => v.vendorType === vendorType);
       }
 
-      // Apply performance filter (derived from rating)
+      // Apply performance filter (derived from rating — use the mapped `rating` field, not raw `avg_rating`)
       if (performance && performance !== 'all') {
         vendors = vendors.filter((v: any) => {
-          const rating = parseFloat(v.avg_rating) || 0;
+          const rating = parseFloat(v.rating) || 0;
           if (performance === 'high') return rating >= 4.5;
           if (performance === 'medium') return rating >= 3.5 && rating < 4.5;
           if (performance === 'low') return rating < 3.5;
@@ -5044,26 +5044,36 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       let orders;
       try {
-        let sql = `
-          SELECT o.*, 
-                 c.full_name as customer_name, c.email as customer_email,
-                 v.business_name as vendor_name
+        // COALESCE normalises legacy `status` column vs canonical `order_status` column so
+        // the vendor update (which writes order_status) is always reflected correctly here.
+        const baseSelect = `
+          SELECT o.*,
+                 COALESCE(o.order_status, o.status) AS status,
+                 c.full_name  AS customer_name,
+                 c.email      AS customer_email,
+                 v.business_name AS vendor_name
           FROM orders o
           LEFT JOIN customers c ON o.customer_id = c.id
-          LEFT JOIN vendors v ON o.vendor_id = v.id
+          LEFT JOIN vendors  v ON o.vendor_id   = v.id
         `;
         if (status) {
-          sql += ` WHERE o.status = $1`;
-          sql += ` ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`;
-          orders = await query(sql, [status, limit, offset]);
+          orders = await query(
+            `${baseSelect} WHERE COALESCE(o.order_status, o.status) = $1 ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`,
+            [status, limit, offset]
+          );
         } else {
-          sql += ` ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`;
-          orders = await query(sql, [limit, offset]);
+          orders = await query(
+            `${baseSelect} ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`,
+            [limit, offset]
+          );
         }
       } catch {
         // Try simpler query if joins fail
         try {
-          orders = await query(`SELECT * FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+          orders = await query(
+            `SELECT *, COALESCE(order_status, status) AS status FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+            [limit, offset]
+          );
         } catch {
           orders = { rows: [] };
         }

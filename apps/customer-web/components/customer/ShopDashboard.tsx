@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, SlidersHorizontal, ArrowLeft, TrendingUp, Star, Heart, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
+import { Search, SlidersHorizontal, ArrowLeft, TrendingUp, Star, Package, Truck, Shield, Zap, MapPin, Store, Dog, ShoppingBag, Bone, Shirt, Watch, Pill, Scissors, Bed, UtensilsCrossed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,12 +13,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { canonicalProductId } from '@/lib/product-id';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/utils';
 import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
+import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 
 interface ShopDashboardProps {
   phone?: string;
@@ -470,37 +470,15 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                       {deal.discount} OFF
                     </div>
                   )}
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      try {
-                        const customerId = getResolvedCustomerId();
-                        const productId =
-                          canonicalProductId(deal as Record<string, unknown>) || String(deal.id || '');
-                        if (!customerId) {
-                          toast.info('Please login to add items to wishlist');
-                          return;
-                        }
-                        if (!productId) {
-                          console.warn('[wishlist] ShopDashboard deal missing id', { deal });
-                          return;
-                        }
-                        console.log('[wishlist] ShopDashboard POST', { customerId, productId });
-                        const res = await apiClient.post(`/customer/${customerId}/wishlist`, {
-                          productId,
-                          action: 'add',
-                        });
-                        console.log('[wishlist] ShopDashboard POST response', { customerId, productId, res });
-                        toast.success('Added to wishlist');
-                      } catch (error: any) {
-                        console.error('Error adding to wishlist:', error);
-                        toast.error('Failed to add to wishlist');
-                      }
-                    }}
-                    className="absolute bottom-2 right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-                  >
-                    <Heart className="w-4 h-4 text-gray-700" />
-                  </button>
+                  <WishlistProductHeartButton
+                    productId={
+                      canonicalProductId(deal as unknown as Record<string, unknown>) || String(deal.id || '')
+                    }
+                    visualVariant="shop-floating"
+                    className="absolute bottom-2 right-2 w-8 h-8 shadow-lg hover:scale-110 transition-transform"
+                    heartClassName="w-4 h-4"
+                    verifyAfterAdd={false}
+                  />
                 </div>
 
                 {/* Product Info */}
@@ -631,38 +609,16 @@ export function ShopDashboard({ phone, product, category: initialCategory, onBac
                 >
                   <div className="h-36 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-5xl relative">
                     {product.image || '🐾'}
-                    <button 
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          const customerId = getResolvedCustomerId();
-                          const productId =
-                            canonicalProductId(product as Record<string, unknown>) ||
-                            String(product.id || '');
-                          if (!customerId) {
-                            toast.info('Please login to add items to wishlist');
-                            return;
-                          }
-                          if (!productId) {
-                            console.warn('[wishlist] ShopDashboard product missing id', { product });
-                            return;
-                          }
-                          console.log('[wishlist] ShopDashboard POST', { customerId, productId });
-                          const res = await apiClient.post(`/customer/${customerId}/wishlist`, {
-                            productId,
-                            action: 'add',
-                          });
-                          console.log('[wishlist] ShopDashboard POST response', { customerId, productId, res });
-                          toast.success('Added to wishlist');
-                        } catch (error: any) {
-                          console.error('Error adding to wishlist:', error);
-                          toast.error('Failed to add to wishlist');
-                        }
-                      }}
-                      className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-transform"
-                    >
-                      <Heart className="w-4 h-4 text-gray-700" />
-                    </button>
+                    <WishlistProductHeartButton
+                      productId={
+                        canonicalProductId(product as unknown as Record<string, unknown>) ||
+                        String(product.id || '')
+                      }
+                      visualVariant="shop-floating"
+                      className="absolute top-2 right-2 w-7 h-7 shadow-md hover:scale-110 transition-transform"
+                      heartClassName="w-4 h-4"
+                      verifyAfterAdd={false}
+                    />
                   </div>
                   <div className="p-3">
                     {product.category && (

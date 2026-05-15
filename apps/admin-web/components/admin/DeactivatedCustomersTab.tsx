@@ -207,10 +207,10 @@ export function DeactivatedCustomersTab() {
                       Deactivated
                     </span>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 text-sm mb-2">
-                    <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mb-2">
+                    <div className="min-w-0 sm:col-span-2">
                       <span className="text-gray-500">Location:</span>
-                      <span className="ml-2 font-medium">{c.location || c.city || 'N/A'}</span>
+                      <span className="ml-2 font-medium break-words">{c.location || c.city || 'N/A'}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Bookings:</span>

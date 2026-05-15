@@ -1,9 +1,35 @@
 /**
- * Customer marketplace (shop, cart tab, wishlist, checkout) — **disabled** regardless of
- * `NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED` or `window.__WARMPAWZ_RUNTIME_CONFIG__.customerEcommerceEnabled`.
- * UI shows “Coming soon” / “Soon”. Re-enable by restoring env + runtime-aware logic when launching again.
+ * Customer marketplace feature flag (shop, cart, wishlist, orders).
+ *
+ * Toggle on/off in one place:
+ *   • Locally  — set NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=true|false in .env.local
+ *   • Deployed — set the same env var in the build environment, OR override at runtime via
+ *                window.__WARMPAWZ_RUNTIME_CONFIG__.customerEcommerceEnabled (runtime-config.js)
+ *   • Hard-off — replace the body with `return false;` and redeploy
+ *
+ * Precedence (highest → lowest):
+ *   1. window.__WARMPAWZ_RUNTIME_CONFIG__.customerEcommerceEnabled  (runtime override)
+ *   2. NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED                        (build-time env)
+ *   3. false                                                          (default: off / coming soon)
  */
 
+function parseExplicitEnv(raw: string | undefined): boolean | null {
+  if (raw === undefined || raw === '') return null;
+  const v = raw.toLowerCase().trim();
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  return null;
+}
+
 export function isCustomerEcommerceEnabled(): boolean {
-  return false;
+  if (typeof window !== 'undefined') {
+    const rc = (window as unknown as { __WARMPAWZ_RUNTIME_CONFIG__?: { customerEcommerceEnabled?: boolean } })
+      .__WARMPAWZ_RUNTIME_CONFIG__?.customerEcommerceEnabled;
+    if (typeof rc === 'boolean') return rc;
+  }
+  const explicit = parseExplicitEnv(
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED : undefined
+  );
+  if (explicit !== null) return explicit;
+  return false; // default: off until launch
 }
