@@ -59,26 +59,35 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
           </span>
         </button>
 
-        {/* Cart Tab — disabled until customer marketplace is enabled */}
-        <button
-          type="button"
-          disabled={!commerceEnabled}
-          onClick={() => commerceEnabled && handleNavClick('cart')}
-          className={`relative flex flex-col items-center gap-1 ${!commerceEnabled ? 'cursor-not-allowed opacity-60' : ''}`}
-          aria-disabled={!commerceEnabled}
-        >
-          <div className="relative">
-            <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-            {commerceEnabled && itemCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {itemCount}
-              </span>
-            )}
-          </div>
-          <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-            {commerceEnabled ? 'Cart' : 'Soon'}
-          </span>
-        </button>
+        {/* Cart Tab */}
+        {commerceEnabled ? (
+          <button
+            type="button"
+            onClick={() => handleNavClick('cart')}
+            className="relative flex flex-col items-center gap-1"
+          >
+            <div className="relative">
+              <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+              Cart
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="relative flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+          >
+            <ShoppingCart className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Soon</span>
+          </button>
+        )}
 
         {/* Bookings Tab */}
         <button 
