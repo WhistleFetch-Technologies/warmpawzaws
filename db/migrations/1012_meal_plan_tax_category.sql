@@ -25,15 +25,37 @@ BEGIN
 END $$;
 
 -- 2. Seed default meal-plan categories (idempotent)
-INSERT INTO tax_categories (name, description, default_gst_rate, is_active)
-VALUES
-  ('Meal Plans – Food',
-   'Pet prepared meals and nutrition subscriptions (food component). Default GST 5% (prepared pet food). Admin can update.',
-   5.00, TRUE),
-  ('Meal Plans – Delivery Fee',
-   'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
-   18.00, TRUE)
-ON CONFLICT (name) DO NOTHING;
+-- Prod and some DBs still use 001_initial_schema shape: category_name + tax_rate (not name + default_gst_rate).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'tax_categories' AND column_name = 'name'
+  ) THEN
+    INSERT INTO tax_categories (name, description, default_gst_rate, is_active)
+    VALUES
+      ('Meal Plans – Food',
+       'Pet prepared meals and nutrition subscriptions (food component). Default GST 5% (prepared pet food). Admin can update.',
+       5.00, TRUE),
+      ('Meal Plans – Delivery Fee',
+       'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
+       18.00, TRUE)
+    ON CONFLICT (name) DO NOTHING;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'tax_categories' AND column_name = 'category_name'
+  ) THEN
+    INSERT INTO tax_categories (category_name, description, tax_rate, is_active)
+    VALUES
+      ('Meal Plans – Food',
+       'Pet prepared meals and nutrition subscriptions (food component). Default GST 5% (prepared pet food). Admin can update.',
+       5.00, TRUE),
+      ('Meal Plans – Delivery Fee',
+       'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
+       18.00, TRUE)
+    ON CONFLICT (category_name) DO NOTHING;
+  END IF;
+END $$;
 
 -- 3. Add tax_category_id to meal_plans (optional per-plan override)
 ALTER TABLE meal_plans
