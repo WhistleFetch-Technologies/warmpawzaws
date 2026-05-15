@@ -22,6 +22,7 @@ import {
   playtimeLabel,
   type BoardingIntakeV1Payload,
 } from '@/lib/boarding-intake-notes';
+import { getVendorBookingVenuePillLabel } from '@/lib/vendor-utils';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -53,6 +54,8 @@ interface Booking {
   petAge: string;
   location: string;
   serviceType: string;
+  /** Where the service happens — at_home | at_center | tele (from API). */
+  serviceStyle?: string;
   serviceName: string;
   status: string;
   date: string;
@@ -336,6 +339,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           rawBooking.service_name ||
           'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
+        serviceStyle: String(
+          rawBooking.serviceStyle ||
+            rawBooking.service_style ||
+            rawBooking.service?.serviceStyle ||
+            rawBooking.service?.service_style ||
+            ''
+        ).trim(),
         // ✅ FIX: Build location from detailed address → API location → customer/vendor address fallback
         location: rawBooking.customerAddressDetails?.formattedAddress || rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
           (rawBooking.serviceStyle === 'at_home' || rawBooking.serviceType === 'at_home' ? 'Home Visit' : 'At Clinic'),
@@ -1454,12 +1464,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           <div className="flex-1 overflow-y-auto bg-gray-50">
             {activeTab === 'details' && (
               <div className="p-4 space-y-4">
-                {/* Status Badge */}
-                <div className="flex items-center justify-between">
-                  <div className={`px-4 py-2 rounded-lg border inline-block ${getStatusColor(booking.status)}`}>
-                    <span className="text-sm font-medium capitalize">{booking.status.replace('_', ' ')}</span>
+                {/* Status + venue (home / clinic / tele) */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <div
+                      className={`px-4 py-2 rounded-lg border inline-block shrink-0 ${getStatusColor(booking.status)}`}
+                    >
+                      <span className="text-sm font-medium capitalize">
+                        {booking.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div className="px-4 py-2 rounded-lg border inline-block shrink-0 bg-violet-50 text-violet-800 border-violet-200">
+                      <span className="text-sm font-medium">
+                        {getVendorBookingVenuePillLabel(booking)}
+                      </span>
+                    </div>
                   </div>
-                  
+
                   {/* ✅ ACTION BUTTONS based on status */}
                   {booking.status === 'confirmed' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
