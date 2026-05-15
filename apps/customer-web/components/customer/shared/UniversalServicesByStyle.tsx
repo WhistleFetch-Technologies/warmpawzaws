@@ -859,6 +859,7 @@ export function UniversalServicesByStyle({
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
         <ServiceDashboardHeader
+          fullWidth
           className="!z-0 isolation-auto"
           serviceName={providerName}
           serviceSubtitle={specializationText}
@@ -871,7 +872,7 @@ export function UniversalServicesByStyle({
           bottomEdge="flat"
         />
 
-        <div className="relative z-0 mx-auto max-w-md">
+        <div className="relative z-0 mx-auto w-full max-w-customer">
         {hasPhotos ? (
           <div className="relative w-full -mt-3 sm:-mt-3">
             <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
@@ -901,7 +902,7 @@ export function UniversalServicesByStyle({
           </div>
         )}
 
-        <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar-sticky-cta">
+        <div className="mx-auto w-full max-w-customer px-4 cw-scroll-pad-tabbar-sticky-cta">
           {/* Provider Header Info - Vet-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -1394,9 +1395,10 @@ export function UniversalServicesByStyle({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex flex-col relative overflow-hidden">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName={config.displayName}
         serviceSubtitle={getServiceSubtitle()}
         serviceIcon={config.icon}
@@ -1408,9 +1410,11 @@ export function UniversalServicesByStyle({
         bottomEdge="sheet"
         sheetToneClass="bg-white"
       />
-      
+
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
       {/* Info section */}
-      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-6 pt-6 pb-2 sm:rounded-t-[2rem]">
+      <div className="px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1435,7 +1439,7 @@ export function UniversalServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 pb-24">
+      <div className="px-4 pb-24">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1689,6 +1693,7 @@ export function UniversalServicesByStyle({
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

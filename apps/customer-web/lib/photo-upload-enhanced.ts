@@ -157,7 +157,8 @@ async function uploadWithXHR(
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const response = JSON.parse(xhr.responseText);
-          if (response.success && response.publicUrl) {
+          const resolvedUrl = response.url || response.publicUrl;
+          if (response.success && resolvedUrl) {
             resolve({
               success: true,
               url: response.url,

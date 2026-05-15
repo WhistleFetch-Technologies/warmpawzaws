@@ -248,9 +248,10 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName={clinic.name}
         serviceSubtitle="Veterinary Clinic"
         serviceIcon={Building2}
@@ -259,9 +260,11 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-40">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-40 sm:rounded-t-[2rem]">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">

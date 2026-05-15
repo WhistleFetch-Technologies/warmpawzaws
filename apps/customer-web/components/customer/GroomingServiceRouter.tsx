@@ -294,6 +294,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     <div className="min-h-screen bg-gray-50">
       {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Grooming Services"
         serviceSubtitle="Premium pet grooming"
         serviceIcon={Scissors}
@@ -306,7 +307,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       />
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
         <div className="space-y-8">
           
           {/* YOUR GROOMER Section - As per Master Plan */}
