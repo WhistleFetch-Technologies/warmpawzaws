@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     is_approved BOOLEAN DEFAULT false,
     approved_at TIMESTAMPTZ,
     rejection_reason TEXT,
+    photos JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (id)
@@ -68,3 +69,4 @@ COMMENT ON COLUMN reviews.is_published IS 'Whether review is published';
 COMMENT ON COLUMN reviews.is_approved IS 'Whether review is approved by admin';
 COMMENT ON COLUMN reviews.approved_at IS 'When review was approved';
 COMMENT ON COLUMN reviews.rejection_reason IS 'Reason for rejection if not approved';
+COMMENT ON COLUMN reviews.photos IS 'Optional customer-uploaded images (JSON array of HTTPS URLs)';

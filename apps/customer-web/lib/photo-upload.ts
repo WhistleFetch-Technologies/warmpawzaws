@@ -35,7 +35,7 @@ export async function uploadCustomerPhoto(
       error?: string;
     }>('/storage/upload-media', formData);
 
-    if (response.success && response.publicUrl) {
+    if (response.success && (response.publicUrl || response.url)) {
       return {
         success: true,
         url: response.url,
@@ -82,7 +82,7 @@ export async function uploadPetPhoto(
       error?: string;
     }>('/storage/upload-media', formData);
 
-    if (response.success && response.publicUrl) {
+    if (response.success && (response.publicUrl || response.url)) {
       return {
         success: true,
         url: response.url,

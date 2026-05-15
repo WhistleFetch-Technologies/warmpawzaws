@@ -816,9 +816,10 @@ export function UniversalServiceProviderList({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="mx-auto flex min-h-screen w-full max-w-customer flex-col bg-gray-50">
       {/*HEADER SECTION*/}
       <ServiceDashboardHeader
+        fullWidth
         serviceName={title || styleConfig.label}
         serviceSubtitle={subtitle}
         serviceIcon={getCategoryIcon()}
@@ -827,10 +828,11 @@ export function UniversalServiceProviderList({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      {/*MAIN CONTENT SECTION*/}
-      <div className="px-4 pt-2 pb-8">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-8 sm:rounded-t-[2rem]">
         {/*FILTER SECTION STARTS*/}
         {showProblemFilter && categoryProblems.length > 0 && (
           <div className="mb-4">
